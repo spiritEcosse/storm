@@ -10,7 +10,7 @@ Storm is a C++26 ORM library for SQLite using compile-time reflection to automat
 
 **Performance**: 96-108% efficiency vs raw SQLite (Release builds). See [benchmarks/README.md](benchmarks/README.md).
 
-**Key Features**: Compile-time SQL generation, 3-level statement caching, thread-local caching, type-erased JOINs, pure C++26 reflection for WHERE clauses.
+**Key Features**: Compile-time SQL generation, single-level (Connection-level) statement caching, thread-local caching, type-erased JOINs, pure C++26 reflection for WHERE clauses.
 
 ## Behavioral Guidelines
 
@@ -272,7 +272,7 @@ See [docs/architecture/](docs/architecture/) for design decisions.
 1. C++26 reflection for automatic field mapping
 2. Concept-based DB abstraction (PostgreSQL/MySQL ready)
 3. Compile-time SQL generation (zero runtime overhead)
-4. Statement + thread-local caching (20x+ speedup)
+4. Single Connection-level statement cache + thread-local SQL caching (20x+ speedup). Statements are per-call temporaries owned by the result proxy; the L1/L2 caches were removed in #214 as they gave no measurable benefit.
 5. Batch operations with smart thresholds (SQLite limit = 999)
 6. Type-erased JOINs via abstract base class
 
@@ -285,16 +285,15 @@ See [docs/architecture/](docs/architecture/) for design decisions.
 | Optimization | Improvement | When to Use |
 |--------------|-------------|-------------|
 | Flat code over nested lambdas | ~3-4% | Hot paths, inner loops |
-| Statement pointer caching | ~23% | Single-row ops in loops |
 | Raw pointer caching in loops | ~5-6% | Query extraction loops |
-| Expression address caching | Skip SQL build | Repeated WHERE queries |
 | Template methods for modules | ~1-3% | Cross-module hot paths |
 
-```cpp
-// Cache statement pointer (23% faster)
-if (!cached_stmt_) cached_stmt_ = conn_->prepare_cached(sql);
-cached_stmt_->reset();
+> Statement preparation is cached once, at the Connection level (`prepare_cached`,
+> see [STATEMENT_CACHING.md](docs/architecture/STATEMENT_CACHING.md)). The former
+> per-QuerySet (L1) and per-Statement (L2) pointer caches were removed in #214
+> after benchmarks showed no measurable benefit — do not reintroduce them.
 
+```cpp
 // Cache raw pointer in loops (5-6% faster)
 sqlite3_stmt* raw = stmt->handle();
 while (sqlite3_step(raw) == SQLITE_ROW) { ... }

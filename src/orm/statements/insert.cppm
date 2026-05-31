@@ -218,7 +218,7 @@ export namespace storm::orm::statements {
         explicit InsertStatement(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
         struct SingleQuery {
-            InsertStatement&   stmt;
+            InsertStatement    stmt;
             const T&           obj;
             [[nodiscard]] auto execute() -> std::expected<std::int64_t, Error> {
                 return stmt.execute_single_optimized(obj, true);
@@ -232,7 +232,7 @@ export namespace storm::orm::statements {
         };
 
         struct VoidQuery {
-            InsertStatement&   stmt;
+            InsertStatement    stmt;
             const T&           obj;
             [[nodiscard]] auto execute() -> std::expected<void, Error> {
                 return stmt.execute_single_void(obj);
@@ -246,7 +246,7 @@ export namespace storm::orm::statements {
         };
 
         struct BulkQuery {
-            InsertStatement&             stmt;
+            InsertStatement              stmt;
             std::span<const T>           objects;
             std::optional<InsertOptions> opts;
             [[nodiscard]] auto           execute() -> std::expected<void, Error> {
@@ -261,7 +261,7 @@ export namespace storm::orm::statements {
         };
 
         struct BulkReturningQuery {
-            InsertStatement&             stmt; // NOSONAR(cpp:S1659) — aggregate struct, same pattern as BulkQuery
+            InsertStatement              stmt; // NOSONAR(cpp:S1659) — aggregate struct, same pattern as BulkQuery
             std::span<const T>           objects;
             std::optional<InsertOptions> opts;
 
@@ -278,23 +278,23 @@ export namespace storm::orm::statements {
 
         template <ReturnId R = ReturnId::Yes> auto query(const T& obj [[clang::lifetimebound]]) {
             if constexpr (R == ReturnId::Yes) {
-                return SingleQuery{*this, obj};
+                return SingleQuery{std::move(*this), obj};
             } else {
-                return VoidQuery{*this, obj};
+                return VoidQuery{std::move(*this), obj};
             }
         }
         auto
         query(std::span<const T> objects [[clang::lifetimebound]], std::optional<InsertOptions> opts = std::nullopt)
                 -> BulkQuery {
-            return {*this, objects, opts};
+            return {std::move(*this), objects, opts};
         }
         template <ReturnId R>
         auto
         query(std::span<const T> objects [[clang::lifetimebound]], std::optional<InsertOptions> opts = std::nullopt) {
             if constexpr (R == ReturnId::Yes) {
-                return BulkReturningQuery{*this, objects, opts};
+                return BulkReturningQuery{std::move(*this), objects, opts};
             } else {
-                return BulkQuery{*this, objects, opts};
+                return BulkQuery{std::move(*this), objects, opts};
             }
         }
 
@@ -377,61 +377,42 @@ export namespace storm::orm::statements {
         [[nodiscard]] __attribute__((hot)) auto execute_single_optimized(const T& obj, bool return_id = true) noexcept
                 -> std::expected<std::int64_t, Error> {
             // Both SQLite 3.35+ and PostgreSQL support RETURNING
-            if (cached_insert_returning_stmt_ == nullptr) [[unlikely]] {
-                auto stmt_result = conn_->prepare_cached(insert_returning_sql_string);
-                if (!stmt_result) {
-                    return std::unexpected(stmt_result.error());
-                }
-                cached_insert_returning_stmt_ = *stmt_result;
+            auto prepared = prepare_and_bind(insert_returning_sql_string, obj);
+            if (!prepared) [[unlikely]] {
+                return std::unexpected(prepared.error());
             }
-
-            // Bind non-PK fields
-            auto bind_result = Base::template bind_non_pk_fields_impl<ConnType, Statement>(
-                    *cached_insert_returning_stmt_, obj, typename Base::field_indices_t()
-            );
-            if (!bind_result) [[unlikely]] {
-                return std::unexpected(bind_result.error());
-            }
+            Statement* stmt = *prepared;
 
             // Execute — step_raw() avoids std::expected overhead on hot path
-            const int rc = cached_insert_returning_stmt_->step_raw();
+            const int rc = stmt->step_raw();
             if (rc == Statement::ROW_AVAILABLE) [[likely]] {
                 // RETURNING produced a row — extract the ID
-                std::int64_t id = return_id ? cached_insert_returning_stmt_->extract_int64(0) : 0;
-                cached_insert_returning_stmt_->reset();
+                std::int64_t id = return_id ? stmt->extract_int64(0) : 0;
+                stmt->reset();
                 return id;
             }
-            cached_insert_returning_stmt_->reset();
+            stmt->reset();
             if (rc == Statement::NO_MORE_ROWS) [[unlikely]] {
                 return 0; // No row returned (shouldn't happen with RETURNING)
             }
-            return std::unexpected(Error{rc, cached_insert_returning_stmt_->get_error_message()});
+            return std::unexpected(Error{rc, stmt->get_error_message()});
         }
 
         // Optimized single INSERT without RETURNING — no ID extraction overhead
         [[nodiscard]] __attribute__((hot)) auto execute_single_void(const T& obj) noexcept
                 -> std::expected<void, Error> {
-            if (cached_insert_stmt_ == nullptr) [[unlikely]] {
-                auto stmt_result = conn_->prepare_cached(insert_sql_string);
-                if (!stmt_result) {
-                    return std::unexpected(stmt_result.error());
-                }
-                cached_insert_stmt_ = *stmt_result;
+            auto prepared = prepare_and_bind(insert_sql_string, obj);
+            if (!prepared) [[unlikely]] {
+                return std::unexpected(prepared.error());
             }
+            Statement* stmt = *prepared;
 
-            auto bind_result = Base::template bind_non_pk_fields_impl<ConnType, Statement>(
-                    *cached_insert_stmt_, obj, typename Base::field_indices_t()
-            );
-            if (!bind_result) [[unlikely]] {
-                return std::unexpected(bind_result.error());
-            }
-
-            const int rc = cached_insert_stmt_->step_raw();
-            cached_insert_stmt_->reset();
+            const int rc = stmt->step_raw();
+            stmt->reset();
             if (rc == Statement::NO_MORE_ROWS) [[likely]] {
                 return {};
             }
-            return std::unexpected(Error{rc, cached_insert_stmt_->get_error_message()});
+            return std::unexpected(Error{rc, stmt->get_error_message()});
         }
 
       protected: // Changed to protected so BaseStatement can access
@@ -550,17 +531,26 @@ export namespace storm::orm::statements {
             return all_ids;
         }
 
-      public:
-        // Drop cached Statement pointers obtained from Connection::prepare_cached().
-        // Call this before Connection::clear_statement_cache() — otherwise the next
-        // execute() would step a freed prepared statement. Reached from QuerySet::reset()
-        // and QuerySet::invalidate_cache(). Issue #215.
-        auto invalidate_cache() noexcept -> void {
-            cached_insert_returning_stmt_ = nullptr;
-            cached_insert_stmt_           = nullptr;
+      private:
+        // Prepare (L3-cached) the given INSERT SQL and bind the object's non-PK
+        // fields. Both single-row execute paths share this so the prepare +
+        // bind + error-check sequence lives in one place.
+        [[nodiscard]] __attribute__((always_inline)) auto
+        prepare_and_bind(const std::string& sql, const T& obj) noexcept -> std::expected<Statement*, Error> {
+            auto stmt_result = conn_->prepare_cached(sql);
+            if (!stmt_result) [[unlikely]] {
+                return std::unexpected(stmt_result.error());
+            }
+            Statement* stmt        = *stmt_result;
+            auto       bind_result = Base::template bind_non_pk_fields_impl<ConnType, Statement>(
+                    *stmt, obj, typename Base::field_indices_t()
+            );
+            if (!bind_result) [[unlikely]] {
+                return std::unexpected(bind_result.error());
+            }
+            return stmt;
         }
 
-      private:
         // Shared body of the four to_sql* debug helpers: prepare the given SQL,
         // delegate binding to the caller, then return the expanded SQL string.
         template <typename BindFn>
@@ -591,11 +581,6 @@ export namespace storm::orm::statements {
         }
 
         std::shared_ptr<ConnType> conn_;
-        // Raw pointers obtained from Connection::prepare_cached(). Pointer
-        // stability across cache growth is guaranteed by the
-        // `unique_ptr<Statement>` value type in StatementCache (Issue #215).
-        Statement* cached_insert_returning_stmt_ = nullptr;
-        Statement* cached_insert_stmt_           = nullptr;
     };
 
 } // namespace storm::orm::statements

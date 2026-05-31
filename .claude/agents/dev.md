@@ -98,8 +98,8 @@ cmake --preset ninja-release && cmake --build --preset ninja-release
 ## Thread Safety
 
 - SQLite is opened with `SQLITE_OPEN_FULLMUTEX`
-- The Level 3 statement cache (`statement_cache_` on each `Connection`) is thread-safe via `std::shared_mutex` (issue #271): `shared_lock` on the cache-hit hot path, `unique_lock` on insert/clear, on both SQLite and PostgreSQL backends
-- The returned `Statement*` lifetime relies on the exclusive-checkout invariant (`ConnectionPool` hands each thread its own `Connection`); sharing a single `Connection`/QuerySet across threads is still unsupported
+- The Connection-level statement cache (`statement_cache_` on each `Connection`) is the only statement cache — the per-QuerySet (L1) and per-Statement (L2) caches were removed in #214. It is thread-safe via `std::shared_mutex` (issue #271): `shared_lock` on the cache-hit hot path, `unique_lock` on insert/clear, on both SQLite and PostgreSQL backends
+- Statements are per-call temporaries owned by the returned result proxy by value; no raw `Statement*` is held across calls. The `Statement*` from `prepare_cached()` is valid for the operation's scope and relies on the exclusive-checkout invariant (`ConnectionPool` hands each thread its own `Connection`); sharing a single `Connection`/QuerySet across threads is still unsupported
 - Use per-thread connections (`thread_local`) or a `ConnectionPool` (enforces exclusive checkout)
 
 ## Problem-Solving Approach

@@ -57,17 +57,17 @@ export namespace storm {
 
         // Erase single object - returns proxy with .execute() and .to_sql()
         auto erase(const T& obj [[clang::lifetimebound]]) {
-            return get_erase_statement().query(obj);
+            return orm::statements::EraseStatement<T, ConnType>(conn_).query(obj);
         }
 
         // Bulk erase - returns proxy with .execute() and .to_sql()
         auto erase(std::span<const T> objects [[clang::lifetimebound]]) {
-            return get_erase_statement().query(objects);
+            return orm::statements::EraseStatement<T, ConnType>(conn_).query(objects);
         }
 
         // Erase all rows — executes DELETE FROM <table> with no WHERE clause
         [[nodiscard]] auto erase_all() {
-            return get_erase_statement().query_all();
+            return orm::statements::EraseStatement<T, ConnType>(conn_).query_all();
         }
 
         // Insert single object - returns proxy with .execute() and .to_sql()
@@ -77,7 +77,7 @@ export namespace storm {
         template <orm::statements::ReturnId R = orm::statements::ReturnId::Yes, typename U = T>
             requires std::same_as<std::remove_cvref_t<U>, T>
         auto insert(const U& obj [[clang::lifetimebound]]) {
-            return get_insert_statement().template query<R>(obj);
+            return orm::statements::InsertStatement<T, ConnType>(conn_).template query<R>(obj);
         }
 
         // Bulk insert - returns proxy with .execute() and .to_sql()
@@ -86,13 +86,13 @@ export namespace storm {
         auto
         insert(std::span<const T>                            objects [[clang::lifetimebound]],
                std::optional<orm::statements::InsertOptions> opts = std::nullopt) {
-            return get_insert_statement().query(objects, opts);
+            return orm::statements::InsertStatement<T, ConnType>(conn_).query(objects, opts);
         }
         template <orm::statements::ReturnId R>
         auto
         insert(std::span<const T>                            objects [[clang::lifetimebound]],
                std::optional<orm::statements::InsertOptions> opts = std::nullopt) {
-            return get_insert_statement().template query<R>(objects, opts);
+            return orm::statements::InsertStatement<T, ConnType>(conn_).template query<R>(objects, opts);
         }
 
         // WHERE clause support - builder pattern with method chaining using type-safe expressions
@@ -155,7 +155,7 @@ export namespace storm {
         // NOTE: WHERE and JOIN state is preserved after select() for query reusability.
         // Call reset() to clear state when needed.
         [[nodiscard]] __attribute__((hot)) auto select() {
-            return get_select_statement()
+            return orm::statements::SelectStatement<T, ConnType>(conn_)
                     .query(join_stmt_, where_expr_, limit_value_, offset_value_, order_by_wrapper_);
         }
 
@@ -164,7 +164,7 @@ export namespace storm {
         // Uses a dedicated (non-cached) prepared statement per generator instance
         // Usage: for (auto&& result : qs.where(age > 30).rows()) { ... }
         [[nodiscard]] auto rows() {
-            return get_select_statement()
+            return orm::statements::SelectStatement<T, ConnType>(conn_)
                     .rows_generator(conn_, join_stmt_, where_expr_, limit_value_, offset_value_, order_by_wrapper_);
         }
 
@@ -174,7 +174,7 @@ export namespace storm {
         [[nodiscard]] __attribute__((hot)) auto first() {
             const bool fast = !where_expr_ && !join_stmt_.has_value() && !order_by_wrapper_.has_value() &&
                               !offset_value_.has_value();
-            return get_select_statement()
+            return orm::statements::SelectStatement<T, ConnType>(conn_)
                     .query_first(join_stmt_, where_expr_, limit_value_, offset_value_, order_by_wrapper_, fast);
         }
 
@@ -186,7 +186,7 @@ export namespace storm {
         [[nodiscard]] __attribute__((hot)) auto get() {
             const bool fast = !where_expr_ && !join_stmt_.has_value() && !order_by_wrapper_.has_value() &&
                               !offset_value_.has_value();
-            return get_select_statement()
+            return orm::statements::SelectStatement<T, ConnType>(conn_)
                     .query_get(join_stmt_, where_expr_, limit_value_, offset_value_, order_by_wrapper_, fast);
         }
 
@@ -274,12 +274,12 @@ export namespace storm {
         template <typename U = T>
             requires std::same_as<std::remove_cvref_t<U>, T>
         auto update(const U& obj [[clang::lifetimebound]]) {
-            return get_update_statement().query(obj);
+            return orm::statements::UpdateStatement<T, ConnType>(conn_).query(obj);
         }
 
         // Bulk update - returns proxy with .execute() and .to_sql()
         auto update(std::span<const T> objects [[clang::lifetimebound]]) {
-            return get_update_statement().query(objects);
+            return orm::statements::UpdateStatement<T, ConnType>(conn_).query(objects);
         }
 
         // Reset WHERE, JOIN, LIMIT, and OFFSET state
@@ -289,39 +289,12 @@ export namespace storm {
         //   qs.where(age > 25).limit(10).select();  // WHERE age > 25 LIMIT 10
         //   qs.reset();                              // Clear state
         //   qs.select();                             // No WHERE, no LIMIT
-        //
-        // Issue #215: reset() also drops every Level 2 Statement-pointer cache so
-        // that schema changes followed by Connection::clear_statement_cache() do not
-        // leave Insert/Update/Erase/Select holding pointers to freed statements.
-        // For schema-only invalidation that preserves WHERE/LIMIT state, use
-        // invalidate_cache() below.
         auto reset() noexcept -> void {
             join_stmt_.reset();
             where_expr_.reset();
             limit_value_.reset();
             offset_value_.reset();
             order_by_wrapper_.reset();
-            invalidate_cache();
-        }
-
-        // Drop every cached Statement pointer held by this QuerySet's Level 2
-        // statements without touching the WHERE/LIMIT/OFFSET/JOIN chain. Use
-        // this after a targeted DDL on the underlying table — pair with
-        // Connection::clear_statement_cache(table) on the same connection.
-        // Issue #215.
-        auto invalidate_cache() noexcept -> void {
-            if (insert_stmt_) {
-                insert_stmt_->invalidate_cache();
-            }
-            if (update_stmt_) {
-                update_stmt_->invalidate_cache();
-            }
-            if (erase_stmt_) {
-                erase_stmt_->invalidate_cache();
-            }
-            if (select_stmt_) {
-                select_stmt_->invalidate_cache();
-            }
         }
 
         // GROUP BY - returns GroupByBuilder for fluent aggregate chaining
@@ -523,38 +496,6 @@ export namespace storm {
         }
 
       private:
-        // Lazy-initialize and return cached InsertStatement for optimal performance
-        auto get_insert_statement() const -> orm::statements::InsertStatement<T, ConnType>& {
-            if (!insert_stmt_) [[unlikely]] {
-                insert_stmt_ = std::make_unique<orm::statements::InsertStatement<T, ConnType>>(conn_);
-            }
-            return *insert_stmt_;
-        }
-
-        // Lazy-initialize and return cached EraseStatement for optimal performance
-        auto get_erase_statement() const -> orm::statements::EraseStatement<T, ConnType>& {
-            if (!erase_stmt_) [[unlikely]] {
-                erase_stmt_ = std::make_unique<orm::statements::EraseStatement<T, ConnType>>(conn_);
-            }
-            return *erase_stmt_;
-        }
-
-        // Lazy-initialize and return cached UpdateStatement for optimal performance
-        auto get_update_statement() const -> orm::statements::UpdateStatement<T, ConnType>& {
-            if (!update_stmt_) [[unlikely]] {
-                update_stmt_ = std::make_unique<orm::statements::UpdateStatement<T, ConnType>>(conn_);
-            }
-            return *update_stmt_;
-        }
-
-        // Lazy-initialize and return cached SelectStatement for optimal performance
-        auto get_select_statement() const -> orm::statements::SelectStatement<T, ConnType>& {
-            if (!select_stmt_) [[unlikely]] {
-                select_stmt_ = std::make_unique<orm::statements::SelectStatement<T, ConnType>>(conn_);
-            }
-            return *select_stmt_;
-        }
-
         explicit QuerySet(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
         template <bool F2> auto copy_state_into(QuerySet<T, ConnType, F2>& dst) const -> void {
@@ -583,11 +524,7 @@ export namespace storm {
             return {conn_, std::move(operands), std::move(operators)};
         }
 
-        std::shared_ptr<ConnType>                                              conn_;
-        mutable std::unique_ptr<orm::statements::InsertStatement<T, ConnType>> insert_stmt_;
-        mutable std::unique_ptr<orm::statements::EraseStatement<T, ConnType>>  erase_stmt_;
-        mutable std::unique_ptr<orm::statements::SelectStatement<T, ConnType>> select_stmt_;
-        mutable std::unique_ptr<orm::statements::UpdateStatement<T, ConnType>> update_stmt_;
+        std::shared_ptr<ConnType> conn_;
 
         mutable std::optional<orm::statements::JoinStatementWrapper> join_stmt_;
         mutable orm::where::ExpressionVariantPtr                     where_expr_;

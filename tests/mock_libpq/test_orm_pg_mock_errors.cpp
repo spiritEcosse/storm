@@ -1173,8 +1173,8 @@ namespace {
         EXPECT_TRUE(results.value().empty());
     }
 
-    // Covers queryset.cppm lines 296-298: reset() invalidates cached select statement
-    // Covers select.cppm lines 239-244: invalidate_cache() body
+    // Covers QuerySet::reset(): clearing query state must leave the QuerySet
+    // usable for a fresh select.
     TEST_F(PgOrmInsertReturningTest, ResetInvalidatesSelectCache) {
         MockPqConfig::exec_prepared_ntuples(0);
 
