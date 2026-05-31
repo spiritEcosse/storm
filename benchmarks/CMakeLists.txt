@@ -124,53 +124,6 @@ set_property(
 message(STATUS "Benchmark executable: storm_anchors")
 
 # ============================================================================
-# storm_cache_probe — single-TU cache investigation binary (Issue #214)
-# ============================================================================
-# Standalone executable for measuring statement-caching cost across four access
-# patterns (Reuse / NewPerOp / MixedWhere / BulkUpdate).  NOT a CI target — used
-# only for manual investigation on the feature/214 branch.
-#
-# cache_probe.cpp is a plain .cpp (not .cppm) that owns BOTH `import storm;` AND
-# `#include <benchmark/benchmark.h>`.  The storm_bench split (main.cpp +
-# register.cpp) is not required here because storm_cache_probe is its own
-# isolated executable with its own module-cache scope; the benchmark header
-# arrives via -isystem (per-source INCLUDE_DIRECTORIES below) which keeps it out
-# of the module hash graph.  See task 5 of Issue #214 for empirical findings.
-add_executable(storm_cache_probe "${CMAKE_CURRENT_SOURCE_DIR}/cache_probe.cpp")
-# import std; is used in cache_probe.cpp, so the target needs the std named
-# module (same requirement as storm_bench's .cppm units).
-set_target_properties(storm_cache_probe PROPERTIES CXX_MODULE_STD ON)
-target_link_libraries(storm_cache_probe
-                      PRIVATE storm pthread $<TARGET_FILE:benchmark::benchmark>)
-add_dependencies(storm_cache_probe benchmark::benchmark)
-link_sqlite(storm_cache_probe)
-apply_clang_flags(storm_cache_probe)
-target_compile_options(storm_cache_probe PRIVATE -Werror)
-# src/ and third_party/ mirror storm_bench — needed so `import storm;` resolve
-# correctly via the module map that apply_clang_flags sets up.
-target_include_directories(
-  storm_cache_probe
-  PRIVATE "${CMAKE_SOURCE_DIR}/src"
-          "${CMAKE_SOURCE_DIR}/third_party"
-          # benchmarks/ so `#include "models.hpp"` resolves.
-          "${CMAKE_CURRENT_SOURCE_DIR}"
-          # shared/ so models.hpp can reach `#include "../shared/models.h"`.
-          "${CMAKE_SOURCE_DIR}/shared")
-# benchmark.h via -isystem (per-source) to avoid promoting gbench warnings to
-# errors and to keep the benchmark include path out of the module hash for the
-# import-storm TU — same pattern as main.cpp / anchors_raw.cpp.
-set_property(
-  SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/cache_probe.cpp"
-  APPEND
-  PROPERTY INCLUDE_DIRECTORIES "${_benchmark_includes}")
-set_property(
-  SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/cache_probe.cpp"
-  APPEND
-  PROPERTY COMPILE_DEFINITIONS "BENCHMARK_STATIC_DEFINE")
-
-message(STATUS "Benchmark executable: storm_cache_probe")
-
-# ============================================================================
 # storm_bench_dashboard — Issue #247
 # ============================================================================
 # Phase 1 skeleton lives in its own subdirectory so the dashboard's reflection

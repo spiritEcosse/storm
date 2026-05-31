@@ -4,7 +4,7 @@
 # Rationale per file lives in docs/development/CODE_QUALITY.md.
 
 src/orm/statements/insert.cppm:    file-size
-src/orm/statements/select.cppm:    file-size, complexity, length
+src/orm/statements/select.cppm:    file-size
 src/orm/statements/base.cppm:      file-size, duplicate
 src/orm/statements/aggregate.cppm: file-size
 src/orm/queryset.cppm:             file-size
