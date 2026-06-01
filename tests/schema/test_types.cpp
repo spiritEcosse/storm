@@ -1759,8 +1759,8 @@ TEST(PgDialectTypesSchemaTest, BoolFieldIsBoolean) {
     EXPECT_EQ(sql.find("BOOLEAN"), std::string::npos)
             << "ExtendedTypes has no bool field, should not contain BOOLEAN: " << sql;
     const std::string& person_sql = SchemaStatement<Person>::create_table_sql<Dialect::PostgreSQL>();
-    EXPECT_NE(person_sql.find("is_active BOOLEAN NOT NULL"), std::string::npos)
-            << "Expected 'is_active BOOLEAN NOT NULL' in PG SQL: " << person_sql;
+    EXPECT_NE(person_sql.find("is_active BOOLEAN NOT NULL DEFAULT FALSE"), std::string::npos)
+            << "Expected 'is_active BOOLEAN NOT NULL DEFAULT FALSE' in PG SQL: " << person_sql;
 }
 
 TEST(PgDialectTypesSchemaTest, FloatFieldIsReal) {

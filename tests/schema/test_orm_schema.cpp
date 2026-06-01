@@ -24,7 +24,7 @@ TEST(SchemaUnitTest, PersonSqlMatchesHandWritten) {
                                  "    name TEXT NOT NULL UNIQUE,\n"
                                  "    age INTEGER NOT NULL,\n"
                                  "    salary REAL NOT NULL,\n"
-                                 "    is_active INTEGER NOT NULL,\n"
+                                 "    is_active INTEGER NOT NULL DEFAULT 0,\n"
                                  "    years_experience INTEGER NOT NULL,\n"
                                  "    department TEXT NOT NULL,\n"
                                  "    score INTEGER,\n"
@@ -75,11 +75,12 @@ TEST(SchemaUnitTest, PersonSalaryFieldIsRealNotNull) {
     EXPECT_NE(sql.find("salary REAL NOT NULL"), std::string::npos) << "Expected 'salary REAL NOT NULL' in: " << sql;
 }
 
-// Test: Person is_active field generates INTEGER NOT NULL (bool maps to INTEGER)
+// Test: Person is_active field generates INTEGER NOT NULL DEFAULT 0
+// (bool maps to INTEGER; bool{} default member init → DEFAULT 0, issue #344)
 TEST(SchemaUnitTest, PersonIsActiveFieldIsIntegerNotNull) {
     const std::string& sql = storm::create_table_sql<Person>();
-    EXPECT_NE(sql.find("is_active INTEGER NOT NULL"), std::string::npos)
-            << "Expected 'is_active INTEGER NOT NULL' in: " << sql;
+    EXPECT_NE(sql.find("is_active INTEGER NOT NULL DEFAULT 0"), std::string::npos)
+            << "Expected 'is_active INTEGER NOT NULL DEFAULT 0' in: " << sql;
 }
 
 // Test: Person years_experience field generates INTEGER NOT NULL
@@ -350,7 +351,7 @@ TEST(PgDialectSchemaTest, PersonPgSqlMatchesHandWritten) {
                                  "    name TEXT NOT NULL UNIQUE,\n"
                                  "    age BIGINT NOT NULL,\n"
                                  "    salary DOUBLE PRECISION NOT NULL,\n"
-                                 "    is_active BOOLEAN NOT NULL,\n"
+                                 "    is_active BOOLEAN NOT NULL DEFAULT FALSE,\n"
                                  "    years_experience BIGINT NOT NULL,\n"
                                  "    department TEXT NOT NULL,\n"
                                  "    score BIGINT,\n"

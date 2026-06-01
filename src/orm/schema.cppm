@@ -204,6 +204,31 @@ export namespace storm::orm::schema {
             }
         }
 
+        // DEFAULT clause for a non-nullable bool column. Returns "" for everything
+        // else. The C++ default-member-initializer value is recovered by reading the
+        // field off a default-constructed instance of the owning type (compile-time),
+        // since P2996 exposes whether a default initializer exists but not its value.
+        //
+        // Without this, `ALTER TABLE ... ADD COLUMN <bool> NOT NULL` is rejected by
+        // SQLite on a populated table ("Cannot add a NOT NULL column with default
+        // value NULL"). Issue #344. Scope is intentionally limited to bool, the only
+        // type that actually broke; other NOT NULL columns keep their prior shape.
+        template <typename Owner, std::meta::info Member, Dialect D>
+        consteval auto bool_default_clause() -> std::string_view {
+            using FieldType = std::remove_cvref_t<typename[:std::meta::type_of(Member):]>;
+            if constexpr (!std::is_same_v<FieldType, bool> || !std::meta::has_default_member_initializer(Member)) {
+                return {};
+            } else {
+                constexpr Owner def{};
+                constexpr bool  value = def.[:Member:];
+                if constexpr (D == Dialect::PostgreSQL) {
+                    return value ? " DEFAULT TRUE" : " DEFAULT FALSE";
+                } else {
+                    return value ? " DEFAULT 1" : " DEFAULT 0";
+                }
+            }
+        }
+
         // Map a C++ field type to its SQL column definition string for the given dialect.
         // Returns the column type portion (after the column name).
         // Two-axis dispatch:
@@ -261,6 +286,7 @@ export namespace storm::orm::schema {
                 col.append(std::meta::identifier_of(member));
                 col.append(" ");
                 col.append(detail::sql_col_def<FieldType, D>());
+                col.append(detail::bool_default_clause<T, member, D>());
                 col.append(" UNIQUE");
             }
             // Regular field
@@ -269,6 +295,7 @@ export namespace storm::orm::schema {
                 col.append(std::meta::identifier_of(member));
                 col.append(" ");
                 col.append(detail::sql_col_def<FieldType, D>());
+                col.append(detail::bool_default_clause<T, member, D>());
             }
             return col;
         }
@@ -298,7 +325,8 @@ export namespace storm::orm::schema {
                     if (field_attr.has_value() && field_attr.value() == statements::meta::FieldAttr::fk) {
                         size += max_fk_suffix;
                     } else {
-                        size += 1 + max_type_def + 7; // " " + type def + " UNIQUE"
+                        // " " + type def + bool DEFAULT clause (" DEFAULT FALSE" = 14) + " UNIQUE" (7)
+                        size += 1 + max_type_def + 14 + 7;
                     }
                 }
             }
