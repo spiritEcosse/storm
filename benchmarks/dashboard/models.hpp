@@ -23,6 +23,7 @@ namespace bench_dashboard {
         std::string                               compiler;           // e.g. "Clang 21.0"
         std::string                               filter;             // gbench --benchmark_filter, empty = full run
         bool                                      is_full_run{false}; // tagged so --baseline auto can skip partial runs
+        bool                                      is_raw{false};      // true => raw-SQLite baseline run (storm_anchors)
     };
 
     struct BenchResult {

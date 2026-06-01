@@ -66,7 +66,7 @@ TEST_F(DashboardRunBranch, BranchReReadPerRun) {
     DashboardDB db{[&]() -> DashboardDB::GitContext { return script.at(call++); }};
 
     for (std::size_t i = 0; i < script.size(); ++i) {
-        ASSERT_TRUE(db.insert_run("", /*is_full_run=*/true).has_value());
+        ASSERT_TRUE(db.insert_run("", /*is_full_run=*/true, /*is_raw=*/false).has_value());
     }
 
     const auto runs = all_runs();

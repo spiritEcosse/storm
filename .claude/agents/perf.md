@@ -17,8 +17,8 @@ You are the performance specialist for Storm ORM, with expertise in benchmarking
   - `./build/release/benchmarks/storm_bench --benchmark_filter='Storm/SELECT/.*'` (category filter)
   - `./build/release/benchmarks/storm_bench --benchmark_repetitions=10 --benchmark_report_aggregates_only=true` (stats: median/mean/stddev)
   - `./build/release/benchmarks/storm_bench --benchmark_min_time=2s` (longer-running profile-friendly run)
-  - `./build/release/benchmarks/storm_anchors` (raw SQLite anchors — separate binary, release-time spot check)
-- For local-dev regression diffs: `./benchmarks/scripts/compare_against_baseline.sh BASELINE=path/to/snapshot.json` (Mann-Whitney U-test). No committed baseline — runner-class binding makes that fragile; Bencher (Phase 6) owns server-side persistence.
+  - `./build/release/benchmarks/storm_anchors` (raw SQLite anchors — separate binary, release-time spot check; also feeds the live dashboard baseline when streamed with `STORM_BENCH_SOCKET=1` + `--baseline raw:last`)
+- For local-dev regression diffs: `./benchmarks/scripts/compare_against_baseline.sh BASELINE=path/to/snapshot.json` (Mann-Whitney U-test). No committed baseline — runner-class binding makes that fragile; Bencher (Phase 6) owns server-side persistence. For live dashboard Storm-vs-raw baseline, see [docs/development/BENCHMARK_DASHBOARD.md](../docs/development/BENCHMARK_DASHBOARD.md).
 - Target: ≥95% of raw SQLite efficiency (≤5% overhead). CLAUDE.md mandates reverting on ANY measurable slowdown.
 - Flag regressions >5% as critical
 - Always build Release before benchmarking: `cmake --preset ninja-release && cmake --build --preset ninja-release`

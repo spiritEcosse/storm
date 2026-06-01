@@ -29,7 +29,7 @@ STORM_BENCH_SOCKET=1 ./build/release/benchmarks/storm_bench --benchmark_filter='
 
 Results are stored in `~/.local/state/storm/dashboard/bench_results.db` with two tables:
 
-- **`BenchRun`** — One row per benchmark session, capturing start time, filter, and environment
+- **`BenchRun`** — One row per benchmark session, capturing start time, filter, and environment. The `is_raw` column tags raw-SQLite baseline runs (true for `storm_anchors`, false for `storm_bench`).
 - **`BenchResult`** — One row per benchmark result, linking to its parent `BenchRun`
 
 ## First-Run Setup
@@ -74,11 +74,33 @@ When a baseline run exists in the database, each streamed result is compared in 
 | `auto` (default) | Most recent **full** run on the same branch + hostname |
 | `run:<id>` | Specific run by numeric id (see `SELECT id FROM BenchRun`) |
 | `branch:<name>` | Most recent full run on the named branch, any host |
+| `raw:<id>` | Specific raw-SQLite baseline run by numeric id |
+| `raw:last` | Most recent raw-SQLite baseline (`is_raw = true`) on the same branch + hostname |
 | `none` | No comparison column |
 
 `--baseline auto` skips partial/filtered runs (`is_full_run = false`) so percentage deltas are always against a comparable full run. If no matching baseline is found, the dashboard prints a notice and runs without comparison.
 
 > **Git branch/hash are read per run, not at startup.** Each `BenchRun` row records the working-tree `branch` and `git_hash` at the moment the bench process connects, not when the daemon started (Issue #267). This means a long-lived daemon stays correct across `git checkout`/commits — `--baseline auto` always matches the branch the bench was actually run from. Because the labels come from `git rev-parse`, **the dashboard must be started from inside the storm git work tree**; if it is not, it fails loudly at startup (exit code 4) instead of stamping every run with empty git metadata.
+
+### Storm vs raw efficiency
+
+When the active baseline is a raw-SQLite run (`--baseline raw:<id>` or `--baseline raw:last`), matched Storm rows display efficiency instead of a signed percentage delta:
+
+| Efficiency | Colour | Formula | Interpretation |
+|-----------|--------|---------|-----------------|
+| ≥95% | green | `raw_ns / current_ns * 100` | Within target; Storm acceptable |
+| <95% | red | `raw_ns / current_ns * 100` | Below target; Storm too slow |
+| — (no raw) | grey | N/A | Benchmark not in raw subset |
+
+The session summary switches to show matched rows and average efficiency:
+```
+session: 4/28 matched · avg 98.2% of raw · target ≥95%
+```
+
+**Raw baseline semantics:**
+- `raw:last` resolves **once at dashboard startup** to the most recent `is_raw = true` run on the same branch + hostname. The run ID is printed at startup.
+- The raw baseline is **reused across multiple Storm sessions**. Refresh requires manually re-running `storm_anchors` (to update the raw baseline) and restarting the dashboard (to reload `raw:last`).
+- Only the 4 pinned benchmarks in `storm_anchors` (names with `/N:` suffix) are matched. Other Storm rows show `— (no raw)` and do not count toward the matched summary.
 
 ### Delta column
 

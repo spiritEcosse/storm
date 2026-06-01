@@ -68,51 +68,73 @@ namespace {
         return materialise_select<bench_dashboard::BenchResult>(std::forward<QS>(qs).limit(1));
     }
 
-    // Resolve the baseline selector to a concrete (run_id, label) pair.
-    // Returns {0, ""} when no matching run is found or selector is None.
+    struct ResolvedBaseline {
+        std::int64_t run_id{0};
+        std::string  label;
+        bool         is_raw{false};
+    };
+
+    // Take the newest matching BenchRun for `qs` (ordered by id desc).
+    template <typename QS> auto newest_run(QS qs) -> ResolvedBaseline {
+        auto rows =
+                qs.template order_by<^^bench_dashboard::BenchRun::id, false>().limit(1).select().execute().transform(
+                        hive_to_vector_lambda<bench_dashboard::BenchRun>()
+                );
+        if (!rows || rows->empty())
+            return {};
+        const auto& r   = rows->front();
+        const auto  lbl = std::format("Run #{} {} {}", r.id, r.branch, r.git_hash);
+        return {.run_id = r.id, .label = lbl, .is_raw = r.is_raw};
+    }
+
+    // Newest run matching the boolean flag `field` plus current branch+host.
+    // `flag` is the reflected BenchRun bool column (is_full_run or is_raw).
+    template <std::meta::info Flag>
+    auto newest_flagged_run(std::string_view current_branch, std::string_view current_host) -> ResolvedBaseline {
+        return newest_run(
+                storm::QuerySet<bench_dashboard::BenchRun>()
+                        .where(storm::orm::where::field<Flag>() == true)
+                        .where(storm::orm::where::field<^^bench_dashboard::BenchRun::branch>() ==
+                               std::string{current_branch})
+                        .where(storm::orm::where::field<^^bench_dashboard::BenchRun::hostname>() ==
+                               std::string{current_host})
+        );
+    }
+
+    // Newest run with the given id.
+    auto run_by_id(std::int64_t id) -> ResolvedBaseline {
+        return newest_run(
+                storm::QuerySet<bench_dashboard::BenchRun>().where(
+                        storm::orm::where::field<^^bench_dashboard::BenchRun::id>() == static_cast<int>(id)
+                )
+        );
+    }
+
+    // Resolve the baseline selector to a concrete (run_id, label, is_raw).
+    // Returns {} when no matching run is found or selector is None.
     auto resolve_baseline(BaselineSelector const& sel, std::string_view current_branch, std::string_view current_host)
-            -> std::pair<std::int64_t, std::string> {
-        if (std::holds_alternative<BaselineNone>(sel))
-            return {0, ""};
+            -> ResolvedBaseline {
+        if (std::holds_alternative<BaselineAuto>(sel))
+            return newest_flagged_run<^^bench_dashboard::BenchRun::is_full_run>(current_branch, current_host);
 
-        auto find_run = [&](auto qs) -> std::pair<std::int64_t, std::string> {
-            auto rows = qs.template order_by<^^bench_dashboard::BenchRun::id, false>()
-                                .limit(1)
-                                .select()
-                                .execute()
-                                .transform(hive_to_vector_lambda<bench_dashboard::BenchRun>());
-            if (!rows || rows->empty())
-                return {0, ""};
-            const auto& r   = rows->front();
-            const auto  lbl = std::format("Run #{} {} {}", r.id, r.branch, r.git_hash);
-            return {r.id, lbl};
-        };
+        if (const auto* r = std::get_if<BaselineRunId>(&sel))
+            return run_by_id(r->id);
 
-        if (std::holds_alternative<BaselineAuto>(sel)) {
-            auto qs = storm::QuerySet<bench_dashboard::BenchRun>()
-                              .where(storm::orm::where::field<^^bench_dashboard::BenchRun::is_full_run>() == true)
-                              .where(storm::orm::where::field<^^bench_dashboard::BenchRun::branch>() ==
-                                     std::string{current_branch})
-                              .where(storm::orm::where::field<^^bench_dashboard::BenchRun::hostname>() ==
-                                     std::string{current_host});
-            return find_run(std::move(qs));
-        }
-
-        if (const auto* r = std::get_if<BaselineRunId>(&sel)) {
-            auto qs = storm::QuerySet<bench_dashboard::BenchRun>().where(
-                    storm::orm::where::field<^^bench_dashboard::BenchRun::id>() == static_cast<int>(r->id)
+        if (const auto* b = std::get_if<BaselineBranch>(&sel))
+            return newest_run(
+                    storm::QuerySet<bench_dashboard::BenchRun>()
+                            .where(storm::orm::where::field<^^bench_dashboard::BenchRun::is_full_run>() == true)
+                            .where(storm::orm::where::field<^^bench_dashboard::BenchRun::branch>() == b->name)
             );
-            return find_run(std::move(qs));
+
+        if (const auto* rw = std::get_if<BaselineRaw>(&sel)) {
+            if (rw->id > 0)
+                return run_by_id(rw->id);
+            // raw:last — most recent raw run, same branch+host (mirrors auto).
+            return newest_flagged_run<^^bench_dashboard::BenchRun::is_raw>(current_branch, current_host);
         }
 
-        if (const auto* b = std::get_if<BaselineBranch>(&sel)) {
-            auto qs = storm::QuerySet<bench_dashboard::BenchRun>()
-                              .where(storm::orm::where::field<^^bench_dashboard::BenchRun::is_full_run>() == true)
-                              .where(storm::orm::where::field<^^bench_dashboard::BenchRun::branch>() == b->name);
-            return find_run(std::move(qs));
-        }
-
-        return {0, ""};
+        return {};
     }
 
     // Look up the baseline real_time_ns for (run_id, test_name, dataset_size).
@@ -196,7 +218,7 @@ namespace {
         DashboardDB() : git_capture_{&capture_git_context} {}
         explicit DashboardDB(GitCapture git_capture) : git_capture_{std::move(git_capture)} {}
 
-        [[nodiscard]] auto insert_run(std::string_view filter, bool is_full_run)
+        [[nodiscard]] auto insert_run(std::string_view filter, bool is_full_run, bool is_raw)
                 -> std::expected<std::int64_t, std::string> {
             ensure_host_context();
 
@@ -212,6 +234,7 @@ namespace {
             row.compiler    = host_.compiler;
             row.filter      = std::string{filter};
             row.is_full_run = is_full_run;
+            row.is_raw      = is_raw;
 
             auto rc = storm::QuerySet<bench_dashboard::BenchRun>().insert(row).execute();
             if (!rc)

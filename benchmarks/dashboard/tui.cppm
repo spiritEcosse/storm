@@ -75,6 +75,7 @@ export namespace bench_dashboard::tui {
         std::string                 filter;    // NOLINT(readability-redundant-member-init)
         std::string                 timestamp; // NOLINT(readability-redundant-member-init)
         bool                        is_full_run{false};
+        bool                        is_raw{false};
         bool                        expanded{true};
         bool                        complete{false};
         std::size_t                 result_count{0};
@@ -85,6 +86,9 @@ export namespace bench_dashboard::tui {
         std::size_t                 regression_count{0};
         std::size_t                 improvement_count{0};
         std::size_t                 severe_count{0};
+        std::size_t                 raw_matched{0};   // rows with an efficiency_pct
+        std::size_t                 raw_total{0};     // measurement rows seen while baseline is raw
+        double                      raw_eff_sum{0.0}; // sum of efficiency_pct for the average
     };
 
     struct DashboardState {
@@ -94,6 +98,7 @@ export namespace bench_dashboard::tui {
         double               regression_threshold{5.0};
         std::string          baseline_label; // NOLINT(readability-redundant-member-init)
         std::int64_t         baseline_run_id{0};
+        bool                 baseline_is_raw{false};
         double               complexity_threshold{5.0};
         int                  scroll_offset{0};
     };
@@ -102,7 +107,7 @@ export namespace bench_dashboard::tui {
     // State mutators
     // -----------------------------------------------------------------------
 
-    inline auto open_session(DashboardState& s, std::string_view filter, bool is_full_run) -> Session& {
+    inline auto open_session(DashboardState& s, std::string_view filter, bool is_full_run, bool is_raw) -> Session& {
         for (auto& prev : s.sessions) {
             prev.expanded = false;
         }
@@ -116,6 +121,7 @@ export namespace bench_dashboard::tui {
         Session ns{};
         ns.filter         = std::string{filter};
         ns.is_full_run    = is_full_run;
+        ns.is_raw         = is_raw;
         ns.expanded       = true;
         ns.complete       = false;
         ns.expected_count = expected;
@@ -191,12 +197,20 @@ export namespace bench_dashboard::tui {
         }
     }
 
-    inline auto add_result(Session& sess, wire::ResultMsg const& m, double regression_threshold) -> void {
+    inline auto add_result(Session& sess, wire::ResultMsg const& m, double regression_threshold, bool baseline_is_raw)
+            -> void {
         if (m.row_kind == wire::kRowKindBigO || m.row_kind == wire::kRowKindRms) {
             add_complexity(find_or_create_bucket(sess, m.category), m, regression_threshold);
             return;
         }
         ++sess.result_count;
+        if (baseline_is_raw) {
+            ++sess.raw_total;
+            if (m.efficiency_pct.has_value()) {
+                ++sess.raw_matched;
+                sess.raw_eff_sum += *m.efficiency_pct;
+            }
+        }
         if (m.delta_pct.has_value()) {
             bump_delta_counters(sess, *m.delta_pct, regression_threshold);
         }

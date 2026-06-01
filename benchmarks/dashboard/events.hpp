@@ -18,12 +18,17 @@ namespace {
     // -----------------------------------------------------------------------
 
     // Attach per-size delta to a measurement row when a baseline is active.
-    auto enrich_measurement(bench_dashboard::wire::ResultMsg& msg, std::int64_t baseline_run_id) -> void {
+    // When the baseline is a raw run, also attach efficiency_pct (raw_ns / current_ns).
+    auto enrich_measurement(bench_dashboard::wire::ResultMsg& msg, std::int64_t baseline_run_id, bool baseline_is_raw)
+            -> void {
         if (baseline_run_id == 0)
             return;
         msg.baseline_looked_up = true;
-        if (auto base_ns = lookup_baseline_ns(baseline_run_id, msg.test_name, msg.dataset_size); base_ns.has_value())
+        if (auto base_ns = lookup_baseline_ns(baseline_run_id, msg.test_name, msg.dataset_size); base_ns.has_value()) {
             msg.delta_pct = compute_delta(msg.real_ns, *base_ns);
+            if (baseline_is_raw && msg.real_ns > 0.0)
+                msg.efficiency_pct = *base_ns / msg.real_ns * 100.0; // raw_ns / current_ns * 100
+        }
     }
 
     // Attach baseline complexity class + coef to a BigO row when a baseline is active.
@@ -38,10 +43,11 @@ namespace {
         }
     }
 
-    auto enrich_with_baseline(bench_dashboard::wire::ResultMsg& msg, std::int64_t baseline_run_id) -> void {
+    auto enrich_with_baseline(bench_dashboard::wire::ResultMsg& msg, std::int64_t baseline_run_id, bool baseline_is_raw)
+            -> void {
         if (msg.row_kind == bench_dashboard::wire::kRowKindMeasurement ||
             msg.row_kind == bench_dashboard::wire::kRowKindAggregate || msg.row_kind.empty())
-            enrich_measurement(msg, baseline_run_id);
+            enrich_measurement(msg, baseline_run_id, baseline_is_raw);
         else if (msg.row_kind == bench_dashboard::wire::kRowKindBigO)
             enrich_bigo(msg, baseline_run_id);
     }
@@ -56,13 +62,13 @@ namespace {
             DashboardDB&                            db,
             std::int64_t&                           active_run_id
     ) -> bool {
-        auto rc = db.insert_run(msg.filter, msg.is_full_run);
+        auto rc = db.insert_run(msg.filter, msg.is_full_run, msg.is_raw);
         if (!rc) {
             std::fprintf(stderr, "\nstorm_bench_dashboard: insert_run failed: %s\n", rc.error().c_str());
             return false;
         }
         active_run_id  = *rc;
-        auto& sess     = bench_dashboard::tui::open_session(state, msg.filter, msg.is_full_run);
+        auto& sess     = bench_dashboard::tui::open_session(state, msg.filter, msg.is_full_run, msg.is_raw);
         sess.run_id    = active_run_id;
         sess.timestamp = current_iso8601();
         return true;
@@ -75,13 +81,13 @@ namespace {
             DashboardDB&                            db,
             std::int64_t&                           active_run_id
     ) -> bool {
-        auto rc = db.insert_run(msg.filter, /*is_full_run=*/true);
+        auto rc = db.insert_run(msg.filter, /*is_full_run=*/true, /*is_raw=*/false);
         if (!rc) {
             std::fprintf(stderr, "\nstorm_bench_dashboard: synthetic insert_run failed: %s\n", rc.error().c_str());
             return false;
         }
         active_run_id = *rc;
-        auto& sess    = bench_dashboard::tui::open_session(state, "", true);
+        auto& sess    = bench_dashboard::tui::open_session(state, "", true, /*is_raw=*/false);
         sess.run_id   = active_run_id;
         return true;
     }
@@ -96,12 +102,14 @@ namespace {
             return false;
 
         auto enriched = msg;
-        enrich_with_baseline(enriched, state.baseline_run_id);
+        enrich_with_baseline(enriched, state.baseline_run_id, state.baseline_is_raw);
 
         if (auto rc = db.insert_result(active_run_id, enriched); !rc)
             std::fprintf(stderr, "\nstorm_bench_dashboard: insert_result failed: %s\n", rc.error().c_str());
         if (!state.sessions.empty())
-            bench_dashboard::tui::add_result(state.sessions.front(), enriched, state.regression_threshold);
+            bench_dashboard::tui::add_result(
+                    state.sessions.front(), enriched, state.regression_threshold, state.baseline_is_raw
+            );
         return true;
     }
 
@@ -152,6 +160,7 @@ namespace {
         sess.filter      = std::move(run.filter);
         sess.timestamp   = std::move(run.timestamp);
         sess.is_full_run = run.is_full_run;
+        sess.is_raw      = run.is_raw;
         sess.complete    = true;
         sess.expanded    = is_first;
         sess.run_id      = run.id;
@@ -170,12 +179,13 @@ namespace {
             bench_dashboard::tui::Session&            sess,
             std::vector<bench_dashboard::BenchResult> rows,
             std::int64_t                              baseline_run_id,
+            bool                                      baseline_is_raw,
             double                                    regression_threshold
     ) -> void {
         for (auto& r : rows) {
             auto m = build_result_msg_from_row(r);
-            enrich_with_baseline(m, baseline_run_id);
-            bench_dashboard::tui::add_result(sess, m, regression_threshold);
+            enrich_with_baseline(m, baseline_run_id, baseline_is_raw);
+            bench_dashboard::tui::add_result(sess, m, regression_threshold, baseline_is_raw);
         }
     }
 
@@ -193,7 +203,11 @@ namespace {
         for (auto& run : *runs) {
             auto sess = build_session_from_run(run, /*is_first=*/state.sessions.empty());
             replay_run_results_into_session(
-                    sess, load_results_for_run(run.id), state.baseline_run_id, state.regression_threshold
+                    sess,
+                    load_results_for_run(run.id),
+                    state.baseline_run_id,
+                    state.baseline_is_raw,
+                    state.regression_threshold
             );
             state.sessions.push_back(std::move(sess));
         }

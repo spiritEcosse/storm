@@ -102,8 +102,13 @@ message(STATUS "Benchmark executable: storm_bench")
 #
 # Kept as a plain .cpp (not .cppm) — converting to a module unit segfaults
 # clang-p2996 inside ASTWriter::GenerateNameLookupTable when serializing the BMI
-# for the BENCHMARK(...) macro's static-init globals.
-add_executable(storm_anchors "${CMAKE_CURRENT_SOURCE_DIR}/anchors_raw.cpp")
+# for the BENCHMARK(...) macro's static-init globals. When STORM_BENCH_SOCKET is
+# set, anchors_raw.cpp streams its raw subset over the dashboard wire via the
+# shared streaming reporter (Issue #74). Both TUs are plain .cpp and never
+# import storm, so linking reporter.cpp here is safe from PCM-hash divergence.
+add_executable(
+  storm_anchors "${CMAKE_CURRENT_SOURCE_DIR}/anchors_raw.cpp"
+                "${CMAKE_CURRENT_SOURCE_DIR}/dashboard/reporter.cpp")
 target_link_libraries(storm_anchors PRIVATE pthread
                                             $<TARGET_FILE:benchmark::benchmark>)
 add_dependencies(storm_anchors benchmark::benchmark)
@@ -111,7 +116,14 @@ link_sqlite(storm_anchors)
 apply_clang_flags(storm_anchors)
 # Treat warnings as errors on Storm-owned benchmark code (issue #317).
 target_compile_options(storm_anchors PRIVATE -Werror)
+# anchors_raw.cpp does #include "dashboard/reporter.h" (path relative to
+# benchmarks/), so the benchmarks/ dir must be on its include path.
+target_include_directories(storm_anchors PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 
+# anchors_raw.cpp needs the benchmark include dirs + BENCHMARK_STATIC_DEFINE.
+# dashboard/reporter.cpp's source-scoped properties are already set by the
+# storm_bench block above (source-file properties are directory-scoped and apply
+# to every target using that file), so it is not repeated here.
 set_property(
   SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/anchors_raw.cpp"
   APPEND

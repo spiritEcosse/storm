@@ -64,7 +64,10 @@ namespace {
     struct BaselineBranch {
         std::string name{};
     };
-    using BaselineSelector = std::variant<BaselineAuto, BaselineNone, BaselineRunId, BaselineBranch>;
+    struct BaselineRaw {
+        std::int64_t id{}; // 0 => raw:last (most recent raw run, same branch+host)
+    };
+    using BaselineSelector = std::variant<BaselineAuto, BaselineNone, BaselineRunId, BaselineBranch, BaselineRaw>;
 
     struct Options {
         std::string      db_path{default_db_path()};
@@ -100,6 +103,8 @@ namespace {
                 "                            none        disable comparison\n"
                 "                            run:<id>    specific run by numeric id\n"
                 "                            branch:<name>  most recent full run on named branch\n"
+                "                            raw:<id>    specific raw run by id (efficiency labels)\n"
+                "                            raw:last    most recent raw run, same branch+host\n"
                 "  --regression-threshold N\n"
                 "                          Percentage delta that counts as a regression\n"
                 "                          (default: 5)\n"
@@ -162,7 +167,20 @@ namespace {
         std::exit(1);
     }
 
-    // Parse the value side of `--baseline auto|none|run:<id>|branch:<name>`.
+    // Parse `raw:last` or `raw:<positive-id>` into a BaselineRaw value.
+    auto parse_raw_baseline(std::string_view rest) -> BaselineRaw {
+        if (rest == "last")
+            return BaselineRaw{0};
+        std::int64_t id{};
+        const auto   r = std::from_chars(rest.data(), rest.data() + rest.size(), id);
+        if (r.ec != std::errc{} || id <= 0) {
+            std::fprintf(stderr, "storm_bench_dashboard: --baseline raw: expects 'last' or a positive integer id\n");
+            std::exit(1);
+        }
+        return BaselineRaw{id};
+    }
+
+    // Parse the value side of `--baseline auto|none|run:<id>|branch:<name>|raw:<id>|raw:last`.
     auto parse_baseline_arg(std::string_view sel, Options& opts) -> void {
         if (sel == "auto") {
             opts.baseline = BaselineAuto{};
@@ -187,9 +205,14 @@ namespace {
             opts.baseline = BaselineBranch{std::string{sel.substr(7)}};
             return;
         }
+        if (sel.starts_with("raw:")) {
+            opts.baseline = parse_raw_baseline(sel.substr(4));
+            return;
+        }
         std::fprintf(
                 stderr,
-                "storm_bench_dashboard: --baseline expects auto|none|run:<id>|branch:<name>, got: %.*s\n",
+                "storm_bench_dashboard: --baseline expects auto|none|run:<id>|branch:<name>|raw:<id>|raw:last, got: "
+                "%.*s\n",
                 static_cast<int>(sel.size()),
                 sel.data()
         );

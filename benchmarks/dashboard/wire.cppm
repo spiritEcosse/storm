@@ -37,6 +37,7 @@ export namespace bench_dashboard::wire {
 
         std::string filter; // NOLINT(readability-redundant-member-init)
         bool        is_full_run{false};
+        bool        is_raw{false}; // run_start only: true => raw-SQLite baseline run
 
         std::string  test_name; // NOLINT(readability-redundant-member-init)
         std::string  category;  // NOLINT(readability-redundant-member-init)
@@ -53,6 +54,9 @@ export namespace bench_dashboard::wire {
 
         std::optional<double> delta_pct; // NOLINT(readability-redundant-member-init)
         bool                  baseline_looked_up{false};
+        // Set by the dashboard when the active baseline is a raw run (Issue #74):
+        // raw_ns / current_ns * 100. nullopt = not a raw baseline / no raw match.
+        std::optional<double> efficiency_pct; // NOLINT(readability-redundant-member-init)
 
         bool        shape_regression{false};
         std::string baseline_class; // NOLINT(readability-redundant-member-init)
@@ -98,13 +102,15 @@ export namespace bench_dashboard::wire {
         out.append(buf.data(), r.ptr);
     }
 
-    inline auto build_run_start(std::string_view filter, bool is_full_run) -> std::string {
+    inline auto build_run_start(std::string_view filter, bool is_full_run, bool is_raw) -> std::string {
         std::string s;
-        s.reserve(64 + filter.size());
+        s.reserve(80 + filter.size());
         s.append(R"({"type":"run_start","filter":")");
         append_escaped(s, filter);
         s.append(R"(","is_full_run":)");
         s.append(is_full_run ? "true" : "false");
+        s.append(R"(,"is_raw":)");
+        s.append(is_raw ? "true" : "false");
         s.push_back('}');
         return s;
     }
@@ -318,6 +324,7 @@ export namespace bench_dashboard::wire {
                 m.kind = MessageKind::RunStart;
                 rdr.read_field("filter", m.filter);
                 rdr.read_field("is_full_run", m.is_full_run);
+                rdr.read_field("is_raw", m.is_raw);
                 return m;
             }
             return std::nullopt;
