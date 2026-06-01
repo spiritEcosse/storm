@@ -102,6 +102,26 @@ At compile time, the generated schema binary:
 
 No manual registration, no model list, no macros.
 
+### Column Defaults and `ADD COLUMN` on Populated Tables
+
+A non-nullable `bool` field with a C++ default member initializer
+(`bool is_raw{false};`) emits a SQL `DEFAULT` clause:
+
+| C++ field            | SQLite                          | PostgreSQL                          |
+|----------------------|---------------------------------|-------------------------------------|
+| `bool x{false};`     | `x INTEGER NOT NULL DEFAULT 0`   | `x BOOLEAN NOT NULL DEFAULT FALSE`  |
+| `bool x{true};`      | `x INTEGER NOT NULL DEFAULT 1`   | `x BOOLEAN NOT NULL DEFAULT TRUE`   |
+
+This matters for migrations: `ALTER TABLE ... ADD COLUMN <x> NOT NULL` is
+**rejected by SQLite on a table that already has rows** ("Cannot add a NOT NULL
+column with default value NULL"). Emitting the `DEFAULT` makes the generated
+`ADD COLUMN ... NOT NULL DEFAULT <v>` valid on populated tables.
+
+Scope is limited to `bool` (the value is recovered at compile time from a
+default-constructed instance of the model). Other non-nullable columns are
+generated without a `DEFAULT`; if you add a NOT NULL column of another type to a
+populated table, give it a server-side default in a hand-edited migration.
+
 ## CMake Function Reference
 
 ```cmake
