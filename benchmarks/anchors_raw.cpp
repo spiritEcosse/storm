@@ -148,9 +148,11 @@ namespace {
     constexpr int kWhereSeedRows = 10'000;
     constexpr int kSelectRows    = 10'000;
 
-    // Shared SELECT driver: build the table via create_sql, seed it, then time
-    // query_sql to exhaustion. expected_rows < 0 disables the row-count check
-    // (filtered queries return a variable count); items_per_row scales
+    // Shared SELECT driver: build the table via create_sql, seed it with
+    // state.range(0) rows (the single source of truth gbench also reports as
+    // /N), then time query_sql to exhaustion. assert_full_count gates the
+    // row-count check against the seeded count (filtered queries return a
+    // variable count, so they pass false); items_per_row scales
     // SetItemsProcessed (1 for filtered scans, the full result size for the
     // full-table scan). Setup is outside the timed loop to mirror the Storm
     // fixtures — only the query is measured.
@@ -159,17 +161,18 @@ namespace {
             char const*       create_sql,
             void (*seeder)(sqlite3*, int),
             char const*  query_sql,
-            int          expected_rows,
+            bool         assert_full_count,
             std::int64_t items_per_row
     ) -> void {
-        sqlite3* db = open_memory_db();
+        int const seed_rows = static_cast<int>(state.range(0));
+        sqlite3*  db        = open_memory_db();
         exec(db, create_sql);
-        seeder(db, kWhereSeedRows);
+        seeder(db, seed_rows);
         sqlite3_stmt* sel = prepare(db, query_sql);
 
         for (auto _ : state) {
             int const rows = drain_person_select(sel);
-            if (expected_rows >= 0 && rows != expected_rows) {
+            if (assert_full_count && rows != seed_rows) {
                 die(db, "select row count mismatch");
             }
         }
@@ -182,7 +185,12 @@ namespace {
     // Storm/WHERE/where_int_comparison_gt/10000 — SELECT … WHERE age > 30
     auto BM_Raw_Where_IntGt(benchmark::State& state) -> void {
         run_select_benchmark(
-                state, kCreatePerson, seed_person, "SELECT id, name, age, salary FROM person WHERE age > 30", -1, 1
+                state,
+                kCreatePerson,
+                seed_person,
+                "SELECT id, name, age, salary FROM person WHERE age > 30",
+                /*assert_full_count=*/false,
+                1
         );
     }
     BENCHMARK(BM_Raw_Where_IntGt)->Name("Storm/WHERE/where_int_comparison_gt")->Arg(kWhereSeedRows);
@@ -194,7 +202,7 @@ namespace {
                 kCreatePersonBool,
                 seed_person_bool,
                 "SELECT id, name, age, salary FROM person WHERE is_active = 1",
-                -1,
+                /*assert_full_count=*/false,
                 1
         );
     }
@@ -203,7 +211,12 @@ namespace {
     // Storm/SELECT/select/10000 — sequential SELECT over 10K rows
     auto BM_Raw_Select_All(benchmark::State& state) -> void {
         run_select_benchmark(
-                state, kCreatePerson, seed_person, "SELECT id, name, age, salary FROM person", kSelectRows, kSelectRows
+                state,
+                kCreatePerson,
+                seed_person,
+                "SELECT id, name, age, salary FROM person",
+                /*assert_full_count=*/true,
+                state.range(0)
         );
     }
     BENCHMARK(BM_Raw_Select_All)->Name("Storm/SELECT/select")->Arg(kSelectRows);
@@ -242,6 +255,8 @@ auto main(int argc, char** argv) -> int { // NOLINT(bugprone-exception-escape)
     ::benchmark::BenchmarkReporter* dashboard_reporter = nullptr;
     if (std::getenv("STORM_BENCH_SOCKET") != nullptr) {    // NOLINT(concurrency-mt-unsafe)
         ::setenv("STORM_BENCH_RAW", "1", /*overwrite=*/1); // NOLINT(concurrency-mt-unsafe)
+        // Empty filter is intentional: this fixed raw-subset binary always runs
+        // its full set, so run_start reports is_full_run=true (not a bug).
         dashboard_reporter = bench_dashboard::install_storm_reporter(/*socket_path=*/"", /*filter=*/"");
     }
 
