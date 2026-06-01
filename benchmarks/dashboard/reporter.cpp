@@ -161,7 +161,7 @@ namespace bench_dashboard {
 
             auto ReportContext(Context const& /*ctx*/) -> bool override {
                 if (!sent_start_) {
-                    send_line(wire::build_run_start(filter_, filter_.empty()));
+                    send_line(wire::build_run_start(filter_, filter_.empty(), /*is_raw=*/false));
                     sent_start_ = true;
                 }
                 return true;
