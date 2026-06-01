@@ -134,13 +134,21 @@ inline auto format_result_prefix(wire::ResultMsg const& r) -> std::string {
     );
 }
 
+inline auto efficiency_label(double pct) -> std::pair<std::string_view, std::string> {
+    const std::string_view colour = pct >= 95.0 ? ansi::kFgGreen : ansi::kFgRed;
+    return {colour, std::format("{:.1f}% of raw", pct)};
+}
+
 inline auto append_result_line(std::string& out, wire::ResultMsg const& r, double regression_threshold) -> void {
     out += format_result_prefix(r);
-    if (r.delta_pct.has_value()) {
+    if (r.efficiency_pct.has_value()) {
+        const auto [ecol, etxt] = efficiency_label(*r.efficiency_pct);
+        out += std::format("  {}{}{}\n", ecol, etxt, ansi::kReset);
+    } else if (r.baseline_looked_up && r.delta_pct.has_value()) {
         const auto [dcol, dtxt] = format_delta(*r.delta_pct, regression_threshold);
         out += std::format("  {}{}{}\n", dcol, dtxt, ansi::kReset);
     } else if (r.baseline_looked_up) {
-        out += std::format("  {}—{}\n", ansi::kFgGrey, ansi::kReset);
+        out += std::format("  {}— (no raw){}\n", ansi::kFgGrey, ansi::kReset);
     } else {
         out += '\n';
     }
@@ -237,6 +245,18 @@ inline auto terminal_rows() -> int {
 }
 
 inline auto append_summary_line(std::string& out, Session const& sess) -> void {
+    if (sess.raw_total > 0) {
+        const double avg = sess.raw_matched > 0 ? sess.raw_eff_sum / static_cast<double>(sess.raw_matched) : 0.0;
+        out += std::format(
+                "  {}session: {}/{} matched · avg {:.1f}% of raw · target ≥95%{}\n",
+                ansi::kFgGrey,
+                sess.raw_matched,
+                sess.raw_total,
+                avg,
+                ansi::kReset
+        );
+        return;
+    }
     const std::size_t total = sess.ok_count + sess.regression_count + sess.improvement_count + sess.severe_count;
     if (total == 0)
         return;
@@ -293,7 +313,7 @@ inline auto push_bucket_lines(std::vector<std::string>& lines, CategoryBucket co
 
 inline auto push_session_summary(std::vector<std::string>& lines, Session const& sess) -> void {
     const std::size_t compared = sess.ok_count + sess.regression_count + sess.improvement_count + sess.severe_count;
-    if (compared == 0)
+    if (compared == 0 && sess.raw_total == 0)
         return;
     std::string sumline;
     append_summary_line(sumline, sess);

@@ -86,6 +86,9 @@ export namespace bench_dashboard::tui {
         std::size_t                 regression_count{0};
         std::size_t                 improvement_count{0};
         std::size_t                 severe_count{0};
+        std::size_t                 raw_matched{0};   // rows with an efficiency_pct
+        std::size_t                 raw_total{0};     // measurement rows seen while baseline is raw
+        double                      raw_eff_sum{0.0}; // sum of efficiency_pct for the average
     };
 
     struct DashboardState {
@@ -95,6 +98,7 @@ export namespace bench_dashboard::tui {
         double               regression_threshold{5.0};
         std::string          baseline_label; // NOLINT(readability-redundant-member-init)
         std::int64_t         baseline_run_id{0};
+        bool                 baseline_is_raw{false};
         double               complexity_threshold{5.0};
         int                  scroll_offset{0};
     };
@@ -199,6 +203,13 @@ export namespace bench_dashboard::tui {
             return;
         }
         ++sess.result_count;
+        if (m.efficiency_pct.has_value()) {
+            ++sess.raw_total;
+            ++sess.raw_matched;
+            sess.raw_eff_sum += *m.efficiency_pct;
+        } else if (m.baseline_looked_up && !m.delta_pct.has_value()) {
+            ++sess.raw_total;
+        }
         if (m.delta_pct.has_value()) {
             bump_delta_counters(sess, *m.delta_pct, regression_threshold);
         }

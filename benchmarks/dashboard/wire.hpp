@@ -66,6 +66,9 @@ namespace bench_dashboard::wire {
         // "no baseline active" (false) from "active but no match" (true+nullopt).
         std::optional<double> delta_pct; // NOLINT(readability-redundant-member-init)
         bool                  baseline_looked_up{false};
+        // Set by the dashboard when the active baseline is a raw run (Issue #74):
+        // raw_ns / current_ns * 100. nullopt = not a raw baseline / no raw match.
+        std::optional<double> efficiency_pct; // NOLINT(readability-redundant-member-init)
 
         // Phase 7: baseline complexity data (set by dashboard when baseline is active).
         bool        shape_regression{false}; // complexity_class differs from baseline

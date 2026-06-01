@@ -194,10 +194,11 @@ namespace {
     auto resolve_and_log_baseline(Options const& opts, bench_dashboard::tui::DashboardState& state) -> void {
         const std::string current_branch = run_capture("git rev-parse --abbrev-ref HEAD 2>/dev/null");
         const std::string current_host   = run_capture("hostname -s 2>/dev/null");
-        auto [bid, blabel]               = resolve_baseline(opts.baseline, current_branch, current_host);
-        state.baseline_run_id            = bid;
-        state.baseline_label             = std::move(blabel);
-        if (bid == 0 && std::holds_alternative<BaselineAuto>(opts.baseline)) {
+        auto              resolved       = resolve_baseline(opts.baseline, current_branch, current_host);
+        state.baseline_run_id            = resolved.run_id;
+        state.baseline_label             = std::move(resolved.label);
+        state.baseline_is_raw            = resolved.is_raw;
+        if (resolved.run_id == 0 && std::holds_alternative<BaselineAuto>(opts.baseline)) {
             std::
                     fprintf( // NOLINT(cppcoreguidelines-pro-type-vararg)
                             stderr,
