@@ -62,7 +62,7 @@ namespace {
             return false;
         }
         active_run_id  = *rc;
-        auto& sess     = bench_dashboard::tui::open_session(state, msg.filter, msg.is_full_run);
+        auto& sess     = bench_dashboard::tui::open_session(state, msg.filter, msg.is_full_run, msg.is_raw);
         sess.run_id    = active_run_id;
         sess.timestamp = current_iso8601();
         return true;
@@ -81,7 +81,7 @@ namespace {
             return false;
         }
         active_run_id = *rc;
-        auto& sess    = bench_dashboard::tui::open_session(state, "", true);
+        auto& sess    = bench_dashboard::tui::open_session(state, "", true, /*is_raw=*/false);
         sess.run_id   = active_run_id;
         return true;
     }

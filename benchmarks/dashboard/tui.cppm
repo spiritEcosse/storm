@@ -103,7 +103,7 @@ export namespace bench_dashboard::tui {
     // State mutators
     // -----------------------------------------------------------------------
 
-    inline auto open_session(DashboardState& s, std::string_view filter, bool is_full_run) -> Session& {
+    inline auto open_session(DashboardState& s, std::string_view filter, bool is_full_run, bool is_raw) -> Session& {
         for (auto& prev : s.sessions) {
             prev.expanded = false;
         }
@@ -117,6 +117,7 @@ export namespace bench_dashboard::tui {
         Session ns{};
         ns.filter         = std::string{filter};
         ns.is_full_run    = is_full_run;
+        ns.is_raw         = is_raw;
         ns.expanded       = true;
         ns.complete       = false;
         ns.expected_count = expected;
