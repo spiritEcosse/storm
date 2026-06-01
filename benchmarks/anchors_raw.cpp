@@ -177,6 +177,7 @@ namespace {
             }
         }
         state.SetItemsProcessed(static_cast<std::int64_t>(state.iterations()) * items_per_row);
+        state.SetComplexityN(state.range(0));
 
         sqlite3_finalize(sel);
         sqlite3_close(db);
@@ -193,7 +194,7 @@ namespace {
                 1
         );
     }
-    BENCHMARK(BM_Raw_Where_IntGt)->Name("Storm/WHERE/where_int_comparison_gt")->Arg(kWhereSeedRows);
+    BENCHMARK(BM_Raw_Where_IntGt)->Name("Storm/WHERE/where_int_comparison_gt")->Arg(kWhereSeedRows)->ArgName("N");
 
     // Storm/WHERE/where_bool_equality/10000 — SELECT … WHERE is_active = 1
     auto BM_Raw_Where_BoolEq(benchmark::State& state) -> void {
@@ -206,7 +207,7 @@ namespace {
                 1
         );
     }
-    BENCHMARK(BM_Raw_Where_BoolEq)->Name("Storm/WHERE/where_bool_equality")->Arg(kWhereSeedRows);
+    BENCHMARK(BM_Raw_Where_BoolEq)->Name("Storm/WHERE/where_bool_equality")->Arg(kWhereSeedRows)->ArgName("N");
 
     // Storm/SELECT/select/10000 — sequential SELECT over 10K rows
     auto BM_Raw_Select_All(benchmark::State& state) -> void {
@@ -219,7 +220,7 @@ namespace {
                 state.range(0)
         );
     }
-    BENCHMARK(BM_Raw_Select_All)->Name("Storm/SELECT/select")->Arg(kSelectRows);
+    BENCHMARK(BM_Raw_Select_All)->Name("Storm/SELECT/select")->Arg(kSelectRows)->ArgName("N");
 
     // Storm/INSERT/insert/1 — single-row INSERT throughput
     auto BM_Raw_Insert_Single(benchmark::State& state) -> void {
@@ -239,11 +240,12 @@ namespace {
             sqlite3_reset(ins);
         }
         state.SetItemsProcessed(state.iterations());
+        state.SetComplexityN(state.range(0));
 
         sqlite3_finalize(ins);
         sqlite3_close(db);
     }
-    BENCHMARK(BM_Raw_Insert_Single)->Name("Storm/INSERT/insert")->Arg(1);
+    BENCHMARK(BM_Raw_Insert_Single)->Name("Storm/INSERT/insert")->Arg(1)->ArgName("N");
 
 } // namespace
 
