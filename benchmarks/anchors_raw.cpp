@@ -9,11 +9,15 @@
  * Lives in its own binary (`storm_anchors`) — does NOT import storm and is
  * NOT invoked by the per-PR regression workflow. Release-time spot check only.
  *
- * Four anchors:
- *   - Anchor_Raw_InsertSingleRow   single-row INSERT throughput
- *   - Anchor_Raw_SelectByPK_1K     PK lookup over a 1K-row table
- *   - Anchor_Raw_BatchInsert_1000  multi-row INSERT, 1000 rows / iteration
- *   - Anchor_Raw_FullScan_10K      sequential SELECT over 10K rows
+ * Raw subset (exact Storm gbench names, so the dashboard's (test_name,
+ * dataset_size) matcher slots them against the Storm rows they mirror):
+ *   - Storm/WHERE/where_int_comparison_gt/10000
+ *   - Storm/WHERE/where_bool_equality/10000
+ *   - Storm/SELECT/select/10000
+ *   - Storm/INSERT/insert/1
+ *
+ * When STORM_BENCH_SOCKET is set, streams over the dashboard wire with
+ * is_raw=true (run_start), producing the Storm-vs-raw baseline run.
  *
  * Schema is hand-rolled — no Storm model coupling.
  *
@@ -24,6 +28,8 @@
 
 #include <benchmark/benchmark.h>
 #include <sqlite3.h>
+
+#include "dashboard/reporter.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -38,10 +44,6 @@ namespace {
                                    "age INTEGER NOT NULL,"
                                    "salary REAL NOT NULL"
                                    ")";
-
-    constexpr int kSelect1KRows  = 1'000;
-    constexpr int kBatchSize1000 = 1'000;
-    constexpr int kFullScan10K   = 10'000;
 
     auto die(sqlite3* db, char const* what) -> void {
         std::
@@ -79,14 +81,27 @@ namespace {
         return stmt;
     }
 
-    auto seed_person(sqlite3* db, int rows) -> void {
+    // Bind the shared (name, age, salary) columns for row i. is_active, when
+    // present, is bound separately by the caller (kept out of the helper to
+    // keep both seeders sharing a single bind path). SQLITE_TRANSIENT copies
+    // the name immediately, so the local string need not outlive the bind.
+    auto bind_person_base(sqlite3_stmt* ins, int i) -> void {
+        const std::string name = std::format("Person{}", i);
+        sqlite3_bind_text(ins, 1, name.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_int(ins, 2, 20 + (i % 50));
+        sqlite3_bind_double(ins, 3, 30'000.0 + static_cast<double>(i));
+    }
+
+    // One seed driver for both schemas. When with_active is true the prepared
+    // INSERT has a fourth (is_active) placeholder, bound to i % 2.
+    auto seed_person_table(sqlite3* db, int rows, char const* insert_sql, bool with_active) -> void {
         exec(db, "BEGIN");
-        sqlite3_stmt* ins = prepare(db, "INSERT INTO person(name, age, salary) VALUES(?,?,?)");
+        sqlite3_stmt* ins = prepare(db, insert_sql);
         for (int i = 0; i < rows; ++i) {
-            const std::string name = std::format("Person{}", i);
-            sqlite3_bind_text(ins, 1, name.c_str(), -1, SQLITE_TRANSIENT);
-            sqlite3_bind_int(ins, 2, 20 + (i % 50));
-            sqlite3_bind_double(ins, 3, 30'000.0 + static_cast<double>(i));
+            bind_person_base(ins, i);
+            if (with_active) {
+                sqlite3_bind_int(ins, 4, i % 2);
+            }
             if (sqlite3_step(ins) != SQLITE_DONE) {
                 die(db, "seed step");
             }
@@ -96,10 +111,105 @@ namespace {
         exec(db, "COMMIT");
     }
 
-    // ========================================================================
-    // Anchor_Raw_InsertSingleRow — single-row INSERT throughput
-    // ========================================================================
-    auto BM_Anchor_Raw_InsertSingleRow(benchmark::State& state) -> void {
+    auto seed_person(sqlite3* db, int rows) -> void {
+        seed_person_table(db, rows, "INSERT INTO person(name, age, salary) VALUES(?,?,?)", /*with_active=*/false);
+    }
+
+    constexpr auto kCreatePersonBool = "CREATE TABLE person ("
+                                       "id INTEGER PRIMARY KEY,"
+                                       "name TEXT NOT NULL,"
+                                       "age INTEGER NOT NULL,"
+                                       "salary REAL NOT NULL,"
+                                       "is_active INTEGER NOT NULL"
+                                       ")";
+
+    auto seed_person_bool(sqlite3* db, int rows) -> void {
+        seed_person_table(
+                db, rows, "INSERT INTO person(name, age, salary, is_active) VALUES(?,?,?,?)", /*with_active=*/true
+        );
+    }
+
+    // Step a prepared SELECT to exhaustion, touching all four (id, name, age,
+    // salary) columns so the optimizer can't elide the read. Returns the row
+    // count, then resets the statement for the next iteration.
+    auto drain_person_select(sqlite3_stmt* sel) -> int {
+        int rows = 0;
+        while (sqlite3_step(sel) == SQLITE_ROW) {
+            benchmark::DoNotOptimize(sqlite3_column_int(sel, 0));
+            benchmark::DoNotOptimize(sqlite3_column_text(sel, 1));
+            benchmark::DoNotOptimize(sqlite3_column_int(sel, 2));
+            benchmark::DoNotOptimize(sqlite3_column_double(sel, 3));
+            ++rows;
+        }
+        sqlite3_reset(sel);
+        return rows;
+    }
+
+    constexpr int kWhereSeedRows = 10'000;
+    constexpr int kSelectRows    = 10'000;
+
+    // Shared SELECT driver: build the table via create_sql, seed it, then time
+    // query_sql to exhaustion. expected_rows < 0 disables the row-count check
+    // (filtered queries return a variable count); items_per_row scales
+    // SetItemsProcessed (1 for filtered scans, the full result size for the
+    // full-table scan). Setup is outside the timed loop to mirror the Storm
+    // fixtures — only the query is measured.
+    auto run_select_benchmark(
+            benchmark::State& state,
+            char const*       create_sql,
+            void (*seeder)(sqlite3*, int),
+            char const*  query_sql,
+            int          expected_rows,
+            std::int64_t items_per_row
+    ) -> void {
+        sqlite3* db = open_memory_db();
+        exec(db, create_sql);
+        seeder(db, kWhereSeedRows);
+        sqlite3_stmt* sel = prepare(db, query_sql);
+
+        for (auto _ : state) {
+            int const rows = drain_person_select(sel);
+            if (expected_rows >= 0 && rows != expected_rows) {
+                die(db, "select row count mismatch");
+            }
+        }
+        state.SetItemsProcessed(static_cast<std::int64_t>(state.iterations()) * items_per_row);
+
+        sqlite3_finalize(sel);
+        sqlite3_close(db);
+    }
+
+    // Storm/WHERE/where_int_comparison_gt/10000 — SELECT … WHERE age > 30
+    auto BM_Raw_Where_IntGt(benchmark::State& state) -> void {
+        run_select_benchmark(
+                state, kCreatePerson, seed_person, "SELECT id, name, age, salary FROM person WHERE age > 30", -1, 1
+        );
+    }
+    BENCHMARK(BM_Raw_Where_IntGt)->Name("Storm/WHERE/where_int_comparison_gt")->Arg(kWhereSeedRows);
+
+    // Storm/WHERE/where_bool_equality/10000 — SELECT … WHERE is_active = 1
+    auto BM_Raw_Where_BoolEq(benchmark::State& state) -> void {
+        run_select_benchmark(
+                state,
+                kCreatePersonBool,
+                seed_person_bool,
+                "SELECT id, name, age, salary FROM person WHERE is_active = 1",
+                -1,
+                1
+        );
+    }
+    BENCHMARK(BM_Raw_Where_BoolEq)->Name("Storm/WHERE/where_bool_equality")->Arg(kWhereSeedRows);
+
+    // Storm/SELECT/select/10000 — sequential SELECT over 10K rows
+    auto BM_Raw_Select_All(benchmark::State& state) -> void {
+        run_select_benchmark(
+                state, kCreatePerson, seed_person, "SELECT id, name, age, salary FROM person", kSelectRows, kSelectRows
+        );
+    }
+    BENCHMARK(BM_Raw_Select_All)->Name("Storm/SELECT/select")->Arg(kSelectRows);
+
+    // Storm/INSERT/insert/1 — single-row INSERT throughput
+    auto BM_Raw_Insert_Single(benchmark::State& state) -> void {
         sqlite3* db = open_memory_db();
         exec(db, kCreatePerson);
         sqlite3_stmt* ins = prepare(db, "INSERT INTO person(name, age, salary) VALUES(?,?,?)");
@@ -120,102 +230,31 @@ namespace {
         sqlite3_finalize(ins);
         sqlite3_close(db);
     }
-    BENCHMARK(BM_Anchor_Raw_InsertSingleRow);
-
-    // ========================================================================
-    // Anchor_Raw_SelectByPK_1K — PK lookup over a 1K-row table
-    // ========================================================================
-    auto BM_Anchor_Raw_SelectByPK_1K(benchmark::State& state) -> void {
-        sqlite3* db = open_memory_db();
-        exec(db, kCreatePerson);
-        seed_person(db, kSelect1KRows);
-        sqlite3_stmt* sel = prepare(db, "SELECT id, name, age, salary FROM person WHERE id = ?");
-
-        int probe = 0;
-        for (auto _ : state) {
-            int const id = (probe++ % kSelect1KRows) + 1;
-            sqlite3_bind_int(sel, 1, id);
-            if (sqlite3_step(sel) != SQLITE_ROW) {
-                die(db, "select step");
-            }
-            benchmark::DoNotOptimize(sqlite3_column_int(sel, 0));
-            benchmark::DoNotOptimize(sqlite3_column_text(sel, 1));
-            benchmark::DoNotOptimize(sqlite3_column_int(sel, 2));
-            benchmark::DoNotOptimize(sqlite3_column_double(sel, 3));
-            sqlite3_reset(sel);
-        }
-        state.SetItemsProcessed(state.iterations());
-
-        sqlite3_finalize(sel);
-        sqlite3_close(db);
-    }
-    BENCHMARK(BM_Anchor_Raw_SelectByPK_1K);
-
-    // ========================================================================
-    // Anchor_Raw_BatchInsert_1000 — multi-row INSERT, 1000 rows / iteration
-    // ========================================================================
-    auto BM_Anchor_Raw_BatchInsert_1000(benchmark::State& state) -> void {
-        sqlite3* db = open_memory_db();
-        exec(db, kCreatePerson);
-        // Single multi-VALUES INSERT with 1000 rows × 3 columns = 3000 placeholders.
-        std::string sql = "INSERT INTO person(name, age, salary) VALUES";
-        for (int i = 0; i < kBatchSize1000; ++i) {
-            sql += (i == 0 ? "(?,?,?)" : ",(?,?,?)");
-        }
-        sqlite3_stmt* ins = prepare(db, sql.c_str());
-
-        int batch = 0;
-        for (auto _ : state) {
-            for (int i = 0; i < kBatchSize1000; ++i) {
-                const std::string name = std::format("B{}_{}", batch, i);
-                sqlite3_bind_text(ins, (i * 3) + 1, name.c_str(), -1, SQLITE_TRANSIENT);
-                sqlite3_bind_int(ins, (i * 3) + 2, 25 + (i % 40));
-                sqlite3_bind_double(ins, (i * 3) + 3, 40'000.0 + static_cast<double>(i));
-            }
-            if (sqlite3_step(ins) != SQLITE_DONE) {
-                die(db, "batch step");
-            }
-            sqlite3_reset(ins);
-            ++batch;
-        }
-        state.SetItemsProcessed(state.iterations() * kBatchSize1000);
-
-        sqlite3_finalize(ins);
-        sqlite3_close(db);
-    }
-    BENCHMARK(BM_Anchor_Raw_BatchInsert_1000);
-
-    // ========================================================================
-    // Anchor_Raw_FullScan_10K — sequential SELECT over 10K rows
-    // ========================================================================
-    auto BM_Anchor_Raw_FullScan_10K(benchmark::State& state) -> void {
-        sqlite3* db = open_memory_db();
-        exec(db, kCreatePerson);
-        seed_person(db, kFullScan10K);
-        sqlite3_stmt* sel = prepare(db, "SELECT id, name, age, salary FROM person");
-
-        for (auto _ : state) {
-            int rows = 0;
-            while (sqlite3_step(sel) == SQLITE_ROW) {
-                benchmark::DoNotOptimize(sqlite3_column_int(sel, 0));
-                benchmark::DoNotOptimize(sqlite3_column_text(sel, 1));
-                benchmark::DoNotOptimize(sqlite3_column_int(sel, 2));
-                benchmark::DoNotOptimize(sqlite3_column_double(sel, 3));
-                ++rows;
-            }
-            if (rows != kFullScan10K) {
-                die(db, "full scan row count mismatch");
-            }
-            sqlite3_reset(sel);
-        }
-        state.SetItemsProcessed(state.iterations() * kFullScan10K);
-
-        sqlite3_finalize(sel);
-        sqlite3_close(db);
-    }
-    BENCHMARK(BM_Anchor_Raw_FullScan_10K);
+    BENCHMARK(BM_Raw_Insert_Single)->Name("Storm/INSERT/insert")->Arg(1);
 
 } // namespace
 
-BENCHMARK_MAIN(); // NOLINT(cppcoreguidelines-avoid-c-arrays,misc-const-correctness)
+auto main(int argc, char** argv) -> int { // NOLINT(bugprone-exception-escape)
+    // Stream to the dashboard when STORM_BENCH_SOCKET is set, marking this run
+    // raw (is_raw=true via STORM_BENCH_RAW, read by the reporter) so the
+    // dashboard treats it as a Storm-vs-raw baseline. STORM_BENCH_SOCKET unset →
+    // default text reporter, no network calls (release-time spot check).
+    ::benchmark::BenchmarkReporter* dashboard_reporter = nullptr;
+    if (std::getenv("STORM_BENCH_SOCKET") != nullptr) {    // NOLINT(concurrency-mt-unsafe)
+        ::setenv("STORM_BENCH_RAW", "1", /*overwrite=*/1); // NOLINT(concurrency-mt-unsafe)
+        dashboard_reporter = bench_dashboard::install_storm_reporter(/*socket_path=*/"", /*filter=*/"");
+    }
+
+    benchmark::Initialize(&argc, argv);
+    if (benchmark::ReportUnrecognizedArguments(argc, argv)) {
+        return 1;
+    }
+    if (dashboard_reporter != nullptr) {
+        benchmark::RunSpecifiedBenchmarks(dashboard_reporter);
+    } else {
+        benchmark::RunSpecifiedBenchmarks();
+    }
+    benchmark::Shutdown();
+    return 0;
+}
 // NOLINTEND(cppcoreguidelines-pro-type-vararg)
