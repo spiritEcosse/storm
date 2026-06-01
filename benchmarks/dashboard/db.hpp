@@ -196,7 +196,7 @@ namespace {
         DashboardDB() : git_capture_{&capture_git_context} {}
         explicit DashboardDB(GitCapture git_capture) : git_capture_{std::move(git_capture)} {}
 
-        [[nodiscard]] auto insert_run(std::string_view filter, bool is_full_run)
+        [[nodiscard]] auto insert_run(std::string_view filter, bool is_full_run, bool is_raw)
                 -> std::expected<std::int64_t, std::string> {
             ensure_host_context();
 
@@ -212,6 +212,7 @@ namespace {
             row.compiler    = host_.compiler;
             row.filter      = std::string{filter};
             row.is_full_run = is_full_run;
+            row.is_raw      = is_raw;
 
             auto rc = storm::QuerySet<bench_dashboard::BenchRun>().insert(row).execute();
             if (!rc)

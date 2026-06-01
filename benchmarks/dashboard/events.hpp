@@ -56,7 +56,7 @@ namespace {
             DashboardDB&                            db,
             std::int64_t&                           active_run_id
     ) -> bool {
-        auto rc = db.insert_run(msg.filter, msg.is_full_run);
+        auto rc = db.insert_run(msg.filter, msg.is_full_run, msg.is_raw);
         if (!rc) {
             std::fprintf(stderr, "\nstorm_bench_dashboard: insert_run failed: %s\n", rc.error().c_str());
             return false;
@@ -75,7 +75,7 @@ namespace {
             DashboardDB&                            db,
             std::int64_t&                           active_run_id
     ) -> bool {
-        auto rc = db.insert_run(msg.filter, /*is_full_run=*/true);
+        auto rc = db.insert_run(msg.filter, /*is_full_run=*/true, /*is_raw=*/false);
         if (!rc) {
             std::fprintf(stderr, "\nstorm_bench_dashboard: synthetic insert_run failed: %s\n", rc.error().c_str());
             return false;
@@ -152,6 +152,7 @@ namespace {
         sess.filter      = std::move(run.filter);
         sess.timestamp   = std::move(run.timestamp);
         sess.is_full_run = run.is_full_run;
+        sess.is_raw      = run.is_raw;
         sess.complete    = true;
         sess.expanded    = is_first;
         sess.run_id      = run.id;

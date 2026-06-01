@@ -75,6 +75,7 @@ export namespace bench_dashboard::tui {
         std::string                 filter;    // NOLINT(readability-redundant-member-init)
         std::string                 timestamp; // NOLINT(readability-redundant-member-init)
         bool                        is_full_run{false};
+        bool                        is_raw{false};
         bool                        expanded{true};
         bool                        complete{false};
         std::size_t                 result_count{0};
