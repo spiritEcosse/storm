@@ -28,6 +28,12 @@ namespace {
         return m;
     }
 
+    auto make_aggregate(std::string_view name) -> bench_dashboard::wire::ResultMsg {
+        auto m     = make_measurement(name);
+        m.row_kind = std::string{bench_dashboard::wire::kRowKindAggregate};
+        return m;
+    }
+
 } // namespace
 
 // ---------------------------------------------------------------------------
@@ -114,6 +120,58 @@ TEST(AppendResultLine, ShowsRegressDeltaForNonRawBaseline) {
     bench_dashboard::tui::append_result_line(out, r, kRegressionThreshold);
     EXPECT_NE(out.find("12.0%"), std::string::npos);  // delta rendered
     EXPECT_EQ(out.find("of raw"), std::string::npos); // NOT an efficiency label
+}
+
+// ---------------------------------------------------------------------------
+// Group 3b: aggregate-row semantics (Issue #346)
+// ---------------------------------------------------------------------------
+
+// A _cv row's items_per_second is a dimensionless ratio (e.g. 0.0046), not a
+// throughput — it must NOT render as an ips value (the old code printed "0 ips").
+TEST(AppendResultLine, CvAggregateRendersNoIps) {
+    auto r             = make_aggregate("Storm/INSERT/insert/N:1_cv");
+    r.items_per_second = 0.00455; // gbench's cv: stddev/mean
+    std::string out;
+    bench_dashboard::tui::append_result_line(out, r, kRegressionThreshold);
+    EXPECT_EQ(out.find("ips"), std::string::npos);
+}
+
+// A _stddev row's items_per_second is the std-dev OF throughput — also not a
+// throughput to compare; but it's a real ips-scale number so it may still show
+// as ips. What it must NOT show is a "% of raw" efficiency label.
+TEST(AppendResultLine, StddevAggregateShowsNoEfficiency) {
+    auto r           = make_aggregate("Storm/INSERT/insert/N:1_stddev");
+    r.efficiency_pct = 289.2; // a meaningless stddev/stddev ratio
+    std::string out;
+    bench_dashboard::tui::append_result_line(out, r, kRegressionThreshold);
+    EXPECT_EQ(out.find("of raw"), std::string::npos);
+}
+
+TEST(AppendResultLine, CvAggregateShowsNoEfficiency) {
+    auto r           = make_aggregate("Storm/INSERT/insert/N:1_cv");
+    r.efficiency_pct = 1516.6;
+    std::string out;
+    bench_dashboard::tui::append_result_line(out, r, kRegressionThreshold);
+    EXPECT_EQ(out.find("of raw"), std::string::npos);
+}
+
+// A _mean aggregate row still carries a valid throughput and efficiency.
+TEST(AppendResultLine, MeanAggregateStillShowsIpsAndEfficiency) {
+    auto r             = make_aggregate("Storm/INSERT/insert/N:1_mean");
+    r.items_per_second = 333768.0;
+    r.efficiency_pct   = 19.1;
+    std::string out;
+    bench_dashboard::tui::append_result_line(out, r, kRegressionThreshold);
+    EXPECT_NE(out.find("ips"), std::string::npos);
+    EXPECT_NE(out.find("19.1% of raw"), std::string::npos);
+}
+
+TEST(AppendResultLine, MedianAggregateStillShowsIps) {
+    auto r             = make_aggregate("Storm/INSERT/insert/N:1_median");
+    r.items_per_second = 333409.0;
+    std::string out;
+    bench_dashboard::tui::append_result_line(out, r, kRegressionThreshold);
+    EXPECT_NE(out.find("ips"), std::string::npos);
 }
 
 // ---------------------------------------------------------------------------

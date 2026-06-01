@@ -48,4 +48,19 @@ namespace bench_dashboard {
         return wire::kRowKindMeasurement; // raw per-repetition row
     }
 
+    // Issue #346: Google Benchmark reuses items_per_second on every aggregate
+    // row, but its meaning differs per aggregate. Only the mean/median rows hold
+    // a real throughput; _stddev is the std-dev OF throughput and _cv is a
+    // dimensionless ratio (stddev/mean). Those two must NOT be rendered as an ips
+    // value, nor compared as a "% of raw" efficiency. The aggregate suffix lives
+    // on the gbench test name, so this gates on the name ending.
+    //
+    // Single source of truth: the inline checks in tui_render.hpp (ips gate) and
+    // events.hpp (baseline-enrichment gate) mirror this predicate at their call
+    // sites because they cannot include this header across their module /
+    // import-std boundaries.
+    inline auto aggregate_carries_throughput(std::string_view test_name) -> bool {
+        return !(test_name.ends_with("_stddev") || test_name.ends_with("_cv"));
+    }
+
 } // namespace bench_dashboard
