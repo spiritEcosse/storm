@@ -197,18 +197,19 @@ export namespace bench_dashboard::tui {
         }
     }
 
-    inline auto add_result(Session& sess, wire::ResultMsg const& m, double regression_threshold) -> void {
+    inline auto add_result(Session& sess, wire::ResultMsg const& m, double regression_threshold, bool baseline_is_raw)
+            -> void {
         if (m.row_kind == wire::kRowKindBigO || m.row_kind == wire::kRowKindRms) {
             add_complexity(find_or_create_bucket(sess, m.category), m, regression_threshold);
             return;
         }
         ++sess.result_count;
-        if (m.efficiency_pct.has_value()) {
+        if (baseline_is_raw) {
             ++sess.raw_total;
-            ++sess.raw_matched;
-            sess.raw_eff_sum += *m.efficiency_pct;
-        } else if (m.baseline_looked_up && !m.delta_pct.has_value()) {
-            ++sess.raw_total;
+            if (m.efficiency_pct.has_value()) {
+                ++sess.raw_matched;
+                sess.raw_eff_sum += *m.efficiency_pct;
+            }
         }
         if (m.delta_pct.has_value()) {
             bump_delta_counters(sess, *m.delta_pct, regression_threshold);

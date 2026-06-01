@@ -48,6 +48,11 @@ namespace {
         return m;
     }
 
+    // These tests are about result_count / complexity folding only — never raw.
+    auto add(bench_dashboard::tui::Session& sess, bench_dashboard::wire::ResultMsg const& m) -> void {
+        bench_dashboard::tui::add_result(sess, m, kRegressionThreshold, /*baseline_is_raw=*/false);
+    }
+
 } // namespace
 
 // "N results" counts measurement rows only — BigO and RMS rows are aggregate
@@ -55,17 +60,15 @@ namespace {
 TEST(DashboardResultCounter, OnlyMeasurements) {
     bench_dashboard::tui::Session sess{};
     for (int i = 0; i < 9; ++i)
-        bench_dashboard::tui::add_result(
-                sess, make_measurement("Storm/INSERT/insert/N:1000", "INSERT"), kRegressionThreshold
-        );
+        add(sess, make_measurement("Storm/INSERT/insert/N:1000", "INSERT"));
 
     EXPECT_EQ(sess.result_count, 9U);
 }
 
 TEST(DashboardResultCounter, OnlyBigOAndRms) {
     bench_dashboard::tui::Session sess{};
-    bench_dashboard::tui::add_result(sess, make_bigo("Storm/INSERT/insert_BigO", "INSERT"), kRegressionThreshold);
-    bench_dashboard::tui::add_result(sess, make_rms("Storm/INSERT/insert_RMS", "INSERT"), kRegressionThreshold);
+    add(sess, make_bigo("Storm/INSERT/insert_BigO", "INSERT"));
+    add(sess, make_rms("Storm/INSERT/insert_RMS", "INSERT"));
 
     EXPECT_EQ(sess.result_count, 0U);
     ASSERT_EQ(sess.categories.size(), 1U);
@@ -77,21 +80,13 @@ TEST(DashboardResultCounter, OnlyBigOAndRms) {
 TEST(DashboardResultCounter, MixedMeasurementsAndComplexity) {
     bench_dashboard::tui::Session sess{};
     for (int i = 0; i < 9; ++i)
-        bench_dashboard::tui::add_result(
-                sess, make_measurement("Storm/INSERT/insert/N:1000", "INSERT"), kRegressionThreshold
-        );
+        add(sess, make_measurement("Storm/INSERT/insert/N:1000", "INSERT"));
     for (int i = 0; i < 9; ++i)
-        bench_dashboard::tui::add_result(
-                sess, make_measurement("Storm/UPDATE_PK/update_pk/N:1000", "UPDATE_PK"), kRegressionThreshold
-        );
-    bench_dashboard::tui::add_result(sess, make_bigo("Storm/INSERT/insert_BigO", "INSERT"), kRegressionThreshold);
-    bench_dashboard::tui::add_result(sess, make_rms("Storm/INSERT/insert_RMS", "INSERT"), kRegressionThreshold);
-    bench_dashboard::tui::add_result(
-            sess, make_bigo("Storm/UPDATE_PK/update_pk_BigO", "UPDATE_PK"), kRegressionThreshold
-    );
-    bench_dashboard::tui::add_result(
-            sess, make_rms("Storm/UPDATE_PK/update_pk_RMS", "UPDATE_PK"), kRegressionThreshold
-    );
+        add(sess, make_measurement("Storm/UPDATE_PK/update_pk/N:1000", "UPDATE_PK"));
+    add(sess, make_bigo("Storm/INSERT/insert_BigO", "INSERT"));
+    add(sess, make_rms("Storm/INSERT/insert_RMS", "INSERT"));
+    add(sess, make_bigo("Storm/UPDATE_PK/update_pk_BigO", "UPDATE_PK"));
+    add(sess, make_rms("Storm/UPDATE_PK/update_pk_RMS", "UPDATE_PK"));
 
     EXPECT_EQ(sess.result_count, 18U);
 }
@@ -108,8 +103,6 @@ TEST(DashboardResultCounter, MixedMeasurementsAndComplexity) {
 TEST(DashboardResultCounter, AddResultIncrementsExactlyOnce) {
     bench_dashboard::tui::Session sess{};
     const auto                    before = sess.result_count;
-    bench_dashboard::tui::add_result(
-            sess, make_measurement("Storm/INSERT/insert/N:1000", "INSERT"), kRegressionThreshold
-    );
+    add(sess, make_measurement("Storm/INSERT/insert/N:1000", "INSERT"));
     EXPECT_EQ(sess.result_count - before, 1U);
 }

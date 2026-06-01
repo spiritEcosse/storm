@@ -107,7 +107,9 @@ namespace {
         if (auto rc = db.insert_result(active_run_id, enriched); !rc)
             std::fprintf(stderr, "\nstorm_bench_dashboard: insert_result failed: %s\n", rc.error().c_str());
         if (!state.sessions.empty())
-            bench_dashboard::tui::add_result(state.sessions.front(), enriched, state.regression_threshold);
+            bench_dashboard::tui::add_result(
+                    state.sessions.front(), enriched, state.regression_threshold, state.baseline_is_raw
+            );
         return true;
     }
 
@@ -183,7 +185,7 @@ namespace {
         for (auto& r : rows) {
             auto m = build_result_msg_from_row(r);
             enrich_with_baseline(m, baseline_run_id, baseline_is_raw);
-            bench_dashboard::tui::add_result(sess, m, regression_threshold);
+            bench_dashboard::tui::add_result(sess, m, regression_threshold, baseline_is_raw);
         }
     }
 

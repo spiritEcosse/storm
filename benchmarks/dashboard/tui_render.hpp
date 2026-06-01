@@ -134,8 +134,11 @@ inline auto format_result_prefix(wire::ResultMsg const& r) -> std::string {
     );
 }
 
+// Storm targets ≥95% of raw SQLite efficiency; rows above the line render green.
+inline constexpr double kRawEfficiencyTarget = 95.0;
+
 inline auto efficiency_label(double pct) -> std::pair<std::string_view, std::string> {
-    const std::string_view colour = pct >= 95.0 ? ansi::kFgGreen : ansi::kFgRed;
+    const std::string_view colour = pct >= kRawEfficiencyTarget ? ansi::kFgGreen : ansi::kFgRed;
     return {colour, std::format("{:.1f}% of raw", pct)};
 }
 
@@ -248,11 +251,12 @@ inline auto append_summary_line(std::string& out, Session const& sess) -> void {
     if (sess.raw_total > 0) {
         const double avg = sess.raw_matched > 0 ? sess.raw_eff_sum / static_cast<double>(sess.raw_matched) : 0.0;
         out += std::format(
-                "  {}session: {}/{} matched · avg {:.1f}% of raw · target ≥95%{}\n",
+                "  {}session: {}/{} matched · avg {:.1f}% of raw · target ≥{:.0f}%{}\n",
                 ansi::kFgGrey,
                 sess.raw_matched,
                 sess.raw_total,
                 avg,
+                kRawEfficiencyTarget,
                 ansi::kReset
         );
         return;
