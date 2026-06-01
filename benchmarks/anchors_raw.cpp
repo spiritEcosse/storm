@@ -11,10 +11,10 @@
  *
  * Raw subset (exact Storm gbench names, so the dashboard's (test_name,
  * dataset_size) matcher slots them against the Storm rows they mirror):
- *   - Storm/WHERE/where_int_comparison_gt/10000
- *   - Storm/WHERE/where_bool_equality/10000
- *   - Storm/SELECT/select/10000
- *   - Storm/INSERT/insert/1
+ *   - Storm/WHERE/where_int_comparison_gt/N:10000
+ *   - Storm/WHERE/where_bool_equality/N:10000
+ *   - Storm/SELECT/select/N:10000
+ *   - Storm/INSERT/insert/N:1
  *
  * When STORM_BENCH_SOCKET is set, streams over the dashboard wire with
  * is_raw=true (run_start), producing the Storm-vs-raw baseline run.
@@ -183,7 +183,7 @@ namespace {
         sqlite3_close(db);
     }
 
-    // Storm/WHERE/where_int_comparison_gt/10000 — SELECT … WHERE age > 30
+    // Storm/WHERE/where_int_comparison_gt/N:10000 — SELECT … WHERE age > 30
     auto BM_Raw_Where_IntGt(benchmark::State& state) -> void {
         run_select_benchmark(
                 state,
@@ -196,7 +196,7 @@ namespace {
     }
     BENCHMARK(BM_Raw_Where_IntGt)->Name("Storm/WHERE/where_int_comparison_gt")->Arg(kWhereSeedRows)->ArgName("N");
 
-    // Storm/WHERE/where_bool_equality/10000 — SELECT … WHERE is_active = 1
+    // Storm/WHERE/where_bool_equality/N:10000 — SELECT … WHERE is_active = 1
     auto BM_Raw_Where_BoolEq(benchmark::State& state) -> void {
         run_select_benchmark(
                 state,
@@ -209,7 +209,7 @@ namespace {
     }
     BENCHMARK(BM_Raw_Where_BoolEq)->Name("Storm/WHERE/where_bool_equality")->Arg(kWhereSeedRows)->ArgName("N");
 
-    // Storm/SELECT/select/10000 — sequential SELECT over 10K rows
+    // Storm/SELECT/select/N:10000 — sequential SELECT over 10K rows
     auto BM_Raw_Select_All(benchmark::State& state) -> void {
         run_select_benchmark(
                 state,
@@ -222,7 +222,7 @@ namespace {
     }
     BENCHMARK(BM_Raw_Select_All)->Name("Storm/SELECT/select")->Arg(kSelectRows)->ArgName("N");
 
-    // Storm/INSERT/insert/1 — single-row INSERT throughput
+    // Storm/INSERT/insert/N:1 — single-row INSERT throughput
     auto BM_Raw_Insert_Single(benchmark::State& state) -> void {
         sqlite3* db = open_memory_db();
         exec(db, kCreatePerson);

@@ -66,6 +66,30 @@ Keys: `q` quit · `r` refresh from DB · `1`–`9` toggle session expand/collaps
 
 Each result line shows a delta column (`+6.3% REGRESS`, `−7.1% IMPROVE`, `—` if no baseline row). A summary line per session counts ok / improve / regress.
 
+**Storm vs raw SQLite** — Measure Storm's efficiency against raw SQLite using the intentional `storm_anchors` subset:
+
+```bash
+# Terminal 1 — start the dashboard
+./build/release/benchmarks/dashboard/storm_bench_dashboard
+
+# Terminal 2 — stream raw SQLite baseline run to the dashboard
+STORM_BENCH_SOCKET=1 ./build/release/benchmarks/storm_anchors
+
+# Terminal 2 — now run a Storm comparison run against the raw baseline
+./build/release/benchmarks/dashboard/storm_bench_dashboard --baseline raw:last
+STORM_BENCH_SOCKET=1 ./build/release/benchmarks/storm_bench
+```
+
+The raw baseline covers 4 pinned benchmarks (exact Google Benchmark names with `/N:` suffix):
+- `Storm/WHERE/where_int_comparison_gt/N:10000`
+- `Storm/WHERE/where_bool_equality/N:10000`
+- `Storm/SELECT/select/N:10000`
+- `Storm/INSERT/insert/N:1`
+
+Matched Storm rows show **efficiency as `NN.N% of raw`** (green ≥95%, red below); unmatched rows show `— (no raw)`. The session summary becomes `session: N/M matched · avg NN.N% of raw · target ≥95%`. The raw baseline is **reused across Storm sessions** — refresh is a manual step: re-run `storm_anchors`, then restart the dashboard with `--baseline raw:last`.
+
+To extend the subset, add a benchmark to `benchmarks/anchors_raw.cpp` mirroring the target Storm benchmark's **exact** name via `->Name(...)->Arg(N)->ArgName("N")` and `state.SetComplexityN(state.range(0))`, so the `(test_name, dataset_size)` key matches the Storm row. See `benchmarks/scripts/compare_against_raw.sh` for the orchestration driver.
+
 See [docs/development/BENCHMARK_DASHBOARD.md](../docs/development/BENCHMARK_DASHBOARD.md) for full setup, schema, baseline selectors, backup/restore, and troubleshooting.
 
 ## 📉 Regression detection
