@@ -43,10 +43,23 @@ namespace {
         }
     }
 
+    // Issue #346: a _stddev / _cv aggregate row reuses items_per_second for a
+    // non-throughput stat, so dividing it against a baseline row produces a
+    // meaningless "% of raw". Skip enrichment for those two; only mean/median
+    // aggregates (and measurement rows) carry a real throughput. Mirrors
+    // bench_dashboard::aggregate_carries_throughput (row_classify.hpp), inlined
+    // here because this header is pulled in after `import std;` and cannot
+    // re-include wire.hpp without breaking the build (Finding B).
+    auto aggregate_carries_throughput(std::string_view test_name) -> bool {
+        // NOSONAR(cpp:S4144) source of truth: row_classify.hpp::aggregate_carries_throughput
+        return !(test_name.ends_with("_stddev") || test_name.ends_with("_cv"));
+    }
+
     auto enrich_with_baseline(bench_dashboard::wire::ResultMsg& msg, std::int64_t baseline_run_id, bool baseline_is_raw)
             -> void {
         if (msg.row_kind == bench_dashboard::wire::kRowKindMeasurement ||
-            msg.row_kind == bench_dashboard::wire::kRowKindAggregate || msg.row_kind.empty())
+            (msg.row_kind == bench_dashboard::wire::kRowKindAggregate && aggregate_carries_throughput(msg.test_name)) ||
+            msg.row_kind.empty())
             enrich_measurement(msg, baseline_run_id, baseline_is_raw);
         else if (msg.row_kind == bench_dashboard::wire::kRowKindBigO)
             enrich_bigo(msg, baseline_run_id);

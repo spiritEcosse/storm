@@ -121,6 +121,16 @@ inline auto truncated_name(std::string_view name, std::size_t width) -> std::str
     return name.size() > width ? name.substr(name.size() - width) : name;
 }
 
+// Issue #346: an aggregate row's items_per_second is a real throughput only for
+// the mean/median aggregates. _stddev is the std-dev OF throughput and _cv a
+// dimensionless ratio — neither is an ips value. Mirrors
+// bench_dashboard::aggregate_carries_throughput (row_classify.hpp), inlined here
+// because this header lives in the tui.cppm module purview and cannot include it.
+inline auto row_carries_throughput(wire::ResultMsg const& r) -> bool {
+    // NOSONAR(cpp:S4144) source of truth: row_classify.hpp::aggregate_carries_throughput
+    return !(r.test_name.ends_with("_stddev") || r.test_name.ends_with("_cv"));
+}
+
 inline auto format_result_prefix(wire::ResultMsg const& r) -> std::string {
     return std::format(
             "      {}{:<48}{}  {}{}{}  {}",
@@ -130,7 +140,7 @@ inline auto format_result_prefix(wire::ResultMsg const& r) -> std::string {
             colour_for_latency(r.real_ns),
             format_latency(r.real_ns),
             ansi::kReset,
-            format_ips(r.items_per_second)
+            row_carries_throughput(r) ? format_ips(r.items_per_second) : std::string(12, ' ')
     );
 }
 
@@ -144,7 +154,7 @@ inline auto efficiency_label(double pct) -> std::pair<std::string_view, std::str
 
 inline auto append_result_line(std::string& out, wire::ResultMsg const& r, double regression_threshold) -> void {
     out += format_result_prefix(r);
-    if (r.efficiency_pct.has_value()) {
+    if (r.efficiency_pct.has_value() && row_carries_throughput(r)) {
         const auto [ecol, etxt] = efficiency_label(*r.efficiency_pct);
         out += std::format("  {}{}{}\n", ecol, etxt, ansi::kReset);
     } else if (r.baseline_looked_up && r.delta_pct.has_value()) {

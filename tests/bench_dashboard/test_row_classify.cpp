@@ -18,6 +18,7 @@
 
 namespace {
 
+    using bench_dashboard::aggregate_carries_throughput;
     using bench_dashboard::classify_row_kind;
     using bench_dashboard::RowFlags;
     using bench_dashboard::should_skip_row;
@@ -68,4 +69,23 @@ TEST(RowClassify, RmsRowClassifiesAsRms) {
 TEST(RowClassify, SkippedWinsOverKind) {
     EXPECT_TRUE(should_skip_row(RowFlags{.skipped = true, .aggregate_name = "mean"}));
     EXPECT_TRUE(should_skip_row(RowFlags{.skipped = true, .report_big_o = true}));
+}
+
+// Issue #346: mean/median aggregate rows carry a real throughput in
+// items_per_second — they may be rendered as ips and compared as a % of raw.
+TEST(AggregateThroughput, MeanAndMedianCarryThroughput) {
+    EXPECT_TRUE(aggregate_carries_throughput("Storm/INSERT/insert/N:1_mean"));
+    EXPECT_TRUE(aggregate_carries_throughput("Storm/INSERT/insert/N:1_median"));
+}
+
+// Issue #346: stddev (std-dev OF throughput) and cv (a dimensionless ratio)
+// reuse items_per_second with a different meaning — NOT a throughput.
+TEST(AggregateThroughput, StddevAndCvDoNotCarryThroughput) {
+    EXPECT_FALSE(aggregate_carries_throughput("Storm/INSERT/insert/N:1_stddev"));
+    EXPECT_FALSE(aggregate_carries_throughput("Storm/INSERT/insert/N:1_cv"));
+}
+
+// A plain measurement row (no aggregate suffix) carries a real throughput.
+TEST(AggregateThroughput, MeasurementRowCarriesThroughput) {
+    EXPECT_TRUE(aggregate_carries_throughput("Storm/SELECT/select/10000"));
 }

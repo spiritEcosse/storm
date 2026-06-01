@@ -130,6 +130,18 @@ The `N results` counter is the number of **timing rows** in that run — both ra
 
 Each `BenchResult` carries a `row_kind`: `measurement` (one raw per-repetition row), `aggregate` (a `mean`/`median`/`stddev`/`cv` summary row), `bigo`, or `rms`. Under `--benchmark_repetitions=N` Google Benchmark emits both the raw rows and the aggregate rows; under `--benchmark_report_aggregates_only=true` it emits **only** the aggregate rows. The dashboard streams every timing row regardless of style — both `measurement` and `aggregate` rows render and count (Issue #265). Earlier the reporter silently dropped every `aggregate` row, so the aggregates-only invocation recorded no timings at all.
 
+#### Aggregate-row semantics: `ips` and `% of raw` (Issue #346)
+
+Google Benchmark reuses the `items_per_second` field on *every* aggregate row, but its meaning differs per aggregate:
+
+| Aggregate (test-name suffix) | `items_per_second` is… | `ips` shown? | `% of raw` shown? |
+|---|---|---|---|
+| `_mean`, `_median` | a real throughput (items/sec) | ✓ | ✓ |
+| `_stddev` | the std-dev *of* throughput (an ips-scale spread, not a rate) | ✓ | — |
+| `_cv` | a dimensionless ratio (`stddev/mean`, e.g. `0.0046`) | — (blank) | — |
+
+So `_stddev` and `_cv` are *not* throughputs: the dashboard blanks the `ips` column for `_cv` (a tiny ratio that would otherwise round to `0  ips`) and never attaches a `% of raw` efficiency to either — dividing one run's stddev/cv by another run's is meaningless. Only `_mean`/`_median` aggregates (and raw `measurement` rows) carry a valid efficiency. The gate is the test-name suffix; the canonical predicate is `bench_dashboard::aggregate_carries_throughput` in `benchmarks/dashboard/row_classify.hpp`, mirrored inline at the two render/enrichment call sites (`tui_render.hpp`, `events.hpp`) that cannot include it across their module / `import std;` boundaries.
+
 ### Summary line
 
 Each session header shows a running tally:
