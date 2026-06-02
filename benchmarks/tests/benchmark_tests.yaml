@@ -66,21 +66,21 @@ tests:
   - name: insert
     category: INSERT
     description: INSERT operations with various batch sizes
-    model: Person
+    model: BenchPerson
     operation: insert
     size_profile: batch_standard
 
   - name: insert_no_return
     category: INSERT
     description: INSERT without RETURNING clause (no ID retrieval)
-    model: Person
+    model: BenchPerson
     operation: insert_no_return
     size_profile: batch_standard
 
   - name: insert_edge
     category: INSERT_EDGE
     description: INSERT at SQLite chunk boundary (999/4 fields = 249)
-    model: Person
+    model: BenchPerson
     operation: insert
     size_profile: batch_insert_edge
 

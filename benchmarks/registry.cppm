@@ -26,6 +26,7 @@ export module storm_benchmark_registry;
 import storm;
 
 export namespace storm::benchmark {
+    using ::storm::benchmark::BenchPerson;
     using ::storm::benchmark::FKMessage;
     using ::storm::benchmark::Person;
     using ::storm::benchmark::User;
@@ -65,6 +66,8 @@ export namespace storm::benchmark::registry {
             return fn.template operator()<FKMessage>();
         } else if constexpr (test.model == "User") {
             return fn.template operator()<User>();
+        } else if constexpr (test.model == "BenchPerson") {
+            return fn.template operator()<BenchPerson>();
         } else {
             return fn.template operator()<Person>();
         }

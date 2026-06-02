@@ -53,6 +53,9 @@ namespace storm::benchmark {
         if (!storm::orm::schema::SchemaStatement<Person>::create_table_if_not_exists(conn).has_value()) {
             return false;
         }
+        if (!storm::orm::schema::SchemaStatement<BenchPerson>::create_table_if_not_exists(conn).has_value()) {
+            return false;
+        }
         if (!storm::orm::schema::SchemaStatement<User>::create_table_if_not_exists(conn).has_value()) {
             return false;
         }

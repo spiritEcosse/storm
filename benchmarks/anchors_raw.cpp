@@ -14,7 +14,8 @@
  *   - Storm/WHERE/where_int_comparison_gt/N:10000
  *   - Storm/WHERE/where_bool_equality/N:10000
  *   - Storm/SELECT/select/N:10000
- *   - Storm/INSERT/insert/N:1
+ *   - Storm/INSERT/insert/N:1           (INSERT … RETURNING id)
+ *   - Storm/INSERT/insert_no_return/N:1 (plain INSERT)
  *
  * When STORM_BENCH_SOCKET is set, streams over the dashboard wire with
  * is_raw=true (run_start), producing the Storm-vs-raw baseline run.
@@ -222,11 +223,16 @@ namespace {
     }
     BENCHMARK(BM_Raw_Select_All)->Name("Storm/SELECT/select")->Arg(kSelectRows)->ArgName("N");
 
-    // Storm/INSERT/insert/N:1 — single-row INSERT throughput
-    auto BM_Raw_Insert_Single(benchmark::State& state) -> void {
+    // Shared single-row INSERT driver for both anchors. Builds the table, then
+    // times insert_sql to a counter-named row per iteration (rows accumulate —
+    // no DELETE, no UNIQUE on name). returning mirrors the dialect: plain INSERT
+    // steps once to SQLITE_DONE; RETURNING steps to SQLITE_ROW, reads the id,
+    // then steps again to SQLITE_DONE. Setup is outside the timed loop to match
+    // the Storm fixtures — only the bind + step is measured.
+    auto run_insert_benchmark(benchmark::State& state, char const* insert_sql, bool returning) -> void {
         sqlite3* db = open_memory_db();
         exec(db, kCreatePerson);
-        sqlite3_stmt* ins = prepare(db, "INSERT INTO person(name, age, salary) VALUES(?,?,?)");
+        sqlite3_stmt* ins = prepare(db, insert_sql);
 
         int counter = 0;
         for (auto _ : state) {
@@ -234,7 +240,15 @@ namespace {
             sqlite3_bind_text(ins, 1, name.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_int(ins, 2, 30);
             sqlite3_bind_double(ins, 3, 50'000.0);
-            if (sqlite3_step(ins) != SQLITE_DONE) {
+            if (returning) {
+                if (sqlite3_step(ins) != SQLITE_ROW) {
+                    die(db, "insert returning step");
+                }
+                benchmark::DoNotOptimize(sqlite3_column_int(ins, 0));
+                if (sqlite3_step(ins) != SQLITE_DONE) {
+                    die(db, "insert returning done");
+                }
+            } else if (sqlite3_step(ins) != SQLITE_DONE) {
                 die(db, "insert step");
             }
             sqlite3_reset(ins);
@@ -245,7 +259,20 @@ namespace {
         sqlite3_finalize(ins);
         sqlite3_close(db);
     }
-    BENCHMARK(BM_Raw_Insert_Single)->Name("Storm/INSERT/insert")->Arg(1)->ArgName("N");
+
+    // Storm/INSERT/insert_no_return/N:1 — plain INSERT, no RETURNING
+    auto BM_Raw_Insert_No_Return(benchmark::State& state) -> void {
+        run_insert_benchmark(state, "INSERT INTO person(name, age, salary) VALUES(?,?,?)", /*returning=*/false);
+    }
+    BENCHMARK(BM_Raw_Insert_No_Return)->Name("Storm/INSERT/insert_no_return")->Arg(1)->ArgName("N");
+
+    // Storm/INSERT/insert/N:1 — INSERT with RETURNING id (mirrors Storm's insert() path)
+    auto BM_Raw_Insert_Returning(benchmark::State& state) -> void {
+        run_insert_benchmark(
+                state, "INSERT INTO person(name, age, salary) VALUES(?,?,?) RETURNING id", /*returning=*/true
+        );
+    }
+    BENCHMARK(BM_Raw_Insert_Returning)->Name("Storm/INSERT/insert")->Arg(1)->ArgName("N");
 
 } // namespace
 
