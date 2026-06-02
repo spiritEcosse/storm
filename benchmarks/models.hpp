@@ -33,4 +33,13 @@ namespace storm::benchmark {
         std::string                               text;
     };
 
+    // INSERT-benchmark model — no UNIQUE, no indexes; matches the raw SQLite
+    // anchor schema exactly so bulk inserts need no per-iteration DELETE.
+    struct BenchPerson {
+        [[= storm::meta::FieldAttr::primary]] int id;
+        std::string                               name;
+        int                                       age;
+        double                                    salary;
+    };
+
 } // namespace storm::benchmark
