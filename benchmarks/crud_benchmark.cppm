@@ -10,9 +10,10 @@
 // are intentionally dropped here; raw anchors land in their own TU in Phase 4.
 //
 // Per-iteration semantics that drive the run_once() shape:
-//   * INSERT: Person has UNIQUE(name) — must clear the table before every
-//     iteration so the next bind doesn't trip on the previous row.
-//   * INSERT (no return): same constraint, same clear; uses the
+//   * INSERT: BenchPerson has no UNIQUE(name) — rows accumulate. Each
+//     iteration stamps a fresh counter-based name so the bind never collides,
+//     mirroring the raw SQLite anchor (no per-iteration table clear).
+//   * INSERT (no return): same accumulate-with-counter shape; uses the
 //     ReturnId::No path so RETURNING is not generated.
 //   * UPDATE_PK: rows seeded once in prepare(); each iteration re-issues the
 //     same parameterised UPDATE — no clear needed.
@@ -25,20 +26,12 @@
 
 module;
 
-// `sqlite3` typedef used in clear_table — base.cppm exports get_db() but the
-// SQLite types remain hidden behind its BMI.
-#include <sqlite3.h>
-
 // `<tuple>` + models.hpp must precede any `import` so reflection annotations
 // on Person/User/FKMessage are textually visible (clang-p2996 #262, see
 // feedback_cpp26_module_reflection_annotations).
 #include <tuple>
 
 #include "models.hpp"
-
-// std::meta:: is used in this module's purview; import std; does not export it
-// (issue #326 Finding A), so the reflection header must be textually included.
-#include <meta>
 
 export module storm_benchmark_crud;
 
@@ -53,6 +46,8 @@ export namespace storm::benchmark {
     class CrudBenchmark : public DataBenchmarkBase<CrudBenchmark<Model, test>, Model> {
         using Base = DataBenchmarkBase<CrudBenchmark<Model, test>, Model>;
 
+        int counter_ = 0;
+
         static consteval auto is_insert_op() -> bool {
             constexpr auto op = test.operation.view();
             return op == "insert" || op == "insert_no_return";
@@ -65,15 +60,6 @@ export namespace storm::benchmark {
         }
         static consteval auto is_delete_op() -> bool {
             return test.operation.view() == "delete_pk";
-        }
-
-        static auto clear_table() -> void {
-            sqlite3* db = get_db<Model>();
-            if (db == nullptr) {
-                return;
-            }
-            auto sql = std::format("DELETE FROM {}", std::meta::identifier_of(^^Model));
-            sqlite3_exec(db, sql.c_str(), nullptr, nullptr, nullptr);
         }
 
       public:
@@ -92,6 +78,13 @@ export namespace storm::benchmark {
                 };
             } else if constexpr (std::is_same_v<Model, User>) {
                 return Model{.id = 0, .name = std::format("User{}", i), .age = 20 + (i % 50)};
+            } else if constexpr (std::is_same_v<Model, BenchPerson>) {
+                return Model{
+                        .id     = 0,
+                        .name   = std::format("P{}", index),
+                        .age    = 20 + (index % 50),
+                        .salary = 30000.0 + (index * 1000.0),
+                };
             } else {
                 return Model{};
             }
@@ -99,8 +92,8 @@ export namespace storm::benchmark {
 
         auto prepare(int n) -> void {
             if constexpr (is_insert_op()) {
-                // INSERT seeds nothing — each iteration generates / inserts.
-                // Generate the dataset once; run_once() clears + re-inserts.
+                // INSERT seeds nothing — each iteration stamps fresh names and
+                // inserts. Generate the dataset once; rows accumulate.
                 Base::prepare(n);
             } else if constexpr (is_update_op()) {
                 Base::prepare_with_insert(n);
@@ -125,14 +118,14 @@ export namespace storm::benchmark {
         // execution, not consumption of the result.
         auto run_once() -> void {
             if constexpr (is_insert_no_return_op()) {
-                clear_table();
+                stamp_unique_names();
                 if (Base::batch_size() == 1) {
                     (void)Base::qs().template insert<storm::orm::statements::ReturnId::No>(Base::data()[0]).execute();
                 } else {
                     (void)Base::qs().template insert<storm::orm::statements::ReturnId::No>(Base::data()).execute();
                 }
             } else if constexpr (is_insert_op()) {
-                clear_table();
+                stamp_unique_names();
                 if (Base::batch_size() == 1) {
                     (void)Base::qs().insert(Base::data()[0]).execute();
                 } else {
@@ -158,6 +151,20 @@ export namespace storm::benchmark {
         }
 
       private:
+        // Stamp a fresh unique name on the rows an INSERT iteration will write
+        // so they accumulate without tripping a UNIQUE(name) constraint —
+        // mirrors what the raw SQLite anchor does (no per-iteration clear).
+        // Single-insert touches only data()[0]; batch touches every row.
+        auto stamp_unique_names() -> void {
+            if (Base::batch_size() == 1) {
+                Base::data()[0].name = std::format("P{}", counter_++);
+                return;
+            }
+            for (auto& obj : Base::data()) {
+                obj.name = std::format("P{}", counter_++);
+            }
+        }
+
         auto reinsert_for_delete() -> void {
             // Re-seed via the same path as the initial prepare_with_insert:
             // clear table → insert → select-back IDs. This sidesteps the
