@@ -225,7 +225,7 @@ namespace {
 
     // Shared single-row INSERT driver for both anchors. Builds the table, then
     // times insert_sql to a counter-named row per iteration (rows accumulate —
-    // no DELETE, no UNIQUE on name). step_row mirrors the dialect: plain INSERT
+    // no DELETE, no UNIQUE on name). returning mirrors the dialect: plain INSERT
     // steps once to SQLITE_DONE; RETURNING steps to SQLITE_ROW, reads the id,
     // then steps again to SQLITE_DONE. Setup is outside the timed loop to match
     // the Storm fixtures — only the bind + step is measured.
