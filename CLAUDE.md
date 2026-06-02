@@ -302,6 +302,7 @@ while (sqlite3_step(raw) == SQLITE_ROW) { ... }
 ### Fair Benchmark Rules
 - Setup outside loop, execute inside
 - Same algorithm, containers, decision logic for both Storm and raw
+- **Same SCHEMA** — the raw anchor's `CREATE TABLE` must mirror what Storm's schema generator emits (e.g. `id INTEGER PRIMARY KEY AUTOINCREMENT`, NOT plain `INTEGER PRIMARY KEY`). AUTOINCREMENT alone adds ~358 ns/insert of `sqlite_sequence` bookkeeping inside `sqlite3_step`; a mismatch silently halved the INSERT `% of raw`.
 - Use latency (ms/query) for different result sizes
 
 See [docs/development/PERFORMANCE_GUIDELINES.md](docs/development/PERFORMANCE_GUIDELINES.md).
