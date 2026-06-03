@@ -449,9 +449,22 @@ export namespace storm::orm::statements {
             return extract_results(*prepare_result);
         }
 
-        [[nodiscard]] auto prepare_bind_extract(const std::string& sql) -> std::expected<ResultType, Error> {
+        // Shared prepare→check prefix for the bind+extract helpers below.
+        // prepare_cached already resets the statement on a cache hit, so no
+        // explicit reset here. Explicit-check form (not and_then): monadic
+        // chaining benched slower on aggregate paths (#363).
+        [[nodiscard]] __attribute__((always_inline)) auto ready_aggregate_statement(const std::string& sql) noexcept
+                -> std::expected<Statement*, Error> {
             auto prepare_result = conn_->prepare_cached(sql);
             if (!prepare_result) [[unlikely]] {
+                return std::unexpected(prepare_result.error());
+            }
+            return *prepare_result;
+        }
+
+        [[nodiscard]] auto prepare_bind_extract(const std::string& sql) -> std::expected<ResultType, Error> {
+            auto prepare_result = ready_aggregate_statement(sql);
+            if (!prepare_result) {
                 return std::unexpected(prepare_result.error());
             }
             int  param_index = 1;
@@ -472,8 +485,8 @@ export namespace storm::orm::statements {
         }
 
         [[nodiscard]] auto prepare_bind_having_extract(const std::string& sql) -> std::expected<ResultType, Error> {
-            auto prepare_result = conn_->prepare_cached(sql);
-            if (!prepare_result) [[unlikely]] {
+            auto prepare_result = ready_aggregate_statement(sql);
+            if (!prepare_result) {
                 return std::unexpected(prepare_result.error());
             }
             int  param_index = 1;
