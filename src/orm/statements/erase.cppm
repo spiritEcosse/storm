@@ -229,12 +229,11 @@ export namespace storm::orm::statements {
 
         // Returns SQL string with bound parameters inlined for a single DELETE (for debugging)
         [[nodiscard]] auto to_sql(const T& obj) -> std::expected<std::string, Error> {
-            auto stmt_result = conn_->prepare_cached(get_single_delete_sql());
+            auto stmt_result = ready_delete_statement(get_single_delete_sql());
             if (!stmt_result) {
                 return std::unexpected(stmt_result.error());
             }
             auto* stmt = *stmt_result;
-            stmt->reset();
             if (auto bind_result = bind_pk_at(*stmt, obj, 1); !bind_result) {
                 return std::unexpected(bind_result.error());
             }
@@ -247,13 +246,12 @@ export namespace storm::orm::statements {
                 return std::string{};
             }
             const auto& bulk_sql = get_bulk_delete_sql(objects.size());
-            auto        stmt_res = conn_->prepare_cached(bulk_sql);
+            auto        stmt_res = ready_delete_statement(bulk_sql);
             if (!stmt_res) {
                 return std::unexpected(stmt_res.error());
             }
-            auto* stmt = *stmt_res;
-            stmt->reset();
-            int param_index = 1;
+            auto* stmt        = *stmt_res;
+            int   param_index = 1;
             for (const auto& obj : objects) {
                 if (auto result = bind_pk_at(*stmt, obj, param_index); !result) {
                     return std::unexpected(result.error());
@@ -300,15 +298,13 @@ export namespace storm::orm::statements {
         // Single DELETE - prepare from L3 cache per call, inlined execution
         [[nodiscard]] __attribute__((hot)) auto execute_one(const T& obj) noexcept -> std::expected<void, Error> {
             // Prepare statement (cached internally by connection)
-            auto stmt_result = conn_->prepare_cached(get_single_delete_sql());
+            auto stmt_result = ready_delete_statement(get_single_delete_sql());
             if (!stmt_result) {
                 return std::unexpected(stmt_result.error());
             }
             auto* stmt = *stmt_result;
 
-            // Reset, bind PK, and execute
-            stmt->reset();
-
+            // Bind PK and execute (statement already reset by ready_delete_statement)
             if (auto bind_result = bind_pk_at(*stmt, obj, 1); !bind_result) {
                 return std::unexpected(bind_result.error());
             }
@@ -405,6 +401,22 @@ export namespace storm::orm::statements {
             }
 
             return {};
+        }
+
+        // Prepare via the L3 cache and reset — the prepare→check→reset prefix
+        // shared by to_sql(obj), to_sql(span) and execute_one(). Binding stays
+        // at the call site (single PK / span of PKs / none differ per caller).
+        // Explicit-check form (not and_then): monadic chaining benched slower
+        // on hot delete paths (#363).
+        [[nodiscard]] __attribute__((always_inline)) auto ready_delete_statement(const std::string& sql) noexcept
+                -> std::expected<Statement*, Error> {
+            auto stmt_result = conn_->prepare_cached(sql);
+            if (!stmt_result) [[unlikely]] {
+                return std::unexpected(stmt_result.error());
+            }
+            Statement* stmt = *stmt_result;
+            stmt->reset();
+            return stmt;
         }
 
         // Bind primary key value at specific parameter index
