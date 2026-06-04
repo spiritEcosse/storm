@@ -18,6 +18,11 @@
 namespace {
 
     // Fake handles - store state for opaque PGconn/PGresult pointers
+    // Sentinel poison value written into a FakePGconn by PQfinish. It is NOT a
+    // real ConnStatusType; reading it back means production code touched the
+    // connection after PQfinish (the Issue #351 use-after-free).
+    constexpr int CONNECTION_BAD_AFTER_FINISH = 99;
+
     struct FakePGconn {
         int         status = CONNECTION_OK;
         std::string error_message;
@@ -238,8 +243,13 @@ auto PQstatus(const PGconn* conn) -> ConnStatusType {
 }
 
 auto PQfinish(const PGconn* conn) -> void {
-    (void)conn;
-    // Memory managed by g_fake_conns vector
+    // Memory stays owned by g_fake_conns, but poison the status so any
+    // PQstatus(conn) read AFTER PQfinish (a use-after-free in real libpq,
+    // Issue #351) is observable: it no longer returns the pre-finish value.
+    // The underlying FakePGconn is genuinely mutable (owned by g_fake_conns).
+    auto* mutable_conn = const_cast<PGconn*>(conn); // NOSONAR(cpp:S3630) NOLINT(cppcoreguidelines-pro-type-const-cast)
+    if (auto* fake = reinterpret_cast<FakePGconn*>(mutable_conn); fake)
+        fake->status = CONNECTION_BAD_AFTER_FINISH;
 }
 
 auto PQerrorMessage(const PGconn* conn) -> char* {
