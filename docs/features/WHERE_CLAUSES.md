@@ -48,6 +48,22 @@ auto results = QuerySet<Person>()
 | `<` | `<` | `age < 30` |
 | `<=` | `<=` | `age <= 30` |
 
+### Operand lifetime
+
+`where()` is deferred — the expression node is built now and the operand is bound only at
+`.select()`. Comparison operands are therefore stored **by owning value**: text operands
+(`std::string_view`, `const char*`, string literals) are copied into a `std::string` at
+construction. This means an expression survives the buffer it was built from:
+
+```cpp
+auto make_filter() {
+    std::string name = load_name();           // local buffer
+    return field<^^Person::name>() == name;    // operand is COPIED, not viewed
+}                                              // `name` is destroyed here — safe
+
+auto results = QuerySet<Person>().where(make_filter()).select();  // no dangling bind
+```
+
 ## String Operations
 
 ### LIKE pattern matching
