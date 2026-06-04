@@ -47,13 +47,19 @@ export namespace storm::orm::utilities {
         auto operator=(const TransactionGuard&) -> TransactionGuard& = delete;
 
         TransactionGuard(TransactionGuard&& other) noexcept
-            : conn_(std::move(other.conn_)), committed_(other.committed_) {}
+            : conn_(std::move(other.conn_)), committed_(other.committed_) {
+            // Neutralize the source so a moved-from guard can never attempt a DB op,
+            // independent of std::move(shared_ptr) having nulled other.conn_.
+            other.committed_ = true;
+        }
 
         auto operator=(TransactionGuard&& other) noexcept -> TransactionGuard& {
             if (this != &other) {
                 rollback_if_needed();
                 conn_      = std::move(other.conn_);
                 committed_ = other.committed_;
+                // Neutralize the source so a moved-from guard can never rollback.
+                other.committed_ = true;
             }
             return *this;
         }
@@ -71,6 +77,9 @@ export namespace storm::orm::utilities {
 
             if (auto result = conn_->execute("COMMIT"); !result) {
                 (void)conn_->execute("ROLLBACK");
+                // Transaction is already rolled back; mark committed so the
+                // destructor does not issue a second, redundant ROLLBACK.
+                committed_ = true;
                 return std::unexpected(result.error());
             }
 
