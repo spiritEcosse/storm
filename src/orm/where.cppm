@@ -192,8 +192,6 @@ export namespace storm::orm::where {
                                        ComparisonExpr<double>,
                                        ComparisonExpr<float>,
                                        ComparisonExpr<std::string>,
-                                       ComparisonExpr<std::string_view>,
-                                       ComparisonExpr<const char*>,
                                        ComparisonExpr<bool>,
                                        NullCheckExpr,
                                        LikeExpr,
@@ -320,6 +318,32 @@ export namespace storm::orm::where {
         );
     }
 
+    // Normalize a comparison operand to the type actually stored in ExpressionVariant.
+    // The expression node can outlive the operand's source buffer (where() is deferred, #352),
+    // so text operands (string_view / const char* / char arrays) are copied into an owning
+    // std::string. Enum operands are stored as their underlying int. Everything else is decayed.
+    template <typename V> auto normalize_operand(V&& value) {
+        using D = std::decay_t<V>;
+        if constexpr (std::is_enum_v<D>) {
+            return static_cast<int>(static_cast<std::underlying_type_t<D>>(value));
+        } else if constexpr (std::is_convertible_v<D, std::string_view> && !std::is_same_v<D, std::string>) {
+            return std::string(std::string_view(std::forward<V>(value)));
+        } else {
+            return D{std::forward<V>(value)};
+        }
+    }
+
+    // Build a value-owning ComparisonExpr from any operand. See normalize_operand for the type rules.
+    template <typename V>
+    [[nodiscard]] auto make_comparison_expr(const std::string& field_name, CompOp op, V&& value) -> Expr {
+        auto stored = normalize_operand(std::forward<V>(value));
+        return Expr(
+                std::make_shared<ExpressionVariant>(ComparisonExpr<decltype(stored)>{
+                        .field_name_ = std::move(field_name), .op_ = op, .value_ = std::move(stored)
+                })
+        );
+    }
+
     // CollatedField proxy - wraps field name with COLLATE clause
     // Created via field<^^Person::name>().collate(Collate::NoCase)
     // All comparison operators produce SQL like: "name COLLATE NOCASE = ?"
@@ -398,11 +422,7 @@ export namespace storm::orm::where {
         }
 
         template <typename V> auto make_comparison(CompOp op, V&& value) const -> Expr {
-            return Expr(
-                    std::make_shared<ExpressionVariant>(ComparisonExpr<std::decay_t<V>>{
-                            .field_name_ = collated_name_, .op_ = op, .value_ = std::forward<V>(value)
-                    })
-            );
+            return where::make_comparison_expr(collated_name_, op, std::forward<V>(value));
         }
     };
 
@@ -508,22 +528,7 @@ export namespace storm::orm::where {
       private:
         // Helper: create comparison expression, converting enum values to int
         template <typename V> auto make_comp(CompOp op, V&& value) const -> Expr {
-            using D = std::decay_t<V>;
-            if constexpr (std::is_enum_v<D>) {
-                return Expr(
-                        std::make_shared<ExpressionVariant>(ComparisonExpr<int>{
-                                .field_name_ = std::string(field_name_sv),
-                                .op_         = op,
-                                .value_      = static_cast<int>(static_cast<std::underlying_type_t<D>>(value))
-                        })
-                );
-            } else {
-                return Expr(
-                        std::make_shared<ExpressionVariant>(ComparisonExpr<D>{
-                                .field_name_ = std::string(field_name_sv), .op_ = op, .value_ = std::forward<V>(value)
-                        })
-                );
-            }
+            return where::make_comparison_expr(std::string(field_name_sv), op, std::forward<V>(value));
         }
     };
 
