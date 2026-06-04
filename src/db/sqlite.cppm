@@ -42,9 +42,22 @@ export namespace storm::db::sqlite {
         // Destructor - unique_ptr handles cleanup via sqlite3_finalize
         ~Statement() = default;
 
-        // Move semantics
-        Statement(Statement&&)                    = default;
-        auto operator=(Statement&&) -> Statement& = default;
+        // Move semantics — explicit so the moved-from source nulls its cached
+        // raw_. A defaulted move copies raw_ while stmt_ goes null, leaving the
+        // source aliasing the statement now owned by the destination (issue
+        // #354). Keep the cached raw_ for hot-loop performance (CLAUDE.md).
+        Statement(Statement&& other) noexcept : stmt_(std::move(other.stmt_)), raw_(other.raw_) {
+            other.raw_ = nullptr;
+        }
+
+        auto operator=(Statement&& other) noexcept -> Statement& {
+            if (this != &other) {
+                stmt_      = std::move(other.stmt_);
+                raw_       = other.raw_;
+                other.raw_ = nullptr;
+            }
+            return *this;
+        }
 
         // Delete copy operations
         Statement(const Statement&)                    = delete;
