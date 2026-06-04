@@ -79,6 +79,19 @@ export namespace storm::orm::utilities {
     // Numeric constants
     namespace numeric {
         constexpr std::size_t MAX_SINGLE_DIGIT = 9; // Maximum single digit value (0-9)
+        // Decimal digits needed to render any std::size_t (2^64 - 1 has 20 digits).
+        constexpr std::size_t MAX_DECIMAL_DIGITS = 20;
+
+        // Number of decimal digits required to render `value` (digits_of(0) == 1).
+        // Used by compile-time SQL size estimators to reserve exact alias width.
+        constexpr auto digits_of(std::size_t value) -> std::size_t {
+            std::size_t digits = 1;
+            while (value > MAX_SINGLE_DIGIT) {
+                value /= 10;
+                ++digits;
+            }
+            return digits;
+        }
     } // namespace numeric
 
     // ============================================================================
@@ -494,13 +507,29 @@ export namespace storm::orm::utilities {
             return *this;
         }
 
-        // Append a single digit (0-9) for compile-time number formatting
-        constexpr auto append_digit(std::size_t digit) -> void {
-            if (digit <= numeric::MAX_SINGLE_DIGIT && len < N - 1) {
-                data[len] = '0' + static_cast<char>(digit);
-                ++len;
-                data[len] = '\0';
+        // Append the full decimal representation of an unsigned value for
+        // compile-time number formatting (handles multi-digit values, e.g. 10).
+        constexpr auto append_uint(std::size_t value) -> void {
+            if (value <= numeric::MAX_SINGLE_DIGIT) {
+                if (len < N - 1) {
+                    data[len] = '0' + static_cast<char>(value);
+                    ++len;
+                    data[len] = '\0';
+                }
+                return;
             }
+            // Build digits in reverse, then append in order.
+            std::array<char, numeric::MAX_DECIMAL_DIGITS> buf{};
+            std::size_t                                   count = 0;
+            while (value > 0) {
+                buf[count++] = static_cast<char>('0' + (value % 10));
+                value /= 10;
+            }
+            for (std::size_t i = count; i > 0 && len < N - 1; --i) {
+                data[len] = buf[i - 1];
+                ++len;
+            }
+            data[len] = '\0';
         }
         // LCOV_EXCL_STOP
 

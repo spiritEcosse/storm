@@ -120,13 +120,17 @@ export namespace storm::orm::statements {
 
         // Compile-time SQL generation with ConstexprString
         static consteval auto calculate_join_sql_size() -> std::size_t {
+            using utilities::numeric::digits_of;
             using utilities::sql_len::ON_EQUALS;
             using utilities::sql_len::SMALL_BUFFER;
             std::size_t total = 0;
 
+            // Per FK: <keyword><table> t<alias> ON t<alias>.<pk> = t1.<fk>_id
+            // The alias t<Is+2> appears twice — reserve its exact digit width both times.
             [&]<std::size_t... Is>(std::index_sequence<Is...> /*unused*/) {
-                ((total += get_join_keyword().size() + FKBase_at<Is>::table_name_.size() + 2 + 1 + 4 + 1 + 1 + 1 +
-                           FKBase_at<Is>::pk_name_.size() + ON_EQUALS + fk_field_names_[Is].size() + 3),
+                ((total += get_join_keyword().size() + FKBase_at<Is>::table_name_.size() + 2 + digits_of(Is + 2) + 5 +
+                           digits_of(Is + 2) + 1 + FKBase_at<Is>::pk_name_.size() + ON_EQUALS +
+                           fk_field_names_[Is].size() + 3),
                  ...);
             }(std::make_index_sequence<fk_count_>{});
 
@@ -141,9 +145,9 @@ export namespace storm::orm::statements {
                 ((result.append(get_join_keyword()),
                   result.append(FKBase_at<Is>::table_name_),
                   result.append(" t"),
-                  result.append_digit(Is + 2),
+                  result.append_uint(Is + 2),
                   result.append(" ON t"),
-                  result.append_digit(Is + 2),
+                  result.append_uint(Is + 2),
                   result.append("."),
                   result.append(FKBase_at<Is>::pk_name_),
                   result.append(" = t1."),
@@ -174,11 +178,11 @@ export namespace storm::orm::statements {
                 }
             }
 
-            // FK fields
+            // FK fields — each emits "t<alias>.<field>"; reserve the alias's exact digit width.
             for_each_fk_field([&]<std::size_t I>() {
                 total += 2; // ", "
                 [&]<std::size_t... FieldIs>(std::index_sequence<FieldIs...> /*unused*/) {
-                    ((total += (FieldIs > 0 ? 2 : 0) + 3 + 1 +
+                    ((total += (FieldIs > 0 ? 2 : 0) + 2 + utilities::numeric::digits_of(I + 2) +
                                std::meta::identifier_of(FKBase_at<I>::all_members_[FieldIs]).size()),
                      ...);
                 }(std::make_index_sequence<FKBase_at<I>::field_count_>{});
@@ -212,7 +216,7 @@ export namespace storm::orm::statements {
                     bool first_in_table = true;
                     (((first_in_table ? (void)0 : result.append(", ")),
                       result.append("t"),
-                      result.append_digit(I + 2),
+                      result.append_uint(I + 2),
                       result.append("."),
                       result.append(std::meta::identifier_of(FKBase_at<I>::all_members_[FieldIs])),
                       first_in_table = false),
