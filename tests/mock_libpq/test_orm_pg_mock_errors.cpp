@@ -68,8 +68,13 @@ namespace {
         auto result = PgConnection::open("host=localhost");
 
         ASSERT_FALSE(result.has_value());
-        // Error code is static_cast<int>(PQstatus(raw_conn)) after PQfinish
-        EXPECT_NE(result.error().code(), 0);
+        // Issue #351: the status MUST be captured before PQfinish(raw_conn).
+        // The mock poisons FakePGconn::status inside PQfinish, so a read of
+        // PQstatus(raw_conn) after the free would yield the poison value, not
+        // CONNECTION_BAD. Asserting the exact pre-finish status catches the
+        // use-after-free that ASAN flags against real libpq.
+        EXPECT_EQ(result.error().code(), CONNECTION_BAD);
+        EXPECT_EQ(result.error().message(), "Connection refused");
     }
 
     // ============================================================================

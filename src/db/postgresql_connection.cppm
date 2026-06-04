@@ -56,9 +56,10 @@ export namespace storm::db::postgresql {
             }
 
             if (PQstatus(raw_conn) != CONNECTION_OK) {
-                const std::string msg = PQerrorMessage(raw_conn);
+                const int         status = static_cast<int>(PQstatus(raw_conn));
+                const std::string msg    = PQerrorMessage(raw_conn);
                 PQfinish(raw_conn);
-                return std::unexpected(Error{static_cast<int>(PQstatus(raw_conn)), msg});
+                return std::unexpected(Error{status, msg});
             }
 
             return Connection{PGconnPtr{raw_conn}, config};
