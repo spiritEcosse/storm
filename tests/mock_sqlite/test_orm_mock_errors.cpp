@@ -2176,6 +2176,101 @@ namespace {
         EXPECT_EQ(result.error().code(), SQLITE_BUSY);
     }
 
+    TEST_F(ORMMockErrorTest, TransactionGuardCommitFailureDoesNotDoubleRollback) {
+        // #353 nit: commit() failure issues one in-commit() ROLLBACK; the
+        // destructor must NOT issue a second redundant ROLLBACK.
+        auto conn_result = db::sqlite::Connection::open(":memory:");
+        ASSERT_TRUE(conn_result.has_value());
+        auto conn = std::make_shared<db::sqlite::Connection>(std::move(*conn_result));
+
+        using TxnGuard = storm::orm::utilities::TransactionGuard<db::sqlite::Connection>;
+
+        // Step 1: BEGIN TRANSACTION (succeeds), Step 2: COMMIT (fails)
+        MockSqlite3Config::step_fails_on_call(2, SQLITE_BUSY);
+
+        {
+            auto txn = TxnGuard::begin(conn);
+            ASSERT_TRUE(txn.has_value());
+
+            auto result = txn->commit();
+            ASSERT_FALSE(result.has_value());
+
+            // After failed commit(): BEGIN(1) + COMMIT(2) + in-commit ROLLBACK(3) = 3 steps
+            EXPECT_EQ(MockSqlite3Config::get_step_call_count(), 3);
+            // Guard goes out of scope here → destructor must not ROLLBACK again
+        }
+
+        // Destructor must NOT have issued a second ROLLBACK (would make it 4)
+        EXPECT_EQ(MockSqlite3Config::get_step_call_count(), 3);
+    }
+
+    TEST_F(ORMMockErrorTest, TransactionGuardMoveCtorDoesNotRollbackMovedFrom) {
+        // #353: moving a guard must neutralize the source so destroying the
+        // moved-from object issues no ROLLBACK.
+        auto conn_result = db::sqlite::Connection::open(":memory:");
+        ASSERT_TRUE(conn_result.has_value());
+        auto conn = std::make_shared<db::sqlite::Connection>(std::move(*conn_result));
+
+        using TxnGuard = storm::orm::utilities::TransactionGuard<db::sqlite::Connection>;
+
+        // dst (live owner) outlives the inner scope where the moved-from source dies.
+        std::optional<TxnGuard> dst;
+        int                     after_begin = 0;
+
+        {
+            auto src_result = TxnGuard::begin(conn);
+            ASSERT_TRUE(src_result.has_value());
+            TxnGuard src = std::move(*src_result);
+
+            after_begin = MockSqlite3Config::get_step_call_count();
+
+            // Move-CONSTRUCT dst from src. src becomes moved-from.
+            dst.emplace(std::move(src));
+            // src is destroyed at scope exit → must not ROLLBACK.
+        }
+
+        // No ROLLBACK from the moved-from src destruction.
+        EXPECT_EQ(MockSqlite3Config::get_step_call_count(), after_begin);
+
+        // dst owns the live transaction → commit to clean up.
+        auto commit_result = dst->commit();
+        EXPECT_TRUE(commit_result.has_value());
+    }
+
+    TEST_F(ORMMockErrorTest, TransactionGuardMoveAssignDoesNotRollbackMovedFrom) {
+        // #353: move-assignment must neutralize the source so destroying the
+        // moved-from object issues no ROLLBACK.
+        auto conn_result = db::sqlite::Connection::open(":memory:");
+        ASSERT_TRUE(conn_result.has_value());
+        auto conn = std::make_shared<db::sqlite::Connection>(std::move(*conn_result));
+
+        using TxnGuard = storm::orm::utilities::TransactionGuard<db::sqlite::Connection>;
+
+        // Target guard already committed → its move-assign rollback_if_needed() is a no-op.
+        auto dst = TxnGuard::begin(conn);
+        ASSERT_TRUE(dst.has_value());
+        ASSERT_TRUE(dst->commit().has_value());
+
+        const int before_assign = MockSqlite3Config::get_step_call_count();
+
+        {
+            // Source guard lives only in this scope, moved into dst below.
+            auto src_result = TxnGuard::begin(conn);
+            ASSERT_TRUE(src_result.has_value());
+            TxnGuard src = std::move(*src_result);
+
+            *dst = std::move(src);
+            // src is now moved-from; its destruction at scope exit must not ROLLBACK.
+        }
+
+        // The BEGIN for src counts as one step; no extra ROLLBACK from moved-from destruction.
+        EXPECT_EQ(MockSqlite3Config::get_step_call_count(), before_assign + 1);
+
+        // dst now owns the live transaction → commit to clean up.
+        auto commit_result = dst->commit();
+        EXPECT_TRUE(commit_result.has_value());
+    }
+
     // ============================================================================
     // WHERE Expression Bind Error Tests
     // Covers bind failure paths in BetweenExpr, InExpression, LogicalExpr
