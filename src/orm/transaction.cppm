@@ -76,7 +76,14 @@ export namespace storm::orm::utilities {
             }
 
             if (auto result = conn_->execute("COMMIT"); !result) {
-                (void)conn_->execute("ROLLBACK");
+                // Best-effort ROLLBACK. execute() is not noexcept (it builds a
+                // std::string / inserts into the statement cache and can throw
+                // std::bad_alloc under memory pressure); swallow any throw so it
+                // never escapes this noexcept function and calls std::terminate.
+                try {
+                    (void)conn_->execute("ROLLBACK");
+                } catch (...) { // NOSONAR(cpp:S2486) NOLINT(bugprone-empty-catch)
+                }
                 // Transaction is already rolled back; mark committed so the
                 // destructor does not issue a second, redundant ROLLBACK.
                 committed_ = true;
@@ -90,7 +97,15 @@ export namespace storm::orm::utilities {
       private:
         auto rollback_if_needed() noexcept -> void {
             if (conn_ && !committed_) {
-                (void)conn_->execute("ROLLBACK");
+                // Best-effort ROLLBACK during unwinding. execute() is not noexcept
+                // (it builds a std::string / inserts into the statement cache and
+                // can throw std::bad_alloc under memory pressure); swallow any
+                // throw so it never escapes this noexcept function — a throw here
+                // would call std::terminate (the throwing-destructor trap).
+                try {
+                    (void)conn_->execute("ROLLBACK");
+                } catch (...) { // NOSONAR(cpp:S2486) NOLINT(bugprone-empty-catch)
+                }
             }
         }
     };
