@@ -17,6 +17,36 @@ using namespace storm;
 // SQL Generation Unit Tests (no DB connection needed)
 // ============================================================================
 
+// Model with a field name longer than the former fixed 128-byte per-column
+// buffer (#361). The name below is 115 chars; with " INTEGER NOT NULL" (17)
+// the column def exceeds 128, so a fixed COL_DEF_BUFFER=128 silently truncated
+// it. The table-level estimator sizes from identifier length, so the table
+// buffer would fit — the divergence was purely in the per-column buffer.
+struct LongFieldNameRecord {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    int this_is_a_deliberately_very_long_column_identifier_that_exceeds_one_hundred_and_ten_characters_to_trigger_trunc{};
+};
+
+inline constexpr std::string_view kLongFieldName = "this_is_a_deliberately_very_long_column_identifier_that_exceeds_"
+                                                   "one_hundred_and_ten_characters_to_trigger_trunc";
+
+// Test: a ~115-char field name must produce untruncated SQLite DDL (#361)
+TEST(SchemaUnitTest, LongFieldNameNotTruncatedSqlite) {
+    const std::string& sql = storm::create_table_sql<LongFieldNameRecord>();
+    EXPECT_NE(sql.find(std::string(kLongFieldName) + " INTEGER NOT NULL"), std::string::npos)
+            << "Long field name was truncated in:\n"
+            << sql;
+}
+
+// Test: the same long field name must produce untruncated PostgreSQL DDL (#361).
+// The PG suffix budget differs, so it is sized independently per dialect.
+TEST(SchemaUnitTest, LongFieldNameNotTruncatedPostgres) {
+    const std::string& sql = storm::create_table_sql<LongFieldNameRecord, orm::schema::Dialect::PostgreSQL>();
+    EXPECT_NE(sql.find(std::string(kLongFieldName) + " BIGINT NOT NULL"), std::string::npos)
+            << "Long field name was truncated in:\n"
+            << sql;
+}
+
 // Test: Person CREATE TABLE SQL matches expected hand-written string verbatim
 TEST(SchemaUnitTest, PersonSqlMatchesHandWritten) {
     const std::string expected = "CREATE TABLE Person (\n"
