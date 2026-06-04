@@ -2272,6 +2272,112 @@ namespace {
     }
 
     // ============================================================================
+    // #360: noexcept rollback must not let a throwing execute() reach terminate.
+    //
+    // Connection::execute() is NOT noexcept — it constructs a std::string and
+    // can throw std::bad_alloc under memory pressure (esp. on the cached
+    // "ROLLBACK" path: prepare_cached map insert / make_unique). It is called
+    // from the noexcept rollback_if_needed() (destructor, move-assign) and from
+    // commit()'s best-effort ROLLBACK. A throw escaping a noexcept function calls
+    // std::terminate. These tests drive a connection whose execute("ROLLBACK")
+    // throws and confirm no terminate occurs.
+    // ============================================================================
+
+    // Minimal connection stub satisfying TransactionGuard<ConnType>'s contract:
+    // a nested Error type and execute(string_view) -> expected<void, Error>.
+    // execute("ROLLBACK") throws std::bad_alloc to emulate OOM during unwinding.
+    struct ThrowingRollbackConnection {
+        using Error = db::Error;
+
+        int  begin_calls        = 0;
+        int  commit_calls       = 0;
+        int  rollback_calls     = 0;
+        bool commit_should_fail = false;
+
+        [[nodiscard]] auto execute(std::string_view sql) -> std::expected<void, Error> {
+            if (sql == "BEGIN TRANSACTION") {
+                ++begin_calls;
+                return {};
+            }
+            if (sql == "COMMIT") {
+                ++commit_calls;
+                if (commit_should_fail) {
+                    return std::unexpected(Error{SQLITE_BUSY, "commit failed"});
+                }
+                return {};
+            }
+            if (sql == "ROLLBACK") {
+                ++rollback_calls;
+                throw std::bad_alloc{}; // emulates OOM building/caching the ROLLBACK statement
+            }
+            return {};
+        }
+    };
+
+    TEST_F(ORMMockErrorTest, TransactionGuardDestructorRollbackSwallowsThrow) {
+        // Guard destroyed without commit → rollback_if_needed() runs, execute()
+        // throws. The noexcept destructor must swallow it (no std::terminate).
+        auto conn = std::make_shared<ThrowingRollbackConnection>();
+
+        using TxnGuard = storm::orm::utilities::TransactionGuard<ThrowingRollbackConnection>;
+
+        {
+            auto txn = TxnGuard::begin(conn);
+            ASSERT_TRUE(txn.has_value());
+            // No commit() → destructor will ROLLBACK, which throws.
+        }
+
+        // Reached here without terminate → throw was swallowed. The attempt happened.
+        EXPECT_EQ(conn->rollback_calls, 1);
+    }
+
+    TEST_F(ORMMockErrorTest, TransactionGuardMoveAssignRollbackSwallowsThrow) {
+        // Move-assigning onto a live (uncommitted) guard triggers
+        // rollback_if_needed() on the target before adopting the source. That
+        // ROLLBACK throws; the noexcept operator=(&&) must swallow it.
+        auto conn = std::make_shared<ThrowingRollbackConnection>();
+
+        using TxnGuard = storm::orm::utilities::TransactionGuard<ThrowingRollbackConnection>;
+
+        auto dst_result = TxnGuard::begin(conn); // dst is live, uncommitted
+        ASSERT_TRUE(dst_result.has_value());
+        TxnGuard dst = std::move(*dst_result);
+
+        auto src_result = TxnGuard::begin(conn);
+        ASSERT_TRUE(src_result.has_value());
+        TxnGuard src = std::move(*src_result);
+
+        dst = std::move(src); // dst's pre-existing transaction is rolled back → throws
+
+        // Reached here without terminate → throw swallowed.
+        EXPECT_EQ(conn->rollback_calls, 1);
+
+        // dst now owns src's transaction (uncommitted) → its destructor will
+        // ROLLBACK again (throwing, swallowed) at scope exit.
+    }
+
+    TEST_F(ORMMockErrorTest, TransactionGuardCommitFailureRollbackSwallowsThrow) {
+        // commit() fails on COMMIT, then issues a best-effort ROLLBACK that
+        // throws. commit() is noexcept → the throw must be swallowed.
+        auto conn                = std::make_shared<ThrowingRollbackConnection>();
+        conn->commit_should_fail = true;
+
+        using TxnGuard = storm::orm::utilities::TransactionGuard<ThrowingRollbackConnection>;
+
+        auto txn = TxnGuard::begin(conn);
+        ASSERT_TRUE(txn.has_value());
+
+        auto result = txn->commit();
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_BUSY);
+
+        // commit() attempted the best-effort ROLLBACK (which threw, swallowed),
+        // and marked committed_ so the destructor does not rollback again.
+        EXPECT_EQ(conn->commit_calls, 1);
+        EXPECT_EQ(conn->rollback_calls, 1);
+    }
+
+    // ============================================================================
     // WHERE Expression Bind Error Tests
     // Covers bind failure paths in BetweenExpr, InExpression, LogicalExpr
     // ============================================================================
