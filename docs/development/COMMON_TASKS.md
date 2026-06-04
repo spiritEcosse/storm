@@ -284,8 +284,8 @@ auto by_age_dept = qs.group_by<^^Person::age, ^^Person::department>()
 | `where(Condition)` | Filter rows |
 | `join<OtherModel>()` | Add JOIN clause |
 | `order_by<Cols...>()` | Sort results |
-| `limit(int)` | Restrict result count |
-| `offset(int)` | Skip results |
+| `limit(int)` | Restrict result count (value must be `>= 0`) |
+| `offset(int)` | Skip results (value must be `>= 0`) |
 | `group_by<Cols...>()` | Group results |
 | `having(Condition)` | Filter groups |
 | `distinct<Cols...>()` | Unique values (enters Tuple Mode) |

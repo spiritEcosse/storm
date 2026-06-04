@@ -129,6 +129,9 @@ export namespace storm {
         // Usage: queryset.limit(10).select()
         //        queryset.where(age > 25).limit(10).select()
         [[nodiscard]] constexpr auto limit(int n) -> QuerySet<T, ConnType, true> {
+            // Precondition: LIMIT must be non-negative (issue #362, item C).
+            // TODO(#225): migrate to a P2900 `pre(n >= 0)` contract once clang-p2996 supports it.
+            assert(n >= 0 && "limit() requires a non-negative value");
             auto result         = to_finalized();
             result.limit_value_ = n;
             return result;
@@ -138,6 +141,9 @@ export namespace storm {
         // Usage: queryset.offset(5).select()
         //        queryset.limit(10).offset(5).select()
         [[nodiscard]] constexpr auto offset(int n) -> QuerySet<T, ConnType, true> {
+            // Precondition: OFFSET must be non-negative (issue #362, item C).
+            // TODO(#225): migrate to a P2900 `pre(n >= 0)` contract once clang-p2996 supports it.
+            assert(n >= 0 && "offset() requires a non-negative value");
             auto result          = to_finalized();
             result.offset_value_ = n;
             return result;
