@@ -24,7 +24,12 @@ export namespace storm::orm::statements {
         enum class FieldAttr : std::uint8_t { primary, indexed, unique, fk };
     }
 
-    // Concept: T must have at least one field annotated with FieldAttr::primary
+    // Concept: T must have at least one field annotated with FieldAttr::primary.
+    //
+    // Because a primary key is itself a non-static data member, satisfying this concept
+    // also guarantees `field_count_ >= 1`. That invariant is what makes the INSERT batch
+    // divides `MAX_DB_VARIABLES / field_count_` (insert.cppm) safe from division by zero —
+    // the divisor can never be 0 for any T that reaches a statement class (issue #362, item A).
     template <typename T>
     concept ModelWithPrimaryKey = []() consteval {
         for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
@@ -204,7 +209,12 @@ export namespace storm::orm::statements {
 
       public:
         // Pre-computed field information - made public for QuerySet and JOIN optimization
-        static constexpr auto           field_count_       = get_field_count();
+        static constexpr auto field_count_ = get_field_count();
+        // Makes the ModelWithPrimaryKey invariant explicit: a model with a primary-key
+        // member always has >= 1 field, so the INSERT divides MAX_DB_VARIABLES / field_count_
+        // can never divide by zero (issue #362, item A). Fires here if the concept is ever
+        // loosened, instead of producing UB at the divide.
+        static_assert(field_count_ >= 1, "A model must have at least one field (its primary key)");
         static constexpr auto           all_members_       = get_all_field_members<field_count_>();
         static constexpr auto           field_names_array_ = build_all_field_names_list();
         static inline const std::string field_names_       = std::string(field_names_array_);

@@ -250,8 +250,15 @@ export namespace storm::orm::statements {
             if (!stmt_res) {
                 return std::unexpected(stmt_res.error());
             }
-            auto* stmt        = *stmt_res;
-            int   param_index = 1;
+            auto* stmt = *stmt_res;
+            // `param_index` stays `int` by design (issue #362, item B — deferred):
+            // sqlite3_bind_* takes an `int` index, so the accumulator must narrow to `int`
+            // at the bind call regardless of its own width. Overflow would need > INT_MAX
+            // (~2.1B) bound parameters; the execute path is chunk-capped at 799, so this
+            // unbounded debug-only to_sql path is the only place a large span reaches here,
+            // and 2.1B PKs is not a reachable input. Widening to size_t adds casts in a
+            // hot binder hierarchy for no real safety gain.
+            int param_index = 1;
             for (const auto& obj : objects) {
                 if (auto result = bind_pk_at(*stmt, obj, param_index); !result) {
                     return std::unexpected(result.error());

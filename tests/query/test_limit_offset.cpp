@@ -199,6 +199,38 @@ TYPED_TEST(LimitOffsetTest, OverwriteLimitOffset) {
     EXPECT_EQ(result2.value().begin()->name, "Karen");
 }
 
+// ===== Boundary Values (issue #362, item C) =====
+// limit()/offset() carry an assert(n >= 0) precondition. These guard the valid
+// non-negative inputs so the precondition can never reject a legitimate caller.
+
+TYPED_TEST(LimitOffsetTest, LimitZeroReturnsNoRows) {
+    QuerySet<Person, TypeParam> qs;
+
+    // LIMIT 0 is valid SQL — it returns no rows (not "unlimited").
+    auto result = qs.template order_by<^^Person::name>().limit(0).select().execute();
+    ASSERT_TRUE(result.has_value()) << "SELECT with LIMIT 0 failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 0) << "LIMIT 0 must return zero rows";
+}
+
+TYPED_TEST(LimitOffsetTest, OffsetZeroReturnsAllRows) {
+    QuerySet<Person, TypeParam> qs;
+
+    // OFFSET 0 is valid — skip nothing.
+    auto result = qs.template order_by<^^Person::name>().offset(0).select().execute();
+    ASSERT_TRUE(result.has_value()) << "SELECT with OFFSET 0 failed: " << result.error().message();
+    ASSERT_EQ(result.value().size(), 25) << "OFFSET 0 must return all rows";
+    EXPECT_EQ(result.value().begin()->name, "Alice");
+}
+
+TYPED_TEST(LimitOffsetTest, LimitLargerThanRowCount) {
+    QuerySet<Person, TypeParam> qs;
+
+    // A LIMIT far above the row count returns every row, not an error.
+    auto result = qs.template order_by<^^Person::name>().limit(1000).select().execute();
+    ASSERT_TRUE(result.has_value()) << "SELECT with large LIMIT failed: " << result.error().message();
+    EXPECT_EQ(result.value().size(), 25) << "LIMIT > row count must return all rows";
+}
+
 // ===== SQL Clause Ordering =====
 
 TYPED_TEST(LimitOffsetTest, MethodChainingOrder) {

@@ -22,6 +22,7 @@ tests/mock_sqlite/mock_sqlite3.cpp:             duplicate
 benchmarks/schema.cppm:                         duplicate
 benchmarks/parser.cppm:                         file-size, duplicate, complexity
 tests/query/test_collate.cpp:                    duplicate
+tests/query/test_limit_offset.cpp:               duplicate
 tests/query/test_distinct.cpp:                   file-size, duplicate
 tests/query/test_setop.cpp:                      file-size, duplicate
 tests/query/test_rows.cpp:                       duplicate
