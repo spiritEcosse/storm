@@ -406,8 +406,19 @@ export namespace storm::orm::schema {
         // INDEX SQL GENERATION
         // =====================================================================
 
-        // Index SQL buffer — generous for "CREATE UNIQUE INDEX IF NOT EXISTS idx_<table>_<field> ON <table>(<field>)"
-        static constexpr std::size_t INDEX_SQL_BUFFER = 256;
+        // Index SQL buffer sized from reflected lengths (#355, mirrors col_def_buffer)
+        // so a long table/field name can never silently truncate. Sums EVERY field
+        // name x2 (+"_id"+", " worst case), strictly bounding both the single-field
+        // and composite builders; 64 covers table*2 + "CREATE UNIQUE INDEX ... ON
+        // (...)" scaffolding + '\0'. Correct-by-construction — no truncation possible.
+        static consteval auto index_sql_buffer() -> std::size_t {
+            std::size_t names = 0;
+            for (std::size_t i = 0; i < Base::field_count_; ++i) {
+                names += (std::meta::identifier_of(Base::all_members_[i]).size() + 3 + 2) * 2;
+            }
+            return (Base::table_name_.size() * 2) + names + 64;
+        }
+        static constexpr std::size_t INDEX_SQL_BUFFER = index_sql_buffer();
 
         // Append the shared tail of a CREATE INDEX statement:
         //   <prefix>idx_<table>_<field><suffix> ON <table>(<field><column_suffix>)
