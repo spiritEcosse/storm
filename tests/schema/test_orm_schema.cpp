@@ -30,6 +30,22 @@ struct LongFieldNameRecord {
 inline constexpr std::string_view kLongFieldName = "this_is_a_deliberately_very_long_column_identifier_that_exceeds_"
                                                    "one_hundred_and_ten_characters_to_trigger_trunc";
 
+// Model whose *index* SQL exceeds the former fixed 256-byte INDEX_SQL_BUFFER (#355).
+// A single unique field produces:
+//   "CREATE UNIQUE INDEX IF NOT EXISTS idx_<table>_<field> ON <table>(<field>)"
+// The fixed text is 45 chars, plus the table name twice and the field name twice.
+// With table "LongIdxRecord" (13) a ~100-char unique field name yields
+// 45 + 26 + 200 = 271 > 255 usable bytes, so a fixed 256-byte buffer silently
+// truncated the generated CREATE UNIQUE INDEX statement.
+struct LongIdxRecord {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::meta::FieldAttr::unique]] int
+            this_is_a_deliberately_very_long_unique_column_identifier_that_exceeds_one_hundred_characters_to_truncate{};
+};
+
+inline constexpr std::string_view kLongIdxField =
+        "this_is_a_deliberately_very_long_unique_column_identifier_that_exceeds_one_hundred_characters_to_truncate";
+
 // Test: a ~115-char field name must produce untruncated SQLite DDL (#361)
 TEST(SchemaUnitTest, LongFieldNameNotTruncatedSqlite) {
     const std::string& sql = storm::create_table_sql<LongFieldNameRecord>();
@@ -214,6 +230,23 @@ TEST(SchemaUnitTest, PersonIndexSqlContainsUniqueField) {
 TEST(SchemaUnitTest, PersonIndexSqlCount) {
     const auto& indexes = storm::create_index_sql<Person>();
     EXPECT_EQ(indexes.size(), 4u) << "Expected 4 indexes (name + department + 2 composite), got " << indexes.size();
+}
+
+// Test: a ~100-char unique field name must produce untruncated index DDL (#355).
+// The index SQL exceeds the former fixed 256-byte INDEX_SQL_BUFFER.
+TEST(SchemaUnitTest, LongUniqueFieldIndexNotTruncated) {
+    const auto&       indexes  = storm::create_index_sql<LongIdxRecord>();
+    const std::string expected = std::string("CREATE UNIQUE INDEX IF NOT EXISTS idx_LongIdxRecord_") +
+                                 std::string(kLongIdxField) + " ON LongIdxRecord(" + std::string(kLongIdxField) + ")";
+    bool found = false;
+    for (const auto& sql : indexes) {
+        if (sql == expected) {
+            found = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(found) << "Long unique-field index SQL was truncated; got:\n"
+                       << (indexes.empty() ? std::string("<no indexes>") : indexes.front());
 }
 
 // Test: Message index SQL contains CREATE INDEX for FK sender_id field
