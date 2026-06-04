@@ -162,6 +162,12 @@ export namespace storm::orm::statements {
 
         // Build bulk INSERT SQL body (shared by both returning and non-returning variants)
         static auto build_bulk_insert_body(std::size_t count) -> std::string {
+            // Guard count == 0: (count - 1) below wraps to SIZE_MAX, and an empty
+            // VALUES list is invalid SQL anyway. Return the bare prefix. See #359.
+            if (count == 0) {
+                return bulk_insert_prefix;
+            }
+
             std::string value_template = "(";
             value_template += placeholders_;
             value_template += ")";
@@ -340,7 +346,9 @@ export namespace storm::orm::statements {
 
             constexpr std::size_t max_allowed          = Base::MAX_DB_VARIABLES / Base::field_count_;
             std::size_t           effective_batch_size = options.batch_size.value_or(max_allowed);
-            effective_batch_size                       = std::min(effective_batch_size, max_allowed);
+            // Clamp to [1, max_allowed]: a caller-supplied batch_size of 0 would otherwise
+            // never advance the chunk loop (offset += 0) — see issue #359.
+            effective_batch_size = std::max<std::size_t>(1, std::min(effective_batch_size, max_allowed));
 
             if (objects.size() <= effective_batch_size) {
                 return execute_bulk_returning(objects);
@@ -362,7 +370,9 @@ export namespace storm::orm::statements {
             // Calculate effective batch size
             constexpr std::size_t max_allowed          = Base::MAX_DB_VARIABLES / Base::field_count_;
             std::size_t           effective_batch_size = options.batch_size.value_or(max_allowed);
-            effective_batch_size = std::min(effective_batch_size, max_allowed); // Cap at SQLite max
+            // Clamp to [1, max_allowed]: 0 would never advance the chunk loop (offset += 0,
+            // see issue #359); the upper bound caps at the SQLite parameter limit.
+            effective_batch_size = std::max<std::size_t>(1, std::min(effective_batch_size, max_allowed));
 
             // Batch path with custom batch size
             if (objects.size() <= effective_batch_size) {

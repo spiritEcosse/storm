@@ -141,3 +141,59 @@ TYPED_TEST(InsertNoReturnTest, MixedInsertModes) {
     ASSERT_TRUE(count.has_value());
     EXPECT_EQ(count.value(), 2);
 }
+
+// =====================================================
+// Issue #359 — batch_size = 0 must not hang / underflow
+// =====================================================
+
+namespace {
+    std::vector<Person> three_people() {
+        std::vector<Person> people;
+        people.reserve(3);
+        people.emplace_back(Person{.name = "Alice", .age = 30});
+        people.emplace_back(Person{.name = "Bob", .age = 25});
+        people.emplace_back(Person{.name = "Charlie", .age = 35});
+        return people;
+    }
+} // namespace
+
+// Bug 1: batch_size = 0 on a non-empty span used to step `offset += 0`
+// forever. With a lower clamp it falls back to a single-batch insert.
+TYPED_TEST(InsertNoReturnTest, BatchSizeZeroVoidDoesNotHang) {
+    using storm::orm::statements::InsertOptions;
+    storm::QuerySet<Person, TypeParam> qs;
+
+    std::vector<Person> const people = three_people();
+    auto result = qs.insert(std::span<const Person>(people), InsertOptions{.batch_size = 0}).execute();
+    ASSERT_TRUE(result.has_value()) << "batch_size = 0 should complete, not hang";
+
+    auto count = qs.count().execute();
+    ASSERT_TRUE(count.has_value());
+    EXPECT_EQ(count.value(), 3) << "All rows should be inserted";
+}
+
+// Bug 1 (RETURNING path): same lower-clamp protection in execute_returning.
+TYPED_TEST(InsertNoReturnTest, BatchSizeZeroReturningDoesNotHang) {
+    using ReturnId = storm::orm::statements::ReturnId;
+    using storm::orm::statements::InsertOptions;
+    storm::QuerySet<Person, TypeParam> qs;
+
+    std::vector<Person> const people = three_people();
+    auto result = qs.template insert<ReturnId::Yes>(std::span<const Person>(people), InsertOptions{.batch_size = 0})
+                          .execute();
+    ASSERT_TRUE(result.has_value()) << "batch_size = 0 (RETURNING) should complete, not hang";
+    EXPECT_EQ(result.value().size(), 3) << "All inserted IDs should be returned";
+}
+
+// Bug 2: BulkQuery::sql() on an empty span hit (count - 1) → SIZE_MAX in
+// build_bulk_insert_body's reserve(). It must return the bare prefix instead.
+TYPED_TEST(InsertNoReturnTest, EmptyBulkSqlNoUnderflow) {
+    storm::QuerySet<Person, TypeParam> qs;
+
+    std::vector<Person> empty;
+    auto                bulk = qs.insert(std::span<const Person>(empty));
+    std::string         sql  = bulk.sql();
+
+    EXPECT_TRUE(sql.contains("INSERT INTO")) << "Empty bulk SQL should still be the INSERT prefix";
+    EXPECT_FALSE(sql.contains("(?")) << "Empty bulk SQL should carry no value placeholders";
+}

@@ -316,6 +316,10 @@ static constexpr auto calc_max_batch() {
 // Good: Let Storm decide
 queryset.insert(std::span<const Person>(people));
 
+// Also good: explicit batch size via InsertOptions
+queryset.insert(std::span<const Person>(people),
+                storm::orm::statements::InsertOptions{.batch_size = 100});
+
 // Also good: Explicit batch size control
 constexpr size_t BATCH_SIZE = 50;
 for (size_t i = 0; i < people.size(); i += BATCH_SIZE) {
@@ -323,6 +327,11 @@ for (size_t i = 0; i < people.size(); i += BATCH_SIZE) {
     queryset.insert(std::span<const Person>(people.data() + i, end - i));
 }
 ```
+
+> **`batch_size` is clamped to `[1, floor(999 / field_count)]`.** A `batch_size`
+> of `0` is treated as `1` (it would otherwise never advance the chunk loop);
+> values above the SQLite parameter limit are capped. Leave it unset
+> (`std::nullopt`) to let Storm pick the maximum safe batch.
 
 ### 2. Pre-allocate Vectors
 
