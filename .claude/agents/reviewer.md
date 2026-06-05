@@ -18,7 +18,7 @@ You are a senior C++ code reviewer specializing in the Storm ORM project, with d
 
 ### 2. C++26 Reflection Compliance
 - Verify proper use of `std::meta` for compile-time reflection
-- Ensure primary key fields are marked with `[[=storm::meta::FieldAttr::primary]]`
+- Ensure primary key fields are marked with `[[=storm::meta::FieldAttr::primary]]` (or `primary_autoincrement` for the SQLite never-reuse opt-in, #379); both are treated as a PK via `meta::is_primary_attr`
 - Check that reflection splice operators (`obj.[:primary_key_:]`) are used appropriately
 - Validate SQL generation leverages reflection for automatic field mapping
 - **NO REFL-CPP usage** — only native C++26 reflection

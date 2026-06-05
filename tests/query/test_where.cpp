@@ -85,7 +85,7 @@ TYPED_TEST(WhereTest, WhereReturnsCopyReusable) {
 template <typename ConnType> class WhereJoinTest : public StormTestFixture<Message, ConnType, Person> {
   protected:
     auto on_after_setup(const std::shared_ptr<ConnType>&) -> void override {
-        // Insert users (use ID 0 to let AUTOINCREMENT generate IDs)
+        // Insert users (use ID 0 to let the PRIMARY KEY auto-generate IDs)
         QuerySet<Person, ConnType> user_qs;
         auto                       alice_id = user_qs.insert(Person{.id = 0, .name = "alice", .age = 10}).execute();
         ASSERT_TRUE(alice_id.has_value()) << "Failed to insert alice: " << alice_id.error().message();

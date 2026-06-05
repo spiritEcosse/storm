@@ -67,6 +67,40 @@ TYPED_TEST(BatchInsertReturningTest, ReturnedIdsMatchInsertedRows) {
     }
 }
 
+// =============================================================================
+// AUTOINCREMENT opt-in: ids still auto-assign on insert (#379)
+// =============================================================================
+//
+// SimpleRecord (above) uses plain FieldAttr::primary → plain INTEGER PRIMARY KEY,
+// and BasicBatchReturnsIds already proves ids auto-assign without AUTOINCREMENT.
+// AutoIncRecord opts into the never-reuse guarantee; this proves the opt-in path
+// also auto-assigns ids (the keyword adds a guarantee, it does not change that
+// you INSERT with id=0 and the DB fills it in).
+struct AutoIncRecord {
+    [[= storm::meta::FieldAttr::primary_autoincrement]] int id{};
+    int                                                     value{};
+};
+
+template <typename ConnType> class AutoIncrementInsertTest : public StormTestFixture<AutoIncRecord, ConnType> {};
+
+TYPED_TEST_SUITE(AutoIncrementInsertTest, DatabaseTypes);
+
+TYPED_TEST(AutoIncrementInsertTest, IdsAutoAssignOnInsert) {
+    using ReturnId = storm::orm::statements::ReturnId;
+    storm::QuerySet<AutoIncRecord, TypeParam> qs;
+
+    std::vector<AutoIncRecord> const records = {{0, 10}, {0, 20}, {0, 30}};
+
+    auto result = qs.template insert<ReturnId::Yes>(std::span<const AutoIncRecord>(records)).execute();
+    ASSERT_TRUE(result.has_value()) << "Opt-in AUTOINCREMENT insert should succeed";
+    ASSERT_EQ(result.value().size(), 3);
+    for (const auto id : result.value()) {
+        EXPECT_GT(id, 0) << "Opt-in AUTOINCREMENT must still auto-assign a positive id";
+    }
+    const std::set<std::int64_t> unique_ids(result.value().begin(), result.value().end());
+    EXPECT_EQ(unique_ids.size(), 3) << "Auto-assigned ids must be unique";
+}
+
 // Empty span returns empty vector
 TYPED_TEST(BatchInsertReturningTest, EmptySpanReturnsEmptyVector) {
     using ReturnId = storm::orm::statements::ReturnId;

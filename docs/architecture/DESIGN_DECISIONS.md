@@ -141,12 +141,15 @@ Returns generated IDs from insert operations:
 - Batch insert: `std::expected<std::vector<int64_t>, Error>`
 - Uses `RETURNING id` clause for both single and bulk INSERT
 
-**Table creation requires AUTOINCREMENT:**
+**Table creation uses a plain integer primary key (auto-assigned by SQLite):**
 ```cpp
 conn.execute("CREATE TABLE Person ("
-    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "id INTEGER PRIMARY KEY, "
     "name TEXT NOT NULL, age INTEGER NOT NULL)");
 ```
+Since #379 Storm emits plain `INTEGER PRIMARY KEY` by default; `AUTOINCREMENT`
+(the SQLite never-reuse guarantee, ~358 ns/insert) is opt-in via
+`FieldAttr::primary_autoincrement`.
 
 ## 10. Statement-Level Caching Pattern
 

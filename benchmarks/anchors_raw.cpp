@@ -51,12 +51,13 @@
 
 namespace {
 
-    // AUTOINCREMENT mirrors Storm's schema generator (schema.cppm emits
-    // "id INTEGER PRIMARY KEY AUTOINCREMENT" for every int PK). Without it the
-    // raw INSERT anchor would skip SQLite's per-insert sqlite_sequence
-    // bookkeeping that Storm always pays, making the comparison unfair.
+    // Plain INTEGER PRIMARY KEY mirrors Storm's schema generator, which now emits
+    // "id INTEGER PRIMARY KEY" by default (#379) — AUTOINCREMENT became opt-in.
+    // The raw anchor must NOT use AUTOINCREMENT, or it would pay the per-insert
+    // sqlite_sequence bookkeeping that Storm no longer pays, making the comparison
+    // unfair (see #345 fairness work).
     constexpr auto kCreatePerson = "CREATE TABLE person ("
-                                   "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                                   "id INTEGER PRIMARY KEY,"
                                    "name TEXT NOT NULL,"
                                    "age INTEGER NOT NULL,"
                                    "salary REAL NOT NULL"
@@ -132,9 +133,9 @@ namespace {
         seed_person_table(db, rows, "INSERT INTO person(name, age, salary) VALUES(?,?,?)", /*with_active=*/false);
     }
 
-    // AUTOINCREMENT to mirror Storm's schema (see kCreatePerson note).
+    // Plain INTEGER PRIMARY KEY to mirror Storm's default schema (see kCreatePerson note, #379).
     constexpr auto kCreatePersonBool = "CREATE TABLE person ("
-                                       "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                                       "id INTEGER PRIMARY KEY,"
                                        "name TEXT NOT NULL,"
                                        "age INTEGER NOT NULL,"
                                        "salary REAL NOT NULL,"

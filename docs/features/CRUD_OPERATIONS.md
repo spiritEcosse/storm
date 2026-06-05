@@ -20,13 +20,26 @@ Storm ORM returns auto-generated IDs from all INSERT operations:
 
 ### Table Requirements
 
-All tables must use `AUTOINCREMENT` for the primary key:
+Tables use a plain integer primary key, which SQLite auto-assigns on insert (it
+aliases the rowid). Since #379 Storm emits plain `INTEGER PRIMARY KEY` by default —
+`AUTOINCREMENT` (the never-reuse guarantee, ~358 ns/insert) is opt-in via
+`FieldAttr::primary_autoincrement`.
 
 ```cpp
 conn.execute("CREATE TABLE Person ("
-    "id INTEGER PRIMARY KEY AUTOINCREMENT, "
+    "id INTEGER PRIMARY KEY, "
     "name TEXT NOT NULL, "
     "age INTEGER NOT NULL)");
+```
+
+To opt into the never-reuse guarantee for a specific model, annotate its PK with
+`primary_autoincrement` instead of `primary`:
+
+```cpp
+struct Audit {
+    [[= storm::meta::FieldAttr::primary_autoincrement]] int id{};  // id INTEGER PRIMARY KEY AUTOINCREMENT
+    // ...
+};
 ```
 
 ### Single INSERT
