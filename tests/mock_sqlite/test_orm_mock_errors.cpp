@@ -3140,6 +3140,55 @@ namespace {
     }
 
     // ============================================================================
+    // SQLCache lifetime contract: find()'s pointer is valid only until the next
+    // insert/clear on this thread; a round-robin slot reuse invalidates it (#356)
+    // ============================================================================
+
+    TEST_F(ORMMockErrorTest, SQLCacheFindPointerInvalidatedBySlotReuse) {
+        storm::orm::utilities::SQLCache<std::size_t, 2> cache;
+
+        cache.insert(1, "SELECT 1");
+        cache.insert(2, "SELECT 2");
+
+        // Copy the value BEFORE the next insert — the documented-safe way to keep it.
+        const std::string* hit = cache.find(1);
+        ASSERT_NE(hit, nullptr);
+        const std::string copied = *hit;
+
+        // Round-robin reuses slot 0 (key 1) for key 3, invalidating `hit`'s contents.
+        cache.insert(3, "SELECT 3");
+
+        EXPECT_EQ(copied, "SELECT 1") << "Copy taken before insert stays valid";
+        EXPECT_EQ(cache.find(1), nullptr) << "Key 1 was evicted by slot reuse";
+        ASSERT_NE(cache.find(3), nullptr);
+        EXPECT_EQ(*cache.find(3), "SELECT 3");
+    }
+
+    // ============================================================================
+    // SQLCache: an occupied slot with a legitimately empty SQL value is distinct
+    // from an unused slot — find() returns it, insert() does not treat it as free
+    // (key == KeyType{} + empty value edge case, #356)
+    // ============================================================================
+
+    TEST_F(ORMMockErrorTest, SQLCacheOccupiedSlotWithEmptyValue) {
+        storm::orm::utilities::SQLCache<std::size_t, 4> cache;
+
+        // Key 0 (== KeyType{}) with an empty SQL string — the ambiguous case.
+        cache.insert(0, "");
+
+        const std::string* hit = cache.find(0);
+        ASSERT_NE(hit, nullptr) << "Occupied slot must be found even when value is empty";
+        EXPECT_EQ(*hit, "");
+
+        // A subsequent insert must NOT reuse the occupied key-0 slot as if it were free.
+        cache.insert(1, "SELECT 1");
+        ASSERT_NE(cache.find(0), nullptr) << "Key 0 must survive a later insert";
+        EXPECT_EQ(*cache.find(0), "");
+        ASSERT_NE(cache.find(1), nullptr);
+        EXPECT_EQ(*cache.find(1), "SELECT 1");
+    }
+
+    // ============================================================================
     // Raw Handle get() Test (#177)
     // Covers sqlite.cppm:454-458
     // ============================================================================

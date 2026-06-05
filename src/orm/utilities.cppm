@@ -544,14 +544,24 @@ export namespace storm::orm::utilities {
         struct Entry {
             KeyType     key{};
             std::string sql;
+            // Distinguishes a populated slot from an unused one, so a legitimately
+            // empty value (or key == KeyType{}) is not mistaken for a free slot.
+            bool occupied = false;
         };
 
         std::array<Entry, CACHE_SIZE> entries{};
         std::size_t                   next_slot = 0; // For round-robin replacement
 
+        // Returns a pointer to the cached SQL for `key`, or nullptr if absent.
+        //
+        // Lifetime: the returned pointer is valid only until the next insert() or
+        // clear() on this thread. A subsequent insert() may reuse the same slot via
+        // round-robin replacement (entry.sql = std::move(sql)), invalidating the
+        // pointed-to contents. Consume it immediately, or copy the std::string if you
+        // need to hold it across a later insert/clear. The cache is thread_local.
         auto find(const KeyType& key) const -> const std::string* {
             for (const auto& entry : entries) {
-                if (entry.key == key && !entry.sql.empty()) {
+                if (entry.occupied && entry.key == key) {
                     return &entry.sql;
                 }
             }
@@ -559,23 +569,26 @@ export namespace storm::orm::utilities {
         }
 
         auto insert(KeyType key, std::string sql) -> void {
-            // Try to find empty slot first
+            // Try to find an unused slot first
             for (auto& entry : entries) {
-                if (entry.key == KeyType{} && entry.sql.empty()) {
-                    entry.key = std::move(key);
-                    entry.sql = std::move(sql);
+                if (!entry.occupied) {
+                    entry.key      = std::move(key);
+                    entry.sql      = std::move(sql);
+                    entry.occupied = true;
                     return;
                 }
             }
-            entries[next_slot].key = std::move(key);
-            entries[next_slot].sql = std::move(sql);
-            next_slot              = (next_slot + 1) % CACHE_SIZE;
+            entries[next_slot].key      = std::move(key);
+            entries[next_slot].sql      = std::move(sql);
+            entries[next_slot].occupied = true;
+            next_slot                   = (next_slot + 1) % CACHE_SIZE;
         }
 
         auto clear() -> void {
             for (auto& entry : entries) {
                 entry.key = KeyType{};
                 entry.sql.clear();
+                entry.occupied = false;
             }
             next_slot = 0;
         }
