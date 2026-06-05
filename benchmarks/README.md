@@ -80,11 +80,17 @@ STORM_BENCH_SOCKET=1 ./build/release/benchmarks/storm_anchors
 STORM_BENCH_SOCKET=1 ./build/release/benchmarks/storm_bench
 ```
 
-The raw baseline covers 4 pinned benchmarks (exact Google Benchmark names with `/N:` suffix):
+The raw baseline covers these pinned benchmarks (exact Google Benchmark names with `/N:` suffix):
 - `Storm/WHERE/where_int_comparison_gt/N:10000`
 - `Storm/WHERE/where_bool_equality/N:10000`
 - `Storm/SELECT/select/N:10000`
-- `Storm/INSERT/insert/N:1`
+- `Storm/INSERT/insert/N:<n>` and `Storm/INSERT/insert_no_return/N:<n>` for the full
+  `BATCH_STANDARD` sweep `{1, 10, 100, 500, 1000, 5000, 10000, 50000, 100000}`
+  (mirrors `benchmarks/sizes.cppm`). Each iteration inserts `n` rows the way Storm
+  does — one multi-row `VALUES` statement per chunk of 249 rows (`999 / 4` fields),
+  in a transaction only when `n` spans more than one chunk. `RETURNING id` is read
+  back only for `insert/N:1`, since the Storm fixture sends `N=1` through the
+  single-row `insert(obj)` path but `N>1` through the bulk `insert(span)` VOID path.
 
 Matched Storm rows show **efficiency as `NN.N% of raw`** (green ≥95%, red below); unmatched rows show `— (no raw)`. The session summary becomes `session: N/M matched · avg NN.N% of raw · target ≥95%`. The raw baseline is **reused across Storm sessions** — refresh is a manual step: re-run `storm_anchors`, then restart the dashboard with `--baseline raw:last`.
 
