@@ -95,7 +95,7 @@ template <typename ConnType> auto pg_schema_init(auto &conn) -> void {
 
 // End test isolation. For PG: drops the per-process schema (instant cleanup).
 // For SQLite: no-op (:memory: is destroyed with the connection).
-template <typename ConnType> auto rollback_test_txn(auto &conn) -> void {
+template <typename ConnType> auto rollback_test_txn(const auto &conn) -> void {
     if constexpr (std::is_same_v<ConnType, storm::db::postgresql::Connection>) {
         if (!detail::current_test_schema.empty()) {
             (void)conn->execute(std::format("DROP SCHEMA IF EXISTS {} CASCADE", detail::current_test_schema));
