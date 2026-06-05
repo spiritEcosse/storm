@@ -267,14 +267,15 @@ export namespace storm::db {
     // a hit, nullptr on a miss (caller then prepares + inserts).
     //
     // LIFETIME INVARIANT (issue #357, finding A): the returned Stmt* outlives the
-    // shared_lock released on return. It is valid ONLY under the single-owner-per-
-    // Connection contract — exactly one thread may touch a given Connection at a
-    // time (per-thread connections, or pool checkout enforced by debug_claim_owner).
-    // Under that contract no other thread can evict (eviction needs the unique_lock)
-    // or reset the same entry concurrently, so the pointee cannot be freed or mutated
-    // out from under the caller. The debug owner assertions are load-bearing: they
-    // catch a violation of this contract in debug/sanitizer builds. Do NOT relax them
-    // or hand this pointer to another thread.
+    // shared_lock released on return. Concurrent access to the cache from multiple
+    // threads IS supported and tested — the shared_mutex serialises map structure
+    // (#271; see StatementCacheThreadingTest, which pounds one Connection from 8
+    // threads under TSAN). The actual contract is narrower than single-owner: the
+    // returned Stmt* is valid only WITHIN the iteration that fetched it. A caller
+    // must NOT retain it across a concurrent clear_statement_cache() / eviction,
+    // which destroys the entry's unique_ptr<Stmt> and dangles the pointer. (The
+    // per-thread-connection model trivially satisfies this; the bound is the
+    // dereference window, not the number of threads.)
     template <typename Stmt>
     [[nodiscard]] auto cache_find_hit(StatementCacheState<Stmt>& state, std::string_view sql) -> Stmt* {
         std::shared_lock read_lock(state.mutex);
