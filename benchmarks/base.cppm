@@ -35,7 +35,7 @@ export namespace storm::benchmark {
     // get_db: Helper to get raw sqlite3* from default connection
     // ========================================================================
     template <typename Model> auto get_db() -> sqlite3* {
-        auto& conn = storm::QuerySet<Model>::get_default_connection();
+        const auto& conn = storm::QuerySet<Model>::get_default_connection();
         return conn->get();
     }
 

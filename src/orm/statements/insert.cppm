@@ -289,6 +289,13 @@ export namespace storm::orm::statements {
                 return VoidQuery{std::move(*this), obj};
             }
         }
+        // LIFETIME CONTRACT (issue #357, finding B): the returned BulkQuery holds a
+        // std::span<const T> aliasing the caller's container. `[[clang::lifetimebound]]`
+        // (+ -Werror=dangling) catches the inline-temporary case at compile time, but a
+        // span built from a container that dies before .execute()/.to_sql() runs still
+        // dangles silently at runtime. Treat the proxy as single-expression-use: keep the
+        // backing container alive until the terminal call completes. Same for the
+        // ReturnId-templated overload below.
         auto
         query(std::span<const T> objects [[clang::lifetimebound]], std::optional<InsertOptions> opts = std::nullopt)
                 -> BulkQuery {

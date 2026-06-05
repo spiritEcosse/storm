@@ -481,7 +481,14 @@ export namespace storm {
             return {};
         }
 
-        [[nodiscard]] static auto get_default_connection() -> const std::shared_ptr<ConnType>& {
+        // Returns a COPY of the thread_local default-connection shared_ptr (issue #357,
+        // finding C). Returning by value — not by reference into the thread_local — means
+        // a held copy keeps the connection alive across a later clear_default_connection()
+        // or set_default_connection() on this thread, so the dangling use-after-reseat
+        // pattern (`const auto& c = get_default_connection(); clear...(); use(c);`) is
+        // impossible by construction. The extra shared_ptr copy is one atomic refcount
+        // bump; benched as no measurable change on the QuerySet construction path.
+        [[nodiscard]] static auto get_default_connection() -> std::shared_ptr<ConnType> {
             assert(detail::get_default_connection_ptr<ConnType>() &&
                    "Default database connection not set. Call QuerySet::set_default_connection() first.");
             return detail::get_default_connection_ptr<ConnType>();

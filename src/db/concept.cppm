@@ -265,6 +265,16 @@ export namespace storm::db {
     // Hot path: shared_lock find + reset. On a hit, sets the entry's CLOCK ref bit
     // and bumps `hits`; on a miss, bumps `misses`. Returns the cached Statement* on
     // a hit, nullptr on a miss (caller then prepares + inserts).
+    //
+    // LIFETIME INVARIANT (issue #357, finding A): the returned Stmt* outlives the
+    // shared_lock released on return. It is valid ONLY under the single-owner-per-
+    // Connection contract — exactly one thread may touch a given Connection at a
+    // time (per-thread connections, or pool checkout enforced by debug_claim_owner).
+    // Under that contract no other thread can evict (eviction needs the unique_lock)
+    // or reset the same entry concurrently, so the pointee cannot be freed or mutated
+    // out from under the caller. The debug owner assertions are load-bearing: they
+    // catch a violation of this contract in debug/sanitizer builds. Do NOT relax them
+    // or hand this pointer to another thread.
     template <typename Stmt>
     [[nodiscard]] auto cache_find_hit(StatementCacheState<Stmt>& state, std::string_view sql) -> Stmt* {
         std::shared_lock read_lock(state.mutex);
