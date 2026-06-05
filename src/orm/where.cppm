@@ -32,7 +32,7 @@ export namespace storm::orm::where {
 
     // Mirror of meta::FieldAttr from storm module - must match exactly
     namespace meta {
-        enum class FieldAttr : std::uint8_t { primary, indexed, unique, fk };
+        enum class FieldAttr : std::uint8_t { primary, primary_autoincrement, indexed, unique, fk };
     }
 
     // Comparison operators

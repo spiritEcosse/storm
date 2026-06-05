@@ -40,7 +40,7 @@ export namespace storm {
         // Check if member has primary attribute
         consteval auto has_primary_attr(std::meta::info member) -> bool {
             auto field_attr = std::meta::annotation_of_type<FieldAttr>(member);
-            return field_attr.has_value() && field_attr.value() == FieldAttr::primary;
+            return field_attr.has_value() && orm::statements::meta::is_primary_attr(field_attr.value());
         }
 
         // Find primary key member — T must satisfy ModelWithPrimaryKey<T>

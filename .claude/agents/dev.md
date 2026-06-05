@@ -13,7 +13,7 @@ You are an expert C++26 engineer and architect for the Storm ORM project. You ha
 
 When implementing features:
 1. Use compile-time reflection with `std::meta` for automatic struct-to-database mapping
-2. Mark primary keys with `[[=storm::meta::FieldAttr::primary]]` attributes
+2. Mark primary keys with `[[=storm::meta::FieldAttr::primary]]` attributes (use `primary_autoincrement` to opt a SQLite int PK into `AUTOINCREMENT`/never-reuse; plain `primary` emits plain `INTEGER PRIMARY KEY` since #379)
 3. Inherit new statement classes from `BaseStatement<T>` to leverage shared utilities
 4. Implement both single-object and batch operations using `std::span<const T>`
 5. Apply adaptive thresholds:

@@ -21,8 +21,17 @@ export namespace storm::orm::statements {
 
     // Mirror of meta::FieldAttr from storm module - must match exactly
     namespace meta {
-        enum class FieldAttr : std::uint8_t { primary, indexed, unique, fk };
-    }
+        enum class FieldAttr : std::uint8_t { primary, primary_autoincrement, indexed, unique, fk };
+
+        // A field is "a primary key" for either annotation variant: plain `primary`
+        // (plain INTEGER PRIMARY KEY) or `primary_autoincrement` (the SQLite never-reuse
+        // opt-in, #379). Every PK-detection site routes through here so the two variants
+        // can never drift apart.
+        consteval auto is_primary_attr(FieldAttr attr) -> bool {
+            using enum FieldAttr;
+            return attr == primary || attr == primary_autoincrement;
+        }
+    } // namespace meta
 
     // Concept: T must have at least one field annotated with FieldAttr::primary.
     //
@@ -34,7 +43,7 @@ export namespace storm::orm::statements {
     concept ModelWithPrimaryKey = []() consteval {
         for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
             auto attr = std::meta::annotation_of_type<meta::FieldAttr>(m);
-            if (attr.has_value() && attr.value() == meta::FieldAttr::primary) {
+            if (attr.has_value() && meta::is_primary_attr(attr.value())) {
                 return true;
             }
         }
@@ -58,7 +67,7 @@ export namespace storm::orm::statements {
             for (const std::meta::info member :
                  std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
                 auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
-                if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::primary) {
+                if (field_attr.has_value() && meta::is_primary_attr(field_attr.value())) {
                     return member;
                 }
             }
@@ -111,7 +120,7 @@ export namespace storm::orm::statements {
             for (const std::meta::info member :
                  std::meta::nonstatic_data_members_of(^^InnerType, std::meta::access_context::unchecked())) {
                 auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
-                if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::primary) {
+                if (field_attr.has_value() && meta::is_primary_attr(field_attr.value())) {
                     return member;
                 }
             }

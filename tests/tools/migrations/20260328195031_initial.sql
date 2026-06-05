@@ -1,6 +1,6 @@
 -- Create "Person" table
 CREATE TABLE `Person` (
-  `id` integer NULL PRIMARY KEY AUTOINCREMENT,
+  `id` integer NULL PRIMARY KEY,
   `name` text NOT NULL,
   `age` integer NOT NULL,
   `salary` real NOT NULL,
@@ -23,13 +23,13 @@ CREATE INDEX `idx_Person_department_age` ON `Person` (`department`, `age`);
 CREATE UNIQUE INDEX `idx_Person_name_department` ON `Person` (`name`, `department`);
 -- Create "SimpleRecord" table
 CREATE TABLE `SimpleRecord` (
-  `id` integer NULL PRIMARY KEY AUTOINCREMENT,
+  `id` integer NULL PRIMARY KEY,
   `name` text NOT NULL,
   `value` integer NOT NULL
 );
 -- Create "Message" table
 CREATE TABLE `Message` (
-  `id` integer NULL PRIMARY KEY AUTOINCREMENT,
+  `id` integer NULL PRIMARY KEY,
   `content` text NOT NULL,
   `value` integer NOT NULL,
   `sender_id` integer NOT NULL
@@ -38,7 +38,7 @@ CREATE TABLE `Message` (
 CREATE INDEX `idx_Message_sender_id` ON `Message` (`sender_id`);
 -- Create "ExtendedTypes" table
 CREATE TABLE `ExtendedTypes` (
-  `id` integer NULL PRIMARY KEY AUTOINCREMENT,
+  `id` integer NULL PRIMARY KEY,
   `big_num` integer NOT NULL,
   `precise` real NOT NULL,
   `approx` real NOT NULL,
@@ -63,7 +63,7 @@ CREATE TABLE `ExtendedTypes` (
 );
 -- Create "Task" table
 CREATE TABLE `Task` (
-  `id` integer NULL PRIMARY KEY AUTOINCREMENT,
+  `id` integer NULL PRIMARY KEY,
   `assignee_id` integer NOT NULL,
   `reviewer_id` integer NOT NULL,
   `description` text NOT NULL

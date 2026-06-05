@@ -182,7 +182,7 @@ When creating tables, ensure column types match the C++ type mappings:
 
 ```sql
 CREATE TABLE Example (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    id INTEGER PRIMARY KEY,  -- AUTOINCREMENT is opt-in (#379): FieldAttr::primary_autoincrement
     name TEXT NOT NULL,
     age INTEGER,
     salary REAL,
