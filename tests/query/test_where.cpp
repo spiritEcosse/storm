@@ -10,8 +10,12 @@ import std;
 #include "test_seed_helpers.h"
 #include "test_select_runner.h"
 
-using namespace storm;
-using namespace storm::orm::where;
+using storm::QuerySet;
+using storm::orm::where::ComparisonExpr;
+using storm::orm::where::CompOp;
+using storm::orm::where::Expr;
+using storm::orm::where::ExpressionVariant;
+using storm::orm::where::field;
 
 // Test fixture for WHERE operations — templated on database backend
 template <typename ConnType> class WhereTest : public StormTestFixture<Person, ConnType> {

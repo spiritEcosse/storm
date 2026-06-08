@@ -1,4 +1,5 @@
-#pragma once
+#ifndef STORM_TESTS_TEST_DB_HELPERS_H
+#define STORM_TESTS_TEST_DB_HELPERS_H
 
 /**
  * @file test_db_helpers.h
@@ -118,3 +119,5 @@ template <typename ConnType> constexpr auto is_sqlite() -> bool {
 }
 
 } // namespace storm::test
+
+#endif // STORM_TESTS_TEST_DB_HELPERS_H

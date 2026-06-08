@@ -58,7 +58,9 @@ namespace {
         Statement dst{std::move(src)};
 
         EXPECT_EQ(as_void(dst.handle()), as_void(raw));
-        EXPECT_EQ(as_void(src.handle()), nullptr);
+        // Intentional moved-from read: the test asserts the move nulled the source.
+        const void* moved_src = as_void(src.handle()); // NOLINT(clang-analyzer-cplusplus.Move,bugprone-use-after-move)
+        EXPECT_EQ(moved_src, nullptr);
     }
 
     // Same invariant for move assignment.
@@ -71,7 +73,9 @@ namespace {
         dst = std::move(src);
 
         EXPECT_EQ(as_void(dst.handle()), as_void(raw_src));
-        EXPECT_EQ(as_void(src.handle()), nullptr);
+        // Intentional moved-from read: the test asserts the move nulled the source.
+        const void* moved_src = as_void(src.handle()); // NOLINT(clang-analyzer-cplusplus.Move,bugprone-use-after-move)
+        EXPECT_EQ(moved_src, nullptr);
     }
 
 } // namespace

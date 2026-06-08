@@ -10,8 +10,8 @@ import std;
 #include "test_models.h" // NOSONAR cpp:S954
 #include "test_seed_helpers.h"
 #include "test_select_runner.h"
-using namespace storm;
-using namespace storm::orm::where;
+using storm::QuerySet;
+using storm::orm::where::field;
 
 template <typename ConnType> auto insert_test_data(const std::vector<Person>& data) -> void {
     QuerySet<Person, ConnType> qs;

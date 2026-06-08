@@ -1,4 +1,5 @@
-#pragma once
+#ifndef STORM_BENCHMARKS_DASHBOARD_REPORTER_H
+#define STORM_BENCHMARKS_DASHBOARD_REPORTER_H
 
 // install_storm_reporter() — wires a custom Google Benchmark reporter that
 // streams every Run as a one-line NDJSON datagram to the storm_bench_dashboard
@@ -37,3 +38,5 @@ namespace bench_dashboard {
 auto install_storm_reporter(std::string_view socket_path, std::string_view filter) -> ::benchmark::BenchmarkReporter *;
 
 } // namespace bench_dashboard
+
+#endif // STORM_BENCHMARKS_DASHBOARD_REPORTER_H

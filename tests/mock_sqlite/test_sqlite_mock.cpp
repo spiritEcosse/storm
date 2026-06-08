@@ -15,7 +15,8 @@
 
 // NOLINTBEGIN(misc-const-correctness,cppcoreguidelines-pro-type-cstyle-cast,performance-no-int-to-ptr)
 
-using namespace storm::test;
+using storm::test::MockSqlite3Config;
+using storm::test::MockSqlite3Guard;
 
 // ============================================================================
 // Mock Configuration Tests - Verify the mock itself works correctly

@@ -8,9 +8,9 @@ import storm;
 import std;
 
 #include "test_models.h" // NOSONAR cpp:S954
-using namespace storm;
-using namespace storm::orm::where;
+using storm::QuerySet;
 using storm::orm::utilities::Collate;
+using storm::orm::where::field;
 
 // SQLite-only: COLLATE NOCASE/BINARY/RTRIM are SQLite-specific collation sequences.
 // PostgreSQL uses different syntax (COLLATE "C", COLLATE "en_US").

@@ -50,7 +50,7 @@ template <typename ConnType> class QuerySetCrudLifecycleTest : public StormTestF
 TYPED_TEST_SUITE(QuerySetCrudLifecycleTest, DatabaseTypes);
 
 TYPED_TEST(QuerySetCrudLifecycleTest, FullLifecycle) {
-    using namespace storm::orm::where;
+    using storm::orm::where::field;
     storm::QuerySet<Person, TypeParam> qs;
 
     // 1. Verify empty state
@@ -146,7 +146,7 @@ TYPED_TEST(QuerySetCrudLifecycleTest, BatchLifecycle) {
 
 // All supported field types: int, string, double, bool, optional<int>, optional<string>, blob
 TYPED_TEST(QuerySetCrudLifecycleTest, AllFieldTypesLifecycle) {
-    using namespace storm::orm::where;
+    using storm::orm::where::field;
     storm::QuerySet<Person, TypeParam> qs;
 
     // 1. Insert with all fields populated
@@ -228,7 +228,7 @@ TYPED_TEST(QuerySetCrudLifecycleTest, BoundaryBatchLifecycle) {
 
 // Insert, selectively update and erase via WHERE, verify unaffected rows unchanged
 TYPED_TEST(QuerySetCrudLifecycleTest, FilteredLifecycle) {
-    using namespace storm::orm::where;
+    using storm::orm::where::field;
     storm::QuerySet<Person, TypeParam> qs;
 
     // 1. Insert mixed data
@@ -242,6 +242,7 @@ TYPED_TEST(QuerySetCrudLifecycleTest, FilteredLifecycle) {
     EXPECT_EQ(this->countPersons(), 4);
 
     // 2. Select only active persons
+    // NOLINTNEXTLINE(readability-simplify-boolean-expr) -- `== true` is the WHERE-DSL comparison (generates `is_active = ?`), not a redundant bool op
     auto active = qs.where(field<^^Person::is_active>() == true).select().execute();
     ASSERT_TRUE(active.has_value());
     EXPECT_EQ(static_cast<int>(active.value().size()), 2) << "Should have 2 active persons";

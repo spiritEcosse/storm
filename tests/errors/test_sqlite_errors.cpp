@@ -17,7 +17,8 @@ import storm_db_sqlite;
 import storm_orm_statements_insert;
 
 namespace fs = std::filesystem;
-using namespace storm::db::sqlite;
+using storm::db::sqlite::Connection;
+using storm::db::sqlite::Statement;
 
 // ============================================================================
 // Connection Error Tests
@@ -76,12 +77,13 @@ TEST_F(ConnectionErrorTest, ConnectionNotOpenPrepare) {
     auto conn       = std::move(result.value());
     auto moved_conn = std::move(conn);
 
-    // Original conn is now in moved-from state
-    EXPECT_FALSE(conn.is_open()) << "Moved-from connection should not be open"; // NOLINT(bugprone-use-after-move)
+    // Original conn is now in moved-from state. Intentional moved-from reads:
+    // these tests assert the API rejects a moved-from (closed) connection.
+    const bool moved_open = conn.is_open(); // NOLINT(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
+    EXPECT_FALSE(moved_open) << "Moved-from connection should not be open";
 
     // prepare() on closed connection should return error
-    auto prep_result =
-            conn.prepare("SELECT 1"); // NOLINT(bugprone-use-after-move) -- intentional: testing moved-from behavior
+    auto prep_result = conn.prepare("SELECT 1"); // NOLINT(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
     ASSERT_FALSE(prep_result.has_value()) << "prepare() on closed connection should fail";
     EXPECT_EQ(prep_result.error().code(), SQLITE_MISUSE);
 }
@@ -93,8 +95,9 @@ TEST_F(ConnectionErrorTest, ConnectionNotOpenPrepareCached) {
     auto conn       = std::move(result.value());
     auto moved_conn = std::move(conn);
 
-    // prepare_cached() on closed connection should return error
-    auto prep_result = conn.prepare_cached("SELECT 1"); // NOLINT(bugprone-use-after-move)
+    // prepare_cached() on closed connection should return error (intentional moved-from read)
+    // NOLINTNEXTLINE(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
+    auto prep_result = conn.prepare_cached("SELECT 1");
     ASSERT_FALSE(prep_result.has_value()) << "prepare_cached() on closed connection should fail";
     EXPECT_EQ(prep_result.error().code(), SQLITE_MISUSE);
 }
@@ -107,7 +110,7 @@ TEST_F(ConnectionErrorTest, ConnectionNotOpenExecute) {
     auto moved_conn = std::move(conn);
 
     // execute() on closed connection should return error
-    auto exec_result = conn.execute("SELECT 1"); // NOLINT(bugprone-use-after-move)
+    auto exec_result = conn.execute("SELECT 1"); // NOLINT(bugprone-use-after-move,clang-analyzer-cplusplus.Move)
     ASSERT_FALSE(exec_result.has_value()) << "execute() on closed connection should fail";
     EXPECT_EQ(exec_result.error().code(), SQLITE_MISUSE);
 }

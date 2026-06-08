@@ -180,9 +180,7 @@ export namespace storm::db::postgresql {
             bool in_single_quote = false;
             bool in_double_quote = false;
 
-            for (std::size_t i = 0; i < sql.size(); ++i) {
-                const char ch = sql[i];
-
+            for (const char ch : sql) {
                 // Track quoted strings to avoid translating ? inside them
                 if (ch == '\'' && !in_double_quote) {
                     in_single_quote = !in_single_quote;

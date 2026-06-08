@@ -1,4 +1,5 @@
-#pragma once
+#ifndef STORM_BENCHMARKS_DASHBOARD_ROW_CLASSIFY_HPP
+#define STORM_BENCHMARKS_DASHBOARD_ROW_CLASSIFY_HPP
 
 // Pure, Google-Benchmark-free classification of a benchmark Run into a
 // dashboard row_kind (Issue #265).
@@ -64,3 +65,5 @@ namespace bench_dashboard {
     }
 
 } // namespace bench_dashboard
+
+#endif // STORM_BENCHMARKS_DASHBOARD_ROW_CLASSIFY_HPP

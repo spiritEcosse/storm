@@ -2,8 +2,12 @@
 # Clang-Tidy configuration for Storm ORM
 # Comprehensive checks for C++26 ORM project
 #
-# Categories enabled: bugprone, cert, concurrency, cppcoreguidelines, misc, performance, readability
-# Excluded categories: android, fuchsia, llvm, abseil, google, objc, etc. (platform/library-specific)
+# Categories enabled (full): clang-analyzer, bugprone, cert, concurrency,
+#   cppcoreguidelines, misc, performance, portability, readability
+# Categories enabled (curated subset only): modernize, google (see notes below)
+# Excluded categories: android, fuchsia, llvm, llvmlibc, abseil, boost, darwin,
+#   mpi, objc, openmp, zircon, altera, linuxkernel, hicpp (platform/library-specific
+#   or pure aliases of already-enabled checks).
 #
 # Exclusion policy:
 # - Keep checks that catch real bugs
@@ -42,9 +46,57 @@
 #   constexpr ternary to eliminate the clone.
 # - performance-enum-size: re-enabled 2026-05-25 (issue #313); enums in src/ given explicit small
 #   underlying types (std::uint8_t) since none exceed 256 enumerators.
+#
+# Category additions (issue #364):
+#
+# clang-analyzer-* (path-sensitive analysis — catches resource leak / use-after-free
+#   on error paths the sanitizers never execute, null deref on a specific branch,
+#   uninitialized reads the syntactic checks miss):
+#   - Enabled wholesale. The full-tree sweep found 0 warnings in src/ and 8 in
+#     test/bench code (all idiomatic: gbench `for (auto _ : state)` dead-store on
+#     the iteration token, intentional moved-from assertions, a bounded mock copy);
+#     each fixed at the site (NOLINT or memcpy).
+#   - Runtime: measured ~0 added cost. The analyzer runs during the same single-TU
+#     parse/AST that the already-enabled syntactic categories pay for (24 src TUs:
+#     145s with vs 145s without; analyzer-only is 14s). So it rides the normal
+#     --full / --all sweep and pre-commit --diff — NO special CI-only gating needed.
+#
+# modernize-* (curated allow-list, NOT wholesale — several modernize checks fight
+#   Storm's C++26/consteval style or duplicate SonarCloud rules):
+#   Enabled: use-nullptr, use-override, use-equals-default, use-equals-delete,
+#     make-unique, make-shared, use-emplace, loop-convert.
+#   Excluded with cause (omitted from the allow-list above):
+#   - modernize-use-trailing-return-type: cosmetic; would churn every signature.
+#   - modernize-use-auto: fights Storm's explicit-type-in-consteval style.
+#   - modernize-avoid-c-arrays: consteval code uses C arrays deliberately
+#     (cf. NOSONAR S6188 — std::span is unreliable in consteval).
+#   Also implicitly excluded (the rest of modernize-*, e.g. use-ranges S6197,
+#     use-std-contains-after-find S7034, use-using, concat-nested-namespaces) —
+#     either duplicate SonarCloud rules already in CLAUDE.md or out of scope here.
+#
+# portability-* (enabled wholesale): low-noise insurance for the planned
+#   PostgreSQL/MySQL backends. The only finding was portability-avoid-pragma-once
+#   (4 test/bench headers) — those 4 were converted to include guards so the
+#   category enables clean.
+#
+# google-* (NOT monolithic — enable header-hygiene checks, keep the one conflict off):
+#   Enabled: build-using-namespace, build-namespaces, global-names-in-headers,
+#     readability-casting. The 58 build-using-namespace findings (all in .cpp
+#     test/bench TUs, none in headers) were converted to explicit
+#     using-declarations / namespace aliases.
+#   Excluded with cause:
+#   - google-explicit-constructor: Expr/UUID implicit conversions are intentional
+#     public API (kept off globally; see the GTest block below).
+#   - google-runtime-int, google-readability-{braces-around-statements,function-size,
+#     namespace-comments,todo}, google-objc-*: noisy, cosmetic, aliases of already-
+#     enabled readability-* checks, or N/A. Not added (allow-list above excludes them).
+#
+# hicpp-*: NOT added — pure aliases of cppcoreguidelines/bugprone checks already
+#   enabled; only adds duplicate diagnostics.
 
 Checks: >
   -*,
+  clang-analyzer-*,
   bugprone-*,
   -bugprone-argument-comment,
   -bugprone-easily-swappable-parameters,
@@ -67,9 +119,22 @@ Checks: >
   misc-*,
   -misc-const-correctness,
   -misc-include-cleaner,
+  modernize-use-nullptr,
+  modernize-use-override,
+  modernize-use-equals-default,
+  modernize-use-equals-delete,
+  modernize-make-unique,
+  modernize-make-shared,
+  modernize-use-emplace,
+  modernize-loop-convert,
   performance-*,
+  portability-*,
   readability-*,
   -readability-magic-numbers,
+  google-build-using-namespace,
+  google-build-namespaces,
+  google-global-names-in-headers,
+  google-readability-casting,
   -google-explicit-constructor
 
 # Header filter - apply to project headers, exclude third_party

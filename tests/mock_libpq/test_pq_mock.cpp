@@ -18,7 +18,8 @@
 // NOLINTBEGIN(cppcoreguidelines-pro-type-cstyle-cast,misc-const-correctness) // NOSONAR(cpp:S125)
 // NOLINTBEGIN(readability-static-accessed-through-instance) // NOSONAR(cpp:S125)
 
-using namespace storm::test;
+using storm::test::MockPqConfig;
+using storm::test::MockPqGuard;
 
 // ============================================================================
 // Default Behavior Tests

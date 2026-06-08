@@ -4,7 +4,7 @@
 import storm;
 import std;
 
-using namespace storm;
+using storm::QuerySet;
 
 #include "test_models.h" // NOSONAR cpp:S954
 #include "test_seed_helpers.h"
