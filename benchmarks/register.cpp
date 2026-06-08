@@ -35,8 +35,6 @@ import storm_benchmark_registry;
 import storm_benchmark_schema;
 import storm_benchmark_sizes;
 
-using namespace storm;
-
 namespace storm::benchmark {
 
     auto registered_benchmarks() -> std::vector<RegisteredBenchmark>& {

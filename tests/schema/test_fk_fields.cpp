@@ -45,7 +45,7 @@ struct Summary {
     std::string                               report_type;
 };
 
-using namespace storm;
+using storm::QuerySet;
 
 // Test fixture for FK field operations — templated on database backend
 template <typename ConnType> class FKFieldTest : public StormTestFixture<Person, ConnType, Task> {};

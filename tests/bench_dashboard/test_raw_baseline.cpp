@@ -41,7 +41,9 @@ namespace {
 // ---------------------------------------------------------------------------
 
 TEST(WireRunStart, IsRawRoundTrips) {
-    using namespace bench_dashboard::wire;
+    using bench_dashboard::wire::build_run_start;
+    using bench_dashboard::wire::MessageKind;
+    using bench_dashboard::wire::parse;
     const auto json = build_run_start("WHERE.*", /*is_full_run=*/false, /*is_raw=*/true);
     const auto msg  = parse(json);
     ASSERT_TRUE(msg.has_value());
@@ -52,7 +54,7 @@ TEST(WireRunStart, IsRawRoundTrips) {
 }
 
 TEST(WireRunStart, IsRawDefaultsFalseWhenAbsent) {
-    using namespace bench_dashboard::wire;
+    using bench_dashboard::wire::parse;
     // Backward compat: an older producer omits is_raw → parses as false.
     const auto msg = parse(R"({"type":"run_start","filter":"","is_full_run":true})");
     ASSERT_TRUE(msg.has_value());
@@ -61,7 +63,8 @@ TEST(WireRunStart, IsRawDefaultsFalseWhenAbsent) {
 }
 
 TEST(WireRunStart, IsRawFalseRoundTrips) {
-    using namespace bench_dashboard::wire;
+    using bench_dashboard::wire::build_run_start;
+    using bench_dashboard::wire::parse;
     const auto json = build_run_start("", /*is_full_run=*/true, /*is_raw=*/false);
     const auto msg  = parse(json);
     ASSERT_TRUE(msg.has_value());

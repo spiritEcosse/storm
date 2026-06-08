@@ -6,8 +6,7 @@
 import storm;
 import std;
 
-using namespace storm;
-using namespace storm::orm::where;
+using storm::QuerySet;
 
 #include "test_models.h" // NOSONAR cpp:S954
 

@@ -42,7 +42,7 @@ template <typename ConnType> class PersonCrudTestBase : public StormTestFixture<
     }
 
     static auto personExists(int person_id) -> bool {
-        using namespace storm::orm::where;
+        using storm::orm::where::field;
         const storm::QuerySet<Person, ConnType> qs;
         auto result = qs.where(field<^^Person::id>() == person_id).select().execute();
         return result.has_value() && !result.value().empty();
@@ -206,7 +206,7 @@ template <typename ConnType> class QuerySetUpdateTest : public PersonCrudTestBas
   protected:
     // Helper function to get person by ID using the ORM
     static auto getPerson(int person_id) -> std::optional<Person> {
-        using namespace storm::orm::where;
+        using storm::orm::where::field;
         const storm::QuerySet<Person, ConnType> qs;
         auto result = qs.where(field<^^Person::id>() == person_id).select().execute();
         if (!result.has_value() || result.value().empty()) {

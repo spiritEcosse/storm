@@ -8,8 +8,8 @@ import std;
 
 #include "test_models.h"
 
-using namespace storm;
-using namespace storm::orm::where;
+using storm::QuerySet;
+using storm::orm::where::field;
 
 // ============================================================================
 // Test fixture

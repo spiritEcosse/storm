@@ -1,4 +1,5 @@
-#pragma once
+#ifndef STORM_BENCHMARKS_DASHBOARD_WIRE_HPP
+#define STORM_BENCHMARKS_DASHBOARD_WIRE_HPP
 
 // Wire format for the storm_bench → storm_bench_dashboard link (Issue #247,
 // Phase 2). NDJSON over AF_UNIX SOCK_DGRAM: one datagram = one JSON line. The
@@ -380,3 +381,5 @@ namespace bench_dashboard::wire {
     }
 
 } // namespace bench_dashboard::wire
+
+#endif // STORM_BENCHMARKS_DASHBOARD_WIRE_HPP

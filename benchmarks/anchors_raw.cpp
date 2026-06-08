@@ -189,6 +189,7 @@ namespace {
         seeder(db, seed_rows);
         sqlite3_stmt* sel = prepare(db, query_sql);
 
+        // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores) -- Google Benchmark loop idiom: `_` is the iteration token, never read
         for (auto _ : state) {
             int const rows = drain_person_select(sel);
             if (assert_full_count && rows != seed_rows) {
@@ -363,6 +364,7 @@ namespace {
         InsertPlan const plan = make_insert_plan(db, n, use_returning);
 
         int counter = 0;
+        // NOLINTNEXTLINE(clang-analyzer-deadcode.DeadStores) -- Google Benchmark loop idiom: `_` is the iteration token, never read
         for (auto _ : state) {
             run_insert_chunks(db, plan, counter);
         }

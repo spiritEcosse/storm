@@ -148,6 +148,15 @@ echo ""
 #   benchmarks/dashboard/args.hpp, benchmarks/dashboard/backup.hpp,
 #   benchmarks/dashboard/db.hpp, benchmarks/dashboard/events.hpp,
 #   benchmarks/dashboard/tui_render.hpp, benchmarks/dashboard/models.hpp
+#
+#   benchmarks/schema.cppm — parses fine, but ANY ASTMatcher-based check
+#       (every enabled check) SIGSEGVs clang-tidy inside
+#       RecursiveASTVisitor::TraverseTemplateInstantiations on the std-module
+#       VarTemplateDecl `std::__desugars_to_v` (a clang-p2996 ParentMap/AST
+#       traversal bug over `import std;` instantiations). Reproduces with the
+#       pre-#364 7-category config and with a single readability check, so it is
+#       a toolchain crash, not a Storm-code or check-config issue. Tracked with
+#       the other clang-p2996 module crashes under issue #262.
 is_known_unparseable() {
     local file="$1"
     case "$file" in
@@ -169,6 +178,7 @@ is_known_unparseable() {
         benchmarks/dashboard/events.hpp) return 0 ;;
         benchmarks/dashboard/tui_render.hpp) return 0 ;;
         benchmarks/dashboard/models.hpp) return 0 ;;
+        benchmarks/schema.cppm) return 0 ;;
         *) return 1 ;;
     esac
 }

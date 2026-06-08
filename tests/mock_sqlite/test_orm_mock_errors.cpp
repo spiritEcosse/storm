@@ -28,7 +28,9 @@ import std;
 import storm_orm_utilities;
 import storm_orm_transaction;
 
-using namespace storm;
+namespace db  = storm::db;
+namespace orm = storm::orm;
+using storm::QuerySet;
 using storm::test::MockSqlite3Config;
 
 // Struct with indexes — must be at namespace scope for Indexes<> specialization

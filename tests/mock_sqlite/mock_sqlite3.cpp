@@ -9,6 +9,7 @@
 // NOLINTBEGIN(bugprone-easily-swappable-parameters) // mock signatures must match real SQLite3 API // NOSONAR(cpp:S125)
 
 #include "mock_sqlite3.h"
+#include <algorithm>
 #include <cstring>
 #include <mutex>
 
@@ -570,10 +571,15 @@ auto sqlite3_expanded_sql(sqlite3_stmt* /*pStmt*/) -> char* {
     if (g_mock_config.expanded_sql_returns_null) {
         return nullptr;
     }
-    // Return a malloc'd copy of a placeholder SQL string (caller must sqlite3_free)
-    const char* placeholder = "SELECT 1";
-    auto*       copy        = static_cast<char*>(malloc(strlen(placeholder) + 1)); // NOSONAR(cpp:S1231)
-    strcpy(copy, placeholder);                                                     // NOSONAR(cpp:S5025)
+    // Return a malloc'd copy of a placeholder SQL string. malloc (not new /
+    // unique_ptr) is mandatory: the caller frees this via sqlite3_free → free(),
+    // matching SQLite's C ABI contract (see sqlite.cppm expanded_sql()).
+    constexpr std::string_view placeholder = "SELECT 1";
+    auto*                      copy        = static_cast<char*>(malloc(placeholder.size() + 1)); // NOSONAR(cpp:S1231)
+    if (copy == nullptr) {
+        return nullptr; // OOM — the real sqlite3_expanded_sql() returns null too
+    }
+    *std::ranges::copy(placeholder, copy).out = '\0'; // bounded, null-terminated
     return copy;
 }
 

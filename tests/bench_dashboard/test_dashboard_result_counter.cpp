@@ -59,8 +59,9 @@ namespace {
 // data shown in the Complexity footer and must not inflate the session total.
 TEST(DashboardResultCounter, OnlyMeasurements) {
     bench_dashboard::tui::Session sess{};
-    for (int i = 0; i < 9; ++i)
+    for (int i = 0; i < 9; ++i) {
         add(sess, make_measurement("Storm/INSERT/insert/N:1000", "INSERT"));
+    }
 
     EXPECT_EQ(sess.result_count, 9U);
 }
@@ -79,10 +80,12 @@ TEST(DashboardResultCounter, OnlyBigOAndRms) {
 // Counter must show 18, not 22 and not 36.
 TEST(DashboardResultCounter, MixedMeasurementsAndComplexity) {
     bench_dashboard::tui::Session sess{};
-    for (int i = 0; i < 9; ++i)
+    for (int i = 0; i < 9; ++i) {
         add(sess, make_measurement("Storm/INSERT/insert/N:1000", "INSERT"));
-    for (int i = 0; i < 9; ++i)
+    }
+    for (int i = 0; i < 9; ++i) {
         add(sess, make_measurement("Storm/UPDATE_PK/update_pk/N:1000", "UPDATE_PK"));
+    }
     add(sess, make_bigo("Storm/INSERT/insert_BigO", "INSERT"));
     add(sess, make_rms("Storm/INSERT/insert_RMS", "INSERT"));
     add(sess, make_bigo("Storm/UPDATE_PK/update_pk_BigO", "UPDATE_PK"));

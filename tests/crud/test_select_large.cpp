@@ -6,7 +6,7 @@ import std;
 
 #include "test_models.h"
 
-using namespace storm;
+using storm::QuerySet;
 
 // Test fixture for large SELECT operations — templated on database backend
 template <typename ConnType> class SelectLargeTest : public StormTestFixture<SimpleRecord, ConnType> {};

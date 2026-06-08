@@ -9,8 +9,8 @@ import std;
 #include "test_models.h" // NOSONAR cpp:S954
 #include "test_seed_helpers.h"
 
-using namespace storm;
-using namespace storm::orm::where;
+using storm::QuerySet;
+using storm::orm::where::field;
 
 template <typename ConnType> class RowsTest : public StormTestFixture<Person, ConnType> {
   protected:

@@ -274,8 +274,7 @@ export namespace storm::db::postgresql {
             int  param_idx       = 0;
             bool in_single_quote = false;
             bool in_double_quote = false;
-            for (std::size_t i = 0; i < original_sql_.size(); ++i) {
-                const char ch = original_sql_[i];
+            for (const char ch : original_sql_) {
                 if (ch == '\'' && !in_double_quote) {
                     in_single_quote = !in_single_quote;
                     result += ch;

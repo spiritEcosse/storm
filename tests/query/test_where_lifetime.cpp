@@ -9,8 +9,9 @@ import std;
 #include "test_models.h" // NOSONAR cpp:S954
 #include "test_seed_helpers.h"
 
-using namespace storm;
-using namespace storm::orm::where;
+using storm::QuerySet;
+using storm::orm::where::Expr;
+using storm::orm::where::field;
 
 // Lifetime safety for WHERE comparison operands (#352).
 //
