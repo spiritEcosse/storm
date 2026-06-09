@@ -2,7 +2,7 @@
 
 **Issue:** #209
 **Date:** 2026-06-08
-**Status:** Design approved, pending spec review
+**Status:** Implemented (feature/209-auto-timestamps)
 
 ## Summary
 
@@ -96,15 +96,26 @@ produces a constraint violation at the call site with a clear message.
 
 ### 3. Bind-time substitution (the only runtime change)
 
-Single injection point: `bind_field_at_index` (`base.cppm:265`). This unified
+Single injection point: `bind_field_at_index` (`base.cppm:267`). This unified
 binder is used by **all four** paths:
 
-- INSERT single — `bind_non_pk_fields_impl` → `bind_field_at_index`
-- INSERT bulk — `bind_non_pk_objects_bulk_impl` → `bind_field_at_index`
+- INSERT single/bulk — `bind_non_pk_fields_impl` (`base.cppm:258`) → `bind_field_at_index`
+- INSERT all-fields — `bind_all_fields_impl` (`base.cppm:247`) → `bind_field_at_index`
 - UPDATE single & bulk — `update.cppm:266` `inline_bind_all_fields` →
   `Base::bind_field_at_index`
 
-Thread a compile-time `bool IsUpdate` template parameter through the binder. Add an
+**The binder already carries a 3rd template parameter** — `bool SkipPK = false`
+(`base.cppm:265`). It is `true` for *both* INSERT-non-PK (`base.cppm:258`) *and*
+UPDATE (`update.cppm:272`), so `SkipPK` **cannot** tell INSERT from UPDATE and must
+not be reused for the timestamp rule. Add `IsUpdate` as a **separate, 4th**
+template parameter:
+
+```cpp
+template <typename ConnType, std::size_t Index, bool SkipPK = false, bool IsUpdate = false>
+```
+
+Only the two UPDATE call sites (`update.cppm:272` and the bulk path) pass
+`IsUpdate = true`; all INSERT call sites keep the default `false`. Then add an
 `if constexpr` branch **before** the plain-field `else` (currently `base.cppm:302`):
 
 ```cpp
@@ -112,7 +123,7 @@ else if constexpr (is_auto_update_field(member)
                    || (is_auto_create_field(member) && !IsUpdate)) {
     // auto_update: now() on INSERT and UPDATE
     // auto_create: now() on INSERT only
-    auto result = bind_value_by_type<ConnType>(*stmt, param_index, /* batch now() */);
+    auto result = bind_value_by_type<ConnType>(*stmt, param_index, now);
     if (!result) return std::unexpected(result.error());
     ++param_index;
     return {};
@@ -120,9 +131,22 @@ else if constexpr (is_auto_update_field(member)
 // auto_create on UPDATE falls through to the normal obj.[:member:] bind below.
 ```
 
-The `now()` value for a batch is read **once** and threaded into the binder so all
-rows in a bulk operation share it. The bound value reuses the existing `time_point`
-text-storage binding (`is_text_stored_v`, `base.cppm:427`) — no schema change.
+**Threading the batch `now()` value.** `bind_field_at_index` currently takes
+`(stmt, obj, param_index)`. To make all rows in a bulk operation share one clock
+read, the per-batch `now()` value must reach the binder as data, not be re-read per
+field. Add a trailing `now` parameter (a `system_clock::time_point`), defaulted so
+non-timestamp call paths need no churn:
+
+```cpp
+// new trailing binder param; default lets non-timestamp paths stay untouched
+std::chrono::system_clock::time_point now = std::chrono::system_clock::now()
+```
+
+The caller reads `now()` **once** per operation (`bind_all_fields_impl`,
+`bind_non_pk_fields_impl`, `inline_bind_all_fields`) and forwards the same value
+into every `bind_field_at_index` invocation in the fold. The bound value reuses the
+existing `time_point` text-storage binding (`is_text_stored_v`, `base.cppm:427`) —
+no schema change.
 
 ### 4. Schema
 
@@ -134,9 +158,9 @@ No change. `schema.cppm:82` already maps `system_clock::time_point` to `TEXT`
 | Unit | Responsibility | Depends on |
 |---|---|---|
 | `FieldAttr` enum (base + where) | Declare the two new attributes | — |
-| `is_auto_create_field` / `is_auto_update_field` | Detect annotated members at compile time | `std::meta::annotation_of_type` |
+| `is_auto_create_field` / `is_auto_update_field` | Detect annotated members at compile time | `annotation_of_type<meta::FieldAttr>` + equality (mirrors `is_fk_field`) |
 | `ValidTimestampField` concept | Reject wrong-typed timestamp fields | `std::meta::type_of` |
-| `bind_field_at_index<…, IsUpdate>` | Substitute `now()` for the right fields at bind time | batch `now()`, `bind_value_by_type` |
+| `bind_field_at_index<…, SkipPK, IsUpdate>` | Substitute `now()` for the right fields at bind time | new 4th template param `IsUpdate`, batch `now()`, `bind_value_by_type` |
 
 ## Error handling
 

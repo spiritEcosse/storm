@@ -90,6 +90,15 @@ struct ExtendedTypes {
     std::optional<std::filesystem::path> opt_path;
 };
 
+// Auto-timestamp model — created_at stamped on INSERT only, updated_at on
+// INSERT and UPDATE. Both are std::chrono::system_clock::time_point (#209).
+struct TimestampedRecord {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    std::string name;
+    [[= storm::meta::FieldAttr::auto_create]] std::chrono::system_clock::time_point created_at{};
+    [[= storm::meta::FieldAttr::auto_update]] std::chrono::system_clock::time_point updated_at{};
+};
+
 // =============================================================================
 // Section 3: FK-dependent structs (must come after section 1)
 // =============================================================================

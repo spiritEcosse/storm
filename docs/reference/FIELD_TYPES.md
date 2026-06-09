@@ -142,6 +142,52 @@ std::vector<uint8_t> binary_data = {0x89, 0x50, 0x4E, 0x47}; // PNG header
 FileData file{0, "image.png", binary_data};
 ```
 
+## Automatic Timestamps (`auto_create` / `auto_update`)
+
+Two field attributes populate `std::chrono::system_clock::time_point` columns with
+the current time automatically, so you never set them by hand (#209):
+
+| Attribute | INSERT | UPDATE |
+|-----------|--------|--------|
+| `auto_create` | set to `now()` | preserved (bound from the object's stored value) |
+| `auto_update` | set to `now()` | set to `now()` |
+
+```cpp
+struct User {
+    [[=storm::meta::FieldAttr::primary]] int id;
+    std::string name;
+    [[=storm::meta::FieldAttr::auto_create]] std::chrono::system_clock::time_point created_at;
+    [[=storm::meta::FieldAttr::auto_update]] std::chrono::system_clock::time_point updated_at;
+};
+
+// INSERT — both stamped automatically; any value you set is ignored.
+QuerySet<User>().insert(User{.name = "John"}).execute();
+// row: created_at = now, updated_at = now
+
+// UPDATE — only updated_at re-stamped; created_at preserved.
+User u{.id = 1, .name = "Jane", .created_at = original_created_at};
+QuerySet<User>().update(u).execute();
+// row: created_at unchanged, updated_at = now
+```
+
+**Contract and constraints:**
+
+- **Bind-time only, no write-back.** The value is computed in C++ (`system_clock::now()`)
+  and bound as a parameter. The caller's in-memory object is **not** mutated — re-SELECT
+  the row to read the stamped value.
+- **Preserving `created_at` on UPDATE** requires the object to carry its original
+  `created_at` (UPDATE binds it from the object). Load-modify-save, or pass the value
+  you read on INSERT.
+- **One `now()` per batch.** A bulk INSERT/UPDATE reads the clock once and shares it
+  across every row, so all rows in a batch get the same timestamp.
+- **Type-checked at compile time.** An `auto_create`/`auto_update` field that is not a
+  `std::chrono::system_clock::time_point` fails to compile with a clear message.
+- **Zero cost when unused.** Models without any timestamp field do not pay for the
+  clock read — the call compiles away.
+
+The column maps to `TIMESTAMP` (PostgreSQL) / `TEXT` (SQLite) and round-trips via the
+existing `time_point` ↔ `"YYYY-MM-DD HH:MM:SS"` conversion.
+
 ## Type Dispatch Implementation
 
 The binding uses compile-time `if constexpr` type dispatch to select the appropriate SQLite binding function with **zero runtime overhead**.
