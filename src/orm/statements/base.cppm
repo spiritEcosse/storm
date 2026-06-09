@@ -21,7 +21,15 @@ export namespace storm::orm::statements {
 
     // Mirror of meta::FieldAttr from storm module - must match exactly
     namespace meta {
-        enum class FieldAttr : std::uint8_t { primary, primary_autoincrement, indexed, unique, fk };
+        enum class FieldAttr : std::uint8_t {
+            primary,
+            primary_autoincrement,
+            indexed,
+            unique,
+            fk,
+            auto_create,
+            auto_update
+        };
 
         // A field is "a primary key" for either annotation variant: plain `primary`
         // (plain INTEGER PRIMARY KEY) or `primary_autoincrement` (the SQLite never-reuse
@@ -49,6 +57,13 @@ export namespace storm::orm::statements {
         }
         return false;
     }();
+
+    // A field carrying auto_create/auto_update must be a system_clock::time_point (#209).
+    // Referenced by a static_assert in bind_field_at_index so a wrong-typed timestamp field
+    // fails to compile with a clear message rather than deep inside parameter binding.
+    template <std::meta::info Member>
+    concept ValidTimestampField = std::
+            same_as<std::remove_cvref_t<typename[:std::meta::type_of(Member):]>, std::chrono::system_clock::time_point>;
 
     // Shared reflection utilities for all statement types
     template <typename T>
@@ -90,6 +105,25 @@ export namespace storm::orm::statements {
         static consteval auto is_indexed_field(std::meta::info member) -> bool {
             auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
             return field_attr.has_value() && field_attr.value() == meta::FieldAttr::indexed;
+        }
+
+        // Auto-timestamp detection (#209): auto_create stamps now() on INSERT only;
+        // auto_update stamps now() on both INSERT and UPDATE.
+        static consteval auto is_auto_create_field(std::meta::info member) -> bool {
+            auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
+            return field_attr.has_value() && field_attr.value() == meta::FieldAttr::auto_create;
+        }
+
+        static consteval auto is_auto_update_field(std::meta::info member) -> bool {
+            auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
+            return field_attr.has_value() && field_attr.value() == meta::FieldAttr::auto_update;
+        }
+
+        // True when `member` should be stamped with now() on this operation: auto_update
+        // always; auto_create on INSERT only (IsUpdate=false). auto_create on UPDATE is
+        // false here so it binds the object's stored value (preserving created_at).
+        static consteval auto stamps_now(std::meta::info member, bool is_update) -> bool {
+            return is_auto_update_field(member) || (is_auto_create_field(member) && !is_update);
         }
 
         // Check if a field needs an index (indexed, unique, or fk — but not primary key)
@@ -228,6 +262,28 @@ export namespace storm::orm::statements {
         static constexpr auto           field_names_array_ = build_all_field_names_list();
         static inline const std::string field_names_       = std::string(field_names_array_);
 
+        // True if T has any auto_create/auto_update field (#209). Gates the per-operation
+        // system_clock::now() read so models with no timestamp fields pay zero overhead.
+        static constexpr bool has_auto_timestamp_field_ = []() consteval {
+            for (const auto m : all_members_) {
+                if (is_auto_create_field(m) || is_auto_update_field(m)) {
+                    return true;
+                }
+            }
+            return false;
+        }();
+
+        // One clock read per operation, but only for models that actually have a timestamp
+        // field — otherwise the call compiles away entirely (no regression on plain models).
+        [[nodiscard]] __attribute__((always_inline)) static auto batch_now() noexcept
+                -> std::chrono::system_clock::time_point {
+            if constexpr (has_auto_timestamp_field_) {
+                return std::chrono::system_clock::now();
+            } else {
+                return {};
+            }
+        }
+
         // Reflection data - made public for JOIN statement access
         static constexpr auto primary_key_ = find_primary_key_impl();
         static constexpr auto pk_name_     = std::meta::identifier_of(primary_key_);
@@ -244,7 +300,8 @@ export namespace storm::orm::statements {
                 -> std::expected<void, typename ConnType::Error> {
             int                                           param_index = 1;
             std::expected<void, typename ConnType::Error> result{};
-            ((result = bind_field_at_index<ConnType, Is>(&stmt, obj, param_index), result.has_value()) && ...);
+            const auto now = batch_now(); // shared by all fields of this object (compiles away if none)
+            ((result = bind_field_at_index<ConnType, Is>(&stmt, obj, param_index, now), result.has_value()) && ...);
             return result;
         }
 
@@ -255,58 +312,90 @@ export namespace storm::orm::statements {
                 -> std::expected<void, typename ConnType::Error> {
             int                                           param_index = 1;
             std::expected<void, typename ConnType::Error> result{};
-            ((result = bind_field_at_index<ConnType, Is, true>(&stmt, obj, param_index), result.has_value()) && ...);
+            const auto now = batch_now(); // shared by all fields of this object (compiles away if none)
+            ((result = bind_field_at_index<ConnType, Is, true>(&stmt, obj, param_index, now), result.has_value()) &&
+             ...);
             return result;
         }
 
-        // Unified field binder: binds a single field at compile-time index
-        // SkipPK=true skips primary key fields (for INSERT/UPDATE non-PK binding)
-        // Auto-increments param_index on successful bind
-        template <typename ConnType, std::size_t Index, bool SkipPK = false>
-        [[nodiscard]] __attribute__((always_inline)) static constexpr auto
-        bind_field_at_index(typename ConnType::Statement* stmt, const T& obj, int& param_index) noexcept
-                -> std::expected<void, typename ConnType::Error> {
+        // Unified field binder: binds a single field at compile-time index.
+        // SkipPK=true skips primary key fields (for INSERT/UPDATE non-PK binding).
+        // IsUpdate=true marks the UPDATE path so auto_create fields bind the object's
+        // stored value instead of now() (#209). `now` is read once per operation by the
+        // caller and threaded in so every row in a batch shares the same timestamp.
+        // Auto-increments param_index on successful bind.
+        template <typename ConnType, std::size_t Index, bool SkipPK = false, bool IsUpdate = false>
+        [[nodiscard]] __attribute__((always_inline)) static constexpr auto bind_field_at_index(
+                typename ConnType::Statement*         stmt,
+                const T&                              obj,
+                int&                                  param_index,
+                std::chrono::system_clock::time_point now = {}
+        ) noexcept -> std::expected<void, typename ConnType::Error> {
             constexpr auto member = all_members_[Index];
+
+            // Auto-timestamp fields (#209) must be system_clock::time_point — binding now()
+            // to any other type is a model error. Fires at the call site with a clear message.
+            if constexpr (is_auto_create_field(member) || is_auto_update_field(member)) {
+                static_assert(
+                        ValidTimestampField<member>,
+                        "auto_create / auto_update fields must be std::chrono::system_clock::time_point"
+                );
+            }
 
             // Compile-time PK skip for INSERT/UPDATE non-PK paths
             if constexpr (SkipPK && member == primary_key_) {
                 return {};
             }
+            // Auto-timestamp (#209): stamp now() for auto_update (always) and auto_create
+            // (INSERT only). auto_create on UPDATE is not stamped here and falls through to
+            // the normal bind below, preserving the object's stored created_at.
+            else if constexpr (stamps_now(member, IsUpdate)) {
+                return bind_one<ConnType>(stmt, param_index, now);
+            }
             // FK field - extract and bind the PK value from the foreign object
             else if constexpr (is_fk_field(member)) {
-                using FKType = std::remove_cvref_t<decltype(obj.[:member:])>;
-                if constexpr (utilities::is_optional_v<FKType>) {
-                    // Optional FK: bind NULL when empty, otherwise bind the inner PK value
-                    std::expected<void, typename ConnType::Error> result{};
-                    if (obj.[:member:].has_value()) {
-                        constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
-                        auto           pk_value     = obj.[:member:].value().[:fk_pk_member:];
-                        result                      = bind_value_by_type<ConnType>(*stmt, param_index, pk_value);
-                    } else {
-                        result = stmt->bind_null(param_index);
-                    }
-                    if (!result) {
-                        return std::unexpected(result.error());
-                    }
-                } else {
-                    const auto&    fk_object    = obj.[:member:];
-                    constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
-                    const auto&    pk_value     = fk_object.[:fk_pk_member:];
-                    auto           result       = bind_value_by_type<ConnType>(*stmt, param_index, pk_value);
-                    if (!result) {
-                        return std::unexpected(result.error());
-                    }
-                }
-                ++param_index;
-                return {};
+                return bind_fk_field_at_index<ConnType, Index>(stmt, obj, param_index);
             } else {
-                const auto& field_value = obj.[:member:];
-                auto        result      = bind_value_by_type<ConnType>(*stmt, param_index, field_value);
-                if (!result) {
-                    return std::unexpected(result.error());
+                return bind_one<ConnType>(stmt, param_index, obj.[:member:]);
+            }
+        }
+
+        // Bind one value at param_index and advance it on success. Shared tail used by the
+        // plain-field and auto-timestamp branches of bind_field_at_index.
+        template <typename ConnType>
+        [[nodiscard]] __attribute__((always_inline)) static constexpr auto
+        bind_one(typename ConnType::Statement* stmt, int& param_index, const auto& value) noexcept
+                -> std::expected<void, typename ConnType::Error> {
+            auto result = bind_value_by_type<ConnType>(*stmt, param_index, value);
+            if (!result) {
+                return std::unexpected(result.error());
+            }
+            ++param_index;
+            return {};
+        }
+
+        // Extract and bind the foreign object's PK value (NULL for an empty optional FK).
+        template <typename ConnType, std::size_t Index>
+        [[nodiscard]] __attribute__((always_inline)) static constexpr auto
+        bind_fk_field_at_index(typename ConnType::Statement* stmt, const T& obj, int& param_index) noexcept
+                -> std::expected<void, typename ConnType::Error> {
+            constexpr auto member = all_members_[Index];
+            using FKType          = std::remove_cvref_t<decltype(obj.[:member:])>;
+            if constexpr (utilities::is_optional_v<FKType>) {
+                // Optional FK: bind NULL when empty, otherwise bind the inner PK value
+                if (!obj.[:member:].has_value()) {
+                    auto null_result = stmt->bind_null(param_index);
+                    if (!null_result) {
+                        return std::unexpected(null_result.error());
+                    }
+                    ++param_index;
+                    return {};
                 }
-                ++param_index;
-                return {};
+                constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
+                return bind_one<ConnType>(stmt, param_index, obj.[:member:].value().[:fk_pk_member:]);
+            } else {
+                constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
+                return bind_one<ConnType>(stmt, param_index, obj.[:member:].[:fk_pk_member:]);
             }
         }
 
@@ -319,10 +408,13 @@ export namespace storm::orm::statements {
                 Statement& stmt, const ContainerType& objects, std::index_sequence<Is...> /*unused*/
         ) noexcept -> std::expected<void, typename ConnType::Error> {
             int param_index = 1;
+            // One now() per batch, reused for every row (#209): all rows share the same
+            // created_at/updated_at, matching the issue's batch-timestamp intent.
+            const auto now = batch_now();
 
             for (const auto& obj : objects) {
                 std::expected<void, typename ConnType::Error> result{};
-                ((result = bind_field_at_index<ConnType, Is, SkipPrimaryKey>(&stmt, obj, param_index),
+                ((result = bind_field_at_index<ConnType, Is, SkipPrimaryKey>(&stmt, obj, param_index, now),
                   result.has_value()) &&
                  ...);
                 if (!result) {

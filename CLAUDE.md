@@ -311,6 +311,12 @@ See [docs/development/PERFORMANCE_GUIDELINES.md](docs/development/PERFORMANCE_GU
 
 `int`, `int64_t`, `double`, `float`, `bool`, `std::string`, `std::string_view`, `std::optional<T>`, `std::vector<uint8_t>` (BLOB)
 
+**Auto-timestamps (#209)**: `[[= FieldAttr::auto_create]]` / `[[= FieldAttr::auto_update]]` on a
+`std::chrono::system_clock::time_point` field auto-stamp `now()` — `auto_create` on INSERT only,
+`auto_update` on INSERT and UPDATE. **Bind-time only, no write-back** (the caller's object is never
+mutated; re-SELECT to read the value). UPDATE preserves `created_at` by binding the object's stored
+value, so pass the original `created_at` when updating. Zero cost on models without timestamp fields.
+
 See [docs/reference/FIELD_TYPES.md](docs/reference/FIELD_TYPES.md).
 
 ## Known Compiler Issues

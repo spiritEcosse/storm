@@ -94,6 +94,33 @@ for (auto& p : people) { p.salary *= 1.1; }
 qs.update(people);
 ```
 
+## Automatic Timestamps
+
+```cpp
+struct Article {
+    [[=storm::meta::FieldAttr::primary]] int id;
+    std::string title;
+    [[=storm::meta::FieldAttr::auto_create]] std::chrono::system_clock::time_point created_at;
+    [[=storm::meta::FieldAttr::auto_update]] std::chrono::system_clock::time_point updated_at;
+};
+
+QuerySet<Article> qs;
+
+// INSERT — created_at and updated_at are stamped automatically (any value you set is ignored).
+qs.insert(Article{.title = "Hello"}).execute();
+
+// The object in memory is NOT mutated — re-SELECT to read the stamped values.
+auto saved = *qs.select().execute().value().begin();
+
+// UPDATE — updated_at is re-stamped; created_at is preserved by passing the saved value back.
+saved.title = "Hello (edited)";
+qs.update(saved).execute();
+```
+
+`auto_create` stamps on INSERT only; `auto_update` stamps on INSERT and UPDATE. Both
+fields must be `std::chrono::system_clock::time_point`. See
+[reference/FIELD_TYPES.md](reference/FIELD_TYPES.md#automatic-timestamps-auto_create--auto_update).
+
 ## DELETE
 
 ```cpp

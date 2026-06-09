@@ -267,9 +267,12 @@ export namespace storm::orm::statements {
                 -> std::expected<void, Error> {
             int param_index = 1;
 
-            // Bind all non-PK fields at compile time using unified binder
+            // Bind all non-PK fields at compile time using unified binder.
+            // IsUpdate=true: auto_update stamps now(); auto_create binds the object's
+            // stored value (preserving created_at). One now() read shared across fields (#209).
             std::expected<void, Error> result{};
-            ((result = Base::template bind_field_at_index<ConnType, Is, true>(stmt, obj, param_index),
+            const auto                 now = Base::batch_now();
+            ((result = Base::template bind_field_at_index<ConnType, Is, true, true>(stmt, obj, param_index, now),
               result.has_value()) &&
              ...);
 
