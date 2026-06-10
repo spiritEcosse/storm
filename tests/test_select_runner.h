@@ -52,9 +52,9 @@ constexpr auto build_where_expr(std::string_view op, ValueType value) {
 
 // FK resolver for test models (Message::sender → Person).
 struct TestFkResolver {
-    consteval auto operator()(std::string_view name) const {
+    consteval auto operator()(std::string_view name) const -> std::meta::info {
         if (name == "sender")
-            return &Message::sender;
+            return ^^Message::sender;
         std::unreachable();
     }
 };

@@ -73,8 +73,8 @@ namespace storm::orm::query_builder {
     // spec protocol (spec.where, spec.join, spec.order_by[], spec.group_by,
     // spec.distinct, spec.limit, spec.aggregate, spec.setop, spec.operation).
     //
-    // fk_resolver: consteval callable (string_view) -> member-ptr for JOIN
-    // field dispatch. Pass a no-op for tests that don't use JOINs.
+    // fk_resolver: consteval callable (string_view) -> std::meta::info for
+    // JOIN field dispatch. Pass a no-op for tests that don't use JOINs.
     // ========================================================================
     template <typename Model, auto spec, auto fk_resolver, typename ConnType = storm::db::sqlite::Connection>
     class QueryBuilder {

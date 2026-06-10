@@ -59,7 +59,7 @@ TYPED_TEST(AggregateTest, FullChain_WhereJoinOrderByLimitOffset) {
     // Values >= 20 ordered DESC: 75,70,65,60,55,50,45,40,35,30,25,20
     // After OFFSET 2: 65,60,55,50,45,...  After LIMIT 5: 65,60,55,50,45
     auto result = this->msg_qs->where(storm::orm::where::field<^^Message::value>() >= 20)
-                          .template join<&Message::sender>()
+                          .template join<^^Message::sender>()
                           .template order_by<^^Message::value, false>()
                           .limit(5)
                           .offset(2)
@@ -75,7 +75,7 @@ TYPED_TEST(AggregateTest, FullChain_WhereJoinOrderByAscLimit) {
     insert_full_chain_14_messages<TypeParam>();
 
     auto result = this->msg_qs->where(storm::orm::where::field<^^Message::value>() >= 20)
-                          .template join<&Message::sender>()
+                          .template join<^^Message::sender>()
                           .template order_by<^^Message::value, true>()
                           .limit(3)
                           .offset(0)
@@ -91,7 +91,7 @@ TYPED_TEST(AggregateTest, FullChain_JoinResolvesCorrectSender) {
     insert_full_chain_14_messages<TypeParam>();
 
     auto result = this->msg_qs->where(storm::orm::where::field<^^Message::value>() == 75)
-                          .template join<&Message::sender>()
+                          .template join<^^Message::sender>()
                           .select()
                           .execute();
 

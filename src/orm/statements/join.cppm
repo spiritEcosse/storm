@@ -38,29 +38,23 @@ export namespace storm::orm::statements {
         }
     };
 
-    template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, auto... FKFieldPtrs>
-        requires(sizeof...(FKFieldPtrs) >= 1)
+    template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, std::meta::info... FKFields>
+        requires(sizeof...(FKFields) >= 1 && (FKFieldOf<T, FKFields> && ...))
     class JoinStatement : private BaseStatement<T> {
         friend class BaseStatement<T>;
         using Base      = BaseStatement<T>;
         using Error     = typename ConnType::Error;
         using Statement = typename ConnType::Statement;
 
-        static constexpr std::size_t fk_count_ = sizeof...(FKFieldPtrs);
+        static constexpr std::size_t fk_count_ = sizeof...(FKFields);
 
         // C++26: Direct pack indexing
         // FK_type unwraps std::optional<FKModel> → FKModel so FKBase_at works correctly
         template <std::size_t Idx>
         using FK_type =
-                utilities::optional_inner_type_t<std::remove_cvref_t<decltype(std::declval<T>().*FKFieldPtrs...[Idx])>>;
+                utilities::optional_inner_type_t<std::remove_cvref_t<typename[:std::meta::type_of(FKFields...[Idx]):]>>;
 
         template <std::size_t Idx> using FKBase_at = BaseStatement<FK_type<Idx>>;
-
-        // Compile-time validation
-        static_assert(
-                (std::is_member_object_pointer_v<decltype(FKFieldPtrs)> && ...),
-                "FK pointers must be member object pointers"
-        );
 
         static consteval auto count_non_fk_fields() -> std::size_t {
             std::size_t count = 0;
@@ -91,20 +85,8 @@ export namespace storm::orm::statements {
 
         static constexpr auto column_offsets_ = calculate_column_offsets();
 
-        static consteval auto build_fk_field_names() {
-            std::array<std::string_view, fk_count_> names{};
-            std::size_t                             fk_idx = 0;
-
-            for (std::size_t member_idx = 0; member_idx < Base::field_count_ && fk_idx < fk_count_; ++member_idx) {
-                auto member = Base::all_members_[member_idx];
-                if (Base::is_fk_field(member)) {
-                    names[fk_idx++] = std::meta::identifier_of(member);
-                }
-            }
-            return names;
-        }
-
-        static constexpr auto fk_field_names_ = build_fk_field_names();
+        // FK names derived per-info — independent of FK declaration order in T (#388)
+        static constexpr std::array<std::string_view, fk_count_> fk_field_names_{std::meta::identifier_of(FKFields)...};
 
         // LCOV_EXCL_START - compile-time only (called from consteval functions)
         static constexpr auto get_join_keyword() -> std::string_view {
@@ -318,24 +300,24 @@ export namespace storm::orm::statements {
 
         template <std::size_t Idx>
         __attribute__((always_inline)) static void extract_fk_at(Statement* stmt, T& obj) noexcept {
-            constexpr auto FKPtr              = FKFieldPtrs...[Idx]; // C++26 pack indexing
-            using RawFKFieldType              = std::remove_cvref_t<decltype(obj.*FKPtr)>;
+            constexpr auto FKField            = FKFields...[Idx]; // C++26 pack indexing
+            using RawFKFieldType              = std::remove_cvref_t<decltype(obj.[:FKField:])>;
             constexpr std::size_t field_count = FKBase_at<Idx>::field_count_;
 
             if constexpr (utilities::is_optional_v<RawFKFieldType>) {
                 // Optional FK: NULL first joined column means no match → set nullopt
                 const auto first_col = static_cast<int>(column_offsets_[Idx]);
                 if (stmt->is_null(first_col)) {
-                    obj.*FKPtr = std::nullopt;
+                    obj.[:FKField:] = std::nullopt;
                 } else {
                     FK_type<Idx> fk_inner{};
                     extract_fk_fields_impl<Idx>(
                             stmt, fk_inner, column_offsets_[Idx], std::make_index_sequence<field_count>{}
                     );
-                    obj.*FKPtr = std::move(fk_inner);
+                    obj.[:FKField:] = std::move(fk_inner);
                 }
             } else {
-                auto& fk_obj = obj.*FKPtr;
+                auto& fk_obj = obj.[:FKField:];
                 extract_fk_fields_impl<Idx>(
                         stmt, fk_obj, column_offsets_[Idx], std::make_index_sequence<field_count>{}
                 );
@@ -379,9 +361,10 @@ export namespace storm::orm::statements {
         }
     };
 
-    template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, auto... FKFieldPtrs>
+    template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, std::meta::info... FKFields>
+        requires(sizeof...(FKFields) >= 1 && (FKFieldOf<T, FKFields> && ...))
     [[nodiscard]] auto make_join_wrapper() -> JoinStatementWrapper {
-        using JS = JoinStatement<T, ConnType, Type, FKFieldPtrs...>;
+        using JS = JoinStatement<T, ConnType, Type, FKFields...>;
 
         return JoinStatementWrapper{
                 +[]() -> const std::string& { return JS::get_complete_sql(); },

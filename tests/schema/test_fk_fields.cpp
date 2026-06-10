@@ -47,6 +47,23 @@ struct Summary {
 
 using storm::QuerySet;
 
+// ── Compile-time API contract (#388) ─────────────────────────────────────────
+// join/left_join/right_join take ^^T::field reflection NTTPs. Member-pointer
+// syntax, non-member reflections, non-FK fields, and other models' fields are
+// all rejected by the FKFieldOf constraint. The template parameter makes the
+// call dependent so a rejected argument is a substitution failure (= false),
+// not a hard error.
+template <auto... FKs> constexpr bool join_accepts = requires(QuerySet<Task> qs) { qs.template join<FKs...>(); };
+
+static_assert(join_accepts<^^Task::assignee>);
+static_assert(join_accepts<^^Task::assignee, ^^Task::reviewer>);
+static_assert(requires(QuerySet<Task> qs) { qs.template left_join<^^Task::assignee>(); });
+static_assert(requires(QuerySet<Task> qs) { qs.template right_join<^^Task::assignee>(); });
+static_assert(!join_accepts<&Task::assignee>);     // old pointer syntax removed
+static_assert(!join_accepts<^^Task::description>); // non-FK field
+static_assert(!join_accepts<^^Task>);              // not a data member
+static_assert(!join_accepts<^^Person::name>);      // member of another model
+
 // Test fixture for FK field operations — templated on database backend
 template <typename ConnType> class FKFieldTest : public StormTestFixture<Person, ConnType, Task> {};
 
@@ -389,7 +406,7 @@ TYPED_TEST(FKFieldTest, JoinFullyPopulatesFKObject) {
     ASSERT_TRUE(msg_result.has_value());
 
     // Phase 2: JOIN to get fully populated assignee
-    auto join_result = message_qs.template join<&Task::assignee>().select().execute();
+    auto join_result = message_qs.template join<^^Task::assignee>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "JOIN failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
@@ -436,7 +453,7 @@ TYPED_TEST(FKFieldTest, JoinMultipleFKFields) {
     ASSERT_TRUE(msg_result.has_value());
 
     // Phase 3: Multi-JOIN to get BOTH assignee and reviewer fully populated
-    auto join_result = message_qs.template join<&Task::assignee, &Task::reviewer>().select().execute();
+    auto join_result = message_qs.template join<^^Task::assignee, ^^Task::reviewer>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "Multi-JOIN failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
@@ -483,7 +500,7 @@ TYPED_TEST(FKFieldTest, LeftJoinReturnsAllMessages) {
     ASSERT_EQ(step_result, decltype(stmt)::NO_MORE_ROWS) << "Direct INSERT failed";
 
     // LEFT JOIN on assignee - should return task even though reviewer doesn't exist
-    auto join_result = message_qs.template left_join<&Task::assignee>().select().execute();
+    auto join_result = message_qs.template left_join<^^Task::assignee>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "LEFT JOIN failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
@@ -528,7 +545,7 @@ TYPED_TEST(FKFieldTest, LeftJoinMultipleFKFields) {
     ASSERT_TRUE(msg_result.has_value());
 
     // LEFT JOIN on both assignee and reviewer
-    auto join_result = message_qs.template left_join<&Task::assignee, &Task::reviewer>().select().execute();
+    auto join_result = message_qs.template left_join<^^Task::assignee, ^^Task::reviewer>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "Multi LEFT JOIN failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
@@ -579,7 +596,7 @@ TYPED_TEST(FKFieldTest, RightJoinBehavior) {
 
     // RIGHT JOIN on assignee - should return all users in Person table as assignees
     // This includes Charlie even though no task references him
-    auto join_result = message_qs.template right_join<&Task::assignee>().select().execute();
+    auto join_result = message_qs.template right_join<^^Task::assignee>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "RIGHT JOIN failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
@@ -629,7 +646,7 @@ TYPED_TEST(FKFieldTest, RightJoinMultipleFKFields) {
     ASSERT_TRUE(msg_result.has_value());
 
     // RIGHT JOIN on both assignee and reviewer
-    auto join_result = message_qs.template right_join<&Task::assignee, &Task::reviewer>().select().execute();
+    auto join_result = message_qs.template right_join<^^Task::assignee, ^^Task::reviewer>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "Multi RIGHT JOIN failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
@@ -732,7 +749,7 @@ TYPED_TEST(NullableFKTest, LeftJoinWithNullFKField) {
     ASSERT_TRUE(insert_result.has_value());
 
     // LEFT JOIN on sender - should return message even with NULL sender_id
-    auto join_result = message_qs.template left_join<&NullableFKMessage::sender>().select().execute();
+    auto join_result = message_qs.template left_join<^^NullableFKMessage::sender>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "LEFT JOIN with NULL FK failed: " << join_result.error().message();
 
     const auto& messages = join_result.value();
@@ -767,7 +784,7 @@ TYPED_TEST(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
     ASSERT_TRUE(message_qs.insert(msg2).execute().has_value());
 
     // LEFT JOIN should return both messages
-    auto join_result = message_qs.template left_join<&NullableFKMessage::sender>().select().execute();
+    auto join_result = message_qs.template left_join<^^NullableFKMessage::sender>().select().execute();
     ASSERT_TRUE(join_result.has_value());
 
     const auto& messages = join_result.value();
@@ -845,7 +862,7 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
     ASSERT_TRUE(proj2_result.has_value()) << "Failed to insert project 2: " << proj2_result.error().message();
 
     // JOIN to get projects with fully populated manager (Person) objects
-    auto join_result = project_qs.template join<&Project::manager>().select().execute();
+    auto join_result = project_qs.template join<^^Project::manager>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "JOIN failed: " << join_result.error().message();
 
     const auto& projects = join_result.value();
@@ -946,7 +963,7 @@ TYPED_TEST(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
 
     // Multi-JOIN to populate both assignee and reviewer
     // NOLINTNEXTLINE(readability-isolate-declaration) - false positive with template
-    auto join_result = task_qs.template join<&Task::assignee, &Task::reviewer>().select().execute();
+    auto join_result = task_qs.template join<^^Task::assignee, ^^Task::reviewer>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "Multi-JOIN failed: " << join_result.error().message();
 
     const auto& tasks = join_result.value();
@@ -1014,7 +1031,7 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithFloatAndLongLongTypes) {
     ASSERT_TRUE(reading_result.has_value()) << "Failed to insert reading: " << reading_result.error().message();
 
     // JOIN to get readings with fully populated measurement
-    auto join_result = reading_qs.template join<&Reading::measurement>().select().execute();
+    auto join_result = reading_qs.template join<^^Reading::measurement>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "JOIN failed: " << join_result.error().message();
 
     const auto& readings = join_result.value();
@@ -1067,7 +1084,7 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithLongType) {
     ASSERT_TRUE(sum_result.has_value()) << "Failed to insert summary: " << sum_result.error().message();
 
     // JOIN to get summaries with fully populated counter
-    auto join_result = summary_qs.template join<&Summary::counter>().select().execute();
+    auto join_result = summary_qs.template join<^^Summary::counter>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "JOIN failed: " << join_result.error().message();
 
     const auto& summaries = join_result.value();
@@ -1125,7 +1142,7 @@ template <typename ConnType> class JoinTypeExtractionTest : public StormTestFixt
 TYPED_TEST_SUITE(JoinTypeExtractionTest, DatabaseTypes);
 
 TYPED_TEST(JoinTypeExtractionTest, JoinExtractsFloatField) {
-    auto result = this->msg_qs->template join<&Message::sender>().select().execute();
+    auto result = this->msg_qs->template join<^^Message::sender>().select().execute();
 
     ASSERT_TRUE(result.has_value()) << "JOIN with float field should succeed";
     ASSERT_FALSE(result.value().empty());
@@ -1142,7 +1159,7 @@ TYPED_TEST(JoinTypeExtractionTest, JoinExtractsFloatField) {
 }
 
 TYPED_TEST(JoinTypeExtractionTest, JoinExtractsBoolField) {
-    auto result = this->msg_qs->template join<&Message::sender>().select().execute();
+    auto result = this->msg_qs->template join<^^Message::sender>().select().execute();
 
     ASSERT_TRUE(result.has_value()) << "JOIN with bool field should succeed";
     ASSERT_FALSE(result.value().empty());
@@ -1159,7 +1176,7 @@ TYPED_TEST(JoinTypeExtractionTest, JoinExtractsBoolField) {
 }
 
 TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalIntWithValue) {
-    auto result = this->msg_qs->template join<&Message::sender>().select().execute();
+    auto result = this->msg_qs->template join<^^Message::sender>().select().execute();
 
     ASSERT_TRUE(result.has_value()) << "JOIN with optional int should succeed";
     ASSERT_FALSE(result.value().empty());
@@ -1176,7 +1193,7 @@ TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalIntWithValue) {
 }
 
 TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalIntNull) {
-    auto result = this->msg_qs->template join<&Message::sender>().select().execute();
+    auto result = this->msg_qs->template join<^^Message::sender>().select().execute();
 
     ASSERT_TRUE(result.has_value()) << "JOIN with NULL optional should succeed";
     ASSERT_FALSE(result.value().empty());
@@ -1189,7 +1206,7 @@ TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalIntNull) {
 }
 
 TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalStringWithValue) {
-    auto result = this->msg_qs->template join<&Message::sender>().select().execute();
+    auto result = this->msg_qs->template join<^^Message::sender>().select().execute();
 
     ASSERT_TRUE(result.has_value()) << "JOIN with optional string should succeed";
     ASSERT_FALSE(result.value().empty());
@@ -1203,7 +1220,7 @@ TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalStringWithValue) {
 }
 
 TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalStringNull) {
-    auto result = this->msg_qs->template join<&Message::sender>().select().execute();
+    auto result = this->msg_qs->template join<^^Message::sender>().select().execute();
 
     ASSERT_TRUE(result.has_value()) << "JOIN with NULL optional string should succeed";
     ASSERT_FALSE(result.value().empty());
@@ -1217,7 +1234,7 @@ TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalStringNull) {
 
 TYPED_TEST(JoinTypeExtractionTest, JoinWithOrderBy) {
     auto result =
-            this->msg_qs->template join<&Message::sender>().template order_by<^^Message::value>().select().execute();
+            this->msg_qs->template join<^^Message::sender>().template order_by<^^Message::value>().select().execute();
 
     ASSERT_TRUE(result.has_value()) << "JOIN with ORDER BY should succeed";
     EXPECT_EQ(result.value().size(), 4);

@@ -235,28 +235,28 @@ export namespace storm {
         // INNER JOIN support for single or multiple FK fields
         // Immutable: returns a new QuerySet with the join attached (Django-style).
         // Usage:
-        //   Single FK: message_qs.join<&Message::sender>().select()
-        //   Multi FK:  message_qs.join<&Message::sender, &Message::receiver>().select()
-        template <auto... FKFieldPtrs>
-            requires(sizeof...(FKFieldPtrs) >= 1)
+        //   Single FK: message_qs.join<^^Message::sender>().select()
+        //   Multi FK:  message_qs.join<^^Message::sender, ^^Message::receiver>().select()
+        template <std::meta::info... FKFields>
+            requires(sizeof...(FKFields) >= 1 && (orm::statements::FKFieldOf<T, FKFields> && ...))
         [[nodiscard]] auto join() const -> QuerySet {
             auto result = clone_state();
             result.join_stmt_ =
-                    orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Inner, FKFieldPtrs...>();
+                    orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Inner, FKFields...>();
             return result;
         }
 
         // LEFT JOIN support for single or multiple FK fields
         // Immutable: returns a new QuerySet with the join attached.
         // Usage:
-        //   Single FK: message_qs.left_join<&Message::sender>().select()
-        //   Multi FK:  message_qs.left_join<&Message::sender, &Message::receiver>().select()
-        template <auto... FKFieldPtrs>
-            requires(sizeof...(FKFieldPtrs) >= 1)
+        //   Single FK: message_qs.left_join<^^Message::sender>().select()
+        //   Multi FK:  message_qs.left_join<^^Message::sender, ^^Message::receiver>().select()
+        template <std::meta::info... FKFields>
+            requires(sizeof...(FKFields) >= 1 && (orm::statements::FKFieldOf<T, FKFields> && ...))
         [[nodiscard]] auto left_join() const -> QuerySet {
             auto result = clone_state();
             result.join_stmt_ =
-                    orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Left, FKFieldPtrs...>();
+                    orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Left, FKFields...>();
             return result;
         }
 
@@ -264,14 +264,17 @@ export namespace storm {
         // Immutable: returns a new QuerySet with the join attached.
         // Requires backend support (SQLite 3.39.0+, PostgreSQL always)
         // Usage:
-        //   Single FK: message_qs.right_join<&Message::sender>().select()
-        //   Multi FK:  message_qs.right_join<&Message::sender, &Message::receiver>().select()
-        template <auto... FKFieldPtrs>
-            requires(sizeof...(FKFieldPtrs) >= 1 && ConnType::supports_right_join)
+        //   Single FK: message_qs.right_join<^^Message::sender>().select()
+        //   Multi FK:  message_qs.right_join<^^Message::sender, ^^Message::receiver>().select()
+        template <std::meta::info... FKFields>
+            requires(
+                    sizeof...(FKFields) >= 1 && (orm::statements::FKFieldOf<T, FKFields> && ...) &&
+                    ConnType::supports_right_join
+            )
         [[nodiscard]] auto right_join() const -> QuerySet {
             auto result = clone_state();
             result.join_stmt_ =
-                    orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Right, FKFieldPtrs...>();
+                    orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Right, FKFields...>();
             return result;
         }
 

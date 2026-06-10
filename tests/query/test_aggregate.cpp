@@ -67,7 +67,7 @@ TYPED_TEST(AggregateTest, SingleAggregates_WithWhereAndJoin) {
     this->insert_join_test_data();
 
     auto sum_result = this->msg_qs->where(storm::orm::where::field<^^Message::value>() > 25)
-                              .template join<&Message::sender>()
+                              .template join<^^Message::sender>()
                               .template sum<^^Message::value>()
                               .execute();
     ASSERT_TRUE(sum_result.has_value()) << "SUM with WHERE+JOIN failed: " << sum_result.error().message();
@@ -76,7 +76,7 @@ TYPED_TEST(AggregateTest, SingleAggregates_WithWhereAndJoin) {
     (*this->msg_qs).reset();
 
     auto count_result = this->msg_qs->where(storm::orm::where::field<^^Message::value>() > 25)
-                                .template join<&Message::sender>()
+                                .template join<^^Message::sender>()
                                 .count()
                                 .execute();
     ASSERT_TRUE(count_result.has_value()) << "COUNT with WHERE+JOIN failed: " << count_result.error().message();
@@ -85,7 +85,7 @@ TYPED_TEST(AggregateTest, SingleAggregates_WithWhereAndJoin) {
     (*this->msg_qs).reset();
 
     auto min_result = this->msg_qs->where(storm::orm::where::field<^^Message::value>() > 25)
-                              .template join<&Message::sender>()
+                              .template join<^^Message::sender>()
                               .template min<^^Message::value>()
                               .execute();
     ASSERT_TRUE(min_result.has_value()) << "MIN with WHERE+JOIN failed: " << min_result.error().message();
@@ -325,7 +325,7 @@ TYPED_TEST(AggregateTest, WhereJoinRepeatedQueries) {
 
     for (int i = 0; i < 50; ++i) {
         auto result = this->msg_qs->where(storm::orm::where::field<^^Message::value>() > 20)
-                              .template join<&Message::sender>()
+                              .template join<^^Message::sender>()
                               .count()
                               .execute();
         ASSERT_TRUE(result.has_value()) << "Iteration " << i << " failed: " << result.error().message();

@@ -66,7 +66,7 @@ TYPED_TEST(AggregateTest, HavingOnAggregateStatement) {
 TYPED_TEST(AggregateTest, HavingWithJoin) {
     this->insert_join_test_data();
 
-    auto result = this->msg_qs->template join<&Message::sender>()
+    auto result = this->msg_qs->template join<^^Message::sender>()
                           .template group_by<^^Message::value>()
                           .having(storm::orm::where::field<^^Message::value>() > 30)
                           .count()
@@ -119,7 +119,7 @@ TYPED_TEST(AggregateTest, HavingWithWhereAndJoin) {
     // WHERE value >= 20 + JOIN + GROUP BY value HAVING value > 25
     // After WHERE: 20,30,50,70 → After HAVING > 25: 30,50,70 → 3 groups
     auto result = this->msg_qs->where(storm::orm::where::field<^^Message::value>() >= 20)
-                          .template join<&Message::sender>()
+                          .template join<^^Message::sender>()
                           .template group_by<^^Message::value>()
                           .having(storm::orm::where::field<^^Message::value>() > 25)
                           .count()

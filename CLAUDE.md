@@ -398,8 +398,9 @@ qs.distinct<^^Person::name>().execute();
 qs.values<^^Person::name>().execute();                      // plf::hive<std::string>
 qs.values<^^Person::name, ^^Person::age>().execute();       // plf::hive<std::tuple<std::string, int>>
 
-// JOIN
-qs.join<Message>().where(...).select();
+// JOIN — FK field selectors use reflection NTTPs like every other field selector
+message_qs.join<^^Message::sender>().where(...).select();
+message_qs.left_join<^^Message::sender, ^^Message::receiver>().select();
 ```
 
 **Methods**: `where()`, `join()`, `order_by()`, `limit()`, `offset()`, `group_by()`, `having()`, `distinct()`, `values()`

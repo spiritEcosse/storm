@@ -80,7 +80,7 @@ export namespace storm::benchmark {
         using WhereModel = [:where_model_:];
 
         static constexpr auto fk_resolver = [](std::string_view name) consteval {
-            return registry::resolve_fk_ptr(name);
+            return registry::resolve_fk_field(name);
         };
 
         using Builder = storm::orm::query_builder::QueryBuilder<Model, test, fk_resolver>;

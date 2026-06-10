@@ -31,7 +31,7 @@ struct Message {
 storm::orm::QuerySet<Message> message_qs(conn);
 
 // Populates sender field fully for each message
-auto result = message_qs.join<&Message::sender>().select();
+auto result = message_qs.join<^^Message::sender>().select();
 if (result) {
     for (const auto& msg : result.value()) {
         std::cout << msg.content << " from " << msg.sender.username << std::endl;
@@ -59,7 +59,7 @@ struct Message {
 };
 
 // Populates both sender and receiver fields
-auto result = message_qs.join<&Message::sender, &Message::receiver>().select();
+auto result = message_qs.join<^^Message::sender, ^^Message::receiver>().select();
 if (result) {
     for (const auto& msg : result.value()) {
         std::cout << msg.sender.username << " → "
@@ -90,7 +90,7 @@ Storm ORM supports all standard SQL JOIN types:
 Only returns rows where FK relationship exists:
 
 ```cpp
-auto result = message_qs.join<&Message::sender>().select();
+auto result = message_qs.join<^^Message::sender>().select();
 ```
 
 **Use when**: You only want messages with valid senders
@@ -100,7 +100,7 @@ auto result = message_qs.join<&Message::sender>().select();
 Returns all base table rows, FK fields may be NULL:
 
 ```cpp
-auto result = message_qs.left_join<&Message::sender>().select();
+auto result = message_qs.left_join<^^Message::sender>().select();
 ```
 
 **Use when**: You want all messages, even those without senders
@@ -111,7 +111,7 @@ auto result = message_qs.left_join<&Message::sender>().select();
 Returns all FK table rows, base fields may be NULL:
 
 ```cpp
-auto result = message_qs.right_join<&Message::sender>().select();
+auto result = message_qs.right_join<^^Message::sender>().select();
 ```
 
 **Use when**: You want all users, even those without messages
@@ -131,13 +131,13 @@ class IJoinStatement {
 };
 
 // Unified variadic template (handles single + multi FK)
-template <typename T, ConnType, auto... FKFieldPtrs>
+template <typename T, ConnType, std::meta::info... FKFields>
 class JoinStatement : public IJoinStatement {
     // Pure SQL builder - no execute(), no caching
 
     std::string to_sql() const override {
         // Generate: " INNER JOIN table t2 ON t2.id = t1.fk_id"
-        // Uses fold expressions for variadic FKFieldPtrs
+        // Uses fold expressions for variadic FKFields
     }
 
     void extract_row(void* stmt, void* obj) const override {
@@ -154,9 +154,9 @@ QuerySet stores the JOIN statement using type erasure:
 template <class T> class QuerySet {
     mutable std::unique_ptr<IJoinStatement> join_stmt_;
 
-    template <auto... FKFieldPtrs>
+    template <std::meta::info... FKFields>
     auto&& join(this auto&& self) {
-        self.join_stmt_ = std::make_unique<JoinStatement<T, ConnType, FKFieldPtrs...>>();
+        self.join_stmt_ = std::make_unique<JoinStatement<T, ConnType, FKFields...>>();
         return self;  // Chainable
     }
 
@@ -283,7 +283,7 @@ JOIN operations can be combined with WHERE clauses:
 using namespace storm::orm::where;
 
 // Filter on both base table and joined table
-auto result = message_qs.join<&Message::sender>()
+auto result = message_qs.join<^^Message::sender>()
                         .where(field<^^User::level>() > 5 and
                                field<^^Message::content>().like("%urgent%"))
                         .select();

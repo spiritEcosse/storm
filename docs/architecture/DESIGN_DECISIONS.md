@@ -176,7 +176,7 @@ class IJoinStatement {
 };
 
 // Unified variadic template (single + multi FK)
-template <typename T, ConnType, auto... FKFieldPtrs>
+template <typename T, ConnType, std::meta::info... FKFields>
 class JoinStatement : public IJoinStatement {
     // Pure SQL builder - no execute(), no caching
     // Generates: " INNER JOIN table t2 ON t2.id = t1.fk_id"
@@ -194,10 +194,10 @@ class JoinStatement : public IJoinStatement {
 **Usage:**
 ```cpp
 // Single FK - populates sender fully
-auto result = message_qs.join<&Message::sender>().select();
+auto result = message_qs.join<^^Message::sender>().select();
 
 // Multi FK - populates both sender and receiver
-auto result = message_qs.join<&Message::sender, &Message::receiver>().select();
+auto result = message_qs.join<^^Message::sender, ^^Message::receiver>().select();
 ```
 
 See [JOIN Performance Analysis](../benchmarks/JOIN_ANALYSIS.md) for detailed performance data.

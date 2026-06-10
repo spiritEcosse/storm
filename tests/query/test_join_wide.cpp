@@ -37,15 +37,15 @@ TYPED_TEST_SUITE(WideJoinTest, DatabaseTypes);
 // Attaches all 9 FK joins to a WideJoin QuerySet (single source for the FK pack).
 template <typename ConnType> auto join_all_nine(const QuerySet<WideJoin, ConnType>& qs) {
     return qs.template join<
-            &WideJoin::fk1,
-            &WideJoin::fk2,
-            &WideJoin::fk3,
-            &WideJoin::fk4,
-            &WideJoin::fk5,
-            &WideJoin::fk6,
-            &WideJoin::fk7,
-            &WideJoin::fk8,
-            &WideJoin::fk9>();
+            ^^WideJoin::fk1,
+            ^^WideJoin::fk2,
+            ^^WideJoin::fk3,
+            ^^WideJoin::fk4,
+            ^^WideJoin::fk5,
+            ^^WideJoin::fk6,
+            ^^WideJoin::fk7,
+            ^^WideJoin::fk8,
+            ^^WideJoin::fk9>();
 }
 
 // SQL structural check: the 9th FK alias must render as t10 (not bare "t").
