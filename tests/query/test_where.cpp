@@ -139,7 +139,7 @@ TYPED_TEST(WhereJoinTest, WhereWithJoin) {
     QuerySet<Message, TypeParam> queryset;
 
     // SELECT with JOIN and WHERE filtering by Person.age
-    auto result = queryset.template join<&Message::sender>().where(field<^^Person::age>() >= 10).select().execute();
+    auto result = queryset.template join<^^Message::sender>().where(field<^^Person::age>() >= 10).select().execute();
     ASSERT_TRUE(result.has_value()) << "WHERE + JOIN failed: " << result.error().message();
 
     const auto& messages = result.value();
@@ -164,7 +164,7 @@ TYPED_TEST(WhereJoinTest, WhereWithJoinMultipleConditions) {
 
     auto expr1  = field<^^Person::age>() > 5;
     auto expr2  = field<^^Message::content>().like("%from%");
-    auto result = queryset.template join<&Message::sender>().where(expr1 && expr2).select().execute();
+    auto result = queryset.template join<^^Message::sender>().where(expr1 && expr2).select().execute();
     ASSERT_TRUE(result.has_value()) << "WHERE + JOIN failed: " << result.error().message();
 
     const auto& messages = result.value();
@@ -176,7 +176,7 @@ TYPED_TEST(WhereJoinTest, WhereWithNaturalOperators) {
     QuerySet<Message, TypeParam> queryset;
 
     // Using natural 'and' operator (also works with &&)
-    auto result = queryset.template join<&Message::sender>()
+    auto result = queryset.template join<^^Message::sender>()
                           .where(field<^^Person::age>() > 5 and field<^^Message::content>().like("%from%"))
                           .select()
                           .execute();
@@ -550,7 +550,7 @@ TYPED_TEST(WhereJoinTest, IsNull_WithJoin) {
     // In WhereJoinTest fixture, Person rows are inserted without score → all NULL
     // So IS NULL on score matches all 4 messages
     auto result =
-            queryset.template join<&Message::sender>().where(field<^^Person::score>().is_null()).select().execute();
+            queryset.template join<^^Message::sender>().where(field<^^Person::score>().is_null()).select().execute();
     ASSERT_TRUE(result.has_value()) << "IS NULL with JOIN failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 4) << "Expected 4 messages (all senders have NULL score in this fixture)";
 }

@@ -271,7 +271,7 @@ TYPED_TEST_SUITE(RowsJoinTest, DatabaseTypes);
 TYPED_TEST(RowsJoinTest, WithJoin) {
     QuerySet<Message, TypeParam> qs;
     int                          count = 0;
-    for (auto&& result : qs.template join<&Message::sender>().rows()) {
+    for (auto&& result : qs.template join<^^Message::sender>().rows()) {
         ASSERT_TRUE(result.has_value());
         ++count;
     }
@@ -281,7 +281,7 @@ TYPED_TEST(RowsJoinTest, WithJoin) {
 TYPED_TEST(RowsJoinTest, WithJoinAndWhere) {
     QuerySet<Message, TypeParam> qs;
     int                          count = 0;
-    for (auto&& result : qs.template join<&Message::sender>().where(field<^^Message::value>() > 30).rows()) {
+    for (auto&& result : qs.template join<^^Message::sender>().where(field<^^Message::value>() > 30).rows()) {
         ASSERT_TRUE(result.has_value());
         EXPECT_GT(result.value().value, 30);
         ++count;

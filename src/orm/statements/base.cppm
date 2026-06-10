@@ -65,6 +65,32 @@ export namespace storm::orm::statements {
     concept ValidTimestampField = std::
             same_as<std::remove_cvref_t<typename[:std::meta::type_of(Member):]>, std::chrono::system_clock::time_point>;
 
+    // A JOIN field selector must reflect a non-static data member of T annotated with
+    // FieldAttr::fk (#388). Constrains QuerySet::join/left_join/right_join and
+    // JoinStatement so a non-member or non-FK argument fails at the call site with a
+    // clear constraint violation.
+    //
+    // The annotation is read from the member re-derived out of ^^T (matched by
+    // identifier), NOT from Member itself: annotation_of_type on a reflection that
+    // crossed a BMI boundary segfaults clang-p2996 (#262), while structural queries
+    // (is_nonstatic_data_member / parent_of / identifier_of) are safe on it.
+    template <typename T, std::meta::info Member>
+    concept FKFieldOf = []() consteval {
+        if (!std::meta::is_nonstatic_data_member(Member) || !std::meta::has_identifier(Member)) {
+            return false;
+        }
+        if (std::meta::parent_of(Member) != ^^T) {
+            return false;
+        }
+        for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+            if (std::meta::identifier_of(m) == std::meta::identifier_of(Member)) {
+                auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(m);
+                return field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk;
+            }
+        }
+        return false;
+    }();
+
     // Shared reflection utilities for all statement types
     template <typename T>
         requires ModelWithPrimaryKey<T>

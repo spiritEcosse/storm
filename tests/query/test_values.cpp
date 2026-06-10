@@ -275,7 +275,7 @@ TYPED_TEST(ValuesTest, WithJoinSingleField) {
     QuerySet<Message, TypeParam> msg_qs;
 
     // SELECT content FROM Message JOIN Person (values replaces field list)
-    auto result = msg_qs.template join<&Message::sender>().template values<^^Message::content>().execute();
+    auto result = msg_qs.template join<^^Message::sender>().template values<^^Message::content>().execute();
     ASSERT_TRUE(result.has_value()) << "values with JOIN failed: " << result.error().message();
 
     const auto& contents = result.value();
@@ -289,7 +289,7 @@ TYPED_TEST(ValuesTest, WithJoinAndWhere) {
 
     QuerySet<Message, TypeParam> msg_qs;
 
-    auto result = msg_qs.template join<&Message::sender>()
+    auto result = msg_qs.template join<^^Message::sender>()
                           .where(field<^^Message::content>().like("%o%")) // Hello, World, Goodbye
                           .template values<^^Message::content>()
                           .execute();

@@ -526,7 +526,7 @@ TYPED_TEST(DistinctTest, DocumentedBehaviorAndLimitations) {
      *
      * 6. **No JOIN Support**:
      *    - DISTINCT operates only on the base table
-     *    - Cannot do: queryset.template join<&FK>().template distinct<&JoinedTable::field>()
+     *    - Cannot do: queryset.template join<^^FK>().template distinct<&JoinedTable::field>()
      *    - Would require significant refactoring to support
      *
      * Recommendations for future improvement:
@@ -607,22 +607,22 @@ TYPED_TEST(DistinctTest, DesiredSQLForDistinctWithJoin) {
      * Current Storm ORM API doesn't support this because:
      * 1. DISTINCT operates independently of JOIN
      * 2. No way to specify fields from joined tables
-     * 3. QuerySet<Message>.template join<&sender>().template distinct<???>() - what goes in distinct?
+     * 3. QuerySet<Message>.template join<^^sender>().template distinct<???>() - what goes in distinct?
      *
      * Possible API designs:
      *
      * Option A: Chaining
-     *   msg_qs.template join<&Message::sender>()
+     *   msg_qs.template join<^^Message::sender>()
      *         .template distinct<&Person::name>()  // PROBLEM: &Person::name won't match Message fields
      *         .execute()
      *
      * Option B: Separate DISTINCT type for JOINs
-     *   msg_qs.template join<&Message::sender>()
+     *   msg_qs.template join<^^Message::sender>()
      *         .distinct_joined<&Message::sender, &Person::name>()
      *         .execute()
      *
      * Option C: SQL-style field selection
-     *   msg_qs.template join<&Message::sender>()
+     *   msg_qs.template join<^^Message::sender>()
      *         .select_distinct(
      *             field<&Message::content>(),
      *             field<&Message::sender, &Person::name>()  // Joined field
@@ -686,7 +686,7 @@ TYPED_TEST(DistinctTest, CurrentLimitations) {
      *    - They don't integrate
      *
      * 2. **No Chaining Support**:
-     *    - Cannot do: queryset.template join<&FK>().template distinct<&Field>()
+     *    - Cannot do: queryset.template join<^^FK>().template distinct<&Field>()
      *    - join() returns QuerySet&&, but DISTINCT expects to operate independently
      *
      * 3. **Field Specification Limitation**:
@@ -724,7 +724,7 @@ TYPED_TEST(DistinctTest, AlternativeApproaches) {
      *   - Loss of type safety and ORM convenience
      *
      * Approach 2: Application-level filtering
-     *   - Fetch all data with JOIN: msg_qs.template join<&sender>().select()
+     *   - Fetch all data with JOIN: msg_qs.template join<^^sender>().select()
      *   - Filter unique values in application code (std::set, std::unique)
      *   - May load more data than necessary
      *
@@ -874,7 +874,7 @@ TYPED_TEST(DistinctTest, DistinctWithJoinSingleField) {
     // SELECT DISTINCT sender.name (via JOIN)
     // Note: We need to select from Message and distinct on Message fields
     // The JOIN should expand the result set
-    auto result = msg_qs.template join<&Message::sender>().template distinct<^^Message::content>().execute();
+    auto result = msg_qs.template join<^^Message::sender>().template distinct<^^Message::content>().execute();
     ASSERT_TRUE(result.has_value()) << "DISTINCT with JOIN failed: " << result.error().message();
 
     const auto& contents = result.value();
@@ -895,7 +895,7 @@ TYPED_TEST(DistinctTest, ChainingOrderWhereJoinDistinct) {
     // Test that WHERE -> JOIN -> DISTINCT works
     // Using content field to avoid ambiguous column names
     auto result = msg_qs.where(field<^^Message::content>().like("%e%"))
-                          .template join<&Message::sender>()
+                          .template join<^^Message::sender>()
                           .template distinct<^^Message::content>()
                           .execute();
     ASSERT_TRUE(result.has_value()) << "WHERE -> JOIN -> DISTINCT failed: " << result.error().message();
@@ -909,7 +909,7 @@ TYPED_TEST(DistinctTest, ChainingOrderJoinWhereDistinct) {
 
     // Test that JOIN -> WHERE -> DISTINCT works
     // Using content field to avoid ambiguous column names
-    auto result = msg_qs.template join<&Message::sender>()
+    auto result = msg_qs.template join<^^Message::sender>()
                           .where(field<^^Message::content>().like("%e%"))
                           .template distinct<^^Message::content>()
                           .execute();
@@ -991,7 +991,7 @@ TYPED_TEST(DistinctTest, DistinctKeywordInjectionInJoinQueries) {
     QuerySet<Message, TypeParam> msg_qs;
 
     // Test 1: Verify JOIN + DISTINCT works (implicit validation of SELECT clause injection)
-    auto result = msg_qs.template join<&Message::sender>().template distinct<^^Message::content>().execute();
+    auto result = msg_qs.template join<^^Message::sender>().template distinct<^^Message::content>().execute();
     ASSERT_TRUE(result.has_value()) << "JOIN + DISTINCT failed: " << result.error().message();
 
     const auto& contents = result.value();
@@ -1644,14 +1644,14 @@ TYPED_TEST(DistinctTest, SqlVerifyDistinctWithWhere) {
 // Test: DISTINCT + JOIN generates projected fields with t1 prefix (the bug fix)
 TYPED_TEST(DistinctTest, SqlVerifyDistinctWithJoin) {
     QuerySet<Message, TypeParam> msg_qs;
-    auto sql = msg_qs.template join<&Message::sender>().template distinct<^^Message::content>().sql();
+    auto sql = msg_qs.template join<^^Message::sender>().template distinct<^^Message::content>().sql();
     EXPECT_EQ(sql, "SELECT DISTINCT t1.content FROM Message t1 INNER JOIN Person t2 ON t2.id = t1.sender_id");
 }
 
 // Test: DISTINCT + JOIN + WHERE
 TYPED_TEST(DistinctTest, SqlVerifyDistinctWithJoinAndWhere) {
     QuerySet<Message, TypeParam> msg_qs;
-    auto                         sql = msg_qs.template join<&Message::sender>()
+    auto                         sql = msg_qs.template join<^^Message::sender>()
                        .where(field<^^Message::content>().like("%test%"))
                        .template distinct<^^Message::content>()
                        .sql();
@@ -1666,7 +1666,7 @@ TYPED_TEST(DistinctTest, SqlVerifyDistinctWithJoinAndWhere) {
 TYPED_TEST(DistinctTest, SqlVerifyDistinctJoinMultiFieldWithFK) {
     QuerySet<Message, TypeParam> msg_qs;
     auto                         sql =
-            msg_qs.template join<&Message::sender>().template distinct<^^Message::content, ^^Message::sender>().sql();
+            msg_qs.template join<^^Message::sender>().template distinct<^^Message::content, ^^Message::sender>().sql();
     EXPECT_EQ(
             sql,
             "SELECT DISTINCT t1.content, t1.sender_id"
@@ -1677,7 +1677,7 @@ TYPED_TEST(DistinctTest, SqlVerifyDistinctJoinMultiFieldWithFK) {
 // Test: VALUES (no DISTINCT keyword) + JOIN
 TYPED_TEST(DistinctTest, SqlVerifyValuesWithJoin) {
     QuerySet<Message, TypeParam> msg_qs;
-    auto sql = msg_qs.template join<&Message::sender>().template values<^^Message::content>().sql();
+    auto sql = msg_qs.template join<^^Message::sender>().template values<^^Message::content>().sql();
     EXPECT_EQ(sql, "SELECT t1.content FROM Message t1 INNER JOIN Person t2 ON t2.id = t1.sender_id");
 }
 
@@ -1705,7 +1705,7 @@ TYPED_TEST(DistinctTest, SqlVerifyDistinctWithLimitOffset) {
 // Test: DISTINCT + JOIN + WHERE + ORDER BY + LIMIT (full combo)
 TYPED_TEST(DistinctTest, SqlVerifyDistinctFullCombo) {
     QuerySet<Message, TypeParam> msg_qs;
-    auto                         sql = msg_qs.template join<&Message::sender>()
+    auto                         sql = msg_qs.template join<^^Message::sender>()
                        .where(field<^^Message::value>() > 10)
                        .template order_by<^^Message::content>()
                        .limit(5)

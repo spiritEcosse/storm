@@ -2,7 +2,7 @@
 //
 // Compile-time model registry for benchmark schema-driven dispatch. Maps
 // BenchmarkTest.model / .join string fields to concrete C++ types and
-// member pointers, all at compile time.
+// field reflections, all at compile time.
 //
 // The annotated model types (Person / User / FKMessage) live in models.hpp
 // because C++26 reflection-annotated structs are simpler to consume from
@@ -19,6 +19,7 @@ module;
 
 #include "models.hpp"
 
+#include <meta>
 #include <stdexcept>
 
 export module storm_benchmark_registry;
@@ -36,14 +37,14 @@ export namespace storm::benchmark::registry {
 
     // ========================================================================
     // FK field resolution for FKMessage (the only FK model in benchmarks).
-    // Returns User FKMessage::* member pointer by field name.
+    // Returns the FKMessage field reflection by field name (#388).
     // ========================================================================
-    consteval auto resolve_fk_ptr(std::string_view name) {
+    consteval auto resolve_fk_field(std::string_view name) -> std::meta::info {
         if (name == "sender") {
-            return &FKMessage::sender;
+            return ^^FKMessage::sender;
         }
         if (name == "receiver") {
-            return &FKMessage::receiver;
+            return ^^FKMessage::receiver;
         }
         throw std::runtime_error("Unknown FK field"); // NOSONAR(cpp:S112)
     }

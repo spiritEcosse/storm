@@ -61,13 +61,13 @@ See [WHERE Clauses](WHERE_CLAUSES.md) for detailed WHERE syntax.
 
 ```cpp
 // Single FK JOIN
-auto result = message_qs.join<&Message::sender>().select();
+auto result = message_qs.join<^^Message::sender>().select();
 
 // Multi-FK JOIN
-auto result = message_qs.join<&Message::sender, &Message::receiver>().select();
+auto result = message_qs.join<^^Message::sender, ^^Message::receiver>().select();
 
 // JOIN with WHERE
-auto result = message_qs.join<&Message::sender>()
+auto result = message_qs.join<^^Message::sender>()
                         .where(field<^^User::level>() > 5)
                         .select();
 ```

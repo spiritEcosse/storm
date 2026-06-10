@@ -100,7 +100,7 @@ TYPED_TEST(AggregateTest, GroupByWithMax) {
 TYPED_TEST(AggregateTest, GroupByWithJoinAndSum) {
     this->insert_join_test_data();
 
-    auto result = this->msg_qs->template join<&Message::sender>()
+    auto result = this->msg_qs->template join<^^Message::sender>()
                           .template group_by<^^Message::content>()
                           .template sum<^^Message::value>()
                           .execute();
@@ -134,7 +134,7 @@ TYPED_TEST(AggregateTest, GroupByFullChain_Count) {
     this->insert_full_chain_data();
 
     auto count_result = this->msg_qs->where(storm::orm::where::field<^^Message::value>() >= 20)
-                                .template join<&Message::sender>()
+                                .template join<^^Message::sender>()
                                 .template group_by<^^Message::value>()
                                 .count()
                                 .execute();
@@ -149,7 +149,7 @@ TYPED_TEST(AggregateTest, GroupByFullChain_SumAndAvg) {
     this->insert_full_chain_data();
 
     auto sum_result = this->msg_qs->where(storm::orm::where::field<^^Message::value>() < 50)
-                              .template join<&Message::sender>()
+                              .template join<^^Message::sender>()
                               .template group_by<^^Message::content>()
                               .template sum<^^Message::value>()
                               .execute();
@@ -161,7 +161,7 @@ TYPED_TEST(AggregateTest, GroupByFullChain_SumAndAvg) {
     auto avg_result = this->msg_qs
                               ->where(storm::orm::where::field<^^Message::value>() >= 10 &&
                                       storm::orm::where::field<^^Message::value>() <= 70)
-                              .template join<&Message::sender>()
+                              .template join<^^Message::sender>()
                               .template group_by<^^Message::value>()
                               .template avg<^^Message::value>()
                               .execute();
@@ -193,7 +193,8 @@ TYPED_TEST(AggregateTest, CountDistinctWithDuplicates) {
 TYPED_TEST(AggregateTest, CountDistinctWithJoin) {
     this->insert_join_test_data();
 
-    auto result = this->msg_qs->template join<&Message::sender>().template count_distinct<^^Message::value>().execute();
+    auto result =
+            this->msg_qs->template join<^^Message::sender>().template count_distinct<^^Message::value>().execute();
     ASSERT_TRUE(result.has_value()) << "COUNT(DISTINCT) with JOIN failed";
     EXPECT_EQ(result.value(), 6);
 }

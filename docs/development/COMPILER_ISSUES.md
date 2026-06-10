@@ -234,6 +234,40 @@ Folding a pure-library header is only safe per location:
   uses reflection. `fuzz_models.h` dropped its `<string>`; the harness TUs that
   use `std::meta::` keep textual `<meta>` before `import storm; import std;`.
 
+### 10. `annotation_of_type` Segfaults on BMI-Imported Member Reflections
+
+**Problem**: Calling `std::meta::annotation_of_type<X>(member)` on a reflection
+that was **created in another module TU** (e.g. returned by an exported consteval
+function and consumed across the BMI boundary) segfaults the compiler (exit 139,
+crash in `ExprConstant.cpp` metafunction evaluation). In constraint-satisfaction
+contexts the crash can instead surface as a misleading
+`error: cannot take the reflection of an overload set`.
+
+**Structural metafunctions are safe** on the same BMI-crossing reflection:
+`is_nonstatic_data_member`, `parent_of`, `identifier_of`, `has_identifier` all
+work. Only annotation lookup breaks (same family as the annotations-lost-across-BMI
+issue, clang-p2996 [#262](https://github.com/bloomberg/clang-p2996/issues/262)).
+
+**Solution**: Re-derive the member from `^^T` locally before reading annotations —
+match by identifier, then call `annotation_of_type` on the freshly derived info:
+
+```cpp
+// ❌ Crashes when Member crossed a BMI boundary
+auto attr = std::meta::annotation_of_type<meta::FieldAttr>(Member);
+
+// ✅ Safe — annotation read from a locally derived reflection
+for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+    if (std::meta::identifier_of(m) == std::meta::identifier_of(Member)) {
+        auto attr = std::meta::annotation_of_type<meta::FieldAttr>(m);
+        // ...
+    }
+}
+```
+
+Found in #388: the `FKFieldOf<T, Member>` concept (base.cppm) constrains
+`join<^^T::field>()` and must work with FK reflections produced by the benchmark
+registry module (`storm_benchmark_registry::resolve_fk_field`).
+
 ## Debugging Tips
 
 1. **Clean build**: `rm -rf build/ && cmake --preset ninja-debug`

@@ -1085,7 +1085,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<&MockMessage::sender>().select().execute();
+        auto                  result = qs.join<^^MockMessage::sender>().select().execute();
 
         // Verify prepare error is propagated (error code may differ at ORM layer)
         ASSERT_FALSE(result.has_value());
@@ -1096,7 +1096,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_CORRUPT);
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<&MockMessage::sender>().select().execute();
+        auto                  result = qs.join<^^MockMessage::sender>().select().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -1107,7 +1107,7 @@ namespace {
 
         QuerySet<MockMessage> qs;
         auto                  id     = storm::orm::where::Field<^^MockMessage::id>{};
-        auto                  result = qs.where(id > 5).join<&MockMessage::sender>().select().execute();
+        auto                  result = qs.where(id > 5).join<^^MockMessage::sender>().select().execute();
 
         if (!result.has_value()) {
             EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -1118,7 +1118,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_IOERR);
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<&MockMessage::sender>().order_by<^^MockMessage::id>().select().execute();
+        auto result = qs.join<^^MockMessage::sender>().order_by<^^MockMessage::id>().select().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_IOERR);
@@ -1762,7 +1762,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<&MockMessage::sender>().sum<^^MockMessage::id>().execute();
+        auto                  result = qs.join<^^MockMessage::sender>().sum<^^MockMessage::id>().execute();
 
         ASSERT_FALSE(result.has_value()) << "Aggregate with JOIN should fail on prepare error";
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -1772,7 +1772,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_CORRUPT);
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<&MockMessage::sender>().count().execute();
+        auto                  result = qs.join<^^MockMessage::sender>().count().execute();
 
         ASSERT_FALSE(result.has_value()) << "Aggregate with JOIN should fail on step error";
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -1784,7 +1784,7 @@ namespace {
 
         QuerySet<MockMessage> qs;
         auto                  id     = storm::orm::where::Field<^^MockMessage::id>{};
-        auto                  result = qs.where(id > 5).join<&MockMessage::sender>().count().execute();
+        auto                  result = qs.where(id > 5).join<^^MockMessage::sender>().count().execute();
 
         ASSERT_FALSE(result.has_value()) << "Aggregate with WHERE+JOIN should fail on prepare error";
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -1795,8 +1795,8 @@ namespace {
         MockSqlite3Config::bind_int_returns(SQLITE_NOMEM);
 
         QuerySet<MockMessage> qs;
-        auto                  id     = storm::orm::where::Field<^^MockMessage::id>{};
-        auto                  result = qs.where(id > 5).join<&MockMessage::sender>().sum<^^MockMessage::id>().execute();
+        auto                  id = storm::orm::where::Field<^^MockMessage::id>{};
+        auto result              = qs.where(id > 5).join<^^MockMessage::sender>().sum<^^MockMessage::id>().execute();
 
         if (!result.has_value()) {
             EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -2473,7 +2473,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<&MockMessage::sender>().first().execute();
+        auto                  result = qs.join<^^MockMessage::sender>().first().execute();
 
         ASSERT_FALSE(result.has_value());
     }
@@ -2482,7 +2482,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<&MockMessage::sender>().get().execute();
+        auto                  result = qs.join<^^MockMessage::sender>().get().execute();
 
         ASSERT_FALSE(result.has_value());
     }
@@ -2491,7 +2491,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_CORRUPT);
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<&MockMessage::sender>().first().execute();
+        auto                  result = qs.join<^^MockMessage::sender>().first().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -2502,7 +2502,7 @@ namespace {
         MockSqlite3Config::step_returns_sequence({SQLITE_ROW, SQLITE_DONE});
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<&MockMessage::sender>().first().execute();
+        auto                  result = qs.join<^^MockMessage::sender>().first().execute();
 
         // Mock returns zeroed data, but the path is exercised
         ASSERT_TRUE(result.has_value());
@@ -2513,7 +2513,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_CORRUPT);
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<&MockMessage::sender>().get().execute();
+        auto                  result = qs.join<^^MockMessage::sender>().get().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -2524,7 +2524,7 @@ namespace {
         MockSqlite3Config::step_returns_sequence({SQLITE_ROW, SQLITE_DONE});
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<&MockMessage::sender>().get().execute();
+        auto                  result = qs.join<^^MockMessage::sender>().get().execute();
 
         // Mock returns zeroed data, but the path is exercised
         ASSERT_TRUE(result.has_value());
@@ -2855,7 +2855,7 @@ namespace {
 
         QuerySet<MockMessage> qs;
         bool                  got_error = false;
-        for (auto&& result : qs.template join<&MockMessage::sender>().rows()) {
+        for (auto&& result : qs.template join<^^MockMessage::sender>().rows()) {
             if (!result.has_value()) {
                 EXPECT_EQ(result.error().code(), SQLITE_IOERR);
                 got_error = true;

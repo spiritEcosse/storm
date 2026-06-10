@@ -74,7 +74,7 @@ TYPED_TEST(SqlVerifyTest, SelectWithWhere) {
 
 TYPED_TEST(SqlVerifyTest, SelectWithJoin) {
     QuerySet<Message, TypeParam> qs;
-    auto                         sql = qs.template join<&Message::sender>().select().sql();
+    auto                         sql = qs.template join<^^Message::sender>().select().sql();
     EXPECT_EQ(
             sql,
             "SELECT t1.id, t1.content, t1.value, t2.id, t2.name, t2.age, t2.salary,"
@@ -85,7 +85,7 @@ TYPED_TEST(SqlVerifyTest, SelectWithJoin) {
 
 TYPED_TEST(SqlVerifyTest, SelectWithJoinAndWhere) {
     QuerySet<Message, TypeParam> qs;
-    auto sql = qs.template join<&Message::sender>().where(field<^^Message::value>() > 10).select().sql();
+    auto sql = qs.template join<^^Message::sender>().where(field<^^Message::value>() > 10).select().sql();
     EXPECT_EQ(
             sql,
             "SELECT t1.id, t1.content, t1.value, t2.id, t2.name, t2.age, t2.salary,"
@@ -145,7 +145,7 @@ TYPED_TEST(SqlVerifyTest, SelectWithOffsetOnly) {
 
 TYPED_TEST(SqlVerifyTest, SelectFullCombo) {
     QuerySet<Message, TypeParam> qs;
-    auto                         sql = qs.template join<&Message::sender>()
+    auto                         sql = qs.template join<^^Message::sender>()
                        .where(field<^^Message::value>() > 10)
                        .template order_by<^^Message::content>()
                        .limit(5)
@@ -394,13 +394,13 @@ TYPED_TEST(SqlVerifyTest, AggregateChainedOps) {
 
 TYPED_TEST(SqlVerifyTest, AggregateCountWithJoin) {
     QuerySet<Message, TypeParam> qs;
-    auto                         sql = qs.template join<&Message::sender>().count().sql();
+    auto                         sql = qs.template join<^^Message::sender>().count().sql();
     EXPECT_EQ(sql, "SELECT COUNT(*) FROM Message t1 INNER JOIN Person t2 ON t2.id = t1.sender_id");
 }
 
 TYPED_TEST(SqlVerifyTest, AggregateCountWithJoinAndWhere) {
     QuerySet<Message, TypeParam> qs;
-    auto sql = qs.template join<&Message::sender>().where(field<^^Message::value>() > 10).count().sql();
+    auto sql = qs.template join<^^Message::sender>().where(field<^^Message::value>() > 10).count().sql();
     EXPECT_EQ(sql, "SELECT COUNT(*) FROM Message t1 INNER JOIN Person t2 ON t2.id = t1.sender_id WHERE value > ?");
 }
 
@@ -477,7 +477,7 @@ TYPED_TEST(SqlVerifyTest, GroupByMultiField) {
 
 TYPED_TEST(SqlVerifyTest, GroupByWithJoin) {
     QuerySet<Message, TypeParam> qs;
-    auto sql = qs.template join<&Message::sender>().template group_by<^^Message::content>().template count<>().sql();
+    auto sql = qs.template join<^^Message::sender>().template group_by<^^Message::content>().template count<>().sql();
     EXPECT_EQ(
             sql,
             "SELECT content, COUNT(*) FROM Message t1 INNER JOIN Person t2 ON t2.id = t1.sender_id"
