@@ -227,4 +227,49 @@ TYPED_TEST(M2MSeededTest, CountOverM2MJoinCountsPairs) {
     EXPECT_EQ(count.value(), 3);
 }
 
+// ============================================================================
+// Container coverage (#203 Phase 1 edge cases): plf::hive and shared_ptr elements
+// ============================================================================
+
+template <typename ConnType> class M2MContainerTest : public StormTestFixture<Playlist, ConnType, Track, Album> {
+  public:
+    auto on_after_setup(const std::shared_ptr<ConnType>& conn) -> void override {
+        QuerySet<Playlist, ConnType> pqs;
+        ASSERT_TRUE(pqs.insert(Playlist{.name = "Road trip"}).execute().has_value());
+        QuerySet<Album, ConnType> aqs;
+        ASSERT_TRUE(aqs.insert(Album{.name = "Greatest hits"}).execute().has_value());
+        QuerySet<Track, ConnType> tqs;
+        std::vector<Track> const  tracks = {{.title = "Intro"}, {.title = "Outro"}};
+        ASSERT_TRUE(tqs.insert(std::span<const Track>(tracks)).execute().has_value());
+        for (const auto* sql :
+             {"INSERT INTO Playlist_Track (Playlist_id, Track_id) VALUES (1, 1)",
+              "INSERT INTO Playlist_Track (Playlist_id, Track_id) VALUES (1, 2)",
+              "INSERT INTO Album_Track (Album_id, Track_id) VALUES (1, 2)"}) {
+            ASSERT_TRUE(conn->execute(sql).has_value());
+        }
+    }
+};
+
+TYPED_TEST_SUITE(M2MContainerTest, DatabaseTypes);
+
+TYPED_TEST(M2MContainerTest, HiveContainerEagerLoad) {
+    QuerySet<Playlist, TypeParam> qs;
+    auto                          rows = qs.template join<^^Playlist::tracks>().select().execute();
+    ASSERT_TRUE(rows.has_value()) << rows.error().message();
+    ASSERT_EQ(rows->size(), 1U);
+    ASSERT_EQ(rows->begin()->tracks.size(), 2U); // appended via hive insert()
+    auto track_it = rows->begin()->tracks.begin();
+    EXPECT_EQ(track_it->title, "Intro");
+}
+
+TYPED_TEST(M2MContainerTest, SharedPtrElementsEagerLoad) {
+    QuerySet<Album, TypeParam> qs;
+    auto                       rows = qs.template join<^^Album::tracks>().select().execute();
+    ASSERT_TRUE(rows.has_value()) << rows.error().message();
+    ASSERT_EQ(rows->size(), 1U);
+    ASSERT_EQ(rows->begin()->tracks.size(), 1U);
+    ASSERT_NE(rows->begin()->tracks[0], nullptr); // wrapped via make_shared
+    EXPECT_EQ(rows->begin()->tracks[0]->title, "Outro");
+}
+
 // NOLINTEND(misc-const-correctness)
