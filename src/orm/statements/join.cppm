@@ -475,7 +475,8 @@ export namespace storm::orm::statements {
             if constexpr (std::same_as<Through, void>) {
                 return junction_table_arr_.view();
             } else {
-                return std::meta::identifier_of(^^Through);
+                // ^^Through names the local alias — dealias to the model's own name
+                return std::meta::identifier_of(std::meta::dealias(^^Through));
             }
         }
 
