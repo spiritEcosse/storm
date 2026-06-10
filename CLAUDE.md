@@ -311,6 +311,12 @@ See [docs/development/PERFORMANCE_GUIDELINES.md](docs/development/PERFORMANCE_GU
 
 `int`, `int64_t`, `double`, `float`, `bool`, `std::string`, `std::string_view`, `std::optional<T>`, `std::vector<uint8_t>` (BLOB)
 
+**Many-to-many (#203)**: `[[= storm::meta::many_to_many]]` (auto junction `<Owner>_<Related>`)
+or `[[= storm::meta::many_to_many_through<Model>]]` on a container member
+(`std::vector<T>`, `plf::hive<T>`, `vector<shared_ptr<T>>`). Not a column — invisible to
+CRUD/schema; eager-loaded via `join<^^T::field>()`. See
+[docs/features/JOIN_OPERATIONS.md](docs/features/JOIN_OPERATIONS.md).
+
 **Auto-timestamps (#209)**: `[[= FieldAttr::auto_create]]` / `[[= FieldAttr::auto_update]]` on a
 `std::chrono::system_clock::time_point` field auto-stamp `now()` — `auto_create` on INSERT only,
 `auto_update` on INSERT and UPDATE. **Bind-time only, no write-back** (the caller's object is never
@@ -401,6 +407,12 @@ qs.values<^^Person::name, ^^Person::age>().execute();       // plf::hive<std::tu
 // JOIN — FK field selectors use reflection NTTPs like every other field selector
 message_qs.join<^^Message::sender>().where(...).select();
 message_qs.left_join<^^Message::sender, ^^Message::receiver>().select();
+
+// Many-to-many (#203) — container field annotated [[= storm::meta::many_to_many]]
+// (auto junction table) or many_to_many_through<Enrollment> (explicit junction model).
+// Single-query eager load; WHERE/ORDER BY/LIMIT apply to BASE entities (subquery).
+student_qs.join<^^Student::courses>().select();      // students with courses aggregated
+student_qs.left_join<^^Student::courses>().select(); // + students with no courses
 ```
 
 **Methods**: `where()`, `join()`, `order_by()`, `limit()`, `offset()`, `group_by()`, `having()`, `distinct()`, `values()`

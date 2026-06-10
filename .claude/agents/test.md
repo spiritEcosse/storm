@@ -85,6 +85,7 @@ When tests fail, systematically check:
 
 ### 3. Reflection-Related Issues
 - Primary key field annotations: `[[=storm::meta::FieldAttr::primary]]`
+- Many-to-many annotations (#203): `[[=storm::meta::many_to_many]]` / `many_to_many_through<Model>` — m2m test models live in `tests/query/test_m2m_models.h` (textual header, include after `import storm;` + `plf_hive` before the imports)
 - Splice operator usage: `obj.[:primary_key_:]`
 - Meta functionality in struct definitions
 - Module import hierarchy problems

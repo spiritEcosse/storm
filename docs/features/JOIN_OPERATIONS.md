@@ -116,6 +116,103 @@ auto result = message_qs.right_join<^^Message::sender>().select();
 
 **Use when**: You want all users, even those without messages
 
+## Many-to-Many Joins (#203)
+
+Many-to-many relationships use a container field annotated with `many_to_many`
+(auto-generated junction table) or `many_to_many_through<Model>` (explicit
+junction model). The same `join<^^Field>()` API eager-loads the relationship in
+a **single query** — no N+1 problem.
+
+### Phase 1: Auto-Generated Junction Table
+
+```cpp
+struct Course {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    std::string title;
+};
+
+struct Student {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    std::string name;
+    int age{};
+    [[= storm::meta::many_to_many]] std::vector<Course> courses;
+};
+
+// One query: students deduplicated, courses collected into each student
+auto students = QuerySet<Student>().join<^^Student::courses>().select().execute();
+for (const auto& s : *students) {
+    // s.courses holds ALL of the student's courses
+}
+```
+
+- The related type (`Course`) is extracted from the container via C++26 `std::meta`
+  — `std::vector<T>`, `plf::hive<T>`, `std::deque<T>`, and
+  `std::vector<std::shared_ptr<T>>` / `unique_ptr` elements all work.
+- `create_table_if_not_exists<Student>` also creates the junction table
+  `Student_Course (Student_id, Course_id, PRIMARY KEY(both))` — naming is
+  `<OwnerTable>_<RelatedTable>` with `<Table>_id` columns.
+- The m2m container member is **not a column**: plain `select()`, `insert()`,
+  `update()` ignore it entirely (zero cost for models without m2m fields).
+
+**SQL Generated**:
+```sql
+SELECT t1.id, t1.name, t1.age, t3.id, t3.title
+FROM (SELECT id, name, age FROM Student) t1
+INNER JOIN Student_Course t2 ON t1.id = t2.Student_id
+INNER JOIN Course t3 ON t2.Course_id = t3.id
+ORDER BY t1.id
+```
+
+### Phase 2: Explicit Junction Model (metadata)
+
+```cpp
+struct Enrollment {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::meta::FieldAttr::fk]] Pupil pupil;
+    [[= storm::meta::FieldAttr::fk]] Course course;
+    std::string grade;  // relationship metadata
+};
+
+struct Pupil {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    std::string name;
+    [[= storm::meta::many_to_many_through<Enrollment>]] std::vector<Course> courses;
+};
+
+// Simple access — metadata ignored, same single-query eager load
+auto pupils = QuerySet<Pupil>().join<^^Pupil::courses>().select().execute();
+
+// Metadata access — query the junction model directly (regular FK joins)
+auto enrollments = QuerySet<Enrollment>()
+        .join<^^Enrollment::pupil, ^^Enrollment::course>()
+        .where(field<^^Enrollment::grade>() == "A")
+        .select().execute();
+```
+
+The junction table is the through model's own table; FK columns come from its
+field names (`pupil_id`, `course_id`). The through model must have exactly one
+`FieldAttr::fk` field per side (enforced at compile time).
+
+### Semantics
+
+| Aspect | Behavior |
+|---|---|
+| `WHERE` / `ORDER BY` / `LIMIT` / `OFFSET` | Apply to **base entities** (inside a base-table subquery) — `limit(1)` returns one student with ALL courses |
+| `first()` / `get()` | Entity-level: `get()` errors only on 0 or >1 *entities*, never on multiple relations |
+| `rows()` | Yields one aggregated entity at a time (lazy) |
+| `join` (INNER) | Drops base entities with no relations |
+| `left_join` | Keeps them with an empty container |
+| Aggregates (`count()` …) | Count (base, related) **pairs** over the flat 3-table join |
+| Result order | Deterministic: user `order_by` (t1-qualified) + pk tiebreak |
+
+### Limitations
+
+- One m2m field per model; self-referential m2m rejected at compile time.
+- Write-side helpers (`add()`/`remove()`) are not provided — insert junction
+  rows via the through model (`QuerySet<Enrollment>`) or raw SQL for Phase 1.
+- The annotation spelling differs from issue #203's sketch
+  (`FieldAttr::many_to_many<T>` is impossible — `FieldAttr` is an enum).
+
 ## Architecture
 
 ### Type-Erased SQL Builder Pattern

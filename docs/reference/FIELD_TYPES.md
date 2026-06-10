@@ -188,6 +188,28 @@ QuerySet<User>().update(u).execute();
 The column maps to `TIMESTAMP` (PostgreSQL) / `TEXT` (SQLite) and round-trips via the
 existing `time_point` ↔ `"YYYY-MM-DD HH:MM:SS"` conversion.
 
+## Many-to-Many Container Fields (`many_to_many` / `many_to_many_through`)
+
+A container member annotated with `[[= storm::meta::many_to_many]]` (or
+`many_to_many_through<JunctionModel>`) declares a many-to-many relationship (#203):
+
+```cpp
+struct Student {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    std::string name;
+    [[= storm::meta::many_to_many]] std::vector<Course> courses;
+};
+```
+
+- **Not a column.** The member maps to a junction table, not to a column —
+  `INSERT`/`SELECT`/`UPDATE`/schema generation skip it entirely. Plain `select()`
+  leaves it empty; `join<^^Student::courses>()` eager-loads it.
+- **Supported containers:** `std::vector<T>`, `plf::hive<T>`, `std::deque<T>`,
+  and smart-pointer elements (`std::vector<std::shared_ptr<T>>`); the related
+  model type is extracted via C++26 `std::meta`.
+- **Junction DDL** is auto-generated for the `many_to_many` form (see
+  [JOIN_OPERATIONS.md](../features/JOIN_OPERATIONS.md#many-to-many-joins-203)).
+
 ## Type Dispatch Implementation
 
 The binding uses compile-time `if constexpr` type dispatch to select the appropriate SQLite binding function with **zero runtime overhead**.
