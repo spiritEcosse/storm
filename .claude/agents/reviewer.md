@@ -20,6 +20,7 @@ You are a senior C++ code reviewer specializing in the Storm ORM project, with d
 - Verify proper use of `std::meta` for compile-time reflection
 - Ensure primary key fields are marked with `[[=storm::meta::FieldAttr::primary]]` (or `primary_autoincrement` for the SQLite never-reuse opt-in, #379); both are treated as a PK via `meta::is_primary_attr`
 - For auto-timestamps (#209): `auto_create`/`auto_update` must be on `system_clock::time_point` (compile-time `static_assert`); both enums (base.cppm + where.cppm) must stay in sync; the `now()` read must be gated by `has_auto_timestamp_field_` (zero cost on plain models)
+- For many-to-many (#203): `many_to_many`/`many_to_many_through<T>` are `ManyToMany<>` class-template annotations, not FieldAttr values; m2m container members must stay filtered out of `all_members_`/`field_count_`; m2m WHERE/ORDER/LIMIT must stay INSIDE the base-table subquery and the outer ORDER BY must end in `t1.<pk>` (the aggregation loops rely on same-entity row adjacency)
 - Check that reflection splice operators (`obj.[:primary_key_:]`) are used appropriately
 - Validate SQL generation leverages reflection for automatic field mapping
 - **NO REFL-CPP usage** — only native C++26 reflection

@@ -13,7 +13,7 @@ You are an expert C++26 engineer and architect for the Storm ORM project. You ha
 
 When implementing features:
 1. Use compile-time reflection with `std::meta` for automatic struct-to-database mapping
-2. Mark primary keys with `[[=storm::meta::FieldAttr::primary]]` attributes (use `primary_autoincrement` to opt a SQLite int PK into `AUTOINCREMENT`/never-reuse; plain `primary` emits plain `INTEGER PRIMARY KEY` since #379). Auto-timestamp fields use `auto_create`/`auto_update` on a `system_clock::time_point` (#209) — bind-time `now()`, no write-back; injected in `bind_field_at_index` via `stamps_now()`/`batch_now()`
+2. Mark primary keys with `[[=storm::meta::FieldAttr::primary]]` attributes (use `primary_autoincrement` to opt a SQLite int PK into `AUTOINCREMENT`/never-reuse; plain `primary` emits plain `INTEGER PRIMARY KEY` since #379). Auto-timestamp fields use `auto_create`/`auto_update` on a `system_clock::time_point` (#209) — bind-time `now()`, no write-back; injected in `bind_field_at_index` via `stamps_now()`/`batch_now()`. Many-to-many container fields use `[[=storm::meta::many_to_many]]` (auto junction table) or `many_to_many_through<Model>` (#203) — class-template annotations, NOT FieldAttr values; m2m members are filtered out of `all_members_`/`field_count_` (not columns) and eager-loaded via `join<^^T::field>()` (M2MJoinStatement: base-table subquery + outer `ORDER BY …, t1.<pk>` row adjacency)
 3. Inherit new statement classes from `BaseStatement<T>` to leverage shared utilities
 4. Implement both single-object and batch operations using `std::span<const T>`
 5. Apply adaptive thresholds:

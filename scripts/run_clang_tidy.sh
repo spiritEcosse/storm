@@ -136,8 +136,8 @@ echo ""
 #   them standalone and hits missing storm symbols:
 #   tests/test_models.h, tests/test_seed_helpers.h, tests/test_select_runner.h,
 #   tests/test_write_runner.h, tests/test_yaml_register.h,
-#   tests/query/test_aggregate_fixture.h, tests/test_parser.hpp,
-#   tests/tools/storm_schema/models.h
+#   tests/query/test_aggregate_fixture.h, tests/query/test_m2m_models.h,
+#   tests/test_parser.hpp, tests/tools/storm_schema/models.h
 #
 #   benchmarks/bench_register.h — includes benchmark/benchmark.h which
 #   clang-tidy cannot parse (gbench macro / linkage issue).
@@ -167,6 +167,7 @@ is_known_unparseable() {
         tests/test_write_runner.h) return 0 ;;
         tests/test_yaml_register.h) return 0 ;;
         tests/query/test_aggregate_fixture.h) return 0 ;;
+        tests/query/test_m2m_models.h) return 0 ;;
         tests/test_parser.hpp) return 0 ;;
         tests/tools/storm_schema/models.h) return 0 ;;
         benchmarks/bench_register.h) return 0 ;;

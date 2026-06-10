@@ -86,6 +86,11 @@ export namespace storm::orm::statements {
                 const std::optional<int>&                  offset,
                 const std::optional<OrderByWrapper>&       order_by_wrapper
         ) -> std::string {
+            // M2M joins (#203): WHERE/ORDER BY/LIMIT/OFFSET live inside the base-table
+            // subquery — the wrapper owns the whole layout.
+            if (join_wrapper && join_wrapper->is_m2m()) {
+                return join_wrapper->build_m2m_sql_fn(where_expr, order_by_wrapper, limit, offset);
+            }
             std::string sql = join_wrapper ? join_wrapper->get_complete_sql() : std::string(get_select_sql());
             if (where_expr) {
                 sql += " WHERE ";
@@ -257,17 +262,11 @@ export namespace storm::orm::statements {
                 const std::optional<int>&               offset           = std::nullopt,
                 const std::optional<OrderByWrapper>&    order_by_wrapper = std::nullopt)
                 -> std::expected<plf::hive<T>, Error> {
-            auto prepare_result = prepare_statement(join_wrapper, where_expr, limit, offset, order_by_wrapper);
-            if (!prepare_result) [[unlikely]] {
-                return std::unexpected(prepare_result.error());
-            }
-            Statement* stmt_ptr = *prepare_result;
-            if (join_wrapper) {
-                return execute_query_loop(stmt_ptr, [&join_wrapper](Statement* stmt, T& obj) {
-                    join_wrapper->extract_row(stmt, &obj);
-                });
-            }
-            return execute_query_loop(stmt_ptr, [](Statement* stmt, T& obj) { Base::extract_all_columns(stmt, obj); });
+            return prepare_and_dispatch(
+                    QueryClauses{join_wrapper, where_expr, limit, offset, order_by_wrapper},
+                    [this](Statement* stmt, const JoinStatementWrapper& jw) { return execute_m2m_loop(stmt, jw); },
+                    [this](Statement* stmt, const auto& extractor) { return execute_query_loop(stmt, extractor); }
+            );
         }
 
         // Zero-parameter fast path for first() — no checks, no parameter passing overhead
@@ -293,18 +292,7 @@ export namespace storm::orm::statements {
                 const std::optional<int>&                  offset           = std::nullopt,
                 const std::optional<OrderByWrapper>&       order_by_wrapper = std::nullopt
         ) -> std::expected<std::optional<T>, Error> {
-            std::optional<int> const limit_one = 1;
-            auto prepare_result = prepare_statement(join_wrapper, where_expr, limit_one, offset, order_by_wrapper);
-            if (!prepare_result) [[unlikely]] {
-                return std::unexpected(prepare_result.error());
-            }
-            Statement* stmt_ptr = *prepare_result;
-            if (join_wrapper) {
-                return execute_single_row(stmt_ptr, [&join_wrapper](Statement* stmt, T& obj) {
-                    join_wrapper->extract_row(stmt, &obj);
-                });
-            }
-            return execute_single_row(stmt_ptr, [](Statement* stmt, T& obj) { Base::extract_all_columns(stmt, obj); });
+            return execute_one_or_get<false>(join_wrapper, where_expr, offset, order_by_wrapper);
         }
 
         // Zero-parameter fast path for get() — no checks, no parameter passing overhead
@@ -327,18 +315,7 @@ export namespace storm::orm::statements {
                 const std::optional<int>&                  offset           = std::nullopt,
                 const std::optional<OrderByWrapper>&       order_by_wrapper = std::nullopt
         ) -> std::expected<T, Error> {
-            std::optional<int> const limit_two = 2;
-            auto prepare_result = prepare_statement(join_wrapper, where_expr, limit_two, offset, order_by_wrapper);
-            if (!prepare_result) [[unlikely]] {
-                return std::unexpected(prepare_result.error());
-            }
-            Statement* stmt_ptr = *prepare_result;
-            if (join_wrapper) {
-                return execute_exact_one(stmt_ptr, [&join_wrapper](Statement* stmt, T& obj) {
-                    join_wrapper->extract_row(stmt, &obj);
-                });
-            }
-            return execute_exact_one(stmt_ptr, [](Statement* stmt, T& obj) { Base::extract_all_columns(stmt, obj); });
+            return execute_one_or_get<true>(join_wrapper, where_expr, offset, order_by_wrapper);
         }
 
         // Lazy row-by-row iteration via coroutine — yields std::expected<T, Error> per row
@@ -356,22 +333,37 @@ export namespace storm::orm::statements {
 
             auto stmt_result = conn->prepare(sql);
             if (!stmt_result) {
-                co_yield std::unexpected(stmt_result.error());
-                co_return;
+                return yield_error(stmt_result.error());
             }
-            auto& stmt = stmt_result.value();
+            auto stmt = std::move(stmt_result.value());
 
             if (where_expr) {
                 auto bind_result = Base::template bind_where_params<Statement, Error>(&stmt, where_expr);
                 if (!bind_result) {
-                    co_yield std::unexpected(bind_result.error());
-                    co_return;
+                    return yield_error(bind_result.error());
                 }
             }
 
-            // Single step/yield loop — extraction differs only in one line between
-            // the join and non-join cases. co_yield must stay in the coroutine
-            // body (not in a lambda), so we branch only on the per-row extract.
+            // conn and stmt move into the selected coroutine's frame — the statement
+            // (and the connection it needs) live until generator destruction.
+            if (join_wrapper && join_wrapper->is_m2m()) {
+                return rows_m2m_loop(std::move(conn), std::move(stmt), std::move(*join_wrapper));
+            }
+            return rows_plain_loop(std::move(conn), std::move(stmt), std::move(join_wrapper));
+        }
+
+      private:
+        // Single-error generator for prepare/bind failures in rows_generator.
+        static auto yield_error(Error error) -> storm::generator<std::expected<T, Error>&&> {
+            co_yield std::unexpected(std::move(error));
+        }
+
+        // Single step/yield loop — extraction differs only in one line between
+        // the join and non-join cases. co_yield must stay in the coroutine
+        // body (not in a lambda), so we branch only on the per-row extract.
+        static auto rows_plain_loop(
+                std::shared_ptr<ConnType> /*conn*/, Statement stmt, std::optional<JoinStatementWrapper> join_wrapper
+        ) -> storm::generator<std::expected<T, Error>&&> {
             int step_result = 0;
             while ((step_result = stmt.step_raw()) == Statement::ROW_AVAILABLE) {
                 T obj;
@@ -387,6 +379,36 @@ export namespace storm::orm::statements {
             }
         }
 
+        // M2M joins (#203): rows for one entity are adjacent (the outer ORDER BY ends
+        // in t1.<pk>) — group them and yield one aggregated entity per pk change.
+        static auto rows_m2m_loop(std::shared_ptr<ConnType> /*conn*/, Statement stmt, JoinStatementWrapper join_wrapper)
+                -> storm::generator<std::expected<T, Error>&&> {
+            std::optional<T> current;
+            std::int64_t     current_pk  = 0;
+            int              step_result = 0;
+            while ((step_result = stmt.step_raw()) == Statement::ROW_AVAILABLE) {
+                const std::int64_t pk = join_wrapper.extract_base_pk_fn(&stmt);
+                if (current.has_value() && pk == current_pk) {
+                    join_wrapper.append_related_fn(&stmt, &*current);
+                    continue;
+                }
+                if (current.has_value()) {
+                    co_yield std::move(*current);
+                }
+                current.emplace();
+                join_wrapper.extract_row(&stmt, &*current);
+                current_pk = pk;
+            }
+            if (step_result != Statement::NO_MORE_ROWS) {
+                co_yield std::unexpected(Error{step_result, stmt.get_error_message()});
+                co_return;
+            }
+            if (current.has_value()) {
+                co_yield std::move(*current);
+            }
+        }
+
+      public:
       private:
         // =====================================================================
         // STATEMENT PREPARATION - Unified caching for all query types
@@ -482,13 +504,144 @@ export namespace storm::orm::statements {
                 results.insert(std::move(obj));
             }
 
+            return finish_query_loop(stmt, step_result, std::move(results));
+        }
+
+        // Shared loop tail: classify the final step result, reset, return rows or error.
+        // Used by execute_query_loop and execute_m2m_loop.
+        [[nodiscard]] __attribute__((always_inline)) static auto
+        finish_query_loop(Statement* stmt, int step_result, plf::hive<T>&& results) noexcept
+                -> std::expected<plf::hive<T>, Error> {
             if (step_result != Statement::NO_MORE_ROWS) {
                 stmt->reset();
                 return std::unexpected(Error{step_result, stmt->get_error_message()});
             }
-
             stmt->reset();
-            return results;
+            return std::move(results);
+        }
+
+        // Bundles the five query clauses threaded from QuerySet through the proxies
+        // (reference semantics — call-scoped only).
+        struct QueryClauses {
+            const std::optional<JoinStatementWrapper>& join_wrapper;
+            const orm::where::ExpressionVariantPtr&    where_expr;
+            const std::optional<int>&                  limit;
+            const std::optional<int>&                  offset;
+            const std::optional<OrderByWrapper>&       order_by_wrapper;
+        };
+
+        // Prepare the statement (cached, WHERE bound), then dispatch to the m2m
+        // aggregation path, the FK-join extraction path, or the plain-columns path.
+        // Shared by execute / execute_one / execute_get (#203).
+        template <typename M2MFn, typename LoopFn>
+        [[nodiscard]] __attribute__((always_inline)) auto
+        prepare_and_dispatch(const QueryClauses& clauses, const M2MFn& m2m_fn, const LoopFn& loop_fn)
+                -> decltype(m2m_fn(std::declval<Statement*>(), *clauses.join_wrapper)) {
+            auto prepare_result = prepare_statement(
+                    clauses.join_wrapper, clauses.where_expr, clauses.limit, clauses.offset, clauses.order_by_wrapper
+            );
+            if (!prepare_result) [[unlikely]] {
+                return std::unexpected(prepare_result.error());
+            }
+            const auto& join_wrapper = clauses.join_wrapper;
+            if (join_wrapper) {
+                if (join_wrapper->is_m2m()) {
+                    return m2m_fn(*prepare_result, *join_wrapper);
+                }
+                return loop_fn(*prepare_result, [&join_wrapper](Statement* stmt, T& obj) {
+                    join_wrapper->extract_row(stmt, &obj);
+                });
+            }
+            return loop_fn(*prepare_result, [](Statement* stmt, T& obj) { Base::extract_all_columns(stmt, obj); });
+        }
+
+        // Shared body of execute_one (ExactOne=false, LIMIT 1 → optional<T>) and
+        // execute_get (ExactOne=true, LIMIT 2 → T or 0/>1-row error). The LIMIT is
+        // applied here; for m2m joins it lands INSIDE the base-table subquery, so it
+        // bounds base entities, never the related collection (#203).
+        template <bool ExactOne>
+        [[nodiscard]] auto execute_one_or_get(
+                const std::optional<JoinStatementWrapper>& join_wrapper,
+                const orm::where::ExpressionVariantPtr&    where_expr,
+                const std::optional<int>&                  offset,
+                const std::optional<OrderByWrapper>&       order_by_wrapper
+        ) -> std::expected<std::conditional_t<ExactOne, T, std::optional<T>>, Error> {
+            std::optional<int> const limit_value = ExactOne ? 2 : 1;
+            return prepare_and_dispatch(
+                    QueryClauses{join_wrapper, where_expr, limit_value, offset, order_by_wrapper},
+                    [this](Statement* stmt, const JoinStatementWrapper& jw) {
+                        if constexpr (ExactOne) {
+                            return execute_m2m_exact_one(stmt, jw);
+                        } else {
+                            return execute_m2m_one(stmt, jw);
+                        }
+                    },
+                    [this](Statement* stmt, const auto& extractor) {
+                        if constexpr (ExactOne) {
+                            return execute_exact_one(stmt, extractor);
+                        } else {
+                            return execute_single_row(stmt, extractor);
+                        }
+                    }
+            );
+        }
+
+        // m2m first() (#203): LIMIT 1 inside the subquery already restricted the query
+        // to one base entity — aggregate its rows and return it (or nullopt).
+        [[nodiscard]] auto execute_m2m_one(Statement* stmt, const JoinStatementWrapper& join_wrapper) noexcept
+                -> std::expected<std::optional<T>, Error> {
+            auto rows = execute_m2m_loop(stmt, join_wrapper);
+            if (!rows) {
+                return std::unexpected(rows.error());
+            }
+            if (rows->empty()) {
+                return std::optional<T>{std::nullopt};
+            }
+            return std::optional<T>{std::move(*rows->begin())};
+        }
+
+        // m2m get() (#203): LIMIT 2 inside the subquery → 0/1/2 base entities after
+        // aggregation. Multiple RELATED rows for one entity are one result, not a
+        // uniqueness violation.
+        [[nodiscard]] auto execute_m2m_exact_one(Statement* stmt, const JoinStatementWrapper& join_wrapper) noexcept
+                -> std::expected<T, Error> {
+            auto rows = execute_m2m_loop(stmt, join_wrapper);
+            if (!rows) {
+                return std::unexpected(rows.error());
+            }
+            if (rows->empty()) {
+                return std::unexpected(Error{-1, "No row found matching query"});
+            }
+            if (rows->size() > 1) {
+                return std::unexpected(Error{-1, "Multiple rows found matching query"});
+            }
+            return std::move(*rows->begin());
+        }
+
+        // M2M aggregation loop (#203): deduplicate base rows, append related objects.
+        // Relies on M2MJoinStatement's outer ORDER BY ending in t1.<pk>, which makes
+        // one entity's rows adjacent — a pk change starts a new entity, so no map is
+        // needed. plf::hive guarantees stable pointers on insert.
+        [[nodiscard]] auto execute_m2m_loop(Statement* stmt, const JoinStatementWrapper& join_wrapper) noexcept
+                -> std::expected<plf::hive<T>, Error> {
+            plf::hive<T> results;
+            T*           current     = nullptr;
+            std::int64_t current_pk  = 0;
+            int          step_result = 0;
+
+            while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE) {
+                const std::int64_t pk = join_wrapper.extract_base_pk_fn(stmt);
+                if (current == nullptr || pk != current_pk) {
+                    T obj;
+                    join_wrapper.extract_row(stmt, &obj);
+                    current    = &*results.insert(std::move(obj));
+                    current_pk = pk;
+                } else {
+                    join_wrapper.append_related_fn(stmt, current);
+                }
+            }
+
+            return finish_query_loop(stmt, step_result, std::move(results));
         }
 
         // =====================================================================

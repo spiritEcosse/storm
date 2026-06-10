@@ -554,7 +554,74 @@ export namespace storm::orm::schema {
         // Pre-computed index SQL strings
         static inline const std::vector<std::string> index_sql_strings_ = build_all_index_sql();
 
+        // =====================================================================
+        // AUTO-JUNCTION TABLE for many_to_many fields without a through model (#203)
+        // =====================================================================
+
+        // Scans RAW members — all_members_ excludes m2m fields by design.
+        static consteval auto find_m2m_auto_member() -> std::optional<std::meta::info> {
+            for (auto member : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+                if (statements::meta::is_m2m_auto(member)) {
+                    return member;
+                }
+            }
+            return std::nullopt;
+        }
+
+        // Junction DDL: <T>_<Related> (<T>_id, <Related>_id, PRIMARY KEY (both)).
+        // The composite PK rejects duplicate relation pairs and doubles as the index.
+        template <Dialect D> static consteval auto build_junction_sql() {
+            constexpr auto member       = find_m2m_auto_member().value();
+            constexpr auto related      = statements::meta::related_type_from_container(std::meta::type_of(member));
+            constexpr auto owner_name   = std::meta::identifier_of(^^T);
+            constexpr auto related_name = std::meta::identifier_of(related);
+            constexpr std::string_view id_type =
+                    (D == Dialect::PostgreSQL) ? "_id BIGINT NOT NULL" : "_id INTEGER NOT NULL";
+            ConstexprString<((owner_name.size() + related_name.size()) * 3) + 128> sql;
+            sql.append("CREATE TABLE ");
+            sql.append(owner_name);
+            sql.append("_");
+            sql.append(related_name);
+            sql.append(" (\n    ");
+            sql.append(owner_name);
+            sql.append(id_type);
+            sql.append(",\n    ");
+            sql.append(related_name);
+            sql.append(id_type);
+            sql.append(",\n    PRIMARY KEY (");
+            sql.append(owner_name);
+            sql.append("_id, ");
+            sql.append(related_name);
+            sql.append("_id)\n)");
+            return sql;
+        }
+
+        // Rewrites "CREATE TABLE " → "CREATE TABLE IF NOT EXISTS " (idempotent DDL).
+        static auto with_if_not_exists(std::string sql) -> std::string {
+            const std::string create_prefix = "CREATE TABLE ";
+            if (sql.starts_with(create_prefix)) {
+                sql.insert(create_prefix.size(), "IF NOT EXISTS ");
+            }
+            return sql;
+        }
+
       public:
+        // True when T has a many_to_many field with an auto-generated junction table.
+        static constexpr bool has_m2m_junction_ = find_m2m_auto_member().has_value();
+
+        // Pre-computed junction CREATE TABLE SQL for the given dialect (#203).
+        template <Dialect D = Dialect::SQLite>
+        static auto junction_table_sql() -> const std::string&
+            requires has_m2m_junction_
+        {
+            if constexpr (D == Dialect::PostgreSQL) {
+                static const std::string str{std::string(build_junction_sql<Dialect::PostgreSQL>())};
+                return str;
+            } else {
+                static const std::string str{std::string(build_junction_sql<Dialect::SQLite>())};
+                return str;
+            }
+        }
         // Return the pre-computed CREATE TABLE SQL for the given dialect.
         template <Dialect D = Dialect::SQLite> static auto create_table_sql() -> const std::string& {
             if constexpr (D == Dialect::PostgreSQL) {
@@ -587,21 +654,17 @@ export namespace storm::orm::schema {
         template <db::DatabaseConnection ConnType>
         static auto create_table_if_not_exists(std::shared_ptr<ConnType> conn)
                 -> std::expected<void, typename ConnType::Error> {
-            std::string sql;
-            if constexpr (requires { ConnType::uses_pg_dialect; }) {
-                sql = create_table_sql<Dialect::PostgreSQL>();
-            } else {
-                sql = create_table_sql<Dialect::SQLite>();
-            }
+            constexpr Dialect dialect = requires { ConnType::uses_pg_dialect; } ? Dialect::PostgreSQL : Dialect::SQLite;
 
-            // Inject IF NOT EXISTS
-            const std::string create_prefix = "CREATE TABLE ";
-            const std::string if_not_exists = "CREATE TABLE IF NOT EXISTS ";
-            if (sql.substr(0, create_prefix.size()) == create_prefix) {
-                sql = if_not_exists + sql.substr(create_prefix.size());
-            }
+            auto result = conn->execute(with_if_not_exists(create_table_sql<dialect>()));
 
-            return conn->execute(sql);
+            // Auto-generated junction table for many_to_many fields (#203 Phase 1).
+            if constexpr (has_m2m_junction_) {
+                result = result.and_then([&conn] {
+                    return conn->execute(with_if_not_exists(junction_table_sql<dialect>()));
+                });
+            }
+            return result;
         }
     };
 
