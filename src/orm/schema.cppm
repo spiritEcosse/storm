@@ -612,7 +612,7 @@ export namespace storm::orm::schema {
         // Pre-computed junction CREATE TABLE SQL for the given dialect (#203).
         template <Dialect D = Dialect::SQLite>
         static auto junction_table_sql() -> const std::string&
-            requires(has_m2m_junction_)
+            requires has_m2m_junction_
         {
             if constexpr (D == Dialect::PostgreSQL) {
                 static const std::string str{std::string(build_junction_sql<Dialect::PostgreSQL>())};

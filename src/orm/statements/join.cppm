@@ -644,6 +644,8 @@ export namespace storm::orm::statements {
         }
 
       private:
+        using Base::adapt_order_by_for_pg; // unqualified call below (Sonar S1117 false-positive on Base::)
+
         // The user's ordering, t1-qualified, then the pk tiebreak that guarantees
         // same-entity row adjacency. Wrapper SQL is exactly " ORDER BY <f> […] ASC|DESC, …".
         static auto append_outer_order_by(std::string& sql, const std::optional<OrderByWrapper>& order_by) -> void {
@@ -656,7 +658,7 @@ export namespace storm::orm::statements {
                     pos += 5;
                 }
                 if constexpr (requires { ConnType::uses_pg_dialect; }) {
-                    Base::adapt_order_by_for_pg(qualified); // LCOV_EXCL_LINE — PG-only
+                    adapt_order_by_for_pg(qualified); // LCOV_EXCL_LINE — PG-only
                 }
                 sql += qualified;
                 sql += ", ";
