@@ -64,4 +64,27 @@ struct Album {
     [[= storm::meta::many_to_many]] std::vector<std::shared_ptr<Track>> tracks;
 };
 
+namespace storm::test {
+
+// Seeds: Alice(20)→[Math, Physics], Bob(22)→[Math], Carol(25)→[] (no courses).
+// Junction rows go through raw SQL — Phase 1 has no model for the auto junction.
+template <typename ConnType> inline auto seed_students() -> void {
+    storm::QuerySet<Student, ConnType> sqs;
+    std::vector<Student> const students = {
+        {.name = "Alice", .age = 20}, {.name = "Bob", .age = 22}, {.name = "Carol", .age = 25}};
+    ASSERT_TRUE(sqs.insert(std::span<const Student>(students)).execute().has_value());
+
+    storm::QuerySet<Course, ConnType> cqs;
+    std::vector<Course> const courses = {{.title = "Math"}, {.title = "Physics"}};
+    ASSERT_TRUE(cqs.insert(std::span<const Course>(courses)).execute().has_value());
+
+    auto conn = storm::QuerySet<Student, ConnType>::get_default_connection();
+    for (const auto *pair : {"(1, 1)", "(1, 2)", "(2, 1)"}) {
+        ASSERT_TRUE(conn->execute(std::format("INSERT INTO Student_Course (Student_id, Course_id) VALUES {}", pair))
+                        .has_value());
+    }
+}
+
+} // namespace storm::test
+
 #endif // TESTS_QUERY_TEST_M2M_MODELS_H

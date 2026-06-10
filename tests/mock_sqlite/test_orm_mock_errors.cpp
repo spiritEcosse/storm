@@ -3224,6 +3224,66 @@ namespace {
         EXPECT_NE(raw, nullptr);
     }
 
+    // ============================================================================
+    // Many-to-many (#203) — m2m aggregation error paths (select / first / get / rows)
+    // ============================================================================
+
+    struct MockCourse {
+        [[= storm::meta::FieldAttr::primary]] std::int64_t id{};
+        std::string                                        title;
+    };
+
+    struct MockStudent {
+        [[= storm::meta::FieldAttr::primary]] std::int64_t      id{};
+        std::string                                             name;
+        [[= storm::meta::many_to_many]] std::vector<MockCourse> courses;
+    };
+
+    TEST_F(ORMMockErrorTest, M2MSelectFailsOnStepError) {
+        MockSqlite3Config::step_returns(SQLITE_IOERR);
+
+        QuerySet<MockStudent> qs;
+        auto                  rows = qs.join<^^MockStudent::courses>().select().execute();
+
+        ASSERT_FALSE(rows.has_value());
+        EXPECT_EQ(rows.error().code(), SQLITE_IOERR);
+    }
+
+    TEST_F(ORMMockErrorTest, M2MFirstFailsOnStepError) {
+        MockSqlite3Config::step_returns(SQLITE_IOERR);
+
+        QuerySet<MockStudent> qs;
+        auto                  first = qs.join<^^MockStudent::courses>().first().execute();
+
+        ASSERT_FALSE(first.has_value());
+        EXPECT_EQ(first.error().code(), SQLITE_IOERR);
+    }
+
+    TEST_F(ORMMockErrorTest, M2MGetFailsOnStepError) {
+        MockSqlite3Config::step_returns(SQLITE_IOERR);
+
+        QuerySet<MockStudent> qs;
+        auto                  got = qs.join<^^MockStudent::courses>().get().execute();
+
+        ASSERT_FALSE(got.has_value());
+        EXPECT_EQ(got.error().code(), SQLITE_IOERR);
+    }
+
+    TEST_F(ORMMockErrorTest, M2MRowsGeneratorYieldsStepError) {
+        MockSqlite3Config::step_returns(SQLITE_CORRUPT);
+
+        QuerySet<MockStudent> qs;
+        auto                  joined    = qs.join<^^MockStudent::courses>();
+        bool                  saw_error = false;
+        for (auto&& row : joined.rows()) {
+            ASSERT_FALSE(row.has_value());
+            EXPECT_EQ(row.error().code(), SQLITE_CORRUPT);
+            saw_error = true;
+            break;
+        }
+        EXPECT_TRUE(saw_error);
+    }
+
 } // namespace
 
 // NOLINTEND(misc-const-correctness,bugprone-unused-return-value,performance-inefficient-vector-operation) // NOSONAR(cpp:S125)

@@ -98,6 +98,12 @@ export namespace storm::orm::statements {
         }
 
         template <typename Container> using m2m_related_t = typename[:related_type_from_container(^^Container):];
+
+        // Detect std::shared_ptr container elements (m2m append path wraps the
+        // extracted related object in make_shared, #203).
+        template <typename T> struct is_shared_ptr : std::false_type {};
+        template <typename TValue> struct is_shared_ptr<std::shared_ptr<TValue>> : std::true_type {};
+        template <typename TValue> constexpr bool is_shared_ptr_v = is_shared_ptr<TValue>::value;
     } // namespace meta
 
     // Concept: T must have at least one field annotated with FieldAttr::primary.
