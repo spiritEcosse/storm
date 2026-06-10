@@ -39,6 +39,65 @@ export namespace storm::orm::statements {
             using enum FieldAttr;
             return attr == primary || attr == primary_autoincrement;
         }
+
+        // Many-to-many annotation (#203). Phase 1 (auto-generated junction table):
+        //   [[= storm::meta::many_to_many]] std::vector<Course> courses;
+        // Phase 2 (explicit junction model):
+        //   [[= storm::meta::many_to_many_through<Enrollment>]] std::vector<Course> courses;
+        // FieldAttr is an enum, so a templated enumerator is impossible — a class-template
+        // annotation carries the optional through-model type instead.
+        template <typename Through = void> struct ManyToMany {
+            using through_type = Through;
+        };
+        inline constexpr ManyToMany<>                                    many_to_many{};
+        template <typename Through> inline constexpr ManyToMany<Through> many_to_many_through{};
+
+        // Reflection of the ManyToMany<...> annotation TYPE carried by `member`, if any.
+        consteval auto m2m_annotation_type_of(std::meta::info member) -> std::optional<std::meta::info> {
+            for (const auto annotation : std::meta::annotations_of(member)) {
+                const auto type = std::meta::type_of(annotation);
+                if (std::meta::has_template_arguments(type) && std::meta::template_of(type) == ^^ManyToMany) {
+                    return type;
+                }
+            }
+            return std::nullopt;
+        }
+
+        consteval auto is_m2m_field(std::meta::info member) -> bool {
+            return m2m_annotation_type_of(member).has_value();
+        }
+
+        // True for m2m members WITHOUT a through model (auto-generated junction table).
+        consteval auto is_m2m_auto(std::meta::info member) -> bool {
+            auto type = m2m_annotation_type_of(member);
+            return type.has_value() && std::meta::dealias(std::meta::template_arguments_of(type.value())[0]) == ^^void;
+        }
+
+        // Through model of an m2m member (void = auto-generated junction table).
+        template <std::meta::info Member>
+        using m2m_through_t = typename[:std::meta::template_arguments_of(m2m_annotation_type_of(Member).value())[0]:];
+
+        // Related model type extracted from a container field type via C++26 std::meta (#203):
+        // vector<Course> → Course, plf::hive<Track> → Track,
+        // vector<shared_ptr<Course>> / vector<unique_ptr<Course>> → Course.
+        consteval auto related_type_from_container(std::meta::info container_type) -> std::meta::info {
+            const auto first =
+                    std::meta::dealias(std::meta::template_arguments_of(std::meta::dealias(container_type))[0]);
+            if (std::meta::has_template_arguments(first)) {
+                // ^^std::shared_ptr names a using-declarator under `import std;` and can't
+                // be reflected directly — derive the canonical template from a concrete
+                // specialization instead.
+                const auto tmpl            = std::meta::template_of(first);
+                const auto shared_ptr_tmpl = std::meta::template_of(std::meta::dealias(^^std::shared_ptr<int>));
+                const auto unique_ptr_tmpl = std::meta::template_of(std::meta::dealias(^^std::unique_ptr<int>));
+                if (tmpl == shared_ptr_tmpl || tmpl == unique_ptr_tmpl) {
+                    return std::meta::dealias(std::meta::template_arguments_of(first)[0]);
+                }
+            }
+            return first;
+        }
+
+        template <typename Container> using m2m_related_t = typename[:related_type_from_container(^^Container):];
     } // namespace meta
 
     // Concept: T must have at least one field annotated with FieldAttr::primary.
@@ -89,6 +148,40 @@ export namespace storm::orm::statements {
             }
         }
         return false;
+    }();
+
+    // A many-to-many JOIN field selector must reflect a non-static data member of T
+    // carrying a ManyToMany annotation (#203). Same BMI-boundary discipline as
+    // FKFieldOf: the annotation is read from the member re-derived out of ^^T.
+    template <typename T, std::meta::info Member>
+    concept M2MFieldOf = []() consteval {
+        if (!std::meta::is_nonstatic_data_member(Member) || !std::meta::has_identifier(Member)) {
+            return false;
+        }
+        if (std::meta::parent_of(Member) != ^^T) {
+            return false;
+        }
+        for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+            if (std::meta::identifier_of(m) == std::meta::identifier_of(Member)) {
+                return meta::is_m2m_field(m);
+            }
+        }
+        return false;
+    }();
+
+    // A through model must carry exactly one FieldAttr::fk member of type Side
+    // (#203 Phase 2) — that member names the junction FK column (<identifier>_id).
+    template <typename Through, typename Side>
+    concept ThroughWithFKTo = []() consteval {
+        std::size_t count = 0;
+        for (auto m : std::meta::nonstatic_data_members_of(^^Through, std::meta::access_context::unchecked())) {
+            auto attr = std::meta::annotation_of_type<meta::FieldAttr>(m);
+            if (attr.has_value() && attr.value() == meta::FieldAttr::fk &&
+                std::meta::dealias(std::meta::type_of(m)) == std::meta::dealias(^^Side)) {
+                ++count;
+            }
+        }
+        return count == 1;
     }();
 
     // Shared reflection utilities for all statement types
@@ -187,18 +280,28 @@ export namespace storm::orm::statements {
             std::unreachable(); // never reached: requires ModelWithPrimaryKey<...> guarantees a primary key exists
         }
 
-        // Helper to get the number of fields
+        // Number of PERSISTED fields. Many-to-many container members map to a junction
+        // table, not to a column, so they are invisible to INSERT/SELECT/UPDATE/SCHEMA (#203).
         static consteval auto get_field_count() -> std::size_t {
-            return std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()).size();
+            std::size_t count = 0;
+            for (const auto member :
+                 std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+                if (!meta::is_m2m_field(member)) {
+                    ++count;
+                }
+            }
+            return count;
         }
 
-        // Pre-compute all field members at compile-time
+        // Pre-compute all persisted field members at compile-time (m2m members filtered, #203)
         template <std::size_t N> static consteval auto get_all_field_members() -> std::array<std::meta::info, N> {
             std::array<std::meta::info, N> result{};
-            auto members = std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked());
-
-            for (std::size_t i = 0; i < N && i < members.size(); ++i) {
-                result[i] = members[i];
+            std::size_t                    idx = 0;
+            for (const auto member :
+                 std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+                if (!meta::is_m2m_field(member) && idx < N) {
+                    result[idx++] = member;
+                }
             }
             return result;
         }

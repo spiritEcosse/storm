@@ -37,6 +37,13 @@ export namespace storm {
         // and re-exported here through the import chain
         using FieldAttr = orm::statements::meta::FieldAttr;
 
+        // Many-to-many annotations (#203): many_to_many (auto junction table) and
+        // many_to_many_through<Through> (explicit junction model). These re-exports
+        // are consumed by user model declarations, never inside this module.
+        using orm::statements::meta::many_to_many;         // NOLINT(misc-unused-using-decls)
+        using orm::statements::meta::many_to_many_through; // NOLINT(misc-unused-using-decls)
+        using orm::statements::meta::ManyToMany;           // NOLINT(misc-unused-using-decls)
+
         // Check if member has primary attribute
         consteval auto has_primary_attr(std::meta::info member) -> bool {
             auto field_attr = std::meta::annotation_of_type<FieldAttr>(member);
