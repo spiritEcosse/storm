@@ -63,4 +63,39 @@ TYPED_TEST(M2MBaseTest, PlainCrudIgnoresM2MField) {
     EXPECT_TRUE(rows->begin()->courses.empty()); // plain select never populates m2m
 }
 
+// ============================================================================
+// Schema: auto-generated junction table DDL (#203 Phase 1)
+// ============================================================================
+
+TEST(M2MSchemaTest, JunctionTableSqlSQLite) {
+    const auto& sql =
+            storm::orm::schema::SchemaStatement<Student>::junction_table_sql<storm::orm::schema::Dialect::SQLite>();
+    EXPECT_TRUE(sql.contains("CREATE TABLE Student_Course")) << sql;
+    EXPECT_TRUE(sql.contains("Student_id INTEGER NOT NULL")) << sql;
+    EXPECT_TRUE(sql.contains("Course_id INTEGER NOT NULL")) << sql;
+    EXPECT_TRUE(sql.contains("PRIMARY KEY (Student_id, Course_id)")) << sql;
+}
+
+TEST(M2MSchemaTest, JunctionTableSqlPostgreSQL) {
+    const auto& sql =
+            storm::orm::schema::SchemaStatement<Student>::junction_table_sql<storm::orm::schema::Dialect::PostgreSQL>();
+    EXPECT_TRUE(sql.contains("CREATE TABLE Student_Course")) << sql;
+    EXPECT_TRUE(sql.contains("Student_id BIGINT NOT NULL")) << sql;
+    EXPECT_TRUE(sql.contains("Course_id BIGINT NOT NULL")) << sql;
+}
+
+// A through-model m2m field must NOT produce an auto junction table.
+static_assert(!storm::orm::schema::SchemaStatement<Pupil>::has_m2m_junction_);
+static_assert(storm::orm::schema::SchemaStatement<Student>::has_m2m_junction_);
+
+TYPED_TEST(M2MBaseTest, JunctionTableIsCreatedAndWritable) {
+    auto conn = QuerySet<Student, TypeParam>::get_default_connection();
+    // The fixture ran create_table_if_not_exists<Student> — the junction must exist.
+    auto ins = conn->execute("INSERT INTO Student_Course (Student_id, Course_id) VALUES (1, 1)");
+    ASSERT_TRUE(ins.has_value()) << ins.error().message();
+    // Composite PK rejects duplicate pairs.
+    auto dup = conn->execute("INSERT INTO Student_Course (Student_id, Course_id) VALUES (1, 1)");
+    EXPECT_FALSE(dup.has_value());
+}
+
 // NOLINTEND(misc-const-correctness)
