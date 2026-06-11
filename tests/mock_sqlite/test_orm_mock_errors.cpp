@@ -3284,6 +3284,85 @@ namespace {
         EXPECT_TRUE(saw_error);
     }
 
+    // #391 — the two-query eager load wraps Q1+Q2 in a transaction for snapshot
+    // consistency. TransactionGuard::begin() issues "BEGIN TRANSACTION" (a cached
+    // statement that steps), so it is the FIRST step call. Failing only that step
+    // proves the transaction is opened BEFORE Q1/Q2 run: the BEGIN error surfaces
+    // and no rows come back.
+    TEST_F(ORMMockErrorTest, M2MSelectOpensTransactionBeforeQueries) {
+        MockSqlite3Config::step_fails_on_call(1, SQLITE_BUSY); // 1st step = BEGIN TRANSACTION
+
+        QuerySet<MockStudent> qs;
+        auto                  rows = qs.join<^^MockStudent::courses>().select().execute();
+
+        ASSERT_FALSE(rows.has_value()) << "m2m eager load must fail when BEGIN TRANSACTION fails";
+        EXPECT_EQ(rows.error().code(), SQLITE_BUSY);
+    }
+
+    // #391 — prepare-call sequence for an m2m select. SetUp resets the counter,
+    // then the connection bring-up + this query prepare statements in a fixed
+    // order: calls 1-3 = connection/BEGIN bring-up, 4 = Q1 (base subquery),
+    // 5 = Q2 (junction⋈related). Failing each exercises the distinct prepare error
+    // branch in run_q1 / run_q2_stitch (via prepare_clause_sql).
+    TEST_F(ORMMockErrorTest, M2MSelectFailsOnQ1PrepareError) {
+        MockSqlite3Config::prepare_fails_on_call(4, SQLITE_NOMEM); // Q1 prepare
+
+        QuerySet<MockStudent> qs;
+        auto                  rows = qs.join<^^MockStudent::courses>().select().execute();
+
+        ASSERT_FALSE(rows.has_value());
+        EXPECT_EQ(rows.error().code(), SQLITE_NOMEM);
+    }
+
+    TEST_F(ORMMockErrorTest, M2MSelectFailsOnQ2PrepareError) {
+        MockSqlite3Config::prepare_fails_on_call(5, SQLITE_IOERR); // Q2 prepare
+
+        QuerySet<MockStudent> qs;
+        auto                  rows = qs.join<^^MockStudent::courses>().select().execute();
+
+        ASSERT_FALSE(rows.has_value());
+        EXPECT_EQ(rows.error().code(), SQLITE_IOERR);
+    }
+
+    // Q2's row loop ends on a non-NO_MORE_ROWS step → error surfaces from
+    // run_q2_stitch. Step sequence: 1=BEGIN ok, 2=Q1 NO_MORE (empty), 3=Q2 fails.
+    TEST_F(ORMMockErrorTest, M2MSelectFailsOnQ2StepError) {
+        MockSqlite3Config::step_fails_on_call(3, SQLITE_CORRUPT);
+
+        QuerySet<MockStudent> qs;
+        auto                  rows = qs.join<^^MockStudent::courses>().select().execute();
+
+        ASSERT_FALSE(rows.has_value());
+        EXPECT_EQ(rows.error().code(), SQLITE_CORRUPT);
+    }
+
+    // The final COMMIT (4th step: BEGIN, Q1 NO_MORE, Q2 NO_MORE, COMMIT) fails →
+    // error surfaces from execute_m2m_2query's commit() branch.
+    TEST_F(ORMMockErrorTest, M2MSelectFailsOnCommitError) {
+        MockSqlite3Config::step_fails_on_call(4, SQLITE_FULL);
+
+        QuerySet<MockStudent> qs;
+        auto                  rows = qs.join<^^MockStudent::courses>().select().execute();
+
+        ASSERT_FALSE(rows.has_value());
+        EXPECT_EQ(rows.error().code(), SQLITE_FULL);
+    }
+
+    // An m2m select WITH a WHERE clause binds params into Q1; a bind failure
+    // surfaces from prepare_clause_sql's bind branch.
+    TEST_F(ORMMockErrorTest, M2MSelectFailsOnWhereBindError) {
+        MockSqlite3Config::bind_int_returns(SQLITE_RANGE);
+
+        QuerySet<MockStudent> qs;
+        auto                  rows = qs.join<^^MockStudent::courses>()
+                            .where(storm::orm::where::field<^^MockStudent::id>() > 0)
+                            .select()
+                            .execute();
+
+        ASSERT_FALSE(rows.has_value());
+        EXPECT_EQ(rows.error().code(), SQLITE_RANGE);
+    }
+
 } // namespace
 
 // NOLINTEND(misc-const-correctness,bugprone-unused-return-value,performance-inefficient-vector-operation) // NOSONAR(cpp:S125)

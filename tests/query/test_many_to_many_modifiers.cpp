@@ -191,6 +191,20 @@ TYPED_TEST(M2MModifierTest, RowsGeneratorOnEmptyYieldsNothing) {
     EXPECT_EQ(count, 0U);
 }
 
+// A model WITH an m2m field still supports plain rows() iteration (no join) —
+// that takes the non-m2m streaming path, leaving the m2m container empty (#391).
+TYPED_TEST(M2MModifierTest, PlainRowsGeneratorIgnoresM2MField) {
+    QuerySet<Student, TypeParam> qs;
+
+    std::size_t count = 0;
+    for (auto&& row : qs.rows()) {
+        ASSERT_TRUE(row.has_value()) << row.error().message();
+        EXPECT_TRUE(row->courses.empty()); // plain rows() never populates m2m
+        ++count;
+    }
+    EXPECT_EQ(count, 3U); // Alice, Bob, Carol
+}
+
 TYPED_TEST(M2MModifierTest, RepeatedQueryUsesStatementCache) {
     QuerySet<Student, TypeParam> qs;
     auto                         joined    = qs.template join<^^Student::courses>();
