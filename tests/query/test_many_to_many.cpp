@@ -99,17 +99,23 @@ TYPED_TEST(M2MBaseTest, JunctionTableIsCreatedAndWritable) {
 }
 
 // ============================================================================
-// SQL shape: 3-table join over a base-table subquery (#203 Phase 1)
+// SQL shape: two-query predicate-pushdown eager load (#391)
+//   Q1 = base entities; Q2 = (owner_pk, related.*) filtered by the same base
+//   subquery. .sql() joins them with "; ". The execution path runs them as two
+//   separate prepared statements inside a transaction (see execute_m2m_2query).
 // ============================================================================
 
 TYPED_TEST(M2MBaseTest, M2MJoinSqlShape) {
     QuerySet<Student, TypeParam> qs;
     auto                         sql = qs.template join<^^Student::courses>().select().sql();
-    EXPECT_TRUE(sql.contains("SELECT t1.id, t1.name, t1.age, t3.id, t3.title")) << sql;
-    EXPECT_TRUE(sql.contains("FROM (SELECT id, name, age FROM Student) t1")) << sql;
-    EXPECT_TRUE(sql.contains("INNER JOIN Student_Course t2 ON t1.id = t2.Student_id")) << sql;
-    EXPECT_TRUE(sql.contains("INNER JOIN Course t3 ON t2.Course_id = t3.id")) << sql;
-    EXPECT_TRUE(sql.ends_with(" ORDER BY t1.id")) << sql;
+    // Q1 — base entities, a plain SELECT (no join, no sorter).
+    EXPECT_TRUE(sql.contains("SELECT id, name, age FROM Student; ")) << sql;
+    // Q2 — junction⋈related, related rows filtered by the same base subquery.
+    EXPECT_TRUE(sql.contains("SELECT t2.Student_id, t3.id, t3.title")) << sql;
+    EXPECT_TRUE(sql.contains("FROM Student_Course t2 INNER JOIN Course t3 ON t2.Course_id = t3.id")) << sql;
+    EXPECT_TRUE(sql.contains("WHERE t2.Student_id IN (SELECT id FROM Student)")) << sql;
+    // No outer ORDER BY / pk-adjacency contract — the stitch is a hash map.
+    EXPECT_FALSE(sql.contains(" t1")) << sql;
 }
 
 TYPED_TEST(M2MBaseTest, M2MJoinSqlModifiersGoInsideSubquery) {
@@ -120,15 +126,19 @@ TYPED_TEST(M2MBaseTest, M2MJoinSqlModifiersGoInsideSubquery) {
                        .limit(2)
                        .select()
                        .sql();
-    // WHERE / ORDER BY / LIMIT select WHICH base entities load — inside the subquery.
-    // Outer ORDER BY repeats the user's ordering (t1-qualified) + pk tiebreak.
+    // WHERE / ORDER BY / LIMIT select WHICH base entities load — they appear in
+    // Q1 directly AND inside Q2's IN-subquery so both pick the same entities.
     // PG dialect adds NULLS LAST after DESC (matches SQLite NULL ordering).
     if constexpr (storm::test::is_postgresql<TypeParam>()) {
-        EXPECT_TRUE(sql.contains("FROM Student WHERE age > ? ORDER BY name DESC NULLS LAST LIMIT 2) t1")) << sql;
-        EXPECT_TRUE(sql.ends_with(" ORDER BY t1.name DESC NULLS LAST, t1.id")) << sql;
+        EXPECT_TRUE(
+                sql.contains("SELECT id, name, age FROM Student WHERE age > ? ORDER BY name DESC NULLS LAST LIMIT 2; ")
+        ) << sql;
+        EXPECT_TRUE(sql.contains("IN (SELECT id FROM Student WHERE age > ? ORDER BY name DESC NULLS LAST LIMIT 2)"))
+                << sql;
     } else {
-        EXPECT_TRUE(sql.contains("FROM Student WHERE age > ? ORDER BY name DESC LIMIT 2) t1")) << sql;
-        EXPECT_TRUE(sql.ends_with(" ORDER BY t1.name DESC, t1.id")) << sql;
+        EXPECT_TRUE(sql.contains("SELECT id, name, age FROM Student WHERE age > ? ORDER BY name DESC LIMIT 2; "))
+                << sql;
+        EXPECT_TRUE(sql.contains("IN (SELECT id FROM Student WHERE age > ? ORDER BY name DESC LIMIT 2)")) << sql;
     }
 }
 
@@ -136,19 +146,23 @@ TYPED_TEST(M2MBaseTest, M2MJoinSqlMultiFieldOrderByQualifiesAllFields) {
     QuerySet<Student, TypeParam> qs;
     auto                         sql =
             qs.template join<^^Student::courses>().template order_by<^^Student::age, ^^Student::name>().select().sql();
-    // every user order field gets the t1. prefix, then the pk tiebreak
+    // Multi-field ORDER BY appears (unqualified — no t1. surgery) in Q1 and the
+    // Q2 IN-subquery; no pk tiebreak (the stitch is a hash map, not adjacency).
     if constexpr (storm::test::is_postgresql<TypeParam>()) {
-        EXPECT_TRUE(sql.ends_with(" ORDER BY t1.age ASC NULLS FIRST, t1.name ASC NULLS FIRST, t1.id")) << sql;
+        EXPECT_TRUE(sql.contains("ORDER BY age ASC NULLS FIRST, name ASC NULLS FIRST")) << sql;
     } else {
-        EXPECT_TRUE(sql.ends_with(" ORDER BY t1.age ASC, t1.name ASC, t1.id")) << sql;
+        EXPECT_TRUE(sql.contains("SELECT id, name, age FROM Student ORDER BY age ASC, name ASC; ")) << sql;
+        EXPECT_TRUE(sql.contains("IN (SELECT id FROM Student ORDER BY age ASC, name ASC)")) << sql;
     }
 }
 
 TYPED_TEST(M2MBaseTest, M2MLeftJoinSqlShape) {
     QuerySet<Student, TypeParam> qs;
     auto                         sql = qs.template left_join<^^Student::courses>().select().sql();
-    EXPECT_TRUE(sql.contains("LEFT JOIN Student_Course t2")) << sql;
-    EXPECT_TRUE(sql.contains("LEFT JOIN Course t3")) << sql;
+    // Q2 is always an INNER junction⋈related join — LEFT vs INNER is a post-stitch
+    // filter (LEFT keeps zero-relation entities), never an SQL difference.
+    EXPECT_TRUE(sql.contains("SELECT id, name, age FROM Student; ")) << sql;
+    EXPECT_TRUE(sql.contains("FROM Student_Course t2 INNER JOIN Course t3")) << sql;
 }
 
 // ============================================================================

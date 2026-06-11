@@ -144,7 +144,7 @@ echo ""
 #
 #   Benchmark textual headers — #included inside anonymous namespaces of main
 #   TUs; cannot be parsed standalone (need import storm or benchmark BMI):
-#   benchmarks/models.hpp, benchmarks/benchmark_tests.hpp,
+#   benchmarks/models.hpp, benchmarks/m2m_models.hpp, benchmarks/benchmark_tests.hpp,
 #   benchmarks/dashboard/args.hpp, benchmarks/dashboard/backup.hpp,
 #   benchmarks/dashboard/db.hpp, benchmarks/dashboard/events.hpp,
 #   benchmarks/dashboard/tui_render.hpp, benchmarks/dashboard/models.hpp
@@ -172,6 +172,7 @@ is_known_unparseable() {
         tests/tools/storm_schema/models.h) return 0 ;;
         benchmarks/bench_register.h) return 0 ;;
         benchmarks/models.hpp) return 0 ;;
+        benchmarks/m2m_models.hpp) return 0 ;;
         benchmarks/benchmark_tests.hpp) return 0 ;;
         benchmarks/dashboard/args.hpp) return 0 ;;
         benchmarks/dashboard/backup.hpp) return 0 ;;

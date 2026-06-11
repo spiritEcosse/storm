@@ -408,9 +408,13 @@ qs.values<^^Person::name, ^^Person::age>().execute();       // plf::hive<std::tu
 message_qs.join<^^Message::sender>().where(...).select();
 message_qs.left_join<^^Message::sender, ^^Message::receiver>().select();
 
-// Many-to-many (#203) — container field annotated [[= storm::meta::many_to_many]]
-// (auto junction table) or many_to_many_through<Enrollment> (explicit junction model).
-// Single-query eager load; WHERE/ORDER BY/LIMIT apply to BASE entities (subquery).
+// Many-to-many (#203 model/schema; #391 two-query execution) — container field
+// annotated [[= storm::meta::many_to_many]] (auto junction) or
+// many_to_many_through<Enrollment> (explicit junction model). Eager load runs as
+// Q1 (base entities) + Q2 (owner_pk, related.*) WHERE owner_id IN (base subquery),
+// stitched by a pk→entity hash map, both in one transaction. WHERE/ORDER BY/LIMIT
+// apply to BASE entities. 33-46% faster than the old 1-query 3-table join at
+// fan-out >= 10. See docs/features/JOIN_OPERATIONS.md#execution-strategy-391.
 student_qs.join<^^Student::courses>().select();      // students with courses aggregated
 student_qs.left_join<^^Student::courses>().select(); // + students with no courses
 ```

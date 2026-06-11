@@ -120,8 +120,9 @@ auto result = message_qs.right_join<^^Message::sender>().select();
 
 Many-to-many relationships use a container field annotated with `many_to_many`
 (auto-generated junction table) or `many_to_many_through<Model>` (explicit
-junction model). The same `join<^^Field>()` API eager-loads the relationship in
-a **single query** — no N+1 problem.
+junction model). The same `join<^^Field>()` API eager-loads the relationship with
+a **predicate-pushdown two-query** strategy (#391) — no N+1 problem. See
+[Execution Strategy](#execution-strategy-391) below for why two queries beat one.
 
 ### Phase 1: Auto-Generated Junction Table
 
@@ -138,7 +139,8 @@ struct Student {
     [[= storm::meta::many_to_many]] std::vector<Course> courses;
 };
 
-// One query: students deduplicated, courses collected into each student
+// Two queries (in one transaction): base students, then their courses, stitched
+// client-side by a pk→entity hash map.
 auto students = QuerySet<Student>().join<^^Student::courses>().select().execute();
 for (const auto& s : *students) {
     // s.courses holds ALL of the student's courses
@@ -154,14 +156,19 @@ for (const auto& s : *students) {
 - The m2m container member is **not a column**: plain `select()`, `insert()`,
   `update()` ignore it entirely (zero cost for models without m2m fields).
 
-**SQL Generated**:
+**SQL Generated** (two statements, run inside one transaction):
 ```sql
-SELECT t1.id, t1.name, t1.age, t3.id, t3.title
-FROM (SELECT id, name, age FROM Student) t1
-INNER JOIN Student_Course t2 ON t1.id = t2.Student_id
-INNER JOIN Course t3 ON t2.Course_id = t3.id
-ORDER BY t1.id
+-- Q1: the base entities to load (a plain SELECT — no join, no sorter)
+SELECT id, name, age FROM Student;
+
+-- Q2: their courses, filtered by the SAME base subquery; stitched by owner pk
+SELECT t2.Student_id, t3.id, t3.title
+FROM Student_Course t2 INNER JOIN Course t3 ON t2.Course_id = t3.id
+WHERE t2.Student_id IN (SELECT id FROM Student)
 ```
+
+`WHERE` / `ORDER BY` / `LIMIT` / `OFFSET` are applied to Q1 **and** repeated inside
+Q2's `IN (…)` subquery, so both pick exactly the same base entities.
 
 ### Phase 2: Explicit Junction Model (metadata)
 
@@ -179,7 +186,7 @@ struct Pupil {
     [[= storm::meta::many_to_many_through<Enrollment>]] std::vector<Course> courses;
 };
 
-// Simple access — metadata ignored, same single-query eager load
+// Simple access — metadata ignored, same two-query eager load
 auto pupils = QuerySet<Pupil>().join<^^Pupil::courses>().select().execute();
 
 // Metadata access — query the junction model directly (regular FK joins)
@@ -197,21 +204,60 @@ field names (`pupil_id`, `course_id`). The through model must have exactly one
 
 | Aspect | Behavior |
 |---|---|
-| `WHERE` / `ORDER BY` / `LIMIT` / `OFFSET` | Apply to **base entities** (inside a base-table subquery) — `limit(1)` returns one student with ALL courses |
+| `WHERE` / `ORDER BY` / `LIMIT` / `OFFSET` | Apply to **base entities** (Q1 and the Q2 IN-subquery) — `limit(1)` returns one student with ALL courses |
 | `first()` / `get()` | Entity-level: `get()` errors only on 0 or >1 *entities*, never on multiple relations |
-| `rows()` | Yields one aggregated entity at a time (lazy) |
-| `join` (INNER) | Drops base entities with no relations |
-| `left_join` | Keeps them with an empty container |
-| Aggregates (`count()` …) | Count (base, related) **pairs** over the flat 3-table join |
-| Result order | Deterministic: user `order_by` (t1-qualified) + pk tiebreak |
+| `rows()` | Yields aggregated entities; **materialized eagerly** (Q2 needs the full base set, so true streaming is not possible) |
+| `join` (INNER) | Drops base entities with no relations (a post-stitch filter) |
+| `left_join` | Keeps them with an empty container (the natural case — Q1 already yielded them) |
+| Aggregates (`count()` …) | Count (base, related) **pairs** over the flat 3-table join (`get_complete_sql`) |
+| Result order | The order Q1 returns base entities (`order_by` if given) — no pk tiebreak is needed, since the stitch is a hash map, not row-adjacency |
+| Consistency | Q1 + Q2 run inside one transaction (snapshot consistency) |
 
 ### Limitations
 
-- One m2m field per model; self-referential m2m rejected at compile time.
+- One m2m field per `join<…>()` call; self-referential m2m rejected at compile
+  time. (The two-query design composes — a second m2m field would be one extra Q2
+  keyed off the same base map, not a `K1×K2` cartesian explosion — so multi-m2m
+  is a natural future extension, not yet exposed in the API.)
 - Write-side helpers (`add()`/`remove()`) are not provided — insert junction
   rows via the through model (`QuerySet<Enrollment>`) or raw SQL for Phase 1.
 - The annotation spelling differs from issue #203's sketch
   (`FieldAttr::many_to_many<T>` is impossible — `FieldAttr` is an enum).
+
+### Execution Strategy (#391)
+
+The m2m eager load runs as **two queries inside one transaction**, stitched
+client-side by a `pk → entity` hash map (`SelectStatement::execute_m2m_2query`):
+
+1. **Q1** selects the base entities (`build_base_subquery`) — a plain `SELECT`,
+   no join, no sorter. Its results go into a `plf::hive<T>` (stable pointers),
+   and a `std::unordered_map<int64_t, T*>` indexes them by primary key.
+2. **Q2** selects `(owner_pk, related.*)` from the junction ⋈ related table,
+   filtered by `WHERE owner_id IN (<the same base subquery>)` (`build_q2_sql`).
+   Each row is appended to its owner's container via the hash-map lookup.
+3. **INNER** then drops entities whose container stayed empty; **LEFT** keeps
+   them. Both run the *same* Q2 (an INNER junction ⋈ related join) — the
+   INNER/LEFT difference is a post-stitch filter, never an SQL difference.
+
+**Why two queries beat one.** The former single-query plan was a 3-table join over
+a base-table subquery that ended in `ORDER BY t1.<pk>` so one entity's rows were
+adjacent (the aggregation loop relied on that). SQLite executes that `ORDER BY`
+with a `USE TEMP B-TREE FOR ORDER BY` — *every* one of the `N×K` result rows,
+including the duplicated base columns, passes through the sorter. The two-query
+plan never sorts (the stitch is a hash map) and reads each base row's columns
+once. Measured in-Storm (Release, fan-out sweep, N=100 base entities):
+
+| fan-out | rows | 1-query | 2-query | speedup |
+|---|---|---|---|---|
+| 1 | 100 | 24.0 µs | 26.1 µs | −8.7% (FK-shaped; least representative) |
+| 10 | 1,000 | 190 µs | 127 µs | **+33.5%** |
+| 50 | 5,000 | 907 µs | 519 µs | **+42.8%** |
+| 200 | 20,000 | 3.70 ms | 2.01 ms | **+45.6%** |
+
+Fan-out 1 (one related row per entity) is FK-shaped, not m2m-shaped, and pays a
+~2 µs constant cost (the extra prepare + transaction); every representative m2m
+fan-out wins by 33–46%. `count()` and other aggregates still run the modifier-free
+3-table join (`get_complete_sql`) to count `(base, related)` pairs.
 
 ## Architecture
 

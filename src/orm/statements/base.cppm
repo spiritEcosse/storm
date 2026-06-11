@@ -408,6 +408,16 @@ export namespace storm::orm::statements {
             return false;
         }();
 
+        // True if T has any many-to-many container field (#203/#391). Gates the
+        // two-query eager-load path so models WITHOUT an m2m field never instantiate
+        // it (scans raw members — m2m fields are filtered out of all_members_).
+        static constexpr bool has_m2m_field_ = []() consteval {
+            return std::ranges::any_of(
+                    std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()),
+                    [](std::meta::info m) { return meta::is_m2m_field(m); }
+            );
+        }();
+
         // One clock read per operation, but only for models that actually have a timestamp
         // field — otherwise the call compiles away entirely (no regression on plain models).
         [[nodiscard]] __attribute__((always_inline)) static auto batch_now() noexcept

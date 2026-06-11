@@ -28,24 +28,32 @@ export namespace storm::orm::statements {
 
     struct JoinStatementWrapper {
         auto (*get_complete_sql_fn)() -> const std::string&;
-        auto (*extract_row_fn)(ErasedStatementPtr, ErasedObjectPtr) -> void;
+        // Per-row extractor for FK joins. nullptr for m2m wrappers (the two-query
+        // m2m path extracts base rows via Base::extract_all_columns, never this).
+        auto (*extract_row_fn)(ErasedStatementPtr, ErasedObjectPtr) -> void = nullptr;
 
-        // Many-to-many extension (#203) — nullptr for plain FK joins. M2M SQL depends
-        // on the runtime WHERE/ORDER BY/LIMIT/OFFSET (they live INSIDE the base-table
-        // subquery), so the wrapper builds it per call instead of returning a static
-        // string. extract_base_pk_fn/append_related_fn drive the aggregation loop in
-        // SelectStatement (deduplicate base rows, append related objects).
-        auto (*build_m2m_sql_fn)(
+        // Many-to-many two-query predicate-pushdown extension (#391) — all nullptr
+        // for plain FK joins. build_q1_sql_fn / build_q2_sql_fn produce the base-entity
+        // SELECT and the junction⋈related SELECT (related rows filtered by the same base
+        // subquery). extract_q2_owner_pk_fn keys the client-side stitch into the Q1
+        // pk→entity map; append_related_q2_fn fills the entity's container;
+        // container_empty_fn drives the INNER-join drop of zero-relation entities.
+        using ClauseSqlFn = auto (*)(
                 const orm::where::ExpressionVariantPtr&,
                 const std::optional<OrderByWrapper>&,
                 const std::optional<int>&,
                 const std::optional<int>&
-        ) -> std::string                                                       = nullptr;
-        auto (*extract_base_pk_fn)(ErasedStatementPtr) -> std::int64_t         = nullptr;
-        auto (*append_related_fn)(ErasedStatementPtr, ErasedObjectPtr) -> void = nullptr;
+        ) -> std::string;
+        ClauseSqlFn build_q1_sql_fn                                               = nullptr;
+        ClauseSqlFn build_q2_sql_fn                                               = nullptr;
+        auto (*extract_q2_owner_pk_fn)(ErasedStatementPtr) -> std::int64_t        = nullptr;
+        auto (*append_related_q2_fn)(ErasedStatementPtr, ErasedObjectPtr) -> void = nullptr;
+        auto (*container_empty_fn)(ErasedObjectPtr) -> bool                       = nullptr;
+        // LEFT keeps zero-relation entities; INNER drops them after the stitch.
+        bool m2m_is_left = false;
 
         [[nodiscard]] auto is_m2m() const -> bool {
-            return build_m2m_sql_fn != nullptr;
+            return build_q2_sql_fn != nullptr;
         }
 
         // Get complete pre-computed SELECT...JOIN SQL
@@ -395,18 +403,27 @@ export namespace storm::orm::statements {
     }
 
     // =========================================================================
-    // MANY-TO-MANY JOIN (#203) — 3-table join over a base-table subquery:
+    // MANY-TO-MANY JOIN (#203 model + schema; #391 two-query execution).
     //
-    //   SELECT t1.<cols>, t3.<cols>
-    //   FROM (SELECT <cols> FROM <Base> [WHERE …] [ORDER BY …] [LIMIT/OFFSET]) t1
-    //   <KW> JOIN <junction> t2 ON t1.<pk> = t2.<owner_col>
-    //   <KW> JOIN <Related>  t3 ON t2.<related_col> = t3.<rpk>
-    //   ORDER BY [t1.<user order>, ]t1.<pk>
+    // Eager load runs as TWO queries (SelectStatement::execute_m2m_2query),
+    // stitched client-side by a pk→entity hash map:
     //
-    // WHERE/ORDER BY/LIMIT/OFFSET select WHICH base entities load (inside the
-    // subquery) — a flat outer LIMIT would truncate the related collection. The
-    // outer ORDER BY ends with t1.<pk> so one entity's rows are always adjacent;
-    // the aggregation loops in SelectStatement rely on that.
+    //   Q1 (build_base_subquery): the base entities to load —
+    //     SELECT <base cols> FROM <Base> [WHERE …] [ORDER BY …] [LIMIT/OFFSET]
+    //
+    //   Q2 (build_q2_sql): their related rows, filtered by the same subquery —
+    //     SELECT t2.<owner>_id, t3.<related cols>
+    //     FROM <junction> t2 INNER JOIN <Related> t3 ON t2.<related>_id = t3.<rpk>
+    //     WHERE t2.<owner>_id IN (<the SAME base subquery>)
+    //
+    // WHERE/ORDER BY/LIMIT/OFFSET select WHICH base entities load — they live in
+    // Q1 and inside Q2's IN-subquery so both pick the same set. No outer ORDER BY,
+    // no pk-adjacency contract: the stitch is a hash map (#391). INNER drops
+    // zero-relation entities after the stitch; LEFT keeps them.
+    //
+    // get_complete_sql() still builds the modifier-free 3-table join — aggregates
+    // (COUNT-over-m2m) count (base, related) PAIRS over it (select_prefix_arr_ +
+    // join_suffix_arr_).
     //
     // Junction descriptor: auto mode (Through = void) uses <Base>_<Related> with
     // <Base>_id / <Related>_id columns; through mode uses the through model's
@@ -514,6 +531,19 @@ export namespace storm::orm::statements {
             return total + utilities::sql_len::SMALL_BUFFER;
         }
 
+        // Append ", t3.<col>[_id]" for every related member to `result`. Shared
+        // by build_select_prefix (1-query) and build_q2_prefix (2-query) — both
+        // emit the related block as "t3"-aliased columns, leading-comma-separated.
+        static consteval auto append_related_columns(auto& result) -> void {
+            for (std::size_t i = 0; i < RelatedBase::field_count_; ++i) {
+                result.append(", t3.");
+                result.append(std::meta::identifier_of(RelatedBase::all_members_[i]));
+                if (Base::is_fk_field(RelatedBase::all_members_[i])) {
+                    result.append("_id");
+                }
+            }
+        }
+
         static consteval auto build_select_prefix() {
             ConstexprString<calculate_select_prefix_size()> result;
             result.append("SELECT ");
@@ -529,13 +559,7 @@ export namespace storm::orm::statements {
                 }
                 first = false;
             }
-            for (std::size_t i = 0; i < RelatedBase::field_count_; ++i) {
-                result.append(", t3.");
-                result.append(std::meta::identifier_of(RelatedBase::all_members_[i]));
-                if (Base::is_fk_field(RelatedBase::all_members_[i])) {
-                    result.append("_id");
-                }
-            }
+            append_related_columns(result);
             result.append(" FROM (SELECT ");
             result.append(Base::field_names_array_);
             result.append(" FROM ");
@@ -573,20 +597,6 @@ export namespace storm::orm::statements {
         static constexpr auto select_prefix_arr_ = build_select_prefix();
         static constexpr auto join_suffix_arr_   = build_join_suffix();
 
-        // Column index of a model's pk within its own column block.
-        static consteval auto pk_index_of(const auto& members, std::meta::info pk_member) -> int {
-            for (std::size_t i = 0; i < members.size(); ++i) {
-                if (members[i] == pk_member) {
-                    return static_cast<int>(i);
-                }
-            }
-            std::unreachable(); // ModelWithPrimaryKey guarantees the pk is a member
-        }
-
-        static constexpr int base_pk_col_    = pk_index_of(Base::all_members_, Base::primary_key_);
-        static constexpr int related_pk_col_ = static_cast<int>(Base::field_count_) +
-                                               pk_index_of(RelatedBase::all_members_, RelatedBase::primary_key_);
-
       public:
         // Modifier-free complete SQL — consumed by aggregates/set-ops via the
         // wrapper's get_complete_sql_fn (a COUNT over it counts (base, related) pairs).
@@ -596,77 +606,134 @@ export namespace storm::orm::statements {
             return str;
         }
 
-        // Build the full query — see the class comment for clause placement.
-        static auto build_m2m_sql(
+        // Append the base-entity clauses — WHERE / ORDER BY / LIMIT / OFFSET — to
+        // `sql`. Shared by build_base_subquery (Q1) and build_q2_sql (Q2's
+        // IN-subquery): in both, these clauses select WHICH base entities load.
+        static auto append_base_clauses(
+                std::string&                            sql,
                 const orm::where::ExpressionVariantPtr& where_expr,
                 const std::optional<OrderByWrapper>&    order_by,
                 const std::optional<int>&               limit,
                 const std::optional<int>&               offset
-        ) -> std::string {
-            std::string sql{select_prefix_arr_.view()};
+        ) -> void {
             if (where_expr) {
                 sql += " WHERE ";
                 sql += orm::where::to_sql(*where_expr);
             }
             Base::template append_order_by<ConnType>(sql, order_by);
             Base::template append_limit_offset<ConnType>(sql, limit, offset);
-            sql += join_suffix_arr_.view();
-            append_outer_order_by(sql, order_by);
+        }
+
+        // =====================================================================
+        // TWO-QUERY PREDICATE-PUSHDOWN PATH (#391)
+        //
+        // Q1: SELECT <base cols> FROM <Base> [WHERE …][ORDER BY …][LIMIT/OFFSET]
+        //     — the entities to load (a plain base SELECT; no join, no sorter).
+        // Q2: SELECT t2.<owner>_id, t3.<related cols>
+        //     FROM <junction> t2 INNER JOIN <Related> t3 ON t2.<related>_id = t3.<rpk>
+        //     WHERE t2.<owner>_id IN (<the SAME base subquery as Q1>)
+        //     — related rows for exactly the loaded entities, no base columns
+        //       duplicated, no ORDER BY.
+        //
+        // SelectStatement runs both inside a transaction, builds a pk→entity hash
+        // map from Q1, and stitches each Q2 row by owner pk. INNER drops
+        // zero-relation entities after the stitch; LEFT keeps them (Q1 already
+        // yielded them, Q2 just leaves their container empty). Q2 is always an
+        // INNER junction⋈related join — the INNER/LEFT distinction is purely a
+        // post-stitch filter, never an SQL difference.
+        // =====================================================================
+
+        // Q1 — the base entity subquery. Identical text to the subquery embedded
+        // in Q2's IN clause, so the two stay in lockstep.
+        static auto build_base_subquery(
+                const orm::where::ExpressionVariantPtr& where_expr,
+                const std::optional<OrderByWrapper>&    order_by,
+                const std::optional<int>&               limit,
+                const std::optional<int>&               offset
+        ) -> std::string {
+            std::string sql = "SELECT ";
+            sql += Base::field_names_array_.view();
+            sql += " FROM ";
+            sql += Base::table_name_;
+            append_base_clauses(sql, where_expr, order_by, limit, offset);
             return sql;
         }
 
-        // Row 1 of an entity: base columns + first related row (if any).
-        static auto extract_joined_row(Statement* stmt, T& obj) noexcept -> void {
-            Base::extract_all_columns(stmt, obj);
-            append_related(stmt, obj);
+        // q2_prefix_: "SELECT t2.<owner>_id, t3.<r…> FROM <junction> t2
+        //              INNER JOIN <Related> t3 ON t2.<related>_id = t3.<rpk>
+        //              WHERE t2.<owner>_id IN (SELECT <base.pk> FROM <Base>"
+        static consteval auto calculate_q2_prefix_size() -> std::size_t {
+            std::size_t total = 7 + 3 + owner_col_name().size() + 3; // "SELECT " + "t2." + owner + "_id"
+            for (std::size_t i = 0; i < RelatedBase::field_count_; ++i) {
+                total += 2 + 3 + std::meta::identifier_of(RelatedBase::all_members_[i]).size() + 3;
+            }
+            total += 6 + junction_table_name().size() + 13 + RelatedBase::table_name_.size() + 10 +
+                     related_col_name().size() + 9 + RelatedBase::pk_name_.size();   // FROM…ON…
+            total += 10 + owner_col_name().size() + 16 + Base::pk_name_.size() + 6 + // WHERE…IN (SELECT pk FROM
+                     Base::table_name_.size();
+            return total + utilities::sql_len::SMALL_BUFFER;
         }
 
-        static auto extract_base_pk(Statement* stmt) noexcept -> std::int64_t {
-            return stmt->extract_int64(base_pk_col_);
+        static consteval auto build_q2_prefix() {
+            ConstexprString<calculate_q2_prefix_size()> result;
+            result.append("SELECT t2.");
+            result.append(owner_col_name());
+            result.append("_id");
+            append_related_columns(result);
+            result.append(" FROM ");
+            result.append(junction_table_name());
+            result.append(" t2 INNER JOIN ");
+            result.append(RelatedBase::table_name_);
+            result.append(" t3 ON t2.");
+            result.append(related_col_name());
+            result.append("_id = t3.");
+            result.append(RelatedBase::pk_name_);
+            result.append(" WHERE t2.");
+            result.append(owner_col_name());
+            result.append("_id IN (SELECT ");
+            result.append(Base::pk_name_);
+            result.append(" FROM ");
+            result.append(Base::table_name_);
+            return result;
         }
 
-        // Append the current row's related object into obj's container member.
-        // LEFT JOIN emits NULL related columns for entities with no relations — skip.
-        static auto append_related(Statement* stmt, T& obj) noexcept -> void {
-            if constexpr (Type == JoinType::Left) {
-                if (stmt->is_null(related_pk_col_)) {
-                    return;
-                }
-            }
-            Related rel{};
-            extract_related(stmt, rel, std::make_index_sequence<RelatedBase::field_count_>{});
-            using Elem = typename ContainerType::value_type;
-            if constexpr (meta::is_shared_ptr_v<Elem>) {
-                insert_into(obj.[:m2m_member_:], std::make_shared<Related>(std::move(rel)));
-            } else {
-                insert_into(obj.[:m2m_member_:], std::move(rel));
-            }
+        static constexpr auto q2_prefix_arr_ = build_q2_prefix();
+
+        // Q2 — related rows for the entities selected by the same base subquery.
+        // The WHERE/ORDER BY/LIMIT/OFFSET live inside the IN-subquery so they
+        // bound which entities load (never the related collection), exactly as in
+        // the 1-query design. The trailing ")" closes the IN-subquery.
+        static auto build_q2_sql(
+                const orm::where::ExpressionVariantPtr& where_expr,
+                const std::optional<OrderByWrapper>&    order_by,
+                const std::optional<int>&               limit,
+                const std::optional<int>&               offset
+        ) -> std::string {
+            std::string sql{q2_prefix_arr_.view()};
+            append_base_clauses(sql, where_expr, order_by, limit, offset);
+            sql += ")";
+            return sql;
+        }
+
+        // Q2 row owner pk (column 0) — keys the stitch into the Q1 hash map.
+        static auto extract_q2_owner_pk(Statement* stmt) noexcept -> std::int64_t {
+            return stmt->extract_int64(0);
+        }
+
+        // Append the Q2 row's related object into obj's container. Q2 related
+        // columns start at index 1 (after the owner pk). Always present — Q2 is
+        // an INNER join, so there is never a NULL related row to skip.
+        static auto append_related_q2(Statement* stmt, T& obj) noexcept -> void {
+            insert_related<1>(stmt, obj);
+        }
+
+        // True when this entity has at least one related row — drives the
+        // INNER-join post-stitch drop of zero-relation entities.
+        static auto container_empty(const T& obj) noexcept -> bool {
+            return obj.[:m2m_member_:].empty();
         }
 
       private:
-        using Base::adapt_order_by_for_pg; // unqualified call below (Sonar S1117 false-positive on Base::)
-
-        // The user's ordering, t1-qualified, then the pk tiebreak that guarantees
-        // same-entity row adjacency. Wrapper SQL is exactly " ORDER BY <f> […] ASC|DESC, …".
-        static auto append_outer_order_by(std::string& sql, const std::optional<OrderByWrapper>& order_by) -> void {
-            sql += " ORDER BY ";
-            if (order_by.has_value() && !order_by->empty()) {
-                std::string qualified = "t1." + order_by->get_order_by_sql().substr(10); // strip " ORDER BY "
-                std::size_t pos       = 0;
-                while ((pos = qualified.find(", ", pos)) != std::string::npos) {
-                    qualified.insert(pos + 2, "t1.");
-                    pos += 5;
-                }
-                if constexpr (requires { ConnType::uses_pg_dialect; }) {
-                    adapt_order_by_for_pg(qualified); // LCOV_EXCL_LINE — PG-only
-                }
-                sql += qualified;
-                sql += ", ";
-            }
-            sql += "t1.";
-            sql += Base::pk_name_;
-        }
-
         template <typename C, typename V> static auto insert_into(C& container, V&& value) -> void {
             if constexpr (requires { container.push_back(std::forward<V>(value)); }) {
                 container.push_back(std::forward<V>(value));
@@ -675,17 +742,36 @@ export namespace storm::orm::statements {
             }
         }
 
-        template <std::size_t... Is>
+        // Extract one Related from the row (columns start at RelColOffset) and
+        // append it to obj's container — wrapping in shared_ptr if the container
+        // holds shared_ptr elements. Used by append_related_q2 (Q2 related columns
+        // start at offset 1, after the owner pk).
+        template <int RelColOffset> static auto insert_related(Statement* stmt, T& obj) noexcept -> void {
+            Related rel{};
+            extract_related<RelColOffset>(stmt, rel, std::make_index_sequence<RelatedBase::field_count_>{});
+            using Elem = typename ContainerType::value_type;
+            if constexpr (meta::is_shared_ptr_v<Elem>) {
+                insert_into(obj.[:m2m_member_:], std::make_shared<Related>(std::move(rel)));
+            } else {
+                insert_into(obj.[:m2m_member_:], std::move(rel));
+            }
+        }
+
+        // RelColOffset = column index where the related block starts. The 1-query
+        // path puts related columns after the base columns (offset Base::field_count_);
+        // the 2-query Q2 path puts them after the single owner-pk column (offset 1).
+        template <int RelColOffset, std::size_t... Is>
         static auto extract_related(Statement* stmt, Related& rel, std::index_sequence<Is...> /*unused*/) noexcept
                 -> void {
-            ((extract_related_at<Is>(stmt, rel)), ...);
+            ((extract_related_at<RelColOffset, Is>(stmt, rel)), ...);
         }
 
         // Mirrors plain-SELECT semantics per related member: regular columns extract
         // by value; FK columns hold only the foreign pk (pk-only FK object).
-        template <std::size_t I> static auto extract_related_at(Statement* stmt, Related& rel) noexcept -> void {
+        template <int RelColOffset, std::size_t I>
+        static auto extract_related_at(Statement* stmt, Related& rel) noexcept -> void {
             constexpr auto member = RelatedBase::all_members_[I];
-            constexpr int  col    = static_cast<int>(Base::field_count_) + static_cast<int>(I);
+            constexpr int  col    = RelColOffset + static_cast<int>(I);
             using FieldType       = std::remove_cvref_t<decltype(rel.[:member:])>;
             if constexpr (Base::is_fk_field(member)) {
                 extract_related_fk<FieldType, member>(stmt, rel, col);
@@ -716,22 +802,29 @@ export namespace storm::orm::statements {
     [[nodiscard]] auto make_m2m_join_wrapper() -> JoinStatementWrapper {
         using JS = M2MJoinStatement<T, ConnType, Type, M2MField>;
         return JoinStatementWrapper{
-                +[]() -> const std::string& { return JS::get_complete_sql(); },
-                +[](ErasedStatementPtr stmt, ErasedObjectPtr obj) -> void {
-                    JS::extract_joined_row(static_cast<typename ConnType::Statement*>(stmt), *static_cast<T*>(obj));
+                .get_complete_sql_fn = +[]() -> const std::string& { return JS::get_complete_sql(); },
+                // Two-query path (#391) — see JoinStatementWrapper for the contract.
+                .build_q1_sql_fn = +[](const orm::where::ExpressionVariantPtr& where_expr,
+                                       const std::optional<OrderByWrapper>&    order_by,
+                                       const std::optional<int>&               limit,
+                                       const std::optional<int>&               offset) -> std::string {
+                    return JS::build_base_subquery(where_expr, order_by, limit, offset);
                 },
-                +[](const orm::where::ExpressionVariantPtr& where_expr,
-                    const std::optional<OrderByWrapper>&    order_by,
-                    const std::optional<int>&               limit,
-                    const std::optional<int>&               offset) -> std::string {
-                    return JS::build_m2m_sql(where_expr, order_by, limit, offset);
+                .build_q2_sql_fn = +[](const orm::where::ExpressionVariantPtr& where_expr,
+                                       const std::optional<OrderByWrapper>&    order_by,
+                                       const std::optional<int>&               limit,
+                                       const std::optional<int>&               offset) -> std::string {
+                    return JS::build_q2_sql(where_expr, order_by, limit, offset);
                 },
-                +[](ErasedStatementPtr stmt) -> std::int64_t {
-                    return JS::extract_base_pk(static_cast<typename ConnType::Statement*>(stmt));
+                .extract_q2_owner_pk_fn = +[](ErasedStatementPtr stmt) -> std::int64_t {
+                    return JS::extract_q2_owner_pk(static_cast<typename ConnType::Statement*>(stmt));
                 },
-                +[](ErasedStatementPtr stmt, ErasedObjectPtr obj) -> void {
-                    JS::append_related(static_cast<typename ConnType::Statement*>(stmt), *static_cast<T*>(obj));
-                }
+                .append_related_q2_fn = +[](ErasedStatementPtr stmt, ErasedObjectPtr obj) -> void {
+                    JS::append_related_q2(static_cast<typename ConnType::Statement*>(stmt), *static_cast<T*>(obj));
+                },
+                .container_empty_fn =
+                        +[](ErasedObjectPtr obj) -> bool { return JS::container_empty(*static_cast<T*>(obj)); },
+                .m2m_is_left = (Type == JoinType::Left)
         };
     }
 

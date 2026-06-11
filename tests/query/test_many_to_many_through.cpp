@@ -45,10 +45,11 @@ TYPED_TEST_SUITE(M2MThroughTest, DatabaseTypes);
 TYPED_TEST(M2MThroughTest, ThroughSqlUsesJunctionModel) {
     QuerySet<Pupil, TypeParam> qs;
     auto                       sql = qs.template join<^^Pupil::courses>().select().sql();
-    // junction = the through model's table; FK columns come from its field names
-    EXPECT_TRUE(sql.contains("INNER JOIN Enrollment t2 ON t1.id = t2.pupil_id")) << sql;
-    EXPECT_TRUE(sql.contains("INNER JOIN Course t3 ON t2.course_id = t3.id")) << sql;
-    EXPECT_TRUE(sql.contains("FROM (SELECT id, name, age FROM Pupil) t1")) << sql;
+    // Two-query shape (#391): junction = the through model's table; FK columns
+    // come from its field names. Q1 selects the base pupils; Q2 the junction⋈course.
+    EXPECT_TRUE(sql.contains("SELECT id, name, age FROM Pupil; ")) << sql;
+    EXPECT_TRUE(sql.contains("FROM Enrollment t2 INNER JOIN Course t3 ON t2.course_id = t3.id")) << sql;
+    EXPECT_TRUE(sql.contains("WHERE t2.pupil_id IN (SELECT id FROM Pupil)")) << sql;
 }
 
 TYPED_TEST(M2MThroughTest, ThroughEagerLoadIgnoresMetadata) {
