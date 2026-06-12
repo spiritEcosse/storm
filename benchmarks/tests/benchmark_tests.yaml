@@ -176,32 +176,6 @@ tests:
         op: ">"
         value: 30
 
-  - name: select_right_join
-    category: SELECT_RIGHT_JOIN
-    description: SELECT with RIGHT JOIN on FK field
-    model: FKMessage
-    operation: select_right_join
-    size_profile: dataset_standard
-    join:
-        type: right
-        related: User
-        fk: sender
-
-  - name: select_right_join_where
-    category: SELECT_RIGHT_JOIN_WHERE
-    description: "SELECT with RIGHT JOIN + WHERE (User.age > 30)"
-    model: FKMessage
-    operation: select_right_join_where
-    size_profile: dataset_standard
-    join:
-        type: right
-        related: User
-        fk: sender
-    where:
-        field: age
-        op: ">"
-        value: 30
-
   - name: select_multi_fk_join
     category: SELECT_MULTI_FK_JOIN
     description: SELECT with multiple FK JOINs (sender + receiver)

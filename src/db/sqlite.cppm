@@ -276,11 +276,6 @@ export namespace storm::db::sqlite {
 #else
         static constexpr bool supports_strict_tables = false;
 #endif
-#ifdef STORM_SQLITE_RIGHT_JOIN
-        static constexpr bool supports_right_join = true; // SQLite 3.39+
-#else
-        static constexpr bool supports_right_join = false;
-#endif
 
         // Issue #273: per-Connection cache configuration (capacity 0 = unbounded).
         using Config = storm::db::StatementCacheConfig;

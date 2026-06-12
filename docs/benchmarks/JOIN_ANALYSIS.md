@@ -16,8 +16,6 @@ All benchmarks performed on 10,000 rows with 100 iterations in Release builds.
 | JOIN Operation | Storm ORM | Raw SQLite | Efficiency |
 |----------------|-----------|------------|------------|
 | Simple SELECT (no JOIN) | 8.4M rows/sec | - | - |
-| RIGHT JOIN (single FK) | 4.5M rows/sec | 5.0M rows/sec | 90% |
-| RIGHT JOIN (multi FK) | 2.7M rows/sec | 3.2M rows/sec | 84% |
 | LEFT JOIN (single FK) | 6.1M rows/sec | 6.8M rows/sec | 90% |
 | LEFT JOIN (multi FK) | 3.9M rows/sec | 5.2M rows/sec | 75% |
 | INNER JOIN (single FK) | 4.4M rows/sec | 7.4M rows/sec | 59% |
@@ -27,7 +25,7 @@ All benchmarks performed on 10,000 rows with 100 iterations in Release builds.
 
 ## Key Observations
 
-- **LEFT/RIGHT JOINs**: 75-90% efficiency (excellent)
+- **LEFT JOINs**: 75-90% efficiency (excellent)
 - **INNER JOINs**: 59-62% efficiency (good, lower due to more complex object construction)
 - **Single FK vs Multi FK**: Multi-FK JOINs slower due to more column extraction and object population
 

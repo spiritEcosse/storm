@@ -221,8 +221,6 @@ namespace storm::orm::query_builder {
             constexpr std::string_view jt = spec.join.type.view();
             if (jt == "left")
                 return ^^QuerySet<Model, ConnType>::template left_join<FKs...>;
-            if (jt == "right")
-                return ^^QuerySet<Model, ConnType>::template right_join<FKs...>;
             return ^^QuerySet<Model, ConnType>::template join<FKs...>;
         }
 

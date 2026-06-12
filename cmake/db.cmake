@@ -23,11 +23,6 @@ if(STORM_SQLITE_VERSION_NUMBER GREATER_EQUAL 3037000)
   set(STORM_SQLITE_STRICT_TABLES ON)
 endif()
 
-# RIGHT and FULL OUTER JOIN (SQLite 3.39.0+)
-if(STORM_SQLITE_VERSION_NUMBER GREATER_EQUAL 3039000)
-  set(STORM_SQLITE_RIGHT_JOIN ON)
-endif()
-
 unset(_sqlite_ver_parts)
 unset(_sqlite_major)
 unset(_sqlite_minor)
@@ -43,9 +38,6 @@ function(link_sqlite target_name)
   if(STORM_SQLITE_STRICT_TABLES)
     target_compile_definitions(${target_name}
                                PRIVATE STORM_SQLITE_STRICT_TABLES=1)
-  endif()
-  if(STORM_SQLITE_RIGHT_JOIN)
-    target_compile_definitions(${target_name} PRIVATE STORM_SQLITE_RIGHT_JOIN=1)
   endif()
 endfunction()
 

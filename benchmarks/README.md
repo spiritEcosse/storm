@@ -750,8 +750,6 @@ COMMIT;
 - `select_where_join_100` to `select_where_join_100000` - SELECT with WHERE + INNER JOIN
 - `select_left_join_100` to `select_left_join_100000` - SELECT with LEFT JOIN
 - `select_left_join_where_100` / `select_left_join_where_10000` - SELECT with LEFT JOIN + WHERE
-- `select_right_join_100` to `select_right_join_100000` - SELECT with RIGHT JOIN
-- `select_right_join_where_100` / `select_right_join_where_10000` - SELECT with RIGHT JOIN + WHERE
 - `select_multi_fk_join_100` to `select_multi_fk_join_100000` - SELECT with multiple FK JOINs (sender + receiver)
 
 **What's tested:**
@@ -761,7 +759,7 @@ COMMIT;
 
 ### SELECT Performance Characteristics
 
-**Seven SELECT Configurations:**
+**Six SELECT Configurations:**
 
 | Configuration | SQL Pattern | Use Case |
 |--------------|-------------|----------|
@@ -770,7 +768,6 @@ COMMIT;
 | **SELECT + WHERE + INNER JOIN** | `SELECT ... FROM t INNER JOIN r ON ... WHERE ...` | Filtered fetch with related data |
 | **SELECT + LEFT JOIN** | `SELECT ... FROM t LEFT JOIN r ON ...` | Fetch with optional related data |
 | **SELECT + LEFT JOIN + WHERE** | `SELECT ... FROM t LEFT JOIN r ON ... WHERE ...` | Filtered LEFT JOIN |
-| **SELECT + RIGHT JOIN** | `SELECT ... FROM t RIGHT JOIN r ON ...` | Fetch from right table with optional left data |
 | **SELECT + Multi-FK JOIN** | `SELECT ... FROM t JOIN r1 ON ... JOIN r2 ON ...` | Multiple foreign key JOINs |
 
 **Simple SELECT Performance (verified 2026-01-03, Release build):**
@@ -817,14 +814,6 @@ COMMIT;
 | 1000 | ~7.1 M/s | ~7.2 M/s | **~99%** | ✅ Near parity |
 | 10000 | ~7.0 M/s | ~7.1 M/s | **~99%** | ✅ Near parity |
 
-**SELECT + RIGHT JOIN Performance (verified 2026-01-14, Release build):**
-
-| Dataset Size | Storm ORM | Raw SQLite | Efficiency | Notes |
-|--------------|-----------|------------|------------|-------|
-| 100 | ~4.5 M/s | ~4.5 M/s | **~101%** | ✅ Storm FASTER! |
-| 1000 | ~4.4 M/s | ~4.4 M/s | **~100%** | ✅ Near parity |
-| 10000 | ~4.3 M/s | ~4.3 M/s | **~100%** | ✅ Near parity |
-
 **SELECT + Multi-FK JOIN Performance (verified 2026-01-14, Release build):**
 
 | Dataset Size | Storm ORM | Raw SQLite | Efficiency | Notes |
@@ -856,10 +845,9 @@ COMMIT;
    - **BETWEEN**: ~99% - Near parity with raw SQLite
    - **AND/OR combinations**: 94-97% - Good efficiency for complex expressions
 
-5. **SELECT + LEFT/RIGHT JOIN: 99-101% efficiency**
-   - LEFT JOIN and RIGHT JOIN have near-identical performance to INNER JOIN
+5. **SELECT + LEFT JOIN: 99-101% efficiency**
+   - LEFT JOIN has near-identical performance to INNER JOIN
    - Same compile-time SQL generation and statement caching optimizations apply
-   - RIGHT JOIN slightly slower due to SQLite's internal JOIN handling
 
 6. **SELECT + Multi-FK JOIN: ~88% efficiency**
    - Double JOIN (sender + receiver) has more overhead due to:
