@@ -311,10 +311,11 @@ See [docs/development/PERFORMANCE_GUIDELINES.md](docs/development/PERFORMANCE_GU
 
 `int`, `int64_t`, `double`, `float`, `bool`, `std::string`, `std::string_view`, `std::optional<T>`, `std::vector<uint8_t>` (BLOB)
 
-**Many-to-many (#203)**: `[[= storm::meta::many_to_many]]` (auto junction `<Owner>_<Related>`)
-or `[[= storm::meta::many_to_many_through<Model>]]` on a container member
-(`std::vector<T>`, `plf::hive<T>`, `vector<shared_ptr<T>>`). Not a column — invisible to
-CRUD/schema; eager-loaded via `join<^^T::field>()`. See
+**Many-to-many (#203)**: `[[= storm::meta::many_to_many]]` (auto junction `<Owner>_<Related>`,
+one junction table per field) or `[[= storm::meta::many_to_many_through<Model>]]` on a container
+member (`std::vector<T>`, `plf::hive<T>`, `vector<shared_ptr<T>>`). Not a column — invisible to
+CRUD; eager-loaded via `join<^^T::field>()`, several relations per call via
+`join<^^T::a, ^^T::b>()` (#392). See
 [docs/features/JOIN_OPERATIONS.md](docs/features/JOIN_OPERATIONS.md).
 
 **Auto-timestamps (#209)**: `[[= FieldAttr::auto_create]]` / `[[= FieldAttr::auto_update]]` on a
@@ -408,15 +409,18 @@ qs.values<^^Person::name, ^^Person::age>().execute();       // plf::hive<std::tu
 message_qs.join<^^Message::sender>().where(...).select();
 message_qs.left_join<^^Message::sender, ^^Message::receiver>().select();
 
-// Many-to-many (#203 model/schema; #391 two-query execution) — container field
-// annotated [[= storm::meta::many_to_many]] (auto junction) or
+// Many-to-many (#203 model/schema; #391 two-query execution; #392 multi-relation)
+// — container field annotated [[= storm::meta::many_to_many]] (auto junction) or
 // many_to_many_through<Enrollment> (explicit junction model). Eager load runs as
-// Q1 (base entities) + Q2 (owner_pk, related.*) WHERE owner_id IN (base subquery),
-// stitched by a pk→entity hash map, both in one transaction. WHERE/ORDER BY/LIMIT
-// apply to BASE entities. 33-46% faster than the old 1-query 3-table join at
-// fan-out >= 10. See docs/features/JOIN_OPERATIONS.md#execution-strategy-391.
+// Q1 (base entities) + one Q2 PER relation (owner_pk, related.*) WHERE owner_id
+// IN (base subquery), stitched by one pk→entity hash map, all in one transaction.
+// WHERE/ORDER BY/LIMIT apply to BASE entities. Cost per extra relation is
+// additive (no cartesian product). 33-46% faster than the old 1-query 3-table
+// join at fan-out >= 10. See docs/features/JOIN_OPERATIONS.md#execution-strategy-391.
 student_qs.join<^^Student::courses>().select();      // students with courses aggregated
 student_qs.left_join<^^Student::courses>().select(); // + students with no courses
+member_qs.join<^^Member::courses, ^^Member::clubs>().select(); // several m2m in one call (#392);
+// INNER drops members empty in ANY relation, LEFT fills each independently
 ```
 
 **Methods**: `where()`, `join()`, `order_by()`, `limit()`, `offset()`, `group_by()`, `having()`, `distinct()`, `values()`

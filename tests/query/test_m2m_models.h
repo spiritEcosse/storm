@@ -64,6 +64,39 @@ struct Album {
     [[= storm::meta::many_to_many]] std::vector<std::shared_ptr<Track>> tracks;
 };
 
+// Multi-relation model (#392): two auto-junction m2m fields on one owner.
+struct Club {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    std::string name;
+};
+
+struct Member {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    std::string name;
+    int age{};
+    [[= storm::meta::many_to_many]] std::vector<Course> courses;
+    [[= storm::meta::many_to_many]] std::vector<Club> clubs;
+};
+
+// Related model WITH an FK field (#392): the aggregate complete SQL must emit
+// the related FK column as "<field>_id".
+struct Topic {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    std::string name;
+};
+
+struct Lesson {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    std::string title;
+    [[= storm::meta::FieldAttr::fk]] Topic topic;
+};
+
+struct Tutor {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    std::string name;
+    [[= storm::meta::many_to_many]] std::vector<Lesson> lessons;
+};
+
 namespace storm::test {
 
 // Seeds: Alice(20)→[Math, Physics], Bob(22)→[Math], Carol(25)→[] (no courses).
@@ -82,6 +115,33 @@ template <typename ConnType> inline auto seed_students() -> void {
     for (const auto *pair : {"(1, 1)", "(1, 2)", "(2, 1)"}) {
         ASSERT_TRUE(conn->execute(std::format("INSERT INTO Student_Course (Student_id, Course_id) VALUES {}", pair))
                         .has_value());
+    }
+}
+
+// Seeds (#392 multi-relation): Ann→courses[Math,Physics] clubs[Chess],
+// Ben→courses[Math] clubs[], Cat→courses[] clubs[Chess,Robotics], Dan→[] [].
+template <typename ConnType> inline auto seed_members() -> void {
+    storm::QuerySet<Member, ConnType> mqs;
+    std::vector<Member> const members = {
+        {.name = "Ann", .age = 20}, {.name = "Ben", .age = 22}, {.name = "Cat", .age = 25}, {.name = "Dan", .age = 30}};
+    ASSERT_TRUE(mqs.insert(std::span<const Member>(members)).execute().has_value());
+
+    storm::QuerySet<Course, ConnType> cqs;
+    std::vector<Course> const courses = {{.title = "Math"}, {.title = "Physics"}};
+    ASSERT_TRUE(cqs.insert(std::span<const Course>(courses)).execute().has_value());
+
+    storm::QuerySet<Club, ConnType> kqs;
+    std::vector<Club> const clubs = {{.name = "Chess"}, {.name = "Robotics"}};
+    ASSERT_TRUE(kqs.insert(std::span<const Club>(clubs)).execute().has_value());
+
+    auto conn = storm::QuerySet<Member, ConnType>::get_default_connection();
+    for (const auto *pair : {"(1, 1)", "(1, 2)", "(2, 1)"}) {
+        ASSERT_TRUE(
+            conn->execute(std::format("INSERT INTO Member_Course (Member_id, Course_id) VALUES {}", pair)).has_value());
+    }
+    for (const auto *pair : {"(1, 1)", "(3, 1)", "(3, 2)"}) {
+        ASSERT_TRUE(
+            conn->execute(std::format("INSERT INTO Member_Club (Member_id, Club_id) VALUES {}", pair)).has_value());
     }
 }
 

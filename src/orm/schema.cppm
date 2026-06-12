@@ -559,20 +559,31 @@ export namespace storm::orm::schema {
         // =====================================================================
 
         // Scans RAW members — all_members_ excludes m2m fields by design.
-        static consteval auto find_m2m_auto_member() -> std::optional<std::meta::info> {
+        // A model may carry several auto-junction m2m fields (#392), each one
+        // producing its own junction table.
+        static constexpr std::size_t m2m_auto_count_ = []() consteval {
+            std::size_t count = 0;
+            for (auto member : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+                count += statements::meta::is_m2m_auto(member) ? 1U : 0U;
+            }
+            return count;
+        }();
+
+        static constexpr auto m2m_auto_members_ = []() consteval {
+            std::array<std::meta::info, m2m_auto_count_> members{};
+            std::size_t                                  idx = 0;
             for (auto member : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
                 if (statements::meta::is_m2m_auto(member)) {
-                    return member;
+                    members[idx++] = member;
                 }
             }
-            return std::nullopt;
-        }
+            return members;
+        }();
 
         // Junction DDL: <T>_<Related> (<T>_id, <Related>_id, PRIMARY KEY (both)).
         // The composite PK rejects duplicate relation pairs and doubles as the index.
-        template <Dialect D> static consteval auto build_junction_sql() {
-            constexpr auto member       = find_m2m_auto_member().value();
-            constexpr auto related      = statements::meta::related_type_from_container(std::meta::type_of(member));
+        template <Dialect D, std::meta::info Member> static consteval auto build_junction_sql() {
+            constexpr auto related      = statements::meta::related_type_from_container(std::meta::type_of(Member));
             constexpr auto owner_name   = std::meta::identifier_of(^^T);
             constexpr auto related_name = std::meta::identifier_of(related);
             constexpr std::string_view id_type =
@@ -607,20 +618,33 @@ export namespace storm::orm::schema {
 
       public:
         // True when T has a many_to_many field with an auto-generated junction table.
-        static constexpr bool has_m2m_junction_ = find_m2m_auto_member().has_value();
+        static constexpr bool has_m2m_junction_ = m2m_auto_count_ > 0;
 
-        // Pre-computed junction CREATE TABLE SQL for the given dialect (#203).
+        // Pre-computed junction CREATE TABLE SQL statements for the given
+        // dialect — one per auto-junction m2m field, in declaration order
+        // (#203 single relation; #392 several).
+        template <Dialect D = Dialect::SQLite>
+        static auto junction_table_sqls() -> const std::vector<std::string>&
+            requires has_m2m_junction_
+        {
+            static const std::vector<std::string> sqls = []() {
+                std::vector<std::string> out;
+                out.reserve(m2m_auto_count_);
+                [&]<std::size_t... Is>(std::index_sequence<Is...> /*unused*/) {
+                    (out.emplace_back(std::string(build_junction_sql<D, m2m_auto_members_[Is]>())), ...);
+                }(std::make_index_sequence<m2m_auto_count_>{});
+                return out;
+            }();
+            return sqls;
+        }
+
+        // Pre-computed junction CREATE TABLE SQL for the first (often only)
+        // auto-junction m2m field (#203).
         template <Dialect D = Dialect::SQLite>
         static auto junction_table_sql() -> const std::string&
             requires has_m2m_junction_
         {
-            if constexpr (D == Dialect::PostgreSQL) {
-                static const std::string str{std::string(build_junction_sql<Dialect::PostgreSQL>())};
-                return str;
-            } else {
-                static const std::string str{std::string(build_junction_sql<Dialect::SQLite>())};
-                return str;
-            }
+            return junction_table_sqls<D>()[0];
         }
         // Return the pre-computed CREATE TABLE SQL for the given dialect.
         template <Dialect D = Dialect::SQLite> static auto create_table_sql() -> const std::string& {
@@ -658,11 +682,14 @@ export namespace storm::orm::schema {
 
             auto result = conn->execute(with_if_not_exists(create_table_sql<dialect>()));
 
-            // Auto-generated junction table for many_to_many fields (#203 Phase 1).
+            // Auto-generated junction tables for many_to_many fields — one per
+            // auto-junction field (#203 Phase 1; #392 several relations).
             if constexpr (has_m2m_junction_) {
-                result = result.and_then([&conn] {
-                    return conn->execute(with_if_not_exists(junction_table_sql<dialect>()));
-                });
+                for (const auto& junction_sql : junction_table_sqls<dialect>()) {
+                    result = result.and_then([&conn, &junction_sql] {
+                        return conn->execute(with_if_not_exists(junction_sql));
+                    });
+                }
             }
             return result;
         }

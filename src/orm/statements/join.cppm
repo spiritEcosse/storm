@@ -26,34 +26,45 @@ export namespace storm::orm::statements {
     using ErasedObjectPtr    = void*; // NOSONAR(cpp:S5008) - type erasure requires void*
     using ErasedStatementPtr = void*; // NOSONAR(cpp:S5008) - type erasure requires void*
 
+    // Builds clause-parameterized SQL (Q1 base subquery / per-relation Q2) from
+    // the QuerySet's WHERE / ORDER BY / LIMIT / OFFSET state.
+    using M2MClauseSqlFn = auto (*)(
+            const orm::where::ExpressionVariantPtr&,
+            const std::optional<OrderByWrapper>&,
+            const std::optional<int>&,
+            const std::optional<int>&
+    ) -> std::string;
+
+    // One eager-loaded m2m relation (#392): its Q2 builder plus the stitch
+    // fn-pointers. extract_q2_owner_pk_fn keys the stitch into the shared Q1
+    // pk→entity map; append_related_q2_fn fills the entity's container;
+    // container_empty_fn + is_left drive the per-relation INNER drop.
+    struct M2MRelation {
+        M2MClauseSqlFn build_q2_sql_fn;
+        auto (*extract_q2_owner_pk_fn)(ErasedStatementPtr) -> std::int64_t;
+        auto (*append_related_q2_fn)(ErasedStatementPtr, ErasedObjectPtr) -> void;
+        auto (*container_empty_fn)(ErasedObjectPtr) -> bool;
+        // LEFT keeps zero-relation entities; INNER drops them after the stitch.
+        bool is_left;
+    };
+
     struct JoinStatementWrapper {
         auto (*get_complete_sql_fn)() -> const std::string&;
         // Per-row extractor for FK joins. nullptr for m2m wrappers (the two-query
         // m2m path extracts base rows via Base::extract_all_columns, never this).
         auto (*extract_row_fn)(ErasedStatementPtr, ErasedObjectPtr) -> void = nullptr;
 
-        // Many-to-many two-query predicate-pushdown extension (#391) — all nullptr
-        // for plain FK joins. build_q1_sql_fn / build_q2_sql_fn produce the base-entity
-        // SELECT and the junction⋈related SELECT (related rows filtered by the same base
-        // subquery). extract_q2_owner_pk_fn keys the client-side stitch into the Q1
-        // pk→entity map; append_related_q2_fn fills the entity's container;
-        // container_empty_fn drives the INNER-join drop of zero-relation entities.
-        using ClauseSqlFn = auto (*)(
-                const orm::where::ExpressionVariantPtr&,
-                const std::optional<OrderByWrapper>&,
-                const std::optional<int>&,
-                const std::optional<int>&
-        ) -> std::string;
-        ClauseSqlFn build_q1_sql_fn                                               = nullptr;
-        ClauseSqlFn build_q2_sql_fn                                               = nullptr;
-        auto (*extract_q2_owner_pk_fn)(ErasedStatementPtr) -> std::int64_t        = nullptr;
-        auto (*append_related_q2_fn)(ErasedStatementPtr, ErasedObjectPtr) -> void = nullptr;
-        auto (*container_empty_fn)(ErasedObjectPtr) -> bool                       = nullptr;
-        // LEFT keeps zero-relation entities; INNER drops them after the stitch.
-        bool m2m_is_left = false;
+        // Many-to-many two-query predicate-pushdown extension (#391, #392).
+        // build_q1_sql_fn produces the base-entity SELECT — its text depends only
+        // on the base model + clauses, so ONE Q1 serves every relation. Each
+        // eager-loaded m2m relation contributes one M2MRelation descriptor; the
+        // stitch loop runs each Q2 in turn against the shared pk→entity map.
+        // Empty for plain FK joins.
+        M2MClauseSqlFn           build_q1_sql_fn = nullptr;
+        std::vector<M2MRelation> m2m_relations;
 
         [[nodiscard]] auto is_m2m() const -> bool {
-            return build_q2_sql_fn != nullptr;
+            return !m2m_relations.empty();
         }
 
         // Get complete pre-computed SELECT...JOIN SQL
@@ -421,9 +432,10 @@ export namespace storm::orm::statements {
     // no pk-adjacency contract: the stitch is a hash map (#391). INNER drops
     // zero-relation entities after the stitch; LEFT keeps them.
     //
-    // get_complete_sql() still builds the modifier-free 3-table join — aggregates
-    // (COUNT-over-m2m) count (base, related) PAIRS over it (select_prefix_arr_ +
-    // join_suffix_arr_).
+    // The modifier-free join SQL (aggregates count (base, related) tuples over
+    // it) is assembled per-wrapper in make_m2m_join_wrapper from base_cols_ /
+    // per-relation related cols / base_from_ / per-relation join fragments —
+    // several relations chain with unique aliases (#392).
     //
     // Junction descriptor: auto mode (Through = void) uses <Base>_<Related> with
     // <Base>_id / <Related>_id columns; through mode uses the through model's
@@ -517,23 +529,15 @@ export namespace storm::orm::statements {
             return Type == JoinType::Inner ? " INNER JOIN " : " LEFT JOIN ";
         }
 
-        // ---- Pre-computed SQL fragments --------------------------------------
-        // select_prefix_: "SELECT t1.<c…>, t3.<r…> FROM (SELECT <cols> FROM <Base>"
-        static consteval auto calculate_select_prefix_size() -> std::size_t {
-            std::size_t total = 7; // "SELECT "
-            for (std::size_t i = 0; i < Base::field_count_; ++i) {
-                total += 2 + 3 + std::meta::identifier_of(Base::all_members_[i]).size() + 3;
-            }
-            for (std::size_t i = 0; i < RelatedBase::field_count_; ++i) {
-                total += 2 + 3 + std::meta::identifier_of(RelatedBase::all_members_[i]).size() + 3;
-            }
-            total += 14 + Base::field_names_array_.len + 6 + Base::table_name_.size();
-            return total + utilities::sql_len::SMALL_BUFFER;
-        }
+        // ---- Complete-SQL fragments (#392) ------------------------------------
+        // The modifier-free join SQL (aggregates / DISTINCT / set-ops) is
+        // assembled per-wrapper in make_m2m_join_wrapper from these fragments so
+        // several relations can chain with unique aliases: relation i uses
+        // junction alias 2+2i, related alias 3+2i (relation 0 keeps t2/t3, so the
+        // single-relation text is unchanged).
 
-        // Append ", t3.<col>[_id]" for every related member to `result`. Shared
-        // by build_select_prefix (1-query) and build_q2_prefix (2-query) — both
-        // emit the related block as "t3"-aliased columns, leading-comma-separated.
+        // Append ", t3.<col>[_id]" for every related member to `result` — the
+        // related block of build_q2_prefix, "t3"-aliased, leading-comma-separated.
         static consteval auto append_related_columns(auto& result) -> void {
             for (std::size_t i = 0; i < RelatedBase::field_count_; ++i) {
                 result.append(", t3.");
@@ -544,8 +548,17 @@ export namespace storm::orm::statements {
             }
         }
 
-        static consteval auto build_select_prefix() {
-            ConstexprString<calculate_select_prefix_size()> result;
+        // base_cols_: "SELECT t1.<c1>, t1.<c2>[_id], …" — base columns only.
+        static consteval auto calculate_base_cols_size() -> std::size_t {
+            std::size_t total = 7; // "SELECT "
+            for (std::size_t i = 0; i < Base::field_count_; ++i) {
+                total += 2 + 3 + std::meta::identifier_of(Base::all_members_[i]).size() + 3;
+            }
+            return total + utilities::sql_len::SMALL_BUFFER;
+        }
+
+        static consteval auto build_base_cols() {
+            ConstexprString<calculate_base_cols_size()> result;
             result.append("SELECT ");
             bool first = true;
             for (std::size_t i = 0; i < Base::field_count_; ++i) {
@@ -559,51 +572,104 @@ export namespace storm::orm::statements {
                 }
                 first = false;
             }
-            append_related_columns(result);
+            return result;
+        }
+
+        // base_from_: " FROM (SELECT <cols> FROM <Base>) t1"
+        static consteval auto calculate_base_from_size() -> std::size_t {
+            return 14 + Base::field_names_array_.len + 6 + Base::table_name_.size() + 4 +
+                   utilities::sql_len::SMALL_BUFFER;
+        }
+
+        static consteval auto build_base_from() {
+            ConstexprString<calculate_base_from_size()> result;
             result.append(" FROM (SELECT ");
             result.append(Base::field_names_array_);
             result.append(" FROM ");
             result.append(Base::table_name_);
-            return result;
-        }
-
-        // join_suffix_: ") t1 <KW> <junction> t2 ON t1.<pk> = t2.<owner>_id <KW> <Related> t3 ON t2.<related>_id =
-        // t3.<rpk>"
-        static consteval auto calculate_join_suffix_size() -> std::size_t {
-            return 4 + (2 * join_keyword().size()) + junction_table_name().size() + 10 + Base::pk_name_.size() + 6 +
-                   owner_col_name().size() + 3 + RelatedBase::table_name_.size() + 10 + related_col_name().size() + 9 +
-                   RelatedBase::pk_name_.size() + utilities::sql_len::SMALL_BUFFER;
-        }
-
-        static consteval auto build_join_suffix() {
-            ConstexprString<calculate_join_suffix_size()> result;
             result.append(") t1");
-            result.append(join_keyword());
-            result.append(junction_table_name());
-            result.append(" t2 ON t1.");
-            result.append(Base::pk_name_);
-            result.append(" = t2.");
-            result.append(owner_col_name());
-            result.append("_id");
-            result.append(join_keyword());
-            result.append(RelatedBase::table_name_);
-            result.append(" t3 ON t2.");
-            result.append(related_col_name());
-            result.append("_id = t3.");
-            result.append(RelatedBase::pk_name_);
             return result;
         }
 
-        static constexpr auto select_prefix_arr_ = build_select_prefix();
-        static constexpr auto join_suffix_arr_   = build_join_suffix();
+        static constexpr auto base_cols_arr_ = build_base_cols();
+        static constexpr auto base_from_arr_ = build_base_from();
+
+        // Constexpr name snapshots for the runtime fragment appenders below
+        // (the consteval name fns cannot be called at runtime).
+        static constexpr std::string_view junction_name_v_ = junction_table_name();
+        static constexpr std::string_view owner_col_v_     = owner_col_name();
+        static constexpr std::string_view related_col_v_   = related_col_name();
+        static constexpr std::string_view join_kw_v_       = join_keyword();
+
+        struct RelatedCol {
+            std::string_view name;
+            bool             is_fk;
+        };
+        static constexpr auto related_cols_ = []() consteval {
+            std::array<RelatedCol, RelatedBase::field_count_> cols{};
+            for (std::size_t i = 0; i < RelatedBase::field_count_; ++i) {
+                cols[i] =
+                        {std::meta::identifier_of(RelatedBase::all_members_[i]),
+                         Base::is_fk_field(RelatedBase::all_members_[i])};
+            }
+            return cols;
+        }();
 
       public:
-        // Modifier-free complete SQL — consumed by aggregates/set-ops via the
-        // wrapper's get_complete_sql_fn (a COUNT over it counts (base, related) pairs).
-        static auto get_complete_sql() -> const std::string& {
-            static const std::string str =
-                    std::string(select_prefix_arr_.view()) + std::string(join_suffix_arr_.view());
-            return str;
+        static constexpr auto base_cols_view() -> std::string_view {
+            return base_cols_arr_.view();
+        }
+        static constexpr auto base_from_view() -> std::string_view {
+            return base_from_arr_.view();
+        }
+
+        // Append ", t<A>.<col>[_id]" for every related member. Runs once per
+        // wrapper type (the complete SQL is a function-local static in the
+        // factory's get_complete_sql_fn). Plain += appends — std::format inside
+        // the module purview mis-deduces the wchar_t overload when instantiated
+        // from an import-std TU (clang-p2996).
+        static auto append_complete_cols(std::string& sql, std::size_t related_alias) -> void {
+            const std::string alias = std::to_string(related_alias);
+            for (const auto& col : related_cols_) {
+                sql += ", t";
+                sql += alias;
+                sql += ".";
+                sql += col.name;
+                if (col.is_fk) {
+                    sql += "_id";
+                }
+            }
+        }
+
+        // Append "<KW> <junction> t<J> ON t1.<pk> = t<J>.<owner>_id
+        //         <KW> <Related> t<R> ON t<J>.<related>_id = t<R>.<rpk>"
+        // with J = junction_alias, R = junction_alias + 1.
+        static auto append_complete_join(std::string& sql, std::size_t junction_alias) -> void {
+            const std::string junction = std::to_string(junction_alias);
+            const std::string related  = std::to_string(junction_alias + 1);
+            sql += join_kw_v_;
+            sql += junction_name_v_;
+            sql += " t";
+            sql += junction;
+            sql += " ON t1.";
+            sql += Base::pk_name_;
+            sql += " = t";
+            sql += junction;
+            sql += ".";
+            sql += owner_col_v_;
+            sql += "_id";
+            sql += join_kw_v_;
+            sql += RelatedBase::table_name_;
+            sql += " t";
+            sql += related;
+            sql += " ON t";
+            sql += junction;
+            sql += ".";
+            sql += related_col_v_;
+            sql += "_id = t";
+            sql += related;
+            sql += ".";
+            sql += RelatedBase::pk_name_;
         }
 
         // Append the base-entity clauses — WHERE / ORDER BY / LIMIT / OFFSET — to
@@ -797,19 +863,33 @@ export namespace storm::orm::statements {
         }
     };
 
+    // Rejects join<^^T::courses, ^^T::courses>() — a duplicated m2m field would
+    // run its Q2 twice and silently double-fill the same container (#392).
+    template <std::meta::info... Fields> consteval auto m2m_fields_distinct() -> bool {
+        const std::array<std::string_view, sizeof...(Fields)> names{std::meta::identifier_of(Fields)...};
+        for (std::size_t i = 0; i < names.size(); ++i) {
+            for (std::size_t j = i + 1; j < names.size(); ++j) {
+                if (names[i] == names[j]) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    // Field pack accepted by QuerySet::join / left_join: all-FK, or all-m2m with
+    // no duplicates. Mixed FK + m2m in one call is rejected (out of scope, #392).
+    template <typename T, std::meta::info... Fields>
+    concept JoinableFields =
+            sizeof...(Fields) >= 1 &&
+            ((FKFieldOf<T, Fields> && ...) || ((M2MFieldOf<T, Fields> && ...) && m2m_fields_distinct<Fields...>()));
+
+    // One M2MRelation descriptor (#392) — Q2 builder + stitch fns for one field.
     template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, std::meta::info M2MField>
         requires M2MFieldOf<T, M2MField>
-    [[nodiscard]] auto make_m2m_join_wrapper() -> JoinStatementWrapper {
+    [[nodiscard]] auto make_m2m_relation() -> M2MRelation {
         using JS = M2MJoinStatement<T, ConnType, Type, M2MField>;
-        return JoinStatementWrapper{
-                .get_complete_sql_fn = +[]() -> const std::string& { return JS::get_complete_sql(); },
-                // Two-query path (#391) — see JoinStatementWrapper for the contract.
-                .build_q1_sql_fn = +[](const orm::where::ExpressionVariantPtr& where_expr,
-                                       const std::optional<OrderByWrapper>&    order_by,
-                                       const std::optional<int>&               limit,
-                                       const std::optional<int>&               offset) -> std::string {
-                    return JS::build_base_subquery(where_expr, order_by, limit, offset);
-                },
+        return M2MRelation{
                 .build_q2_sql_fn = +[](const orm::where::ExpressionVariantPtr& where_expr,
                                        const std::optional<OrderByWrapper>&    order_by,
                                        const std::optional<int>&               limit,
@@ -824,8 +904,49 @@ export namespace storm::orm::statements {
                 },
                 .container_empty_fn =
                         +[](ErasedObjectPtr obj) -> bool { return JS::container_empty(*static_cast<T*>(obj)); },
-                .m2m_is_left = (Type == JoinType::Left)
+                .is_left = (Type == JoinType::Left)
         };
+    }
+
+    // Modifier-free chained join SQL over every relation — relation i uses
+    // junction alias 2+2i / related alias 3+2i, so the single-relation text is
+    // byte-identical to the pre-#392 monolithic builder. Consumed by
+    // aggregates / DISTINCT / set-ops; a COUNT over it counts cartesian TUPLES
+    // (the N-relation extension of the documented "(base, related) pairs").
+    template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, std::meta::info... M2MFields>
+    [[nodiscard]] auto build_m2m_complete_sql() -> std::string {
+        std::string sql{M2MJoinStatement<T, ConnType, Type, M2MFields...[0]>::base_cols_view()};
+        [&]<std::size_t... Is>(std::index_sequence<Is...> /*unused*/) {
+            (M2MJoinStatement<T, ConnType, Type, M2MFields...[Is]>::append_complete_cols(sql, 3 + (2 * Is)), ...);
+        }(std::make_index_sequence<sizeof...(M2MFields)>{});
+        sql += M2MJoinStatement<T, ConnType, Type, M2MFields...[0]>::base_from_view();
+        [&]<std::size_t... Is>(std::index_sequence<Is...> /*unused*/) {
+            (M2MJoinStatement<T, ConnType, Type, M2MFields...[Is]>::append_complete_join(sql, 2 + (2 * Is)), ...);
+        }(std::make_index_sequence<sizeof...(M2MFields)>{});
+        return sql;
+    }
+
+    template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, std::meta::info... M2MFields>
+        requires(sizeof...(M2MFields) >= 1 && (M2MFieldOf<T, M2MFields> && ...))
+    [[nodiscard]] auto make_m2m_join_wrapper() -> JoinStatementWrapper {
+        using First = M2MJoinStatement<T, ConnType, Type, M2MFields...[0]>;
+        JoinStatementWrapper wrapper{
+                .get_complete_sql_fn = +[]() -> const std::string& {
+                    static const std::string str = build_m2m_complete_sql<T, ConnType, Type, M2MFields...>();
+                    return str;
+                },
+                // Q1 text depends only on the base model + clauses — any relation
+                // yields the same string; take it from the first.
+                .build_q1_sql_fn = +[](const orm::where::ExpressionVariantPtr& where_expr,
+                                       const std::optional<OrderByWrapper>&    order_by,
+                                       const std::optional<int>&               limit,
+                                       const std::optional<int>&               offset) -> std::string {
+                    return First::build_base_subquery(where_expr, order_by, limit, offset);
+                }
+        };
+        wrapper.m2m_relations.reserve(sizeof...(M2MFields));
+        (wrapper.m2m_relations.push_back(make_m2m_relation<T, ConnType, Type, M2MFields>()), ...);
+        return wrapper;
     }
 
 } // namespace storm::orm::statements

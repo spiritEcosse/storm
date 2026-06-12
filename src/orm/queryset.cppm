@@ -232,53 +232,33 @@ export namespace storm {
             return StmtType{conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_};
         }
 
-        // INNER JOIN support for FK fields or a single many-to-many field (#203)
+        // INNER JOIN support for FK fields or many-to-many fields (#203, #392)
         // Immutable: returns a new QuerySet with the join attached (Django-style).
         // Usage:
         //   Single FK: message_qs.join<^^Message::sender>().select()
         //   Multi FK:  message_qs.join<^^Message::sender, ^^Message::receiver>().select()
         //   M2M:       student_qs.join<^^Student::courses>().select()
+        //   Multi M2M: member_qs.join<^^Member::courses, ^^Member::clubs>().select()
+        // Mixed FK + m2m in one call is rejected (out of scope, #392).
         template <std::meta::info... FKFields>
-            requires(
-                    sizeof...(FKFields) >= 1 &&
-                    ((orm::statements::FKFieldOf<T, FKFields> && ...) ||
-                     (sizeof...(FKFields) == 1 && (orm::statements::M2MFieldOf<T, FKFields> && ...)))
-            )
+            requires orm::statements::JoinableFields<T, FKFields...>
         [[nodiscard]] auto join() const -> QuerySet {
-            auto result = clone_state();
-            if constexpr ((orm::statements::M2MFieldOf<T, FKFields> && ...)) {
-                result.join_stmt_ = orm::statements::
-                        make_m2m_join_wrapper<T, ConnType, orm::statements::JoinType::Inner, FKFields...[0]>();
-            } else {
-                result.join_stmt_ = orm::statements::
-                        make_join_wrapper<T, ConnType, orm::statements::JoinType::Inner, FKFields...>();
-            }
-            return result;
+            return make_joined<orm::statements::JoinType::Inner, FKFields...>();
         }
 
-        // LEFT JOIN support for FK fields or a single many-to-many field (#203).
-        // For m2m, LEFT JOIN keeps base entities with no relations (empty container).
+        // LEFT JOIN support for FK fields or many-to-many fields (#203, #392).
+        // For m2m, LEFT JOIN keeps base entities with no relations — each
+        // relation's container fills independently (empty when no rows).
         // Immutable: returns a new QuerySet with the join attached.
         // Usage:
         //   Single FK: message_qs.left_join<^^Message::sender>().select()
         //   Multi FK:  message_qs.left_join<^^Message::sender, ^^Message::receiver>().select()
         //   M2M:       student_qs.left_join<^^Student::courses>().select()
+        //   Multi M2M: member_qs.left_join<^^Member::courses, ^^Member::clubs>().select()
         template <std::meta::info... FKFields>
-            requires(
-                    sizeof...(FKFields) >= 1 &&
-                    ((orm::statements::FKFieldOf<T, FKFields> && ...) ||
-                     (sizeof...(FKFields) == 1 && (orm::statements::M2MFieldOf<T, FKFields> && ...)))
-            )
+            requires orm::statements::JoinableFields<T, FKFields...>
         [[nodiscard]] auto left_join() const -> QuerySet {
-            auto result = clone_state();
-            if constexpr ((orm::statements::M2MFieldOf<T, FKFields> && ...)) {
-                result.join_stmt_ = orm::statements::
-                        make_m2m_join_wrapper<T, ConnType, orm::statements::JoinType::Left, FKFields...[0]>();
-            } else {
-                result.join_stmt_ =
-                        orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Left, FKFields...>();
-            }
-            return result;
+            return make_joined<orm::statements::JoinType::Left, FKFields...>();
         }
 
         // RIGHT JOIN support for single or multiple FK fields
@@ -546,6 +526,19 @@ export namespace storm {
         auto clone_state() const -> QuerySet {
             QuerySet result(conn_);
             copy_state_into(result);
+            return result;
+        }
+
+        // Shared body of join() / left_join(): clone, then attach the m2m or FK
+        // wrapper for the requested join type.
+        template <orm::statements::JoinType Type, std::meta::info... FKFields>
+        [[nodiscard]] auto make_joined() const -> QuerySet {
+            auto result = clone_state();
+            if constexpr ((orm::statements::M2MFieldOf<T, FKFields> && ...)) {
+                result.join_stmt_ = orm::statements::make_m2m_join_wrapper<T, ConnType, Type, FKFields...>();
+            } else {
+                result.join_stmt_ = orm::statements::make_join_wrapper<T, ConnType, Type, FKFields...>();
+            }
             return result;
         }
 

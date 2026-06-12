@@ -123,6 +123,8 @@ Many-to-many relationships use a container field annotated with `many_to_many`
 junction model). The same `join<^^Field>()` API eager-loads the relationship with
 a **predicate-pushdown two-query** strategy (#391) — no N+1 problem. See
 [Execution Strategy](#execution-strategy-391) below for why two queries beat one.
+Several m2m fields of the same model can be loaded in **one call** (#392) — see
+[Multiple m2m relations](#multiple-m2m-relations-392).
 
 ### Phase 1: Auto-Generated Junction Table
 
@@ -200,6 +202,37 @@ The junction table is the through model's own table; FK columns come from its
 field names (`pupil_id`, `course_id`). The through model must have exactly one
 `FieldAttr::fk` field per side (enforced at compile time).
 
+### Multiple m2m relations (#392)
+
+A model may carry several m2m fields; one `join<>()`/`left_join<>()` call loads
+any subset of them:
+
+```cpp
+struct Member {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    std::string name;
+    int age{};
+    [[= storm::meta::many_to_many]] std::vector<Course> courses;
+    [[= storm::meta::many_to_many]] std::vector<Club> clubs;
+};
+
+// One Q1 (base members) + one Q2 PER relation, all in one transaction:
+auto members = QuerySet<Member>()
+        .join<^^Member::courses, ^^Member::clubs>()
+        .select().execute();
+```
+
+- **Cost is additive** (`K1 + K2` related rows), never multiplicative — each
+  relation is one extra Q2 keyed off the same Q1 `pk → entity` map. There is no
+  `K1×K2` cartesian product anywhere on the eager-load path.
+- **INNER** (`join`) drops a base entity if its container is empty in **any**
+  listed relation; **LEFT** (`left_join`) keeps every base entity and fills each
+  relation's container independently (Django semantics).
+- `create_table_if_not_exists<Member>` creates **one junction table per
+  auto-m2m field** (`Member_Course`, `Member_Club`).
+- Duplicate fields (`join<^^M::courses, ^^M::courses>`) and mixing FK fields
+  with m2m fields in one call are rejected at compile time.
+
 ### Semantics
 
 | Aspect | Behavior |
@@ -207,18 +240,18 @@ field names (`pupil_id`, `course_id`). The through model must have exactly one
 | `WHERE` / `ORDER BY` / `LIMIT` / `OFFSET` | Apply to **base entities** (Q1 and the Q2 IN-subquery) — `limit(1)` returns one student with ALL courses |
 | `first()` / `get()` | Entity-level: `get()` errors only on 0 or >1 *entities*, never on multiple relations |
 | `rows()` | Yields aggregated entities; **materialized eagerly** (Q2 needs the full base set, so true streaming is not possible) |
-| `join` (INNER) | Drops base entities with no relations (a post-stitch filter) |
-| `left_join` | Keeps them with an empty container (the natural case — Q1 already yielded them) |
-| Aggregates (`count()` …) | Count (base, related) **pairs** over the flat 3-table join (`get_complete_sql`) |
+| `join` (INNER) | Drops base entities empty in **any** listed relation (a post-stitch filter) |
+| `left_join` | Keeps them with empty container(s) (the natural case — Q1 already yielded them) |
+| Aggregates (`count()` …) | Count (base, related…) **tuples** over the flat chained join (`get_complete_sql`) — pairs for one relation, cartesian tuples for several |
 | Result order | The order Q1 returns base entities (`order_by` if given) — no pk tiebreak is needed, since the stitch is a hash map, not row-adjacency |
 | Consistency | Q1 + Q2 run inside one transaction (snapshot consistency) |
 
 ### Limitations
 
-- One m2m field per `join<…>()` call; self-referential m2m rejected at compile
-  time. (The two-query design composes — a second m2m field would be one extra Q2
-  keyed off the same base map, not a `K1×K2` cartesian explosion — so multi-m2m
-  is a natural future extension, not yet exposed in the API.)
+- Self-referential m2m, duplicate fields in one call, and mixed FK + m2m in one
+  call are rejected at compile time. INNER vs LEFT applies to the whole call —
+  mixing per relation is not expressible (chaining a second `join()` call
+  replaces the first, as for FK joins).
 - Write-side helpers (`add()`/`remove()`) are not provided — insert junction
   rows via the through model (`QuerySet<Enrollment>`) or raw SQL for Phase 1.
 - The annotation spelling differs from issue #203's sketch
@@ -232,12 +265,14 @@ client-side by a `pk → entity` hash map (`SelectStatement::execute_m2m_2query`
 1. **Q1** selects the base entities (`build_base_subquery`) — a plain `SELECT`,
    no join, no sorter. Its results go into a `plf::hive<T>` (stable pointers),
    and a `std::unordered_map<int64_t, T*>` indexes them by primary key.
-2. **Q2** selects `(owner_pk, related.*)` from the junction ⋈ related table,
-   filtered by `WHERE owner_id IN (<the same base subquery>)` (`build_q2_sql`).
+2. **Q2** — one per eager-loaded relation (#392) — selects `(owner_pk, related.*)`
+   from that relation's junction ⋈ related table, filtered by
+   `WHERE owner_id IN (<the same base subquery>)` (`build_q2_sql`).
    Each row is appended to its owner's container via the hash-map lookup.
-3. **INNER** then drops entities whose container stayed empty; **LEFT** keeps
-   them. Both run the *same* Q2 (an INNER junction ⋈ related join) — the
-   INNER/LEFT difference is a post-stitch filter, never an SQL difference.
+3. **INNER** then drops entities whose container stayed empty in any inner
+   relation; **LEFT** keeps them. Every Q2 is the *same* shape (an INNER
+   junction ⋈ related join) — the INNER/LEFT difference is a post-stitch
+   filter, never an SQL difference.
 
 **Why two queries beat one.** The former single-query plan was a 3-table join over
 a base-table subquery that ended in `ORDER BY t1.<pk>` so one entity's rows were
@@ -257,7 +292,8 @@ once. Measured in-Storm (Release, fan-out sweep, N=100 base entities):
 Fan-out 1 (one related row per entity) is FK-shaped, not m2m-shaped, and pays a
 ~2 µs constant cost (the extra prepare + transaction); every representative m2m
 fan-out wins by 33–46%. `count()` and other aggregates still run the modifier-free
-3-table join (`get_complete_sql`) to count `(base, related)` pairs.
+chained join (`get_complete_sql`) — `(base, related)` pairs for one relation,
+cartesian tuples when several relations are joined (#392).
 
 ## Architecture
 

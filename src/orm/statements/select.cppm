@@ -87,14 +87,19 @@ export namespace storm::orm::statements {
                 const std::optional<int>&                  offset,
                 const std::optional<OrderByWrapper>&       order_by_wrapper
         ) -> std::string {
-            // M2M joins (#391): the eager load is two queries — Q1 selects the base
-            // entities, Q2 selects (owner_pk, related.*) filtered by the same base
-            // subquery. build_sql is only a debugging/introspection surface for m2m
-            // (.sql()); execution runs them separately in execute_m2m_2query. Join the
-            // two with "; " so .sql() shows the full plan.
+            // M2M joins (#391, #392): the eager load is 1 + N queries — Q1 selects
+            // the base entities once, each relation's Q2 selects (owner_pk,
+            // related.*) filtered by the same base subquery. build_sql is only a
+            // debugging/introspection surface for m2m (.sql()); execution runs them
+            // separately in execute_m2m_2query. Join them with "; " so .sql()
+            // shows the full plan.
             if (join_wrapper && join_wrapper->is_m2m()) {
-                return join_wrapper->build_q1_sql_fn(where_expr, order_by_wrapper, limit, offset) + "; " +
-                       join_wrapper->build_q2_sql_fn(where_expr, order_by_wrapper, limit, offset);
+                std::string sql = join_wrapper->build_q1_sql_fn(where_expr, order_by_wrapper, limit, offset);
+                for (const auto& rel : join_wrapper->m2m_relations) {
+                    sql += "; ";
+                    sql += rel.build_q2_sql_fn(where_expr, order_by_wrapper, limit, offset);
+                }
+                return sql;
             }
             std::string sql = join_wrapper ? join_wrapper->get_complete_sql() : std::string(get_select_sql());
             if (where_expr) {
@@ -350,7 +355,7 @@ export namespace storm::orm::statements {
                 if (join_wrapper && join_wrapper->is_m2m()) {
                     return rows_m2m_materialized(
                             std::move(conn),
-                            *join_wrapper, // trivially-copyable POD of fn-pointers — copy, not move
+                            std::move(*join_wrapper), // owns the relation vector — move into the coroutine frame
                             std::move(where_expr),
                             limit,
                             offset,
@@ -630,11 +635,12 @@ export namespace storm::orm::statements {
             }
         }
 
-        // M2M two-query predicate-pushdown execution (#391). Q1 loads the base
-        // entities; Q2 loads (owner_pk, related.*) filtered by the same base
-        // subquery; the two are stitched client-side through a pk→entity map.
-        // Both run inside a transaction for snapshot consistency. INNER drops
-        // zero-relation entities after the stitch; LEFT keeps them.
+        // M2M two-query predicate-pushdown execution (#391, #392). Q1 loads the
+        // base entities once; each relation's Q2 loads (owner_pk, related.*)
+        // filtered by the same base subquery; all are stitched client-side
+        // through one pk→entity map. Everything runs inside a transaction for
+        // snapshot consistency. INNER drops entities empty in any inner
+        // relation after the stitch; LEFT keeps them.
         [[nodiscard]] auto execute_m2m_2query(const QueryClauses& c) noexcept -> std::expected<plf::hive<T>, Error> {
             const auto& wrapper = *c.join_wrapper;
 
@@ -656,15 +662,16 @@ export namespace storm::orm::statements {
                 by_pk.emplace(static_cast<std::int64_t>(obj.[:Base::primary_key_:]), &obj);
             }
 
-            // Q2 — related rows, stitched into their owner's container.
-            if (auto stitched = run_q2_stitch(wrapper, c, by_pk); !stitched) {
-                return std::unexpected(stitched.error());
+            // Q2 per relation (#392) — related rows, stitched into their owner's
+            // container through the shared map.
+            for (const auto& rel : wrapper.m2m_relations) {
+                if (auto stitched = run_q2_stitch(rel, c, by_pk); !stitched) {
+                    return std::unexpected(stitched.error());
+                }
             }
 
-            // INNER: drop entities that gathered no related rows.
-            if (!wrapper.m2m_is_left) {
-                drop_empty_relations(results, wrapper);
-            }
+            // INNER semantics: drop entities empty in ANY inner relation.
+            drop_empty_relations(results, wrapper);
 
             if (auto committed = txn->commit(); !committed) {
                 return std::unexpected(committed.error());
@@ -676,8 +683,7 @@ export namespace storm::orm::statements {
         // if present. Shared preamble of Q1 and Q2 — they differ only in the SQL
         // builder (build_q1_sql_fn vs build_q2_sql_fn) and what they do with the
         // returned statement.
-        [[nodiscard]] auto
-        prepare_clause_sql(typename JoinStatementWrapper::ClauseSqlFn build_fn, const QueryClauses& c) noexcept
+        [[nodiscard]] auto prepare_clause_sql(M2MClauseSqlFn build_fn, const QueryClauses& c) noexcept
                 -> std::expected<Statement*, Error> {
             std::string sql  = build_fn(c.where_expr, c.order_by_wrapper, c.limit, c.offset);
             auto        prep = conn_->prepare_cached(sql);
@@ -704,21 +710,21 @@ export namespace storm::orm::statements {
             return execute_query_loop(*stmt, [](Statement* s, T& obj) { Base::extract_all_columns(s, obj); });
         }
 
-        // Q2: prepare the junction⋈related query, bind the SAME WHERE (its
-        // IN-subquery), step rows, append each related object to its owner.
+        // Q2: prepare one relation's junction⋈related query, bind the SAME WHERE
+        // (its IN-subquery), step rows, append each related object to its owner.
         [[nodiscard]] auto run_q2_stitch(
-                const JoinStatementWrapper& wrapper, const QueryClauses& c, std::unordered_map<std::int64_t, T*>& by_pk
+                const M2MRelation& rel, const QueryClauses& c, std::unordered_map<std::int64_t, T*>& by_pk
         ) noexcept -> std::expected<void, Error> {
-            auto prep = prepare_clause_sql(wrapper.build_q2_sql_fn, c);
+            auto prep = prepare_clause_sql(rel.build_q2_sql_fn, c);
             if (!prep) {
                 return std::unexpected(prep.error());
             }
             Statement* stmt        = *prep;
             int        step_result = 0;
             while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE) {
-                const std::int64_t owner = wrapper.extract_q2_owner_pk_fn(stmt);
+                const std::int64_t owner = rel.extract_q2_owner_pk_fn(stmt);
                 if (auto it = by_pk.find(owner); it != by_pk.end()) {
-                    wrapper.append_related_q2_fn(stmt, it->second);
+                    rel.append_related_q2_fn(stmt, it->second);
                 }
             }
             if (step_result != Statement::NO_MORE_ROWS) {
@@ -730,10 +736,16 @@ export namespace storm::orm::statements {
             return {};
         }
 
-        // INNER-join semantics: remove entities whose container stayed empty.
+        // INNER-join semantics (#392): remove entities whose container stayed
+        // empty in ANY inner relation; LEFT relations never drop. When every
+        // relation is LEFT the predicate is constant-false and nothing drops.
         static auto drop_empty_relations(plf::hive<T>& results, const JoinStatementWrapper& wrapper) noexcept -> void {
             for (auto it = results.begin(); it != results.end();) {
-                if (wrapper.container_empty_fn(&*it)) {
+                T&         obj  = *it;
+                const bool drop = std::ranges::any_of(wrapper.m2m_relations, [&obj](const M2MRelation& rel) {
+                    return !rel.is_left && rel.container_empty_fn(&obj);
+                });
+                if (drop) {
                     it = results.erase(it);
                 } else {
                     ++it;
