@@ -118,7 +118,7 @@ export namespace storm::orm::statements {
             same_as<std::remove_cvref_t<typename[:std::meta::type_of(Member):]>, std::chrono::system_clock::time_point>;
 
     // A JOIN field selector must reflect a non-static data member of T annotated with
-    // FieldAttr::fk (#388). Constrains QuerySet::join/left_join/right_join and
+    // FieldAttr::fk (#388). Constrains QuerySet::join/left_join and
     // JoinStatement so a non-member or non-FK argument fails at the call site with a
     // clear constraint violation.
     //

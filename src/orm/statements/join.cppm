@@ -17,7 +17,7 @@ export namespace storm::orm::statements {
 
     using storm::orm::utilities::ConstexprString;
 
-    enum class JoinType : std::uint8_t { Inner, Left, Right };
+    enum class JoinType : std::uint8_t { Inner, Left };
 
     // Type alias for type-erased pointers used in polymorphic JOIN wrapper.
     // void* is intentional here: JoinStatementWrapper must work with any model type T
@@ -131,10 +131,8 @@ export namespace storm::orm::statements {
         static constexpr auto get_join_keyword() -> std::string_view {
             if constexpr (Type == JoinType::Inner) {
                 return " INNER JOIN ";
-            } else if constexpr (Type == JoinType::Left) {
-                return " LEFT JOIN ";
             } else {
-                return " RIGHT JOIN ";
+                return " LEFT JOIN ";
             }
         }
         // LCOV_EXCL_STOP

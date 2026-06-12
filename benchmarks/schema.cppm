@@ -184,7 +184,7 @@ export namespace storm::benchmark {
     // ========================================================================
     struct JoinSpec {
         bool                enabled = false;
-        ConstexprString<8>  type;    // "inner" / "left" / "right"
+        ConstexprString<8>  type;    // "inner" / "left"
         ConstexprString<32> related; // related model name ("User")
         ConstexprString<32> fk;      // FK field name ("sender")
         // Multi-FK support (up to 2 for now)

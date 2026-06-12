@@ -106,7 +106,7 @@ cost is additive (`K1 + K2` rows), never multiplicative.
   passes the whole pack to `make_m2m_join_wrapper`.
 - New consteval `m2m_fields_distinct` (identifier pairwise-distinct) — a
   duplicated field would silently double-fill one container.
-- `right_join()` unchanged (FK-only).
+- RIGHT JOIN unchanged (FK-only; later removed in #397).
 
 ### `schema.cppm` — one junction table per auto-m2m field
 

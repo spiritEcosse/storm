@@ -83,7 +83,10 @@ INNER JOIN User t3 ON t3.id = t1.receiver_id
 
 ## JOIN Types
 
-Storm ORM supports all standard SQL JOIN types:
+Storm ORM supports INNER and LEFT JOIN. RIGHT JOIN was removed in #397: its only
+distinguishing output — unmatched related-side rows materialized as defaulted base
+entities — was not useful. The related-side query ("all users, each with the
+messages pointing at them") is tracked as a reverse-relation feature in #398.
 
 ### INNER JOIN (Default)
 
@@ -105,16 +108,6 @@ auto result = message_qs.left_join<^^Message::sender>().select();
 
 **Use when**: You want all messages, even those without senders
 **Note**: FK fields must use `std::optional<User>` for NULL safety
-
-### RIGHT JOIN
-
-Returns all FK table rows, base fields may be NULL:
-
-```cpp
-auto result = message_qs.right_join<^^Message::sender>().select();
-```
-
-**Use when**: You want all users, even those without messages
 
 ## Many-to-Many Joins (#203)
 
@@ -372,8 +365,6 @@ auto execute_optimized(JoinStmt* join_stmt = nullptr) {
 | JOIN Operation | Storm ORM | Raw SQLite | Efficiency |
 |----------------|-----------|------------|------------|
 | Simple SELECT (no JOIN) | 8.4M rows/sec | - | - |
-| RIGHT JOIN (single FK) | 4.5M rows/sec | 5.0M rows/sec | 90% |
-| RIGHT JOIN (multi FK) | 2.7M rows/sec | 3.2M rows/sec | 84% |
 | LEFT JOIN (single FK) | 6.1M rows/sec | 6.8M rows/sec | 90% |
 | LEFT JOIN (multi FK) | 3.9M rows/sec | 5.2M rows/sec | 75% |
 | INNER JOIN (single FK) | 4.4M rows/sec | 7.4M rows/sec | 59% |
@@ -383,7 +374,7 @@ auto execute_optimized(JoinStmt* join_stmt = nullptr) {
 
 ### Performance Characteristics
 
-**LEFT/RIGHT JOINs**: 75-90% efficiency (excellent)
+**LEFT JOINs**: 75-90% efficiency (excellent)
 - Less object construction complexity
 - Simpler NULL handling
 

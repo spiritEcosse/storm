@@ -755,7 +755,7 @@ per relation (#392)".
 - [ ] **Step 4.3: `left_join()` (queryset.cppm:259-282)** — same requires change, same
 pack pass-through with `JoinType::Left`, and add the `Multi M2M:` usage line:
 `member_qs.left_join<^^Member::courses, ^^Member::clubs>().select()` (LEFT keeps
-base entities empty in any/all relations). `right_join()` untouched.
+base entities empty in any/all relations). RIGHT JOIN untouched (later removed in #397).
 
 ### Task 5: Green build + full suites
 

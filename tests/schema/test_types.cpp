@@ -228,6 +228,33 @@ TYPED_TEST(MixedTypesInsertUpdateTest, InsertBatchMixedTypes) {
     EXPECT_EQ(it->name, "user3");
 }
 
+// ===== NULL TEXT EXTRACTION =====
+
+template <typename ConnType> class NullTextExtractionTest : public StormTestFixture<SimpleRecord, ConnType> {};
+
+TYPED_TEST_SUITE(NullTextExtractionTest, DatabaseTypes);
+
+// A SQL NULL in a TEXT column extracts into a non-optional std::string as an
+// empty string (read_text_view nullptr branch). The generated schema declares
+// name TEXT NOT NULL, so rebuild the table without the constraint to let a
+// NULL reach the extraction path.
+TYPED_TEST(NullTextExtractionTest, NullTextColumnExtractsAsEmptyString) {
+    auto conn = QuerySet<SimpleRecord, TypeParam>::get_default_connection();
+    ASSERT_TRUE(conn->execute("DROP TABLE SimpleRecord").has_value());
+    ASSERT_TRUE(
+            conn->execute("CREATE TABLE SimpleRecord (id INTEGER PRIMARY KEY, name TEXT, value INTEGER)").has_value()
+    );
+    ASSERT_TRUE(conn->execute("INSERT INTO SimpleRecord (id, name, value) VALUES (1, NULL, 42)").has_value());
+
+    QuerySet<SimpleRecord, TypeParam> qs;
+    auto                              result = qs.select().execute();
+    ASSERT_TRUE(result.has_value()) << result.error().message();
+    ASSERT_EQ(result.value().size(), 1);
+    const auto it = result.value().begin();
+    EXPECT_EQ(it->name, "");
+    EXPECT_EQ(it->value, 42);
+}
+
 // ===== OPTIONAL TYPES TESTS =====
 
 template <typename ConnType> class OptTypesInsertUpdateTest : public StormTestFixture<Person, ConnType> {};

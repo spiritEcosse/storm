@@ -48,9 +48,9 @@ struct Summary {
 using storm::QuerySet;
 
 // ── Compile-time API contract (#388) ─────────────────────────────────────────
-// join/left_join/right_join take ^^T::field reflection NTTPs. Member-pointer
-// syntax, non-member reflections, non-FK fields, and other models' fields are
-// all rejected by the FKFieldOf constraint. The template parameter makes the
+// join/left_join take ^^T::field reflection NTTPs. Member-pointer syntax,
+// non-member reflections, non-FK fields, and other models' fields are all
+// rejected by the FKFieldOf constraint. The template parameter makes the
 // call dependent so a rejected argument is a substitution failure (= false),
 // not a hard error.
 template <auto... FKs> constexpr bool join_accepts = requires(QuerySet<Task> qs) { qs.template join<FKs...>(); };
@@ -58,7 +58,12 @@ template <auto... FKs> constexpr bool join_accepts = requires(QuerySet<Task> qs)
 static_assert(join_accepts<^^Task::assignee>);
 static_assert(join_accepts<^^Task::assignee, ^^Task::reviewer>);
 static_assert(requires(QuerySet<Task> qs) { qs.template left_join<^^Task::assignee>(); });
-static_assert(requires(QuerySet<Task> qs) { qs.template right_join<^^Task::assignee>(); });
+// right_join was removed in #397 — its only distinguishing output was junk
+// defaulted base entities; see #398 for the reverse-relation replacement.
+// The QuerySet type must be the template parameter (detection idiom): with a
+// concrete type the missing member is a hard error at parse, not 'false'.
+template <typename QS> constexpr bool has_right_join = requires(QS qs) { qs.template right_join<^^Task::assignee>(); };
+static_assert(!has_right_join<QuerySet<Task>>);
 static_assert(!join_accepts<&Task::assignee>);     // old pointer syntax removed
 static_assert(!join_accepts<^^Task::description>); // non-FK field
 static_assert(!join_accepts<^^Task>);              // not a data member
@@ -562,111 +567,6 @@ TYPED_TEST(FKFieldTest, LeftJoinMultipleFKFields) {
     EXPECT_EQ(it->reviewer.age, 25);
 
     EXPECT_EQ(it->description, "Hello with LEFT JOIN");
-}
-
-// Test: RIGHT JOIN behavior
-// Note: RIGHT JOIN is less commonly used but should work symmetrically to LEFT JOIN
-TYPED_TEST(FKFieldTest, RightJoinBehavior) {
-    QuerySet<Person, TypeParam> user_qs;
-    QuerySet<Task, TypeParam>   message_qs;
-
-    // Insert users first
-    Person const alice{.id = 0, .name = "Alice", .age = 30};
-    Person const bob{.id = 0, .name = "Bob", .age = 25};
-    Person const charlie{.id = 0, .name = "Charlie", .age = 35}; // Charlie has no messages
-    auto         alice_result   = user_qs.insert(alice).execute();
-    auto         bob_result     = user_qs.insert(bob).execute();
-    auto         charlie_result = user_qs.insert(charlie).execute();
-    ASSERT_TRUE(alice_result.has_value());
-    ASSERT_TRUE(bob_result.has_value());
-    ASSERT_TRUE(charlie_result.has_value());
-    std::int64_t const alice_id   = alice_result.value();
-    std::int64_t const bob_id     = bob_result.value();
-    std::int64_t const charlie_id = charlie_result.value();
-
-    // Insert task assigned to Alice, reviewed by Bob (Charlie is not referenced)
-    Task const msg{
-            .id          = 0,
-            .assignee    = Person{.id = static_cast<int>(alice_id)},
-            .reviewer    = Person{.id = static_cast<int>(bob_id)},
-            .description = "Task to Bob"
-    };
-    auto msg_result = message_qs.insert(msg).execute();
-    ASSERT_TRUE(msg_result.has_value());
-
-    // RIGHT JOIN on assignee - should return all users in Person table as assignees
-    // This includes Charlie even though no task references him
-    auto join_result = message_qs.template right_join<^^Task::assignee>().select().execute();
-    ASSERT_TRUE(join_result.has_value()) << "RIGHT JOIN failed: " << join_result.error().message();
-
-    const auto& messages = join_result.value();
-
-    // RIGHT JOIN returns:
-    // - All rows from right table (Person)
-    // - Matching rows from left table (Task)
-    // So we should get at least the task we inserted, possibly more depending on implementation
-    EXPECT_GE(messages.size(), 1) << "RIGHT JOIN should return at least existing tasks";
-
-    // Find the task we inserted
-    bool found = false;
-    for (const auto& m : messages) {
-        if (m.description == "Task to Bob") {
-            found = true;
-            EXPECT_EQ(m.assignee.id, alice_id);
-            EXPECT_EQ(m.assignee.name, "Alice");
-            EXPECT_EQ(m.assignee.age, 30);
-        }
-    }
-    EXPECT_TRUE(found) << "RIGHT JOIN should include the task we inserted";
-}
-
-// Test: RIGHT JOIN with multiple FK fields
-TYPED_TEST(FKFieldTest, RightJoinMultipleFKFields) {
-    QuerySet<Person, TypeParam> user_qs;
-    QuerySet<Task, TypeParam>   message_qs;
-
-    // Insert users
-    Person const alice{.id = 0, .name = "Alice", .age = 30};
-    Person const bob{.id = 0, .name = "Bob", .age = 25};
-    auto         alice_result = user_qs.insert(alice).execute();
-    auto         bob_result   = user_qs.insert(bob).execute();
-    ASSERT_TRUE(alice_result.has_value());
-    ASSERT_TRUE(bob_result.has_value());
-    std::int64_t const alice_id = alice_result.value();
-    std::int64_t const bob_id   = bob_result.value();
-
-    // Insert task assigned to Alice, reviewed by Bob
-    Task const msg{
-            .id          = 0,
-            .assignee    = Person{.id = static_cast<int>(alice_id)},
-            .reviewer    = Person{.id = static_cast<int>(bob_id)},
-            .description = "Hello with RIGHT JOIN"
-    };
-    auto msg_result = message_qs.insert(msg).execute();
-    ASSERT_TRUE(msg_result.has_value());
-
-    // RIGHT JOIN on both assignee and reviewer
-    auto join_result = message_qs.template right_join<^^Task::assignee, ^^Task::reviewer>().select().execute();
-    ASSERT_TRUE(join_result.has_value()) << "Multi RIGHT JOIN failed: " << join_result.error().message();
-
-    const auto& messages = join_result.value();
-    EXPECT_GE(messages.size(), 1) << "RIGHT JOIN should return at least the inserted task";
-
-    // Find and verify our task
-    bool found = false;
-    for (const auto& m : messages) {
-        if (m.description == "Hello with RIGHT JOIN") {
-            found = true;
-            EXPECT_EQ(m.assignee.id, alice_id);
-            EXPECT_EQ(m.assignee.name, "Alice");
-            EXPECT_EQ(m.assignee.age, 30);
-
-            EXPECT_EQ(m.reviewer.id, bob_id);
-            EXPECT_EQ(m.reviewer.name, "Bob");
-            EXPECT_EQ(m.reviewer.age, 25);
-        }
-    }
-    EXPECT_TRUE(found) << "Should find the task we inserted";
 }
 
 // Test fixture for nullable FK fields — templated on database backend

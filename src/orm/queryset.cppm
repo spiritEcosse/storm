@@ -261,24 +261,6 @@ export namespace storm {
             return make_joined<orm::statements::JoinType::Left, FKFields...>();
         }
 
-        // RIGHT JOIN support for single or multiple FK fields
-        // Immutable: returns a new QuerySet with the join attached.
-        // Requires backend support (SQLite 3.39.0+, PostgreSQL always)
-        // Usage:
-        //   Single FK: message_qs.right_join<^^Message::sender>().select()
-        //   Multi FK:  message_qs.right_join<^^Message::sender, ^^Message::receiver>().select()
-        template <std::meta::info... FKFields>
-            requires(
-                    sizeof...(FKFields) >= 1 && (orm::statements::FKFieldOf<T, FKFields> && ...) &&
-                    ConnType::supports_right_join
-            )
-        [[nodiscard]] auto right_join() const -> QuerySet {
-            auto result = clone_state();
-            result.join_stmt_ =
-                    orm::statements::make_join_wrapper<T, ConnType, orm::statements::JoinType::Right, FKFields...>();
-            return result;
-        }
-
         // Update single object - returns proxy with .execute() and .to_sql()
         // (SFINAE: only accept T, not span/container)
         template <typename U = T>

@@ -31,10 +31,9 @@ export namespace storm::db::postgresql {
         using Statement = postgresql::Statement;
 
         // Dialect traits
-        static constexpr bool supports_limit_all  = true;
-        static constexpr bool supports_returning  = true;
-        static constexpr bool supports_right_join = true;
-        static constexpr bool uses_pg_dialect     = true;
+        static constexpr bool supports_limit_all = true;
+        static constexpr bool supports_returning = true;
+        static constexpr bool uses_pg_dialect    = true;
 
         // Issue #273: per-Connection cache configuration (capacity 0 = unbounded).
         using Config = storm::db::StatementCacheConfig;
