@@ -57,7 +57,7 @@ When adding or modifying modules:
 2. **Prevent circular dependencies**: identify shared dependencies that should be extracted to a base module
 3. **Enforce naming**: module names use underscores (e.g., `storm_db_sqlite`, not `storm.db.sqlite`)
 4. **Minimize coupling**: modules should have minimal import surface area
-5. **Duplicate where needed**: `FieldAttr` enum is intentionally duplicated to avoid circular deps
+5. **Extract shared leaves**: dependency-free shared declarations live in leaf modules (e.g. `storm_orm_field_attr` for `FieldAttr`/`is_primary_attr`, `storm_db_concept`) — never duplicate definitions to break a cycle (#387)
 
 When documenting module structure, provide ASCII dependency graphs showing import relationships and build order.
 

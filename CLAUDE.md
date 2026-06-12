@@ -261,6 +261,7 @@ src/
 │   └── sqlite.cppm             # SQLite implementation
 └── orm/
     ├── queryset.cppm           # QuerySet ORM interface
+    ├── field_attr.cppm         # FieldAttr annotation enum + is_primary_attr (leaf module)
     ├── utilities.cppm          # ConstexprString, SQLCache
     ├── indexes.cppm            # Index, UniqueIndex, Indexes<T> trait (namespace storm)
     └── statements/             # INSERT, SELECT, UPDATE, DELETE, DISTINCT, JOIN

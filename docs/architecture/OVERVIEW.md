@@ -79,6 +79,7 @@ src/
 │   └── sqlite.cppm                 # SQLite implementation
 └── orm/
     ├── queryset.cppm               # QuerySet interface
+    ├── field_attr.cppm             # FieldAttr annotation enum (leaf module, #387)
     ├── utilities.cppm              # ConstexprString, SQLCache
     └── statements/
         ├── base.cppm               # BaseStatement utilities
@@ -95,6 +96,7 @@ src/
 storm (main module)
 ├── storm_db_concept
 ├── storm_db_sqlite
+├── storm_orm_field_attr
 ├── storm_orm_statements_base
 ├── storm_orm_utilities
 ├── storm_orm_statements_{insert,update,erase,select,join}

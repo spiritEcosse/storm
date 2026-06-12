@@ -30,19 +30,6 @@ export namespace storm::orm::where {
     // type at compile time. The actual Statement* conversion happens in bind_params_direct().
     using ErasedStatementPtr = void*; // NOSONAR(cpp:S5008) - type erasure requires void*
 
-    // Mirror of meta::FieldAttr from storm module - must match exactly
-    namespace meta {
-        enum class FieldAttr : std::uint8_t {
-            primary,
-            primary_autoincrement,
-            indexed,
-            unique,
-            fk,
-            auto_create,
-            auto_update
-        };
-    }
-
     // Comparison operators
     enum class CompOp : std::uint8_t { Equal, NotEqual, Greater, GreaterEqual, Less, LessEqual };
 
