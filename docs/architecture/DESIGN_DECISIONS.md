@@ -229,7 +229,7 @@ See [DISTINCT Analysis](../benchmarks/DISTINCT_ANALYSIS.md) for detailed impleme
 - **Index Sequence Optimization**: Uses `std::index_sequence` and fold expressions
 - **Pre-computed Metadata**: Field information cached in static constexpr variables
 - **Module Naming**: Uses underscores (`storm_db_sqlite`) due to compiler limitations
-- **Circular Dependencies**: Avoided by duplicating `FieldAttr` enum
+- **Circular Dependencies**: Avoided by extracting shared declarations into dependency-free leaf modules (`storm_orm_field_attr` for `FieldAttr`/`is_primary_attr`, #387)
 - **Compiler Crashes**: std::mutex in modules causes segfaults
 - **std::function Linker Errors**: Avoid `std::function` with custom libc++ - use abstract base classes instead (see JOIN architecture)
 - **Primary Key Access**: Uses reflection splice operator `obj.[:primary_key_:]`

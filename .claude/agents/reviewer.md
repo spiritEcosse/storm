@@ -64,7 +64,7 @@ You are a senior C++ code reviewer specializing in the Storm ORM project, with d
 ### 9. Compiler-Specific Constraints
 - Code works with the experimental Clang fork at `../clang-p2996/`
 - No constexpr SQL generation (runtime `std::format` only)
-- `FieldAttr` enum duplication where needed to avoid circular dependencies
+- `FieldAttr` has a single definition in the `storm_orm_field_attr` leaf module (#387) — flag any re-declared copy of it
 
 ### 10. C++ Core Guidelines
 - Apply rules from `.claude/agents/rule-standards.md` as a secondary checklist

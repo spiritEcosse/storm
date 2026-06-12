@@ -7,6 +7,7 @@ export module storm;
 import std;
 
 // Import and re-export all Storm ORM modules
+export import storm_orm_field_attr;
 export import storm_orm_generator;
 export import storm_orm_utilities;
 export import storm_db_concept;
@@ -31,12 +32,10 @@ export namespace storm {
     // Re-export UUID type for convenient access as storm::UUID
     using UUID = orm::utilities::UUID;
 
-    // Meta functionality for ORM field attributes and reflection
+    // Meta functionality for ORM field attributes and reflection.
+    // FieldAttr + is_primary_attr come from the storm_orm_field_attr leaf module
+    // (re-exported above), which already declares them in storm::meta (#387).
     namespace meta {
-        // Note: FieldAttr enum is defined in storm_orm_statements_base module
-        // and re-exported here through the import chain
-        using FieldAttr = orm::statements::meta::FieldAttr;
-
         // Many-to-many annotations (#203): many_to_many (auto junction table) and
         // many_to_many_through<Through> (explicit junction model). These re-exports
         // are consumed by user model declarations, never inside this module.
@@ -47,7 +46,7 @@ export namespace storm {
         // Check if member has primary attribute
         consteval auto has_primary_attr(std::meta::info member) -> bool {
             auto field_attr = std::meta::annotation_of_type<FieldAttr>(member);
-            return field_attr.has_value() && orm::statements::meta::is_primary_attr(field_attr.value());
+            return field_attr.has_value() && is_primary_attr(field_attr.value());
         }
 
         // Find primary key member — T must satisfy ModelWithPrimaryKey<T>

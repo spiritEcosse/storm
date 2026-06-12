@@ -163,7 +163,7 @@ Before declaring tests successful:
 - **In-memory database**: Tests use `:memory:` SQLite database
 - **Fresh tables**: Each test creates new tables and data
 - **Module naming**: Uses underscores (storm_db_sqlite) not dots
-- **Circular dependencies**: Watch for duplicated FieldAttr definitions
+- **Circular dependencies**: Shared declarations belong in leaf modules (`storm_orm_field_attr`), never duplicated (#387)
 - **Compiler crashes**: Be aware of std::mutex module limitations
 
 Always provide actionable insights from test results and suggest specific fixes for any failures encountered. If tests pass, confirm the code meets Storm ORM's quality standards and performance expectations.
