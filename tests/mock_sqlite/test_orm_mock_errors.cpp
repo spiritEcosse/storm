@@ -3363,6 +3363,59 @@ namespace {
         EXPECT_EQ(rows.error().code(), SQLITE_RANGE);
     }
 
+    // ============================================================================
+    // Multi-relation m2m (#392) — second-Q2 error paths
+    // ============================================================================
+
+    struct MockClub {
+        [[= storm::meta::FieldAttr::primary]] std::int64_t id{};
+        std::string                                        name;
+    };
+
+    struct MockMember {
+        [[= storm::meta::FieldAttr::primary]] std::int64_t      id{};
+        std::string                                             name;
+        [[= storm::meta::many_to_many]] std::vector<MockCourse> courses;
+        [[= storm::meta::many_to_many]] std::vector<MockClub>   clubs;
+    };
+
+    // Prepare order: calls 1-3 = connection/BEGIN bring-up, 4 = Q1, 5 = Q2a
+    // (courses), 6 = Q2b (clubs). Failing call 6 exercises the per-relation Q2
+    // loop's error branch for a relation after the first.
+    TEST_F(ORMMockErrorTest, MultiM2MSelectFailsOnSecondQ2PrepareError) {
+        MockSqlite3Config::prepare_fails_on_call(6, SQLITE_IOERR);
+
+        QuerySet<MockMember> qs;
+        auto                 rows = qs.join<^^MockMember::courses, ^^MockMember::clubs>().select().execute();
+
+        ASSERT_FALSE(rows.has_value());
+        EXPECT_EQ(rows.error().code(), SQLITE_IOERR);
+    }
+
+    // Step order: 1 = BEGIN, 2 = Q1 NO_MORE (empty), 3 = Q2a NO_MORE,
+    // 4 = Q2b fails → the error surfaces from the second run_q2_stitch and the
+    // transaction never commits.
+    TEST_F(ORMMockErrorTest, MultiM2MSelectFailsOnSecondQ2StepError) {
+        MockSqlite3Config::step_fails_on_call(4, SQLITE_CORRUPT);
+
+        QuerySet<MockMember> qs;
+        auto                 rows = qs.join<^^MockMember::courses, ^^MockMember::clubs>().select().execute();
+
+        ASSERT_FALSE(rows.has_value());
+        EXPECT_EQ(rows.error().code(), SQLITE_CORRUPT);
+    }
+
+    // With two relations the COMMIT is the 5th step (BEGIN, Q1, Q2a, Q2b, COMMIT).
+    TEST_F(ORMMockErrorTest, MultiM2MSelectFailsOnCommitError) {
+        MockSqlite3Config::step_fails_on_call(5, SQLITE_FULL);
+
+        QuerySet<MockMember> qs;
+        auto                 rows = qs.join<^^MockMember::courses, ^^MockMember::clubs>().select().execute();
+
+        ASSERT_FALSE(rows.has_value());
+        EXPECT_EQ(rows.error().code(), SQLITE_FULL);
+    }
+
 } // namespace
 
 // NOLINTEND(misc-const-correctness,bugprone-unused-return-value,performance-inefficient-vector-operation) // NOSONAR(cpp:S125)

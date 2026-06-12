@@ -108,6 +108,16 @@ cost is additive (`K1 + K2` rows), never multiplicative.
   duplicated field would silently double-fill one container.
 - `right_join()` unchanged (FK-only).
 
+### `schema.cppm` — one junction table per auto-m2m field
+
+Discovered during fail-first testing: `find_m2m_auto_member()` only ever
+returned the FIRST auto-m2m member, so a second relation's junction table was
+never created. Generalized: `m2m_auto_members_` (constexpr array of all
+auto-m2m members), `build_junction_sql<D, Member>`, and a new
+`junction_table_sqls<D>()` returning one DDL string per field (declaration
+order). `junction_table_sql<D>()` stays as the first-entry accessor;
+`create_table_if_not_exists` executes every junction DDL.
+
 ### Aggregates / DISTINCT / set-ops over multi-m2m
 
 `get_complete_sql()` consumers (aggregate.cppm, distinct.cppm,
