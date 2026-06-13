@@ -48,11 +48,11 @@ SELECT id, name, age FROM Person
 using namespace storm::orm::where;
 
 // Filter results
-auto result = queryset.where(field<^^Person::age>() > 25).select();
+auto result = queryset.where(f<^^Person::age>() > 25).select();
 
 // Complex conditions
-auto result = queryset.where(field<^^Person::age>() > 25 and
-                              field<^^Person::age>() < 50).select();
+auto result = queryset.where(f<^^Person::age>() > 25 and
+                              f<^^Person::age>() < 50).select();
 ```
 
 See [WHERE Clauses](WHERE_CLAUSES.md) for detailed WHERE syntax.
@@ -68,7 +68,7 @@ auto result = message_qs.join<^^Message::sender, ^^Message::receiver>().select()
 
 // JOIN with WHERE
 auto result = message_qs.join<^^Message::sender>()
-                        .where(field<^^User::level>() > 5)
+                        .where(f<^^User::level>() > 5)
                         .select();
 ```
 

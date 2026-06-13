@@ -1440,7 +1440,7 @@ class QueryBenchmark : public DataBenchmarkBase<QueryBenchmark<Model, test>, Mod
 - `where_or_simple` - OR combination (age < 25 OR age > 60)
 
 **What's tested:**
-- **Storm ORM**: Uses `field<>().like()`, `field<>().between()`, `field<>().in()`, and `&&`/`||` operators
+- **Storm ORM**: Uses `f<>().like()`, `f<>().between()`, `f<>().in()`, and `&&`/`||` operators
 - **Raw SQLite**: Manual SQL with LIKE, BETWEEN, IN clauses
 - **Fair comparison**: Both versions use prepared statement caching
 
@@ -1821,7 +1821,7 @@ This provides an **apples-to-apples comparison** to measure the actual overhead 
 ```cpp
 // Storm ORM version (automatic statement caching)
 for (int i = 0; i < iterations; i++) {
-    auto results = qs.where(field<age>() > 30).select();
+    auto results = qs.where(f<age>() > 30).select();
 }
 
 // Raw SQLite version (manual statement reuse)

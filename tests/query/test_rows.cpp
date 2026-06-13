@@ -10,7 +10,7 @@ import std;
 #include "test_seed_helpers.h"
 
 using storm::QuerySet;
-using storm::orm::where::field;
+using storm::orm::where::f;
 
 template <typename ConnType> class RowsTest : public StormTestFixture<Person, ConnType> {
   protected:
@@ -62,7 +62,7 @@ TYPED_TEST(RowsTest, SingleRow) {
 TYPED_TEST(RowsTest, WhereFilter) {
     QuerySet<Person, TypeParam> qs;
     int                         count = 0;
-    for (auto&& result : qs.where(field<^^Person::age>() > 35).rows()) {
+    for (auto&& result : qs.where(f<^^Person::age>() > 35).rows()) {
         ASSERT_TRUE(result.has_value());
         EXPECT_GT(result.value().age, 35);
         ++count;
@@ -73,7 +73,7 @@ TYPED_TEST(RowsTest, WhereFilter) {
 
 TYPED_TEST(RowsTest, WhereComplex) {
     QuerySet<Person, TypeParam> qs;
-    auto                        expr  = field<^^Person::age>() > 30 || field<^^Person::name>() == "Alice";
+    auto                        expr  = f<^^Person::age>() > 30 || f<^^Person::name>() == "Alice";
     int                         count = 0;
     for (auto&& result : qs.where(expr).rows()) {
         ASSERT_TRUE(result.has_value());
@@ -117,7 +117,7 @@ TYPED_TEST(RowsTest, WithAllModifiers) {
     int                         count    = 0;
     int                         prev_age = -1;
     for (auto&& result :
-         qs.where(field<^^Person::age>() > 25).template order_by<^^Person::age>().limit(5).offset(2).rows()) {
+         qs.where(f<^^Person::age>() > 25).template order_by<^^Person::age>().limit(5).offset(2).rows()) {
         ASSERT_TRUE(result.has_value());
         EXPECT_GT(result.value().age, 25);
         EXPECT_GE(result.value().age, prev_age);
@@ -176,7 +176,7 @@ TYPED_TEST(RowsTest, MultipleGenerators) {
 
 TYPED_TEST(RowsTest, RepeatedCallsSameWhere) {
     QuerySet<Person, TypeParam> qs;
-    auto                        expr = field<^^Person::age>() > 30;
+    auto                        expr = f<^^Person::age>() > 30;
 
     int count1 = 0;
     for (auto&& result : qs.where(expr).rows()) {
@@ -199,14 +199,14 @@ TYPED_TEST(RowsTest, DifferentQueries) {
     QuerySet<Person, TypeParam> qs2;
 
     int count_young = 0;
-    for (auto&& result : qs1.where(field<^^Person::age>() < 30).rows()) {
+    for (auto&& result : qs1.where(f<^^Person::age>() < 30).rows()) {
         ASSERT_TRUE(result.has_value());
         EXPECT_LT(result.value().age, 30);
         ++count_young;
     }
 
     int count_old = 0;
-    for (auto&& result : qs2.where(field<^^Person::age>() >= 30).rows()) {
+    for (auto&& result : qs2.where(f<^^Person::age>() >= 30).rows()) {
         ASSERT_TRUE(result.has_value());
         EXPECT_GE(result.value().age, 30);
         ++count_old;
@@ -281,7 +281,7 @@ TYPED_TEST(RowsJoinTest, WithJoin) {
 TYPED_TEST(RowsJoinTest, WithJoinAndWhere) {
     QuerySet<Message, TypeParam> qs;
     int                          count = 0;
-    for (auto&& result : qs.template join<^^Message::sender>().where(field<^^Message::value>() > 30).rows()) {
+    for (auto&& result : qs.template join<^^Message::sender>().where(f<^^Message::value>() > 30).rows()) {
         ASSERT_TRUE(result.has_value());
         EXPECT_GT(result.value().value, 30);
         ++count;
@@ -329,7 +329,7 @@ TYPED_TEST(RowsTest, ViewsFilterCount) {
 TYPED_TEST(RowsTest, ViewsFilterWhereTransformCollect) {
     QuerySet<Person, TypeParam> qs;
     std::vector<int>            ages;
-    for (auto&& age : qs.where(field<^^Person::is_active>() == true).rows() | std::views::filter([](auto&& r) {
+    for (auto&& age : qs.where(f<^^Person::is_active>() == true).rows() | std::views::filter([](auto&& r) {
                           return r.has_value();
                       }) | std::views::transform([](auto&& r) { return r.value().age; })) {
         ages.push_back(age);

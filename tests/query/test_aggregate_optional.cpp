@@ -226,12 +226,11 @@ TYPED_TEST(AggregateTest, NegativeNumbersInWhere) {
             {.name = "Eve", .age = 10, .salary = 90000.0, .years_experience = 15},
     })));
 
-    auto result = this->qs->where(storm::orm::where::field<^^Person::age>() < 0).count().execute();
+    auto result = this->qs->where(storm::orm::where::f<^^Person::age>() < 0).count().execute();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value(), 2);
 
-    auto sum_neg =
-            this->qs->where(storm::orm::where::field<^^Person::age>() < 0).template sum<^^Person::age>().execute();
+    auto sum_neg = this->qs->where(storm::orm::where::f<^^Person::age>() < 0).template sum<^^Person::age>().execute();
     ASSERT_TRUE(sum_neg.has_value());
     EXPECT_EQ(sum_neg.value(), -15);
 }

@@ -187,7 +187,7 @@ auto pupils = QuerySet<Pupil>().join<^^Pupil::courses>().select().execute();
 // Metadata access — query the junction model directly (regular FK joins)
 auto enrollments = QuerySet<Enrollment>()
         .join<^^Enrollment::pupil, ^^Enrollment::course>()
-        .where(field<^^Enrollment::grade>() == "A")
+        .where(f<^^Enrollment::grade>() == "A")
         .select().execute();
 ```
 
@@ -535,8 +535,8 @@ using namespace storm::orm::where;
 
 // Filter on both base table and joined table
 auto result = message_qs.join<^^Message::sender>()
-                        .where(field<^^User::level>() > 5 and
-                               field<^^Message::content>().like("%urgent%"))
+                        .where(f<^^User::level>() > 5 and
+                               f<^^Message::content>().like("%urgent%"))
                         .select();
 ```
 

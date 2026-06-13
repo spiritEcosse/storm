@@ -57,7 +57,7 @@ TYPED_TEST(BatchInsertReturningTest, ReturnedIdsMatchInsertedRows) {
 
     // SELECT back each row by ID and verify data
     for (std::size_t i = 0; i < records.size(); ++i) {
-        auto row = qs.where(storm::orm::where::field<^^SimpleRecord::id>() == static_cast<int>(result.value()[i]))
+        auto row = qs.where(storm::orm::where::f<^^SimpleRecord::id>() == static_cast<int>(result.value()[i]))
                            .select()
                            .execute();
         ASSERT_TRUE(row.has_value()) << "Should find row with ID " << result.value()[i];

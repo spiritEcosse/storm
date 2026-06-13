@@ -2747,8 +2747,8 @@ namespace {
 
         QuerySet<MockPerson> qs1;
         QuerySet<MockPerson> qs2;
-        auto                 result = qs1.where(storm::orm::where::field<^^MockPerson::age>() > 30)
-                              .union_(qs2.where(storm::orm::where::field<^^MockPerson::age>() < 10))
+        auto                 result = qs1.where(storm::orm::where::f<^^MockPerson::age>() > 30)
+                              .union_(qs2.where(storm::orm::where::f<^^MockPerson::age>() < 10))
                               .execute();
 
         ASSERT_FALSE(result.has_value());
@@ -2760,8 +2760,8 @@ namespace {
 
         QuerySet<MockPerson> qs1;
         QuerySet<MockPerson> qs2;
-        auto                 result = qs1.where(storm::orm::where::field<^^MockPerson::age>() > 30)
-                              .union_(qs2.where(storm::orm::where::field<^^MockPerson::age>() < 10))
+        auto                 result = qs1.where(storm::orm::where::f<^^MockPerson::age>() > 30)
+                              .union_(qs2.where(storm::orm::where::f<^^MockPerson::age>() < 10))
                               .execute();
 
         ASSERT_FALSE(result.has_value());
@@ -2773,8 +2773,8 @@ namespace {
 
         QuerySet<MockPerson> qs1;
         QuerySet<MockPerson> qs2;
-        auto                 result = qs1.where(storm::orm::where::field<^^MockPerson::age>() > 30)
-                              .union_(qs2.where(storm::orm::where::field<^^MockPerson::age>() < 10))
+        auto                 result = qs1.where(storm::orm::where::f<^^MockPerson::age>() > 30)
+                              .union_(qs2.where(storm::orm::where::f<^^MockPerson::age>() < 10))
                               .execute();
 
         ASSERT_FALSE(result.has_value());
@@ -2786,8 +2786,8 @@ namespace {
 
         QuerySet<MockPerson> qs1;
         QuerySet<MockPerson> qs2;
-        auto                 result = qs1.where(storm::orm::where::field<^^MockPerson::age>() > 30)
-                              .union_(qs2.where(storm::orm::where::field<^^MockPerson::age>() < 10))
+        auto                 result = qs1.where(storm::orm::where::f<^^MockPerson::age>() > 30)
+                              .union_(qs2.where(storm::orm::where::f<^^MockPerson::age>() < 10))
                               .to_sql();
 
         ASSERT_FALSE(result.has_value());
@@ -2799,8 +2799,8 @@ namespace {
 
         QuerySet<MockPerson> qs1;
         QuerySet<MockPerson> qs2;
-        auto                 result = qs1.where(storm::orm::where::field<^^MockPerson::age>() > 30)
-                              .union_(qs2.where(storm::orm::where::field<^^MockPerson::age>() < 10))
+        auto                 result = qs1.where(storm::orm::where::f<^^MockPerson::age>() > 30)
+                              .union_(qs2.where(storm::orm::where::f<^^MockPerson::age>() < 10))
                               .to_sql();
 
         ASSERT_FALSE(result.has_value());
@@ -2825,7 +2825,7 @@ namespace {
         MockSqlite3Config::bind_int_returns(SQLITE_NOMEM);
 
         QuerySet<MockPerson> qs;
-        auto                 age       = storm::orm::where::field<^^MockPerson::age>();
+        auto                 age       = storm::orm::where::f<^^MockPerson::age>();
         bool                 got_error = false;
         for (auto&& result : qs.where(age > 25).rows()) {
             if (!result.has_value()) {
@@ -3355,7 +3355,7 @@ namespace {
 
         QuerySet<MockStudent> qs;
         auto                  rows = qs.join<^^MockStudent::courses>()
-                            .where(storm::orm::where::field<^^MockStudent::id>() > 0)
+                            .where(storm::orm::where::f<^^MockStudent::id>() > 0)
                             .select()
                             .execute();
 

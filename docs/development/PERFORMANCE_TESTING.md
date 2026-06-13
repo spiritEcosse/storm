@@ -137,7 +137,7 @@ void benchmark_raw_select() {
 void benchmark_storm_where() {
     QuerySet<Person> qs(conn);
     for (int i = 0; i < iterations; ++i) {
-        auto result = qs.where(field<^^Person::age>() > 25).select();
+        auto result = qs.where(f<^^Person::age>() > 25).select();
     }
 }
 ```

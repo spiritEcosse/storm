@@ -7,16 +7,16 @@ import std;
 #include "test_models.h" // NOSONAR cpp:S954
 #include "test_seed_helpers.h"
 
-using storm::orm::where::field;
+using storm::orm::where::f;
 
 template <typename ConnType> class ComplexWhereTest : public PersonSeedFixture<ConnType> {};
 
 TYPED_TEST_SUITE(ComplexWhereTest, DatabaseTypes);
 
 TYPED_TEST(ComplexWhereTest, OrWithAnd) {
-    auto young    = field<^^Person::age>() < 26;
-    auto old      = field<^^Person::age>() > 35;
-    auto mkt      = field<^^Person::department>() == "Marketing";
+    auto young    = f<^^Person::age>() < 26;
+    auto old      = f<^^Person::age>() > 35;
+    auto mkt      = f<^^Person::department>() == "Marketing";
     auto combined = young || (old && mkt);
 
     auto result = this->qs->where(combined).select().execute();
@@ -25,8 +25,8 @@ TYPED_TEST(ComplexWhereTest, OrWithAnd) {
 }
 
 TYPED_TEST(ComplexWhereTest, NestedAndOr) {
-    auto eng_young = field<^^Person::department>() == "Engineering" && field<^^Person::age>() < 30;
-    auto sales_old = field<^^Person::department>() == "Sales" && field<^^Person::age>() > 29;
+    auto eng_young = f<^^Person::department>() == "Engineering" && f<^^Person::age>() < 30;
+    auto sales_old = f<^^Person::department>() == "Sales" && f<^^Person::age>() > 29;
 
     auto result = this->qs->where(eng_young || sales_old).select().execute();
     ASSERT_TRUE(result.has_value());

@@ -340,7 +340,7 @@ export namespace storm::orm::where {
     }
 
     // CollatedField proxy - wraps field name with COLLATE clause
-    // Created via field<^^Person::name>().collate(Collate::NoCase)
+    // Created via f<^^Person::name>().collate(Collate::NoCase)
     // All comparison operators produce SQL like: "name COLLATE NOCASE = ?"
     template <std::meta::info MemberInfo>
         requires(std::meta::is_nonstatic_data_member(MemberInfo))
@@ -436,7 +436,7 @@ export namespace storm::orm::where {
         }
 
         // IN: Returns Expr wrapping VARIANT (no heap allocation for expression itself!)
-        // Usage: field<^^Person::id>().in(100, 200, 300)
+        // Usage: f<^^Person::id>().in(100, 200, 300)
         // For enum types, converts to underlying int automatically
         template <typename... Values>
             requires(std::constructible_from<FieldType, Values> && ...)
@@ -528,7 +528,7 @@ export namespace storm::orm::where {
     };
 
     // Pure C++26 Reflection-Based Field Helper (No Macro Needed!)
-    // Usage: field<^^Person::id>().in(100, 200, 300)
+    // Usage: f<^^Person::id>().in(100, 200, 300)
     //
     // Returns Field which provides:
     // - in() -> Expr (runtime expression, composable with AND/OR)
@@ -542,11 +542,11 @@ export namespace storm::orm::where {
         requires(
                 std::meta::is_nonstatic_data_member(MemberInfo) && std::meta::has_identifier(MemberInfo)
         ) // Ensures field has a name
-    constexpr auto field() {
+    constexpr auto f() {
         // Additional compile-time validation: field must be accessible
         static_assert(
                 std::meta::is_nonstatic_data_member(MemberInfo),
-                "field<> requires a non-static data member reflection (use ^^Type::member syntax)"
+                "f<> requires a non-static data member reflection (use ^^Type::member syntax)"
         );
         return Field<MemberInfo>();
     }

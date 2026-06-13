@@ -32,22 +32,22 @@ using storm::orm::query_builder::dispatch_field;
 
 template <std::meta::info FieldInfo, typename ValueType>
 constexpr auto build_where_expr(std::string_view op, ValueType value) {
-    using storm::orm::where::field;
-    if constexpr (requires { field<FieldInfo>() == value; }) {
+    using storm::orm::where::f;
+    if constexpr (requires { f<FieldInfo>() == value; }) {
         if (op == "==")
-            return field<FieldInfo>() == value;
+            return f<FieldInfo>() == value;
         if (op == "!=")
-            return field<FieldInfo>() != value;
+            return f<FieldInfo>() != value;
         if (op == ">")
-            return field<FieldInfo>() > value;
+            return f<FieldInfo>() > value;
         if (op == ">=")
-            return field<FieldInfo>() >= value;
+            return f<FieldInfo>() >= value;
         if (op == "<")
-            return field<FieldInfo>() < value;
+            return f<FieldInfo>() < value;
         if (op == "<=")
-            return field<FieldInfo>() <= value;
+            return f<FieldInfo>() <= value;
     }
-    return field<FieldInfo>() == value;
+    return f<FieldInfo>() == value;
 }
 
 // FK resolver for test models (Message::sender → Person).
@@ -68,7 +68,7 @@ inline constexpr NoOpFkResolver no_op_fk{};
 
 // Recursively build a WHERE expression from a compile-time WhereNode tree.
 template <int N, const auto &Tc, typename Model> auto build_where_node_expr() {
-    using storm::orm::where::field;
+    using storm::orm::where::f;
     if constexpr (Tc.where_nodes[N].left < 0) {
         constexpr auto fi = dispatch_field<Model>(Tc.where_nodes[N].field.view());
         if constexpr (Tc.where_nodes[N].value_dbl != 0.0)

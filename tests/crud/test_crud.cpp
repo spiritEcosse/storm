@@ -42,9 +42,9 @@ template <typename ConnType> class PersonCrudTestBase : public StormTestFixture<
     }
 
     static auto personExists(int person_id) -> bool {
-        using storm::orm::where::field;
+        using storm::orm::where::f;
         const storm::QuerySet<Person, ConnType> qs;
-        auto result = qs.where(field<^^Person::id>() == person_id).select().execute();
+        auto                                    result = qs.where(f<^^Person::id>() == person_id).select().execute();
         return result.has_value() && !result.value().empty();
     }
 };
@@ -206,9 +206,9 @@ template <typename ConnType> class QuerySetUpdateTest : public PersonCrudTestBas
   protected:
     // Helper function to get person by ID using the ORM
     static auto getPerson(int person_id) -> std::optional<Person> {
-        using storm::orm::where::field;
+        using storm::orm::where::f;
         const storm::QuerySet<Person, ConnType> qs;
-        auto result = qs.where(field<^^Person::id>() == person_id).select().execute();
+        auto                                    result = qs.where(f<^^Person::id>() == person_id).select().execute();
         if (!result.has_value() || result.value().empty()) {
             return std::nullopt;
         }
@@ -400,7 +400,7 @@ template <typename ConnType> class QueryResetTest : public StormTestFixture<Pers
 TYPED_TEST_SUITE(QueryResetTest, DatabaseTypes);
 
 TYPED_TEST(QueryResetTest, ResetClearsAllState) {
-    auto filtered = this->qs->where(storm::orm::where::field<^^Person::age>() > 25);
+    auto filtered = this->qs->where(storm::orm::where::f<^^Person::age>() > 25);
 
     auto result1 = filtered.template order_by<^^Person::name>().limit(2).offset(1).select().execute();
     ASSERT_TRUE(result1.has_value());
@@ -413,7 +413,7 @@ TYPED_TEST(QueryResetTest, ResetClearsAllState) {
 }
 
 TYPED_TEST(QueryResetTest, ReuseSameQuerySetMultipleTimes) {
-    auto result1 = this->qs->where(storm::orm::where::field<^^Person::age>() > 35).select().execute();
+    auto result1 = this->qs->where(storm::orm::where::f<^^Person::age>() > 35).select().execute();
     ASSERT_TRUE(result1.has_value());
     EXPECT_EQ(result1.value().size(), 9);
 
@@ -423,7 +423,7 @@ TYPED_TEST(QueryResetTest, ReuseSameQuerySetMultipleTimes) {
     EXPECT_EQ(result2.value().size(), 25);
 
     // Can create a different filter without reset
-    auto result3 = this->qs->where(storm::orm::where::field<^^Person::age>() < 35).select().execute();
+    auto result3 = this->qs->where(storm::orm::where::f<^^Person::age>() < 35).select().execute();
     ASSERT_TRUE(result3.has_value());
     EXPECT_EQ(result3.value().size(), 14);
 }
@@ -459,13 +459,13 @@ TYPED_TEST(QueryResetTest, ResetBetweenDifferentOperations) {
 }
 
 TYPED_TEST(QueryResetTest, AggregatesWithWhere) {
-    auto count = this->qs->where(storm::orm::where::field<^^Person::age>() >= 35).count().execute();
+    auto count = this->qs->where(storm::orm::where::f<^^Person::age>() >= 35).count().execute();
     ASSERT_TRUE(count.has_value());
     EXPECT_EQ(count.value(), 11);
 
     (*this->qs).reset();
 
-    auto sum = this->qs->where(storm::orm::where::field<^^Person::age>() >= 35).template sum<^^Person::age>().execute();
+    auto sum = this->qs->where(storm::orm::where::f<^^Person::age>() >= 35).template sum<^^Person::age>().execute();
     ASSERT_TRUE(sum.has_value());
     EXPECT_EQ(sum.value(), 442);
 }

@@ -8,7 +8,7 @@ import storm;
 import std;
 
 using storm::QuerySet;
-using storm::orm::where::field;
+using storm::orm::where::f;
 
 #include "test_models.h"            // NOSONAR cpp:S954
 #include "test_reverse_fk_models.h" // NOSONAR cpp:S954
@@ -133,7 +133,7 @@ TYPED_TEST(ReverseFKTest, InnerJoinDropsZeroRelationEntities) {
 // Owner rows carry their columns (title) and the FK pk.
 TYPED_TEST(ReverseFKTest, OwnerColumnsExtracted) {
     auto rows = QuerySet<RfPerson, TypeParam>()
-                        .where(field<^^RfPerson::id>() == 1)
+                        .where(f<^^RfPerson::id>() == 1)
                         .template left_join<^^RfPerson::tasks>()
                         .select()
                         .execute();
@@ -153,7 +153,7 @@ TYPED_TEST(ReverseFKTest, OwnerColumnsExtracted) {
 // WHERE bounds the BASE entities (the loaded persons), not the tasks.
 TYPED_TEST(ReverseFKTest, WhereAppliesToBaseEntities) {
     auto rows = QuerySet<RfPerson, TypeParam>()
-                        .where(field<^^RfPerson::age>() < 25)
+                        .where(f<^^RfPerson::age>() < 25)
                         .template left_join<^^RfPerson::tasks>()
                         .template order_by<^^RfPerson::id>()
                         .select()

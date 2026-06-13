@@ -11,7 +11,7 @@
 
 namespace storm::orm::query_builder {
 
-    using storm::orm::where::field;
+    using storm::orm::where::f;
 
     // ========================================================================
     // Field dispatcher — compile-time field lookup by name
@@ -134,9 +134,9 @@ namespace storm::orm::query_builder {
         }
 
         template <auto fi, auto op_str, typename... Ts>
-            requires ValidOperator<op_str, typename std::remove_cvref_t<decltype(field<fi>())>::FieldType>
+            requires ValidOperator<op_str, typename std::remove_cvref_t<decltype(f<fi>())>::FieldType>
         static consteval auto resolve_operator() -> std::meta::info {
-            using FE                      = std::remove_cvref_t<decltype(field<fi>())>;
+            using FE                      = std::remove_cvref_t<decltype(f<fi>())>;
             using FieldType               = typename FE::FieldType;
             constexpr std::string_view op = op_str.view();
 
@@ -149,10 +149,10 @@ namespace storm::orm::query_builder {
         }
 
         template <auto fi, auto op_str, typename... Ts>
-            requires ValidOperator<op_str, typename std::remove_cvref_t<decltype(field<fi>())>::FieldType>
+            requires ValidOperator<op_str, typename std::remove_cvref_t<decltype(f<fi>())>::FieldType>
         static auto build_compare_expr(Ts&&... vs) {
             constexpr auto method = resolve_operator<fi, op_str, std::remove_cvref_t<Ts>...>();
-            return (field<fi>().[:method:](std::forward<Ts>(vs)...));
+            return (f<fi>().[:method:](std::forward<Ts>(vs)...));
         }
 
         // ----------------------------------------------------------------
@@ -384,10 +384,10 @@ namespace storm::orm::query_builder {
         static auto build_setop(auto& /*qs*/) {
             constexpr auto            thr = setop_thresholds();
             QuerySet<Model, ConnType> qs_left_base;
-            auto                      qs_left = qs_left_base.where(field<^^Model::age>() < thr.left);
+            auto                      qs_left = qs_left_base.where(f<^^Model::age>() < thr.left);
             QuerySet<Model, ConnType> qs_right_base;
-            auto                      qs_right = thr.overlap ? qs_right_base.where(field<^^Model::age>() > thr.right)
-                                                             : qs_right_base.where(field<^^Model::age>() >= thr.right);
+            auto                      qs_right = thr.overlap ? qs_right_base.where(f<^^Model::age>() > thr.right)
+                                                             : qs_right_base.where(f<^^Model::age>() >= thr.right);
             constexpr auto            method   = resolve_setop();
             auto                      builder  = qs_left.[:method:](qs_right);
             builder                            = apply_order_by(std::move(builder));

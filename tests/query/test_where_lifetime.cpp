@@ -11,7 +11,7 @@ import std;
 
 using storm::QuerySet;
 using storm::orm::where::Expr;
-using storm::orm::where::field;
+using storm::orm::where::f;
 
 // Lifetime safety for WHERE comparison operands (#352).
 //
@@ -47,7 +47,7 @@ TYPED_TEST(WhereLifetimeTest, StringViewOperandSurvivesDeferredBind) {
     Expr expr = [] {
         auto             owner = std::make_unique<std::string>("Bob");
         std::string_view view  = *owner;
-        return field<^^Person::name>() == view; // node must copy "Bob", not keep a view into *owner
+        return f<^^Person::name>() == view; // node must copy "Bob", not keep a view into *owner
     }();
     // `owner` is freed here; ASAN poisons its buffer.
 
@@ -59,7 +59,7 @@ TYPED_TEST(WhereLifetimeTest, CharPtrOperandSurvivesDeferredBind) {
     Expr expr = [] {
         auto        owner = std::make_unique<std::array<char, 4>>(std::array<char, 4>{'B', 'o', 'b', '\0'});
         const char* ptr   = owner->data();
-        return field<^^Person::name>() == ptr; // node must copy "Bob", not keep the char*
+        return f<^^Person::name>() == ptr; // node must copy "Bob", not keep the char*
     }();
 
     expect_single_bob<TypeParam>(expr);
@@ -81,7 +81,7 @@ TEST_F(WhereLifetimeCollateTest, CollatedStringViewOperandSurvivesDeferredBind) 
     Expr expr = [] {
         auto             owner = std::make_unique<std::string>("bob");
         std::string_view view  = *owner;
-        return field<^^Person::name>().collate(storm::orm::utilities::Collate::NoCase) == view;
+        return f<^^Person::name>().collate(storm::orm::utilities::Collate::NoCase) == view;
     }();
 
     // Case-insensitive match: "bob" finds "Bob".

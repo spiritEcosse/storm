@@ -28,7 +28,7 @@ class QuerySet<T> {
 
 // Usage - QuerySet type never changes
 QuerySet<Person> qs;
-auto result = qs.where(field<^^Person::age>() > 30).select();
+auto result = qs.where(f<^^Person::age>() > 30).select();
 ```
 
 ### Characteristics
@@ -113,10 +113,10 @@ struct ComparisonExpr {
 // Type changes with EVERY operation
 QuerySet<Person> qs;
 
-auto qs1 = qs.where(field<^^Person::age>() > 30);
+auto qs1 = qs.where(f<^^Person::age>() > 30);
 // qs1 type: QuerySet<Person, Connection, ComparisonExpr<Person::age, Greater, int>>
 
-auto qs2 = qs1.where(field<^^Person::name>() == "Alice");
+auto qs2 = qs1.where(f<^^Person::name>() == "Alice");
 // qs2 type: QuerySet<Person, Connection,
 //                    AndExpr<ComparisonExpr<Person::age, Greater, int>,
 //                            ComparisonExpr<Person::name, Equal, std::string>>>
@@ -218,7 +218,7 @@ We considered a **hybrid approach** with two APIs:
 
 ```cpp
 // Runtime (default) - clean API
-queryset.where(field<^^Person::age>() > 30).select();
+queryset.where(f<^^Person::age>() > 30).select();
 
 // Compile-time (opt-in) - maximum performance
 queryset.where_ct(field_ct<^^Person::age>() > 30);
@@ -252,7 +252,7 @@ while (stmt.step() == SQLITE_ROW) {
 
 Storm ORM (runtime):
 ```cpp
-queryset.where(field<^^Person::age>() > 30).select();
+queryset.where(f<^^Person::age>() > 30).select();
 ```
 
 ---

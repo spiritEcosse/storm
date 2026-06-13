@@ -5,7 +5,7 @@ import storm;
 import std;
 
 using storm::QuerySet;
-using storm::orm::where::field;
+using storm::orm::where::f;
 
 #include "test_models.h" // NOSONAR cpp:S954
 #include "test_seed_helpers.h"
@@ -124,8 +124,7 @@ TYPED_TEST(LimitOffsetTest, LimitOffsetPagination) {
 TYPED_TEST(LimitOffsetTest, WhereWithOffsetNoLimit) {
     QuerySet<Person, TypeParam> qs;
 
-    auto result =
-            qs.template order_by<^^Person::name>().where(field<^^Person::age>() < 30).offset(2).select().execute();
+    auto result = qs.template order_by<^^Person::name>().where(f<^^Person::age>() < 30).offset(2).select().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT WHERE with OFFSET failed: " << result.error().message();
 
     const auto& people = result.value();

@@ -8,11 +8,11 @@ WHERE expressions use field access via reflection with compile-time operators.
 
 ```cpp
 auto results = QuerySet<Person>()
-    .where(field<^^Person::age>() > 30)
+    .where(f<^^Person::age>() > 30)
     .select();
 ```
 
-The `field<^^Member>()` function creates a field expression for type-safe comparisons at compile time.
+The `f<^^Member>()` function creates a field expression for type-safe comparisons at compile time.
 
 ## Comparison Operators
 
@@ -21,21 +21,21 @@ All 6 comparison operators are supported.
 ```cpp
 // Equals
 auto results = QuerySet<Person>()
-    .where(field<^^Person::age>() == 30)
+    .where(f<^^Person::age>() == 30)
     .select();
 
 // Not equals
 auto results = QuerySet<Person>()
-    .where(field<^^Person::age>() != 30)
+    .where(f<^^Person::age>() != 30)
     .select();
 
 // Greater/Less than
 auto results = QuerySet<Person>()
-    .where(field<^^Person::age>() > 30)
+    .where(f<^^Person::age>() > 30)
     .select();
 
 auto results = QuerySet<Person>()
-    .where(field<^^Person::age>() <= 65)
+    .where(f<^^Person::age>() <= 65)
     .select();
 ```
 
@@ -58,7 +58,7 @@ construction. This means an expression survives the buffer it was built from:
 ```cpp
 auto make_filter() {
     std::string name = load_name();           // local buffer
-    return field<^^Person::name>() == name;    // operand is COPIED, not viewed
+    return f<^^Person::name>() == name;    // operand is COPIED, not viewed
 }                                              // `name` is destroyed here — safe
 
 auto results = QuerySet<Person>().where(make_filter()).select();  // no dangling bind
@@ -73,7 +73,7 @@ The `%` wildcard matches any sequence of characters.
 ```cpp
 // WHERE name LIKE 'Al%'
 auto results = QuerySet<Person>()
-    .where(field<^^Person::name>().like("Al%"))
+    .where(f<^^Person::name>().like("Al%"))
     .select();
 ```
 
@@ -84,7 +84,7 @@ The `between()` method creates a range check.
 ```cpp
 // WHERE age BETWEEN 25 AND 65
 auto results = QuerySet<Person>()
-    .where(field<^^Person::age>().between(25, 65))
+    .where(f<^^Person::age>().between(25, 65))
     .select();
 ```
 
@@ -94,7 +94,7 @@ Collation for string comparisons (case-insensitive, etc).
 
 ```cpp
 auto results = QuerySet<Person>()
-    .where(field<^^Person::name>().collate(Collate::NoCase) == "alice")
+    .where(f<^^Person::name>().collate(Collate::NoCase) == "alice")
     .select();
 ```
 
@@ -117,7 +117,7 @@ Generate an `IS NULL` check.
 ```cpp
 // SELECT * FROM person WHERE score IS NULL
 auto nulls = QuerySet<Person>()
-    .where(field<^^Person::score>().is_null())
+    .where(f<^^Person::score>().is_null())
     .select();
 ```
 
@@ -128,7 +128,7 @@ Generate an `IS NOT NULL` check.
 ```cpp
 // SELECT * FROM person WHERE score IS NOT NULL
 auto non_nulls = QuerySet<Person>()
-    .where(field<^^Person::score>().is_not_null())
+    .where(f<^^Person::score>().is_not_null())
     .select();
 ```
 
@@ -138,12 +138,12 @@ Comparison with `std::nullopt` generates the same SQL.
 
 ```cpp
 // These are equivalent:
-.where(field<^^Person::score>().is_null())
-.where(field<^^Person::score>() == std::nullopt)
+.where(f<^^Person::score>().is_null())
+.where(f<^^Person::score>() == std::nullopt)
 
 // These are equivalent:
-.where(field<^^Person::score>().is_not_null())
-.where(field<^^Person::score>() != std::nullopt)
+.where(f<^^Person::score>().is_not_null())
+.where(f<^^Person::score>() != std::nullopt)
 ```
 
 ### NULL checks with COLLATE
@@ -153,7 +153,7 @@ COLLATE can be combined with NULL checks on optional string fields.
 ```cpp
 // SELECT * FROM person WHERE nickname COLLATE NOCASE IS NULL
 auto results = QuerySet<Person>()
-    .where(field<^^Person::nickname>().collate(Collate::NoCase).is_null())
+    .where(f<^^Person::nickname>().collate(Collate::NoCase).is_null())
     .select();
 ```
 
@@ -164,7 +164,7 @@ NULL checks compose with AND/OR like any other expression.
 ```cpp
 // SELECT * FROM person WHERE score IS NULL AND age > 30
 auto results = QuerySet<Person>()
-    .where(field<^^Person::score>().is_null() && field<^^Person::age>() > 30)
+    .where(f<^^Person::score>().is_null() && f<^^Person::age>() > 30)
     .select();
 ```
 
@@ -175,19 +175,19 @@ Expressions can be combined with `&&` (AND) and `||` (OR).
 ```cpp
 // WHERE (age > 30) AND (name == "Alice")
 auto results = QuerySet<Person>()
-    .where((field<^^Person::age>() > 30) && (field<^^Person::name>() == "Alice"))
+    .where((f<^^Person::age>() > 30) && (f<^^Person::name>() == "Alice"))
     .select();
 
 // WHERE (age < 25) OR (salary > 100000)
 auto results = QuerySet<Person>()
-    .where((field<^^Person::age>() < 25) || (field<^^Person::salary>() > 100000))
+    .where((f<^^Person::age>() < 25) || (f<^^Person::salary>() > 100000))
     .select();
 
 // Complex nesting
 auto results = QuerySet<Person>()
     .where(
-        (field<^^Person::age>() > 30 && field<^^Person::salary>() > 50000) ||
-        (field<^^Person::years_experience>() >= 10)
+        (f<^^Person::age>() > 30 && f<^^Person::salary>() > 50000) ||
+        (f<^^Person::years_experience>() >= 10)
     )
     .select();
 ```
