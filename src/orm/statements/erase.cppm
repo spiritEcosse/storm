@@ -12,6 +12,7 @@ import std;
 import storm_orm_statements_base;
 import storm_orm_utilities;
 import storm_orm_transaction;
+import storm_orm_where;
 import storm_db_concept;
 
 export namespace storm::orm::statements {
@@ -217,6 +218,21 @@ export namespace storm::orm::statements {
             }
         };
 
+        // Conditional bulk DELETE (#198): DELETE FROM <table> WHERE <where_expr>.
+        // Holds the QuerySet's where_expr_ by shared_ptr. A null expr is refused
+        // at execute()/to_sql() time so a dropped where() cannot wipe the table
+        // (erase_all() is the explicit full-wipe path).
+        struct ConditionalDeleteQuery {
+            EraseStatement                   stmt;
+            orm::where::ExpressionVariantPtr where_expr;
+            [[nodiscard]] auto               execute() -> std::expected<void, Error> {
+                return stmt.execute_where(where_expr);
+            }
+            [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
+                return stmt.to_sql_where(where_expr);
+            }
+        };
+
         auto query(const T& obj [[clang::lifetimebound]]) -> SingleQuery {
             return {std::move(*this), obj};
         }
@@ -231,6 +247,9 @@ export namespace storm::orm::statements {
         }
         auto query_all() -> DeleteAllQuery {
             return {std::move(*this)};
+        }
+        auto query_where(orm::where::ExpressionVariantPtr where_expr) -> ConditionalDeleteQuery {
+            return {std::move(*this), std::move(where_expr)};
         }
 
         // Returns SQL string with bound parameters inlined for a single DELETE (for debugging)
@@ -306,6 +325,64 @@ export namespace storm::orm::statements {
         // Delete all rows — executes DELETE FROM <table> with no WHERE clause
         [[nodiscard]] auto execute_all() -> std::expected<void, Error> {
             return conn_->execute(delete_all_sql_string);
+        }
+
+        // Conditional DELETE (#198): build "DELETE FROM <table> WHERE <expr>".
+        // The WHERE body is dynamic (runtime to_sql), so the string is assembled
+        // at runtime like SELECT's dynamic path — not a compile-time ConstexprString.
+        static auto build_conditional_delete_sql(const orm::where::ExpressionVariant& expr) -> std::string {
+            std::string sql = delete_all_sql_string;
+            sql += " WHERE ";
+            sql += orm::where::to_sql(expr);
+            return sql;
+        }
+
+        // std::unexpected returned when erase() is called with no WHERE filter,
+        // refusing to wipe the whole table by accident. -1 is the backend-agnostic
+        // "client-side validation" code (same as PG's "Connection not open").
+        static auto empty_where_error() -> std::unexpected<Error> {
+            return std::unexpected(Error{-1, "erase() requires a WHERE clause; use erase_all() to delete all rows"});
+        }
+
+        // Empty-WHERE check + prepare + bind, shared by execute_where()/to_sql_where().
+        // Returns a prepared, parameter-bound Statement* ready to execute or expand.
+        [[nodiscard]] auto ready_conditional_delete(const orm::where::ExpressionVariantPtr& where_expr)
+                -> std::expected<Statement*, Error> {
+            if (!where_expr) [[unlikely]] {
+                return empty_where_error();
+            }
+            auto stmt_result = ready_delete_statement(build_conditional_delete_sql(*where_expr));
+            if (!stmt_result) {
+                return std::unexpected(stmt_result.error());
+            }
+            auto* stmt = *stmt_result;
+            if (auto bind_result = Base::template bind_where_params<Statement, Error>(stmt, where_expr); !bind_result) {
+                return std::unexpected(bind_result.error());
+            }
+            return stmt;
+        }
+
+        // Execute a conditional DELETE. Refuses an empty WHERE before any DB call.
+        [[nodiscard]] auto execute_where(const orm::where::ExpressionVariantPtr& where_expr)
+                -> std::expected<void, Error> {
+            auto stmt_result = ready_conditional_delete(where_expr);
+            if (!stmt_result) {
+                return std::unexpected(stmt_result.error());
+            }
+            if (auto exec_result = (*stmt_result)->execute(); !exec_result) {
+                return std::unexpected(exec_result.error());
+            }
+            return {};
+        }
+
+        // Return the conditional DELETE SQL with bound parameters inlined (debugging).
+        [[nodiscard]] auto to_sql_where(const orm::where::ExpressionVariantPtr& where_expr)
+                -> std::expected<std::string, Error> {
+            auto stmt_result = ready_conditional_delete(where_expr);
+            if (!stmt_result) {
+                return std::unexpected(stmt_result.error());
+            }
+            return (*stmt_result)->expanded_sql();
         }
 
         // Single DELETE - prepare from L3 cache per call, inlined execution

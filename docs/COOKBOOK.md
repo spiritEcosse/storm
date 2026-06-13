@@ -127,12 +127,11 @@ fields must be `std::chrono::system_clock::time_point`. See
 // Single erase
 qs.erase(p);
 
-// Erase all matching
-auto inactive = qs.where(f<^^Person::is_active>() == false).select();
-qs.erase(inactive);
+// Conditional bulk erase — one DELETE ... WHERE statement (#198)
+qs.where(f<^^Person::is_active>() == false).erase().execute();
 
-// Erase all
-qs.erase_all();
+// Erase all (explicit full-table wipe). erase() with no where() is refused.
+qs.erase_all().execute();
 ```
 
 ## Aggregates

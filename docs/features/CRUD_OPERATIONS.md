@@ -193,6 +193,55 @@ auto result = queryset.erase(std::span<const Person>(people));
 DELETE FROM Person WHERE id IN (?, ?, ?)
 ```
 
+### Conditional DELETE (#198)
+
+Delete every row matching a `where()` filter in a single statement — no need to
+SELECT and loop. Chain `erase()` (no argument) onto a filtered QuerySet:
+
+```cpp
+using storm::orm::where::f;
+
+auto result = QuerySet<Person>()
+    .where(f<^^Person::age>() > 30)
+    .erase()
+    .execute();          // std::expected<void, Error>
+```
+
+**SQL Generated**:
+```sql
+DELETE FROM Person WHERE age>?
+```
+
+The full WHERE expression system is reused, so every operator works
+(`==`, `!=`, `<`, `<=`, `>`, `>=`, `IN`, `BETWEEN`, `LIKE`, `IS NULL`,
+`AND`/`OR`, nested groups). Chained `where()` calls are AND-combined:
+
+```cpp
+QuerySet<Person>()
+    .where(f<^^Person::department>() == "Legacy")
+    .where(f<^^Person::is_active>() == false)
+    .erase()
+    .execute();          // DELETE FROM Person WHERE (department=? AND is_active=?)
+```
+
+**Safety — empty WHERE is refused.** Calling `erase()` with **no** `where()`
+filter would emit `DELETE FROM Person` and wipe the whole table, so it is
+rejected at `execute()`/`to_sql()` time with `std::unexpected(Error)`:
+
+```cpp
+QuerySet<Person>().erase().execute();   // → std::unexpected: refuses full-table wipe
+```
+
+To intentionally delete every row, use the explicit `erase_all()`:
+
+```cpp
+QuerySet<Person>().erase_all().execute();   // DELETE FROM Person (explicit full wipe)
+```
+
+> **Note:** conditional bulk **UPDATE** (`where(cond).update(fields)`) is not yet
+> implemented — it needs a SET-assignment syntax and is tracked as a follow-up to
+> #198.
+
 ## Error Handling
 
 All operations return `std::expected<T, Error>`:

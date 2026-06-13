@@ -239,6 +239,51 @@ namespace {
         EXPECT_EQ(result.error().code(), SQLITE_LOCKED);
     }
 
+    // Conditional bulk DELETE (#198) error paths
+
+    TEST_F(ORMMockErrorTest, ConditionalEraseFailsOnPrepareError) {
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        QuerySet<MockPerson> qs;
+        auto                 result = qs.where(storm::orm::where::f<^^MockPerson::age>() > 30).erase().execute();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_ERROR);
+    }
+
+    TEST_F(ORMMockErrorTest, ConditionalEraseFailsOnBindError) {
+        MockSqlite3Config::bind_int_fails_on_call(1, SQLITE_NOMEM);
+
+        QuerySet<MockPerson> qs;
+        auto                 result = qs.where(storm::orm::where::f<^^MockPerson::age>() > 30).erase().execute();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+    }
+
+    TEST_F(ORMMockErrorTest, ConditionalEraseFailsOnStepError) {
+        MockSqlite3Config::step_returns(SQLITE_LOCKED);
+
+        QuerySet<MockPerson> qs;
+        auto                 result = qs.where(storm::orm::where::f<^^MockPerson::age>() > 30).erase().execute();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_LOCKED);
+    }
+
+    // Empty WHERE is refused with a client-side error (no DB call).
+    TEST_F(ORMMockErrorTest, ConditionalEraseEmptyWhereRefused) {
+        QuerySet<MockPerson> qs;
+        auto                 result = qs.erase().execute();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), -1);
+
+        auto sql = qs.erase().to_sql();
+        ASSERT_FALSE(sql.has_value());
+        EXPECT_EQ(sql.error().code(), -1);
+    }
+
     // ============================================================================
     // Aggregate Error Tests
     // ============================================================================
