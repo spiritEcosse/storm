@@ -93,10 +93,10 @@ namespace {
     auto newest_flagged_run(std::string_view current_branch, std::string_view current_host) -> ResolvedBaseline {
         return newest_run(
                 storm::QuerySet<bench_dashboard::BenchRun>()
-                        .where(storm::orm::where::field<Flag>() == true)
-                        .where(storm::orm::where::field<^^bench_dashboard::BenchRun::branch>() ==
+                        .where(storm::orm::where::f<Flag>() == true)
+                        .where(storm::orm::where::f<^^bench_dashboard::BenchRun::branch>() ==
                                std::string{current_branch})
-                        .where(storm::orm::where::field<^^bench_dashboard::BenchRun::hostname>() ==
+                        .where(storm::orm::where::f<^^bench_dashboard::BenchRun::hostname>() ==
                                std::string{current_host})
         );
     }
@@ -105,7 +105,7 @@ namespace {
     auto run_by_id(std::int64_t id) -> ResolvedBaseline {
         return newest_run(
                 storm::QuerySet<bench_dashboard::BenchRun>().where(
-                        storm::orm::where::field<^^bench_dashboard::BenchRun::id>() == static_cast<int>(id)
+                        storm::orm::where::f<^^bench_dashboard::BenchRun::id>() == static_cast<int>(id)
                 )
         );
     }
@@ -123,8 +123,8 @@ namespace {
         if (const auto* b = std::get_if<BaselineBranch>(&sel))
             return newest_run(
                     storm::QuerySet<bench_dashboard::BenchRun>()
-                            .where(storm::orm::where::field<^^bench_dashboard::BenchRun::is_full_run>() == true)
-                            .where(storm::orm::where::field<^^bench_dashboard::BenchRun::branch>() == b->name)
+                            .where(storm::orm::where::f<^^bench_dashboard::BenchRun::is_full_run>() == true)
+                            .where(storm::orm::where::f<^^bench_dashboard::BenchRun::branch>() == b->name)
             );
 
         if (const auto* rw = std::get_if<BaselineRaw>(&sel)) {
@@ -142,10 +142,10 @@ namespace {
             -> std::optional<double> {
         auto rows = fetch_first_result_row(
                 storm::QuerySet<bench_dashboard::BenchResult>()
-                        .where(storm::orm::where::field<^^bench_dashboard::BenchResult::run_id>() ==
+                        .where(storm::orm::where::f<^^bench_dashboard::BenchResult::run_id>() ==
                                static_cast<int>(baseline_run_id))
-                        .where(storm::orm::where::field<^^bench_dashboard::BenchResult::test_name>() == test_name)
-                        .where(storm::orm::where::field<^^bench_dashboard::BenchResult::dataset_size>() ==
+                        .where(storm::orm::where::f<^^bench_dashboard::BenchResult::test_name>() == test_name)
+                        .where(storm::orm::where::f<^^bench_dashboard::BenchResult::dataset_size>() ==
                                static_cast<int>(dataset_size))
         );
         if (rows.empty())
@@ -169,10 +169,10 @@ namespace {
             -> std::optional<BaselineComplexity> {
         auto rows = fetch_first_result_row(
                 storm::QuerySet<bench_dashboard::BenchResult>()
-                        .where(storm::orm::where::field<^^bench_dashboard::BenchResult::run_id>() ==
+                        .where(storm::orm::where::f<^^bench_dashboard::BenchResult::run_id>() ==
                                static_cast<int>(baseline_run_id))
-                        .where(storm::orm::where::field<^^bench_dashboard::BenchResult::test_name>() == test_name)
-                        .where(storm::orm::where::field<^^bench_dashboard::BenchResult::row_kind>() ==
+                        .where(storm::orm::where::f<^^bench_dashboard::BenchResult::test_name>() == test_name)
+                        .where(storm::orm::where::f<^^bench_dashboard::BenchResult::row_kind>() ==
                                std::string{bench_dashboard::wire::kRowKindBigO})
         );
         if (rows.empty())

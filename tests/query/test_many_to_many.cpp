@@ -121,7 +121,7 @@ TYPED_TEST(M2MBaseTest, M2MJoinSqlShape) {
 TYPED_TEST(M2MBaseTest, M2MJoinSqlModifiersGoInsideSubquery) {
     QuerySet<Student, TypeParam> qs;
     auto                         sql = qs.template join<^^Student::courses>()
-                       .where(storm::orm::where::field<^^Student::age>() > 18)
+                       .where(storm::orm::where::f<^^Student::age>() > 18)
                        .template order_by<^^Student::name, false>()
                        .limit(2)
                        .select()
@@ -226,7 +226,7 @@ TYPED_TEST(M2MSeededTest, LeftJoinKeepsStudentsWithoutCourses) {
 TYPED_TEST(M2MSeededTest, EmptyResultSet) {
     QuerySet<Student, TypeParam> qs;
     auto                         rows = qs.template join<^^Student::courses>()
-                        .where(storm::orm::where::field<^^Student::age>() > 99)
+                        .where(storm::orm::where::f<^^Student::age>() > 99)
                         .select()
                         .execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();

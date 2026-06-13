@@ -50,7 +50,7 @@ template <typename ConnType> class QuerySetCrudLifecycleTest : public StormTestF
 TYPED_TEST_SUITE(QuerySetCrudLifecycleTest, DatabaseTypes);
 
 TYPED_TEST(QuerySetCrudLifecycleTest, FullLifecycle) {
-    using storm::orm::where::field;
+    using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
 
     // 1. Verify empty state
@@ -85,7 +85,7 @@ TYPED_TEST(QuerySetCrudLifecycleTest, FullLifecycle) {
     auto         update_result = qs.update(updated_alice).execute();
     ASSERT_TRUE(update_result.has_value()) << "Update should succeed";
 
-    auto alice_result = qs.where(field<^^Person::id>() == static_cast<int>(id_alice.value())).select().execute();
+    auto alice_result = qs.where(f<^^Person::id>() == static_cast<int>(id_alice.value())).select().execute();
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_FALSE(alice_result.value().empty());
     EXPECT_EQ(alice_result.value().begin()->name, "Alice Updated") << "Name should be updated";
@@ -146,7 +146,7 @@ TYPED_TEST(QuerySetCrudLifecycleTest, BatchLifecycle) {
 
 // All supported field types: int, string, double, bool, optional<int>, optional<string>, blob
 TYPED_TEST(QuerySetCrudLifecycleTest, AllFieldTypesLifecycle) {
-    using storm::orm::where::field;
+    using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
 
     // 1. Insert with all fields populated
@@ -164,7 +164,7 @@ TYPED_TEST(QuerySetCrudLifecycleTest, AllFieldTypesLifecycle) {
     ASSERT_TRUE(id.has_value()) << "Insert with all fields should succeed";
 
     // 2. Verify all fields round-trip correctly
-    auto rows = qs.where(field<^^Person::id>() == static_cast<int>(id.value())).select().execute();
+    auto rows = qs.where(f<^^Person::id>() == static_cast<int>(id.value())).select().execute();
     ASSERT_TRUE(rows.has_value());
     ASSERT_EQ(rows.value().size(), 1U);
     this->verifyFullPersonInserted(*rows.value().begin());
@@ -183,7 +183,7 @@ TYPED_TEST(QuerySetCrudLifecycleTest, AllFieldTypesLifecycle) {
     };
     ASSERT_TRUE(qs.update(updated).execute().has_value()) << "Update with all fields should succeed";
 
-    auto updated_rows = qs.where(field<^^Person::id>() == static_cast<int>(id.value())).select().execute();
+    auto updated_rows = qs.where(f<^^Person::id>() == static_cast<int>(id.value())).select().execute();
     ASSERT_TRUE(updated_rows.has_value());
     ASSERT_EQ(updated_rows.value().size(), 1U);
     this->verifyFullPersonUpdated(*updated_rows.value().begin());
@@ -228,7 +228,7 @@ TYPED_TEST(QuerySetCrudLifecycleTest, BoundaryBatchLifecycle) {
 
 // Insert, selectively update and erase via WHERE, verify unaffected rows unchanged
 TYPED_TEST(QuerySetCrudLifecycleTest, FilteredLifecycle) {
-    using storm::orm::where::field;
+    using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
 
     // 1. Insert mixed data
@@ -243,12 +243,12 @@ TYPED_TEST(QuerySetCrudLifecycleTest, FilteredLifecycle) {
 
     // 2. Select only active persons
     // NOLINTNEXTLINE(readability-simplify-boolean-expr) -- `== true` is the WHERE-DSL comparison (generates `is_active = ?`), not a redundant bool op
-    auto active = qs.where(field<^^Person::is_active>() == true).select().execute();
+    auto active = qs.where(f<^^Person::is_active>() == true).select().execute();
     ASSERT_TRUE(active.has_value());
     EXPECT_EQ(static_cast<int>(active.value().size()), 2) << "Should have 2 active persons";
 
     // 3. Erase only persons aged < 21
-    auto young = qs.where(field<^^Person::age>() < 21).select().execute();
+    auto young = qs.where(f<^^Person::age>() < 21).select().execute();
     ASSERT_TRUE(young.has_value());
     std::vector<Person> young_vec(young.value().begin(), young.value().end());
     ASSERT_EQ(young_vec.size(), 2U) << "Bob and Dave should be under 21";

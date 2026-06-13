@@ -67,7 +67,7 @@ TYPED_TEST(MultiM2MSqlTest, MultiM2MJoinSqlShape) {
 TYPED_TEST(MultiM2MSqlTest, MultiM2MModifiersBoundTheSharedBaseSet) {
     QuerySet<Member, TypeParam> qs;
     auto                        sql = qs.template join<^^Member::courses, ^^Member::clubs>()
-                       .where(storm::orm::where::field<^^Member::age>() > 18)
+                       .where(storm::orm::where::f<^^Member::age>() > 18)
                        .limit(2)
                        .select()
                        .sql();
@@ -150,7 +150,7 @@ TYPED_TEST(MultiM2MSeededTest, WhereOrderLimitBoundTheSharedBaseSet) {
     QuerySet<Member, TypeParam> qs;
     // age > 18 keeps all; ORDER BY age + LIMIT 2 bounds the BASE set to Ann, Ben.
     auto rows = qs.template left_join<^^Member::courses, ^^Member::clubs>()
-                        .where(storm::orm::where::field<^^Member::age>() > 18)
+                        .where(storm::orm::where::f<^^Member::age>() > 18)
                         .template order_by<^^Member::age>()
                         .limit(2)
                         .select()
@@ -171,7 +171,7 @@ TYPED_TEST(MultiM2MSeededTest, WhereOrderLimitBoundTheSharedBaseSet) {
 TYPED_TEST(MultiM2MSeededTest, EmptyResultSet) {
     QuerySet<Member, TypeParam> qs;
     auto                        rows = qs.template join<^^Member::courses, ^^Member::clubs>()
-                        .where(storm::orm::where::field<^^Member::age>() > 99)
+                        .where(storm::orm::where::f<^^Member::age>() > 99)
                         .select()
                         .execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
@@ -188,7 +188,7 @@ TYPED_TEST(MultiM2MSeededTest, FirstAndGetLoadBothRelations) {
     EXPECT_EQ((*first)->clubs.size(), 1U);
 
     auto got = qs.template left_join<^^Member::courses, ^^Member::clubs>()
-                       .where(storm::orm::where::field<^^Member::name>() == "Cat")
+                       .where(storm::orm::where::f<^^Member::name>() == "Cat")
                        .get()
                        .execute();
     ASSERT_TRUE(got.has_value()) << got.error().message();

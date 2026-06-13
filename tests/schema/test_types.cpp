@@ -20,7 +20,7 @@ using std::chrono::system_clock;
 using std::chrono::year;
 using std::chrono::year_month_day;
 using storm::QuerySet;
-using storm::orm::where::field;
+using storm::orm::where::f;
 
 // ===== INTEGER TYPES TESTS =====
 
@@ -1241,7 +1241,7 @@ TYPED_TEST(EnumTypesTest, WhereEnumEqual) {
     auto insert_result = qs.insert(batch).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    auto selected = qs.where(field<^^ExtendedTypes::color>() == Color::Green).select().execute();
+    auto selected = qs.where(f<^^ExtendedTypes::color>() == Color::Green).select().execute();
     ASSERT_TRUE(selected.has_value());
     ASSERT_EQ(selected.value().size(), 1);
     EXPECT_EQ(selected.value().begin()->label, "g");
@@ -1257,7 +1257,7 @@ TYPED_TEST(EnumTypesTest, WhereEnumNotEqual) {
     auto insert_result = qs.insert(batch).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    auto selected = qs.where(field<^^ExtendedTypes::color>() != Color::Red).select().execute();
+    auto selected = qs.where(f<^^ExtendedTypes::color>() != Color::Red).select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 2);
 }
@@ -1272,7 +1272,7 @@ TYPED_TEST(EnumTypesTest, WhereEnumBetween) {
     auto insert_result = qs.insert(batch).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    auto selected = qs.where(field<^^ExtendedTypes::color>().between(Color::Green, Color::Blue)).select().execute();
+    auto selected = qs.where(f<^^ExtendedTypes::color>().between(Color::Green, Color::Blue)).select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 2);
 }

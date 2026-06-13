@@ -66,7 +66,7 @@ TYPED_TEST(AggregateTest, DirectChain_TypeSafety) {
 TYPED_TEST(AggregateTest, SingleAggregates_WithWhereAndJoin) {
     this->insert_join_test_data();
 
-    auto sum_result = this->msg_qs->where(storm::orm::where::field<^^Message::value>() > 25)
+    auto sum_result = this->msg_qs->where(storm::orm::where::f<^^Message::value>() > 25)
                               .template join<^^Message::sender>()
                               .template sum<^^Message::value>()
                               .execute();
@@ -75,7 +75,7 @@ TYPED_TEST(AggregateTest, SingleAggregates_WithWhereAndJoin) {
 
     (*this->msg_qs).reset();
 
-    auto count_result = this->msg_qs->where(storm::orm::where::field<^^Message::value>() > 25)
+    auto count_result = this->msg_qs->where(storm::orm::where::f<^^Message::value>() > 25)
                                 .template join<^^Message::sender>()
                                 .count()
                                 .execute();
@@ -84,7 +84,7 @@ TYPED_TEST(AggregateTest, SingleAggregates_WithWhereAndJoin) {
 
     (*this->msg_qs).reset();
 
-    auto min_result = this->msg_qs->where(storm::orm::where::field<^^Message::value>() > 25)
+    auto min_result = this->msg_qs->where(storm::orm::where::f<^^Message::value>() > 25)
                               .template join<^^Message::sender>()
                               .template min<^^Message::value>()
                               .execute();
@@ -279,7 +279,7 @@ TYPED_TEST(AggregateTest, Integration_AfterDelete) {
 TYPED_TEST(AggregateTest, WhereWithMultiFieldSum) {
     this->insert_test_data();
 
-    auto result = this->qs->where(storm::orm::where::field<^^Person::age>() >= 35)
+    auto result = this->qs->where(storm::orm::where::f<^^Person::age>() >= 35)
                           .template sum<^^Person::age, ^^Person::years_experience>()
                           .execute();
     ASSERT_TRUE(result.has_value()) << "WHERE + SUM(multi-field) failed: " << result.error().message();
@@ -290,7 +290,7 @@ TYPED_TEST(AggregateTest, WhereRepeatedQueries) {
     this->insert_test_data();
 
     for (int i = 0; i < 100; ++i) {
-        auto result = this->qs->where(storm::orm::where::field<^^Person::age>() > 30).count().execute();
+        auto result = this->qs->where(storm::orm::where::f<^^Person::age>() > 30).count().execute();
         ASSERT_TRUE(result.has_value()) << "Iteration " << i << " failed: " << result.error().message();
         EXPECT_EQ(result.value(), 13);
     }
@@ -299,19 +299,19 @@ TYPED_TEST(AggregateTest, WhereRepeatedQueries) {
 TYPED_TEST(AggregateTest, WhereDifferentConditions) {
     this->insert_test_data();
 
-    auto result1 = this->qs->where(storm::orm::where::field<^^Person::age>() > 30).count().execute();
+    auto result1 = this->qs->where(storm::orm::where::f<^^Person::age>() > 30).count().execute();
     ASSERT_TRUE(result1.has_value());
     EXPECT_EQ(result1.value(), 13);
 
     (*this->qs).reset();
 
-    auto result2 = this->qs->where(storm::orm::where::field<^^Person::age>() < 30).count().execute();
+    auto result2 = this->qs->where(storm::orm::where::f<^^Person::age>() < 30).count().execute();
     ASSERT_TRUE(result2.has_value());
     EXPECT_EQ(result2.value(), 9);
 
     (*this->qs).reset();
 
-    auto result3 = this->qs->where(storm::orm::where::field<^^Person::age>() == 30).count().execute();
+    auto result3 = this->qs->where(storm::orm::where::f<^^Person::age>() == 30).count().execute();
     ASSERT_TRUE(result3.has_value());
     EXPECT_EQ(result3.value(), 3);
 }
@@ -324,7 +324,7 @@ TYPED_TEST(AggregateTest, WhereJoinRepeatedQueries) {
     this->insert_join_test_data();
 
     for (int i = 0; i < 50; ++i) {
-        auto result = this->msg_qs->where(storm::orm::where::field<^^Message::value>() > 20)
+        auto result = this->msg_qs->where(storm::orm::where::f<^^Message::value>() > 20)
                               .template join<^^Message::sender>()
                               .count()
                               .execute();

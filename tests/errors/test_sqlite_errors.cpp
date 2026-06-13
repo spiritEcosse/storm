@@ -947,7 +947,7 @@ TEST_F(ORMErrorTest, SelectWithWhereNoMatch) {
     ASSERT_TRUE(insert_result.has_value());
 
     // Select with WHERE that matches nothing
-    auto result = qs.where(storm::orm::where::field<^^Person::age>() > 100).select().execute();
+    auto result = qs.where(storm::orm::where::f<^^Person::age>() > 100).select().execute();
     ASSERT_TRUE(result.has_value()) << "Select with no matches should succeed";
     EXPECT_TRUE(result.value().empty()) << "Result should be empty";
 }
@@ -991,7 +991,7 @@ TEST_F(ORMErrorTest, AggregateWithWhereNoMatch) {
     ASSERT_TRUE(insert_result.has_value());
 
     // COUNT with WHERE that matches nothing
-    auto count_result = qs.where(storm::orm::where::field<^^Person::age>() > 100).count().execute();
+    auto count_result = qs.where(storm::orm::where::f<^^Person::age>() > 100).count().execute();
     ASSERT_TRUE(count_result.has_value()) << "COUNT with no matches should succeed";
     EXPECT_EQ(count_result.value(), 0);
 }

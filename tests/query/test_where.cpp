@@ -15,7 +15,7 @@ using storm::orm::where::ComparisonExpr;
 using storm::orm::where::CompOp;
 using storm::orm::where::Expr;
 using storm::orm::where::ExpressionVariant;
-using storm::orm::where::field;
+using storm::orm::where::f;
 
 // Test fixture for WHERE operations — templated on database backend
 template <typename ConnType> class WhereTest : public StormTestFixture<Person, ConnType> {
@@ -40,9 +40,9 @@ TYPED_TEST_SUITE(WhereTest, DatabaseTypes);
 TYPED_TEST(WhereTest, WhereThreeConditions) {
     QuerySet<Person, TypeParam> queryset;
 
-    auto expr1  = field<^^Person::age>() >= 28;
-    auto expr2  = field<^^Person::age>() <= 35;
-    auto expr3  = field<^^Person::name>() != "Charlie";
+    auto expr1  = f<^^Person::age>() >= 28;
+    auto expr2  = f<^^Person::age>() <= 35;
+    auto expr3  = f<^^Person::name>() != "Charlie";
     auto result = queryset.where(expr1 && expr2 && expr3).select().execute();
     ASSERT_TRUE(result.has_value()) << "WHERE failed: " << result.error().message();
 
@@ -53,7 +53,7 @@ TYPED_TEST(WhereTest, WhereThreeConditions) {
 // Test: WHERE with complex expression
 TYPED_TEST(WhereTest, WhereComplexExpression) {
     this->check_where_count(
-            (field<^^Person::age>() < 30 || field<^^Person::age>() > 35) && field<^^Person::name>() != "Charlie", 18
+            (f<^^Person::age>() < 30 || f<^^Person::age>() > 35) && f<^^Person::name>() != "Charlie", 18
     );
 }
 
@@ -62,7 +62,7 @@ TYPED_TEST(WhereTest, WhereReturnsCopyReusable) {
     QuerySet<Person, TypeParam> queryset;
 
     // where() returns a new QuerySet — original unchanged
-    auto filtered = queryset.where(field<^^Person::age>() >= 25);
+    auto filtered = queryset.where(f<^^Person::age>() >= 25);
 
     auto result1 = filtered.select().execute();
     ASSERT_TRUE(result1.has_value());
@@ -74,7 +74,7 @@ TYPED_TEST(WhereTest, WhereReturnsCopyReusable) {
     ASSERT_EQ(result2.value().size(), 23) << "State should persist after first select()";
 
     // Chaining further narrows without affecting the original filtered copy
-    auto narrower = filtered.where(field<^^Person::age>() < 40);
+    auto narrower = filtered.where(f<^^Person::age>() < 40);
     auto result3  = narrower.select().execute();
     ASSERT_TRUE(result3.has_value());
     ASSERT_EQ(result3.value().size(), 17) << "Expected 17 people with age >= 25 AND age < 40";
@@ -139,7 +139,7 @@ TYPED_TEST(WhereJoinTest, WhereWithJoin) {
     QuerySet<Message, TypeParam> queryset;
 
     // SELECT with JOIN and WHERE filtering by Person.age
-    auto result = queryset.template join<^^Message::sender>().where(field<^^Person::age>() >= 10).select().execute();
+    auto result = queryset.template join<^^Message::sender>().where(f<^^Person::age>() >= 10).select().execute();
     ASSERT_TRUE(result.has_value()) << "WHERE + JOIN failed: " << result.error().message();
 
     const auto& messages = result.value();
@@ -162,8 +162,8 @@ TYPED_TEST(WhereJoinTest, WhereWithJoin) {
 TYPED_TEST(WhereJoinTest, WhereWithJoinMultipleConditions) {
     QuerySet<Message, TypeParam> queryset;
 
-    auto expr1  = field<^^Person::age>() > 5;
-    auto expr2  = field<^^Message::content>().like("%from%");
+    auto expr1  = f<^^Person::age>() > 5;
+    auto expr2  = f<^^Message::content>().like("%from%");
     auto result = queryset.template join<^^Message::sender>().where(expr1 && expr2).select().execute();
     ASSERT_TRUE(result.has_value()) << "WHERE + JOIN failed: " << result.error().message();
 
@@ -177,7 +177,7 @@ TYPED_TEST(WhereJoinTest, WhereWithNaturalOperators) {
 
     // Using natural 'and' operator (also works with &&)
     auto result = queryset.template join<^^Message::sender>()
-                          .where(field<^^Person::age>() > 5 and field<^^Message::content>().like("%from%"))
+                          .where(f<^^Person::age>() > 5 and f<^^Message::content>().like("%from%"))
                           .select()
                           .execute();
     ASSERT_TRUE(result.has_value()) << "WHERE + JOIN failed: " << result.error().message();
@@ -193,14 +193,14 @@ TYPED_TEST(WhereJoinTest, WhereWithNaturalOperators) {
 // Test: Natural operators with complex expressions (same logic as WhereComplexExpression, different syntax)
 TYPED_TEST(WhereTest, WhereNaturalOperatorsComplex) {
     this->check_where_count(
-            (field<^^Person::age>() < 30 or field<^^Person::age>() > 35) and field<^^Person::name>() != "Charlie", 18
+            (f<^^Person::age>() < 30 or f<^^Person::age>() > 35) and f<^^Person::name>() != "Charlie", 18
     );
 }
 
 // Test: Reusing WHERE conditions across multiple queries
 TYPED_TEST(WhereTest, WhereReuseCondition) {
     // Store condition in variable
-    auto age_condition = field<^^Person::age>() > 25;
+    auto age_condition = f<^^Person::age>() > 25;
 
     // First use - should return 20 people with age > 25
     QuerySet<Person, TypeParam> queryset1;
@@ -216,7 +216,7 @@ TYPED_TEST(WhereTest, WhereReuseCondition) {
 
     // Combine reused condition with new one
     QuerySet<Person, TypeParam> queryset3;
-    auto result3 = queryset3.where(age_condition and field<^^Person::name>() == "Bob").select().execute();
+    auto result3 = queryset3.where(age_condition and f<^^Person::name>() == "Bob").select().execute();
     ASSERT_TRUE(result3.has_value()) << "Combined WHERE failed: " << result3.error().message();
     ASSERT_EQ(result3.value().size(), 1) << "Expected 1 person matching both conditions";
     auto it = result3.value().begin();
@@ -233,9 +233,9 @@ TYPED_TEST(WhereTest, WhereReuseCondition) {
 // Test: Building composable filter library
 TYPED_TEST(WhereTest, WhereComposableFilters) {
     // Create reusable filter components
-    auto young_filter       = field<^^Person::age>() < 30;
-    auto old_filter         = field<^^Person::age>() >= 35;
-    auto name_starts_with_a = field<^^Person::name>().like("A%");
+    auto young_filter       = f<^^Person::age>() < 30;
+    auto old_filter         = f<^^Person::age>() >= 35;
+    auto name_starts_with_a = f<^^Person::name>().like("A%");
 
     // Use filters independently with fresh QuerySets
     QuerySet<Person, TypeParam> qs1;
@@ -272,7 +272,7 @@ TYPED_TEST(WhereTest, ReusableBaseQuerySet) {
     QuerySet<Person, TypeParam> queryset;
 
     // Create a base filtered QuerySet (age >= 25)
-    auto base = queryset.where(field<^^Person::age>() >= 25);
+    auto base = queryset.where(f<^^Person::age>() >= 25);
 
     // Reuse base filter multiple times
     auto result1 = base.select().execute();
@@ -285,7 +285,7 @@ TYPED_TEST(WhereTest, ReusableBaseQuerySet) {
     ASSERT_EQ(result2.value().size(), 23) << "Base filter should persist";
 
     // Refine the base filter — creates new copy, base unchanged
-    auto adults = base.where(field<^^Person::age>() >= 30).select().execute();
+    auto adults = base.where(f<^^Person::age>() >= 30).select().execute();
     ASSERT_TRUE(adults.has_value());
     ASSERT_EQ(adults.value().size(), 16) << "Expected 16 people (age >= 25 AND age >= 30)";
 
@@ -300,19 +300,19 @@ TYPED_TEST(WhereTest, ProgressiveQueryBuilding) {
     QuerySet<Person, TypeParam> queryset;
 
     // Start with broad filter
-    auto q1      = queryset.where(field<^^Person::age>() >= 25);
+    auto q1      = queryset.where(f<^^Person::age>() >= 25);
     auto result1 = q1.select().execute();
     ASSERT_TRUE(result1.has_value());
     EXPECT_EQ(result1.value().size(), 23) << "23 people have age >= 25";
 
     // Narrow it down
-    auto q2      = q1.where(field<^^Person::age>() < 35);
+    auto q2      = q1.where(f<^^Person::age>() < 35);
     auto result2 = q2.select().execute();
     ASSERT_TRUE(result2.has_value());
     EXPECT_EQ(result2.value().size(), 12) << "Expected 12 people (25 <= age < 35)";
 
     // Add another condition (names starting with certain letter)
-    auto q3      = q2.where(field<^^Person::name>().like("D%"));
+    auto q3      = q2.where(f<^^Person::name>().like("D%"));
     auto result3 = q3.select().execute();
     ASSERT_TRUE(result3.has_value());
     EXPECT_EQ(result3.value().size(), 1) << "Expected 1 person matching all conditions (Diana)";
@@ -328,9 +328,9 @@ TYPED_TEST(WhereTest, ChainingBuildsComplexFilter) {
     QuerySet<Person, TypeParam> queryset;
 
     // Build up complex filter via chaining
-    auto filtered = queryset.where(field<^^Person::age>() >= 25)
-                            .where(field<^^Person::age>() < 40)
-                            .where(field<^^Person::name>().like("D%"));
+    auto filtered = queryset.where(f<^^Person::age>() >= 25)
+                            .where(f<^^Person::age>() < 40)
+                            .where(f<^^Person::name>().like("D%"));
 
     auto result = filtered.select().execute();
     ASSERT_TRUE(result.has_value());
@@ -343,7 +343,7 @@ TYPED_TEST(WhereTest, ChainingBuildsComplexFilter) {
     EXPECT_EQ(all_people.value().size(), 25) << "Original should have all rows";
 
     // Can create a different filter from the same base
-    auto age25 = queryset.where(field<^^Person::age>() == 25).select().execute();
+    auto age25 = queryset.where(f<^^Person::age>() == 25).select().execute();
     ASSERT_TRUE(age25.has_value());
     EXPECT_EQ(age25.value().size(), 3) << "Different filter from same base (Alice, Grace, Karen)";
 }
@@ -353,7 +353,7 @@ TYPED_TEST(WhereTest, WhereDoesNotMutateOriginal) {
     QuerySet<Person, TypeParam> queryset;
 
     // Call where() — original should be unchanged
-    auto filtered = queryset.where(field<^^Person::age>() > 30);
+    auto filtered = queryset.where(f<^^Person::age>() > 30);
     auto all      = queryset.select().execute();
     ASSERT_TRUE(all.has_value());
     EXPECT_EQ(all.value().size(), 25) << "Original QuerySet must not be mutated by where()";
@@ -369,7 +369,7 @@ TYPED_TEST(WhereTest, WhereInLoopWithoutReset) {
     QuerySet<Person, TypeParam> queryset;
 
     for (int i = 0; i < 10; ++i) {
-        auto result = queryset.where(field<^^Person::age>() > 30).count().execute();
+        auto result = queryset.where(f<^^Person::age>() > 30).count().execute();
         ASSERT_TRUE(result.has_value()) << "Iteration " << i << " failed: " << result.error().message();
         EXPECT_EQ(result.value(), 13) << "Each iteration should return 13 (no accumulation)";
     }
@@ -384,8 +384,8 @@ TYPED_TEST(WhereTest, WhereInLoopWithoutReset) {
 TYPED_TEST(WhereTest, WhereChainingReturnsNewCopies) {
     QuerySet<Person, TypeParam> queryset;
 
-    auto q1 = queryset.where(field<^^Person::age>() >= 25);
-    auto q2 = q1.where(field<^^Person::age>() < 35);
+    auto q1 = queryset.where(f<^^Person::age>() >= 25);
+    auto q2 = q1.where(f<^^Person::age>() < 35);
 
     // Original, q1, q2 should all be independent
     auto all = queryset.select().execute();
@@ -411,14 +411,14 @@ TYPED_TEST(WhereTest, WhereInEmptyValuesReturnsFalse) {
     QuerySet<Person, TypeParam> queryset;
 
     // .in() with no arguments creates InExpression with empty vector → "1 = 0"
-    auto result = queryset.where(field<^^Person::age>().in()).select().execute();
+    auto result = queryset.where(f<^^Person::age>().in()).select().execute();
     ASSERT_TRUE(result.has_value()) << "Empty IN should succeed";
     EXPECT_TRUE(result.value().empty()) << "Empty IN (1=0) should match nothing";
 }
 
 // Test: Expr::get() accessor
 TYPED_TEST(WhereTest, ExprGetReturnsValidPointer) {
-    auto expr = field<^^Person::age>() > 25;
+    auto expr = f<^^Person::age>() > 25;
     auto ptr  = expr.get();
     EXPECT_NE(ptr, nullptr) << "Expr::get() should return a valid pointer";
 }
@@ -448,7 +448,7 @@ TYPED_TEST(WhereTest, ExprDirectConstructionFromVariant) {
 TYPED_TEST(WhereTest, IsNull_MethodSyntax) {
     QuerySet<Person, TypeParam> queryset;
 
-    auto result = queryset.where(field<^^Person::score>().is_null()).select().execute();
+    auto result = queryset.where(f<^^Person::score>().is_null()).select().execute();
     ASSERT_TRUE(result.has_value()) << "IS NULL failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 10) << "Expected 10 people with NULL score";
 }
@@ -457,7 +457,7 @@ TYPED_TEST(WhereTest, IsNull_MethodSyntax) {
 TYPED_TEST(WhereTest, IsNotNull_MethodSyntax) {
     QuerySet<Person, TypeParam> queryset;
 
-    auto result = queryset.where(field<^^Person::score>().is_not_null()).select().execute();
+    auto result = queryset.where(f<^^Person::score>().is_not_null()).select().execute();
     ASSERT_TRUE(result.has_value()) << "IS NOT NULL failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 15) << "Expected 15 people with non-NULL score";
 }
@@ -466,7 +466,7 @@ TYPED_TEST(WhereTest, IsNotNull_MethodSyntax) {
 TYPED_TEST(WhereTest, IsNull_NulloptSyntax) {
     QuerySet<Person, TypeParam> queryset;
 
-    auto result = queryset.where(field<^^Person::score>() == std::nullopt).select().execute();
+    auto result = queryset.where(f<^^Person::score>() == std::nullopt).select().execute();
     ASSERT_TRUE(result.has_value()) << "== nullopt failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 10) << "Expected 10 people with NULL score (nullopt syntax)";
 }
@@ -475,7 +475,7 @@ TYPED_TEST(WhereTest, IsNull_NulloptSyntax) {
 TYPED_TEST(WhereTest, IsNotNull_NulloptSyntax) {
     QuerySet<Person, TypeParam> queryset;
 
-    auto result = queryset.where(field<^^Person::score>() != std::nullopt).select().execute();
+    auto result = queryset.where(f<^^Person::score>() != std::nullopt).select().execute();
     ASSERT_TRUE(result.has_value()) << "!= nullopt failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 15) << "Expected 15 people with non-NULL score (nullopt syntax)";
 }
@@ -484,7 +484,7 @@ TYPED_TEST(WhereTest, IsNotNull_NulloptSyntax) {
 TYPED_TEST(WhereTest, IsNull_StringField) {
     QuerySet<Person, TypeParam> queryset;
 
-    auto result = queryset.where(field<^^Person::nickname>().is_null()).select().execute();
+    auto result = queryset.where(f<^^Person::nickname>().is_null()).select().execute();
     ASSERT_TRUE(result.has_value()) << "IS NULL on nickname failed: " << result.error().message();
     // Count people with nickname = std::nullopt in PEOPLE_25
     std::size_t expected_null_nicknames = 0;
@@ -501,7 +501,7 @@ TYPED_TEST(WhereTest, IsNull_StringField) {
 TYPED_TEST(WhereTest, IsNull_AndCombination) {
     QuerySet<Person, TypeParam> queryset;
 
-    auto result = queryset.where(field<^^Person::score>().is_null() && field<^^Person::age>() > 30).select().execute();
+    auto result = queryset.where(f<^^Person::score>().is_null() && f<^^Person::age>() > 30).select().execute();
     ASSERT_TRUE(result.has_value()) << "IS NULL AND failed: " << result.error().message();
     // NULL score AND age > 30: Charlie(35), Eve(40), Henry(33), Jack(38), Olivia(48), Quinn(30→no), Sam(40) = 6
     std::size_t expected = 0;
@@ -517,7 +517,7 @@ TYPED_TEST(WhereTest, IsNull_AndCombination) {
 TYPED_TEST(WhereTest, IsNull_OrCombination) {
     QuerySet<Person, TypeParam> queryset;
 
-    auto result = queryset.where(field<^^Person::score>().is_null() || field<^^Person::age>() < 25).select().execute();
+    auto result = queryset.where(f<^^Person::score>().is_null() || f<^^Person::age>() < 25).select().execute();
     ASSERT_TRUE(result.has_value()) << "IS NULL OR failed: " << result.error().message();
     // NULL score (10) OR age < 25 (Paul=22, Yara=22 — but Yara has score=92, Paul has score=40)
     std::size_t expected = 0;
@@ -535,10 +535,8 @@ TYPED_TEST(WhereTest, IsNull_EmptyResult) {
 
     // age is NOT optional — it's always set, so IS NULL on a non-optional field won't make sense
     // Instead, filter to only non-NULL scores first, then check IS NULL on score → 0 results
-    auto result = queryset.where(field<^^Person::score>().is_not_null())
-                          .where(field<^^Person::score>().is_null())
-                          .select()
-                          .execute();
+    auto result =
+            queryset.where(f<^^Person::score>().is_not_null()).where(f<^^Person::score>().is_null()).select().execute();
     ASSERT_TRUE(result.has_value()) << "IS NULL empty result failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 0) << "IS NOT NULL AND IS NULL should match nothing";
 }
@@ -549,8 +547,7 @@ TYPED_TEST(WhereJoinTest, IsNull_WithJoin) {
 
     // In WhereJoinTest fixture, Person rows are inserted without score → all NULL
     // So IS NULL on score matches all 4 messages
-    auto result =
-            queryset.template join<^^Message::sender>().where(field<^^Person::score>().is_null()).select().execute();
+    auto result = queryset.template join<^^Message::sender>().where(f<^^Person::score>().is_null()).select().execute();
     ASSERT_TRUE(result.has_value()) << "IS NULL with JOIN failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 4) << "Expected 4 messages (all senders have NULL score in this fixture)";
 }
@@ -572,7 +569,7 @@ class WhereNullCollateTest : public StormTestFixture<Person, SqliteConn> {
 TEST_F(WhereNullCollateTest, IsNull_Collated) {
     QuerySet<Person, SqliteConn> queryset;
 
-    auto result = queryset.where(field<^^Person::nickname>().collate(storm::orm::utilities::Collate::NoCase).is_null())
+    auto result = queryset.where(f<^^Person::nickname>().collate(storm::orm::utilities::Collate::NoCase).is_null())
                           .select()
                           .execute();
     ASSERT_TRUE(result.has_value()) << "Collated IS NULL failed: " << result.error().message();

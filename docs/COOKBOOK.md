@@ -44,11 +44,11 @@ qs.insert(people);
 auto all = qs.select();
 
 // With WHERE
-auto seniors = qs.where(field<^^Person::age>() > 30).select();
+auto seniors = qs.where(f<^^Person::age>() > 30).select();
 
 // With ORDER BY + LIMIT + OFFSET
 auto page = qs
-    .where(field<^^Person::is_active>() == true)
+    .where(f<^^Person::is_active>() == true)
     .order_by<^^Person::name>()
     .limit(10)
     .offset(20)
@@ -59,25 +59,25 @@ auto page = qs
 
 ```cpp
 // Comparison operators
-qs.where(field<^^Person::age>() == 30).select();
-qs.where(field<^^Person::age>() != 30).select();
-qs.where(field<^^Person::age>() > 30).select();
-qs.where(field<^^Person::age>() >= 30).select();
-qs.where(field<^^Person::age>() < 30).select();
-qs.where(field<^^Person::age>() <= 30).select();
+qs.where(f<^^Person::age>() == 30).select();
+qs.where(f<^^Person::age>() != 30).select();
+qs.where(f<^^Person::age>() > 30).select();
+qs.where(f<^^Person::age>() >= 30).select();
+qs.where(f<^^Person::age>() < 30).select();
+qs.where(f<^^Person::age>() <= 30).select();
 
 // LIKE
-qs.where(field<^^Person::name>().like("A%")).select();
+qs.where(f<^^Person::name>().like("A%")).select();
 
 // IN
-qs.where(field<^^Person::age>().in(25, 30, 35)).select();
+qs.where(f<^^Person::age>().in(25, 30, 35)).select();
 
 // BETWEEN
-qs.where(field<^^Person::age>().between(25, 35)).select();
+qs.where(f<^^Person::age>().between(25, 35)).select();
 
 // AND / OR
-qs.where(field<^^Person::age>() > 30 && field<^^Person::is_active>() == true).select();
-qs.where(field<^^Person::age>() < 25 || field<^^Person::age>() > 40).select();
+qs.where(f<^^Person::age>() > 30 && f<^^Person::is_active>() == true).select();
+qs.where(f<^^Person::age>() < 25 || f<^^Person::age>() > 40).select();
 ```
 
 ## UPDATE
@@ -128,7 +128,7 @@ fields must be `std::chrono::system_clock::time_point`. See
 qs.erase(p);
 
 // Erase all matching
-auto inactive = qs.where(field<^^Person::is_active>() == false).select();
+auto inactive = qs.where(f<^^Person::is_active>() == false).select();
 qs.erase(inactive);
 
 // Erase all
@@ -146,7 +146,7 @@ auto lo    = qs.min<^^Person::age>().execute();              // int64_t
 auto hi    = qs.max<^^Person::age>().execute();              // int64_t
 
 // With WHERE
-auto active_count = qs.where(field<^^Person::is_active>() == true).count().execute();
+auto active_count = qs.where(f<^^Person::is_active>() == true).count().execute();
 ```
 
 ## GROUP BY + HAVING
@@ -158,7 +158,7 @@ auto groups = qs.group_by<^^Person::is_active>().count().execute();
 // GROUP BY with HAVING
 auto large_groups = qs
     .group_by<^^Person::age>()
-    .having(field<^^Person::age>() > 30)
+    .having(f<^^Person::age>() > 30)
     .count()
     .execute();
 ```
@@ -203,8 +203,8 @@ auto results = msg_qs.join<Message>().where(...).select();
 QuerySet<Person> qs1, qs2;
 
 // UNION (deduplicated)
-auto combined = qs1.where(field<^^Person::age>() > 30)
-    .union_with(qs2.where(field<^^Person::is_active>() == true))
+auto combined = qs1.where(f<^^Person::age>() > 30)
+    .union_with(qs2.where(f<^^Person::is_active>() == true))
     .select();
 
 // UNION ALL (keeps duplicates)
@@ -222,7 +222,7 @@ auto diff   = qs1.where(...).except_with(qs2.where(...)).select();
 void worker() {
     QuerySet<Person>::set_default_connection(":memory:");
     QuerySet<Person> qs;
-    qs.where(field<^^Person::age>() > 30).select();
+    qs.where(f<^^Person::age>() > 30).select();
 }
 
 std::jthread t1(worker), t2(worker);

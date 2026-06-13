@@ -8,7 +8,7 @@ import storm;
 import std;
 
 using storm::QuerySet;
-using storm::orm::where::field;
+using storm::orm::where::f;
 
 #include "test_models.h" // NOSONAR cpp:S954
 
@@ -195,7 +195,7 @@ TYPED_TEST(ValuesTest, WithWhereSingleField) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT name WHERE age > 22
-    auto result = queryset.where(field<^^Person::age>() > 22).template values<^^Person::name>().execute();
+    auto result = queryset.where(f<^^Person::age>() > 22).template values<^^Person::name>().execute();
     ASSERT_TRUE(result.has_value()) << "values with WHERE failed: " << result.error().message();
 
     const auto& names = result.value();
@@ -218,8 +218,8 @@ TYPED_TEST(ValuesTest, WithMultipleWhereClauses) {
     ASSERT_TRUE(insert_result.has_value());
 
     // Chain multiple WHERE clauses (AND)
-    auto result = queryset.where(field<^^Person::age>() > 22)
-                          .where(field<^^Person::age>() < 32)
+    auto result = queryset.where(f<^^Person::age>() > 22)
+                          .where(f<^^Person::age>() < 32)
                           .template values<^^Person::name>()
                           .execute();
     ASSERT_TRUE(result.has_value());
@@ -244,7 +244,7 @@ TYPED_TEST(ValuesTest, WithComplexWhere) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT name WHERE age BETWEEN 25 AND 35
-    auto result = queryset.where(field<^^Person::age>().between(25, 35)).template values<^^Person::name>().execute();
+    auto result = queryset.where(f<^^Person::age>().between(25, 35)).template values<^^Person::name>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& names = result.value();
@@ -259,7 +259,7 @@ TYPED_TEST(ValuesTest, WithWhereNoResults) {
     auto                insert_result = queryset.insert(people).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    auto result = queryset.where(field<^^Person::age>() > 100).template values<^^Person::name>().execute();
+    auto result = queryset.where(f<^^Person::age>() > 100).template values<^^Person::name>().execute();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 0);
 }
@@ -290,7 +290,7 @@ TYPED_TEST(ValuesTest, WithJoinAndWhere) {
     QuerySet<Message, TypeParam> msg_qs;
 
     auto result = msg_qs.template join<^^Message::sender>()
-                          .where(field<^^Message::content>().like("%o%")) // Hello, World, Goodbye
+                          .where(f<^^Message::content>().like("%o%")) // Hello, World, Goodbye
                           .template values<^^Message::content>()
                           .execute();
     ASSERT_TRUE(result.has_value()) << "values with JOIN and WHERE failed: " << result.error().message();
@@ -434,7 +434,7 @@ TYPED_TEST(ValuesTest, WithWhereOrderByLimit) {
     auto insert_result = queryset.insert(people).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    auto result = queryset.where(field<^^Person::age>() > 25)
+    auto result = queryset.where(f<^^Person::age>() > 25)
                           .template order_by<^^Person::name>()
                           .limit(2)
                           .template values<^^Person::name>()
@@ -555,14 +555,14 @@ TYPED_TEST(ValuesTest, DifferentWhereExpressionsWithCaching) {
     std::ignore = queryset.insert(people).execute();
 
     // Query 1: age > 25
-    auto result1 = queryset.where(field<^^Person::age>() > 25).template values<^^Person::name>().execute();
+    auto result1 = queryset.where(f<^^Person::age>() > 25).template values<^^Person::name>().execute();
     ASSERT_TRUE(result1.has_value());
     EXPECT_EQ(result1.value().size(), 3); // Bob, Charlie, Dave
 
     queryset.reset();
 
     // Query 2: age > 35
-    auto result2 = queryset.where(field<^^Person::age>() > 35).template values<^^Person::name>().execute();
+    auto result2 = queryset.where(f<^^Person::age>() > 35).template values<^^Person::name>().execute();
     ASSERT_TRUE(result2.has_value());
     EXPECT_EQ(result2.value().size(), 1); // Dave only
 }

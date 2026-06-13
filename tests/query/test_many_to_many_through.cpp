@@ -8,7 +8,7 @@ import storm;
 import std;
 
 using storm::QuerySet;
-using storm::orm::where::field;
+using storm::orm::where::f;
 
 #include "test_models.h"     // NOSONAR cpp:S954
 #include "test_m2m_models.h" // NOSONAR cpp:S954
@@ -74,7 +74,7 @@ TYPED_TEST(M2MThroughTest, ThroughEagerLoadIgnoresMetadata) {
 TYPED_TEST(M2MThroughTest, ThroughWithWhereOrderAndLimit) {
     QuerySet<Pupil, TypeParam> qs;
     auto                       rows = qs.template join<^^Pupil::courses>()
-                        .where(field<^^Pupil::age>() >= 11)
+                        .where(f<^^Pupil::age>() >= 11)
                         .template order_by<^^Pupil::name, false>()
                         .limit(1)
                         .select()
@@ -89,7 +89,7 @@ TYPED_TEST(M2MThroughTest, ThroughWithWhereOrderAndLimit) {
 TYPED_TEST(M2MThroughTest, JunctionModelQueriedDirectlyForMetadata) {
     QuerySet<Enrollment, TypeParam> qs;
     auto                            rows = qs.template join<^^Enrollment::pupil, ^^Enrollment::course>()
-                        .where(field<^^Enrollment::grade>() == "B")
+                        .where(f<^^Enrollment::grade>() == "B")
                         .select()
                         .execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();

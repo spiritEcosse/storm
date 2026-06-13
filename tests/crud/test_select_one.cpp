@@ -5,7 +5,7 @@ import storm;
 import std;
 
 using storm::QuerySet;
-using storm::orm::where::field;
+using storm::orm::where::f;
 
 #include "test_models.h" // NOSONAR cpp:S954
 #include "test_seed_helpers.h"
@@ -70,7 +70,7 @@ TYPED_TEST(SelectOneTest, GetWhereMultipleMatch) {
     ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(people)));
 
     // Two people have age 30
-    auto result = queryset.where(field<^^Person::age>() == 30).get().execute();
+    auto result = queryset.where(f<^^Person::age>() == 30).get().execute();
     ASSERT_FALSE(result.has_value()) << "get() should return error when WHERE matches multiple rows";
     EXPECT_EQ(result.error().code(), -1);
     EXPECT_EQ(result.error().message(), "Multiple rows found matching query");
@@ -87,7 +87,7 @@ TYPED_TEST(SelectOneTest, FirstWithWhereNoJoin) {
     ASSERT_TRUE(r1.has_value());
     ASSERT_TRUE(r2.has_value());
 
-    auto result = queryset.where(field<^^Person::age>() == 30).first().execute();
+    auto result = queryset.where(f<^^Person::age>() == 30).first().execute();
     ASSERT_TRUE(result.has_value()) << "first() with WHERE failed: " << result.error().message();
     ASSERT_TRUE(result.value().has_value()) << "Expected a row";
     EXPECT_EQ(result.value().value().name, "Alice");
@@ -100,7 +100,7 @@ TYPED_TEST(SelectOneTest, FirstWithWhereNoMatch) {
     Person const alice{.id = 0, .name = "Alice", .age = 30};
     ASSERT_TRUE(queryset.insert(alice).execute().has_value());
 
-    auto result = queryset.where(field<^^Person::age>() == 999).first().execute();
+    auto result = queryset.where(f<^^Person::age>() == 999).first().execute();
     ASSERT_TRUE(result.has_value()) << "first() should succeed even with no match";
     EXPECT_FALSE(result.value().has_value()) << "Expected nullopt when no rows match";
 }

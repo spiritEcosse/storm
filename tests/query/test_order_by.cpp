@@ -11,7 +11,7 @@ import std;
 #include "test_seed_helpers.h"
 #include "test_select_runner.h"
 using storm::QuerySet;
-using storm::orm::where::field;
+using storm::orm::where::f;
 
 template <typename ConnType> auto insert_test_data(const std::vector<Person>& data) -> void {
     QuerySet<Person, ConnType> qs;
@@ -109,7 +109,7 @@ TYPED_TEST(OrderByTest, WhereWithMultipleOrderBy) {
     QuerySet<Person, TypeParam> qs;
 
     // Filter age >= 30 and order by age ASC, name DESC
-    auto result = qs.where(field<^^Person::age>() >= 30)
+    auto result = qs.where(f<^^Person::age>() >= 30)
                           .template order_by<^^Person::age, true, ^^Person::name, false>()
                           .select()
                           .execute();
@@ -197,7 +197,7 @@ TYPED_TEST(OrderByTest, ChainedWithMultipleClauses) {
     QuerySet<Person, TypeParam> qs;
 
     // Complex query: WHERE + ORDER BY + LIMIT + OFFSET (23 match age >= 25)
-    auto result = qs.where(field<^^Person::age>() >= 25)
+    auto result = qs.where(f<^^Person::age>() >= 25)
                           .template order_by<^^Person::age, ^^Person::name>()
                           .limit(5)
                           .offset(1)
@@ -527,7 +527,7 @@ TYPED_TEST(OrderByTest, EmptyResultWithMultipleOrderBy) {
     QuerySet<Person, TypeParam> qs;
 
     // Complex ORDER BY with no matching results
-    auto result = qs.where(field<^^Person::age>() > 100)
+    auto result = qs.where(f<^^Person::age>() > 100)
                           .template order_by<^^Person::age, false, ^^Person::name, true>()
                           .select()
                           .execute();

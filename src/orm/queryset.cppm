@@ -98,19 +98,19 @@ export namespace storm {
         // WHERE clause support - builder pattern with method chaining using type-safe expressions
         //
         // Usage examples:
-        //   queryset.where(field<^^Person::age>() > 25).select()
-        //   queryset.where(field<^^Person::id>().in(1, 2, 3)).select()
-        //   queryset.where(field<^^Person::name>().like("A%")).select()
-        //   queryset.where(field<^^Person::age>().between(25, 50)).select()
+        //   queryset.where(f<^^Person::age>() > 25).select()
+        //   queryset.where(f<^^Person::id>().in(1, 2, 3)).select()
+        //   queryset.where(f<^^Person::name>().like("A%")).select()
+        //   queryset.where(f<^^Person::age>().between(25, 50)).select()
         //
         // Chaining with AND composition:
-        //   queryset.where(field<^^Person::age>() > 25)
-        //           .where(field<^^Person::name>() == "Alice")
+        //   queryset.where(f<^^Person::age>() > 25)
+        //           .where(f<^^Person::name>() == "Alice")
         //           .select()
         //
         // Complex expressions with AND/OR:
-        //   queryset.where(field<^^Person::age>() > 25 and field<^^Person::is_active>() == true).select()
-        //   queryset.where((field<^^Person::age>() > 25) or (field<^^Person::name>().like("A%"))).select()
+        //   queryset.where(f<^^Person::age>() > 25 and f<^^Person::is_active>() == true).select()
+        //   queryset.where((f<^^Person::age>() > 25) or (f<^^Person::name>().like("A%"))).select()
         //
         [[nodiscard]] auto where(orm::where::ExpressionVariantPtr expr) const -> QuerySet {
             auto result = clone_state();

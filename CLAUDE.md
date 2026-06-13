@@ -405,8 +405,8 @@ qs.avg<^^Person::salary>().execute();          // double
 qs.group_by<^^Person::department>().count().execute();
 
 // HAVING (only with GROUP BY) — filters groups after aggregation
-qs.group_by<^^Person::age>().having(field<^^Person::age>() > 30).count().execute();
-qs.group_by<^^Person::dept>().count().having(field<^^Person::dept>() == "Eng").execute();
+qs.group_by<^^Person::age>().having(f<^^Person::age>() > 30).count().execute();
+qs.group_by<^^Person::dept>().count().having(f<^^Person::dept>() == "Eng").execute();
 
 // DISTINCT
 qs.distinct<^^Person::name>().execute();
