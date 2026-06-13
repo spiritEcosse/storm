@@ -518,6 +518,8 @@ export namespace storm {
             auto result = clone_state();
             if constexpr ((orm::statements::M2MFieldOf<T, FKFields> && ...)) {
                 result.join_stmt_ = orm::statements::make_m2m_join_wrapper<T, ConnType, Type, FKFields...>();
+            } else if constexpr ((orm::statements::ReverseFKJoinable<T, FKFields> && ...)) {
+                result.join_stmt_ = orm::statements::make_reverse_fk_join_wrapper<T, ConnType, Type, FKFields...>();
             } else {
                 result.join_stmt_ = orm::statements::make_join_wrapper<T, ConnType, Type, FKFields...>();
             }

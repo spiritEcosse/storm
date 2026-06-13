@@ -277,7 +277,7 @@ export namespace storm::orm::statements {
             // Q1 base entities + Q2 (owner_pk, related.*) stitched by a pk→entity map.
             // if constexpr gates instantiation: a model with no m2m field can never
             // receive an m2m wrapper, so execute_m2m_2query is not even compiled for it.
-            if constexpr (Base::has_m2m_field_) {
+            if constexpr (Base::has_m2m_field_ || Base::has_reverse_fk_field_) {
                 if (join_wrapper && join_wrapper->is_m2m()) {
                     return execute_m2m_2query(clauses);
                 }
@@ -351,7 +351,7 @@ export namespace storm::orm::statements {
             // set before Q2 can run, so true streaming is impossible — materialize
             // eagerly, then yield each entity. Q1+Q2 run in a transaction inside
             // execute_m2m_2query. if constexpr gates instantiation for non-m2m models.
-            if constexpr (Base::has_m2m_field_) {
+            if constexpr (Base::has_m2m_field_ || Base::has_reverse_fk_field_) {
                 if (join_wrapper && join_wrapper->is_m2m()) {
                     return rows_m2m_materialized(
                             std::move(conn),
@@ -595,7 +595,7 @@ export namespace storm::orm::statements {
             // returns fully-populated entities — multiple related rows for one entity
             // are one result, never a uniqueness violation. if constexpr gates
             // instantiation for non-m2m models.
-            if constexpr (Base::has_m2m_field_) {
+            if constexpr (Base::has_m2m_field_ || Base::has_reverse_fk_field_) {
                 if (join_wrapper && join_wrapper->is_m2m()) {
                     auto rows = execute_m2m_2query(clauses);
                     if (!rows) {

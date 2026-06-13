@@ -54,6 +54,117 @@ export namespace storm::orm::statements {
             return m2m_annotation_type_of(member).has_value();
         }
 
+        // Free FieldAttr::fk predicate — same check as BaseStatement::is_fk_field, but
+        // callable from the free join helpers (#398). Safe on members re-derived from
+        // a model inside the instantiating TU (not on BMI-crossing NTTPs, #262).
+        consteval auto is_fk_field(std::meta::info member) -> bool {
+            auto attr = std::meta::annotation_of_type<FieldAttr>(member);
+            return attr.has_value() && attr.value() == FieldAttr::fk;
+        }
+
+        // Reverse-FK annotation (#398): on a container member of the base model, it
+        // declares the eager-load destination for "all <Base>, each with the <Owner>s
+        // that point at them". The template argument is EITHER:
+        //   - the owning model type — [[= reverse_fk<^^Task>]] vector<Task> tasks;
+        //     (resolved to that model's unique FK back at the base), OR
+        //   - a specific FK field — [[= reverse_fk<^^Task::assignee>]] vector<Task> tasks;
+        //     (names the exact FK; the disambiguator when the owner has several FKs to
+        //     the base, e.g. assignee vs reviewer).
+        // The type form works when the owner is only forward-declared at the annotation
+        // site (the cyclic Base⟷Owner case); the field form needs the owner complete.
+        // Like ManyToMany, it is a class-template annotation (FieldAttr is an enum, so a
+        // templated enumerator is impossible).
+        template <std::meta::info Target> struct ReverseFk {
+            static constexpr std::meta::info target = Target;
+        };
+        template <std::meta::info Target> inline constexpr ReverseFk<Target> reverse_fk{};
+
+        // Reflection of the ReverseFk<...> annotation TYPE carried by `member`, if any.
+        consteval auto reverse_fk_annotation_type_of(std::meta::info member) -> std::optional<std::meta::info> {
+            for (const auto annotation : std::meta::annotations_of(member)) {
+                const auto type = std::meta::type_of(annotation);
+                if (std::meta::has_template_arguments(type) && std::meta::template_of(type) == ^^ReverseFk) {
+                    return type;
+                }
+            }
+            return std::nullopt;
+        }
+
+        consteval auto is_reverse_fk_field(std::meta::info member) -> bool {
+            return reverse_fk_annotation_type_of(member).has_value();
+        }
+
+        // The raw template argument of a reverse_fk member's annotation — either an
+        // owner type (^^Task) or an FK field (^^Task::assignee). The join machinery
+        // resolves it to the concrete FK field via resolve_reverse_fk_target.
+        // Precondition: `member` is a reverse_fk field (callers gate on
+        // is_reverse_fk_field), so the annotation is always present.
+        consteval auto reverse_fk_target_of(std::meta::info member) -> std::meta::info {
+            const auto annotation_type =
+                    reverse_fk_annotation_type_of(member).value(); // NOLINT(bugprone-unchecked-optional-access)
+            return std::meta::extract<std::meta::info>(std::meta::template_arguments_of(annotation_type)[0]);
+        }
+
+        // True when the FK member `fk_member` (an FieldAttr::fk data member) points back
+        // at base_t — its declared type, optional-unwrapped, is exactly base_t. The
+        // single "does this FK reverse to the base?" check across the reverse-FK code.
+        consteval auto fk_member_points_at(std::meta::info fk_member, std::meta::info base_t) -> bool {
+            const auto fk_type = std::meta::dealias(std::meta::type_of(fk_member));
+            return fk_type == base_t || (std::meta::has_template_arguments(fk_type) &&
+                                         std::meta::template_of(fk_type) ==
+                                                 std::meta::template_of(std::meta::dealias(^^std::optional<int>)) &&
+                                         std::meta::dealias(std::meta::template_arguments_of(fk_type)[0]) == base_t);
+        }
+
+        // Count of FieldAttr::fk members of `owner` whose type points back at base_t.
+        consteval auto count_fks_to(std::meta::info owner, std::meta::info base_t) -> std::size_t {
+            std::size_t count = 0;
+            for (auto m : std::meta::nonstatic_data_members_of(owner, std::meta::access_context::unchecked())) {
+                if (is_fk_field(m) && fk_member_points_at(m, base_t)) {
+                    ++count;
+                }
+            }
+            return count;
+        }
+
+        // Validate a reverse_fk member's target against base_t (the model owning the
+        // container). A type target requires the owner to expose exactly ONE FK back at
+        // base_t; a field target must be a FieldAttr::fk member of another model that
+        // points at base_t. Precondition: `member` is a reverse_fk field.
+        consteval auto reverse_fk_member_valid(std::meta::info member, std::meta::info base_t) -> bool {
+            const auto target = reverse_fk_target_of(member);
+            if (std::meta::is_type(target)) {
+                return count_fks_to(target, base_t) == 1;
+            }
+            if (!std::meta::is_nonstatic_data_member(target) || std::meta::parent_of(target) == base_t) {
+                return false;
+            }
+            return is_fk_field(target) && fk_member_points_at(target, base_t);
+        }
+
+        // Resolve a reverse_fk target (owner type OR FK field) to the concrete FK field
+        // pointing back at base_t. A type target picks the unique FieldAttr::fk member
+        // whose (optional-unwrapped) type is base_t; a field target is used directly.
+        // Takes both as runtime consteval args so it works on loop-variable members.
+        consteval auto resolve_reverse_fk_target(std::meta::info target, std::meta::info base_t) -> std::meta::info {
+            if (std::meta::is_type(target)) {
+                for (auto m : std::meta::nonstatic_data_members_of(target, std::meta::access_context::unchecked())) {
+                    if (is_fk_field(m) && fk_member_points_at(m, base_t)) {
+                        return m;
+                    }
+                }
+                std::unreachable(); // ReverseFKFieldOf guarantees a unique FK exists
+            }
+            return target; // already an FK field
+        }
+
+        // Combined relation-field predicate (#398): m2m container OR reverse_fk container.
+        // The single chokepoint for "not a persisted column" — schema/CRUD invisibility
+        // for both relation kinds falls out of every persisted-field array filtering here.
+        consteval auto is_relation_field(std::meta::info member) -> bool {
+            return is_m2m_field(member) || is_reverse_fk_field(member);
+        }
+
         // True for m2m members WITHOUT a through model (auto-generated junction table).
         consteval auto is_m2m_auto(std::meta::info member) -> bool {
             auto type = m2m_annotation_type_of(member);
@@ -162,6 +273,56 @@ export namespace storm::orm::statements {
         return false;
     }();
 
+    // A cross-model reverse-FK selector (#398): Member is a FieldAttr::fk data member
+    // of ANOTHER model whose FK type (unwrapping std::optional) is the base model T.
+    //   QuerySet<Person>().left_join<^^Task::assignee>()  // Member = ^^Task::assignee
+    // The owning model (Task), FK field, and FK target (Person) all come from Member;
+    // naming the field disambiguates several FKs to the same target (assignee vs reviewer).
+    // Structural-only queries on Member (parent_of/type_of/identifier_of) — safe across a
+    // BMI boundary; the annotation is read from the member re-derived out of the owner.
+    template <typename T, std::meta::info Member>
+    concept ReverseFKSelector = []() consteval {
+        if (!std::meta::is_nonstatic_data_member(Member) || !std::meta::has_identifier(Member)) {
+            return false;
+        }
+        const auto owner = std::meta::parent_of(Member);
+        if (owner == ^^T) {
+            return false; // a reverse FK must point from a DIFFERENT model back at T
+        }
+        // The FK type, optional-unwrapped, must be exactly T.
+        if (!meta::fk_member_points_at(Member, ^^T)) {
+            return false;
+        }
+        // Member must carry FieldAttr::fk — read from the member re-derived out of owner.
+        for (auto m : std::meta::nonstatic_data_members_of(owner, std::meta::access_context::unchecked())) {
+            if (std::meta::identifier_of(m) == std::meta::identifier_of(Member)) {
+                auto attr = std::meta::annotation_of_type<meta::FieldAttr>(m);
+                return attr.has_value() && attr.value() == meta::FieldAttr::fk;
+            }
+        }
+        return false;
+    }();
+
+    // A reverse-FK container destination (#398): a non-static data member of T carrying a
+    // ReverseFk annotation, whose carried FK field is itself a valid ReverseFKSelector<T>.
+    // This is the key+destination form (select()); ReverseFKSelector is the key alone
+    // (aggregate/filter chains). Same BMI discipline: annotation re-derived from ^^T.
+    template <typename T, std::meta::info Member>
+    concept ReverseFKFieldOf = []() consteval {
+        if (!std::meta::is_nonstatic_data_member(Member) || !std::meta::has_identifier(Member)) {
+            return false;
+        }
+        if (std::meta::parent_of(Member) != ^^T) {
+            return false;
+        }
+        for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+            if (std::meta::identifier_of(m) == std::meta::identifier_of(Member)) {
+                return meta::is_reverse_fk_field(m) && meta::reverse_fk_member_valid(m, ^^T);
+            }
+        }
+        return false;
+    }();
+
     // A through model must carry exactly one FieldAttr::fk member of type Side
     // (#203 Phase 2) — that member names the junction FK column (<identifier>_id).
     template <typename Through, typename Side>
@@ -258,7 +419,9 @@ export namespace storm::orm::statements {
             return field_name + "_id";
         }
 
-        // Find primary key of a FK type (unwraps std::optional<T> → T first)
+      public:
+        // Find primary key of a FK type (unwraps std::optional<T> → T first). Public so
+        // the free two-query join helpers (join.cppm, #398) can extract FK columns.
         template <typename FKType>
             requires ModelWithPrimaryKey<utilities::optional_inner_type_t<FKType>>
         static consteval auto find_fk_primary_key() -> std::meta::info {
@@ -273,26 +436,29 @@ export namespace storm::orm::statements {
             std::unreachable(); // never reached: requires ModelWithPrimaryKey<...> guarantees a primary key exists
         }
 
-        // Number of PERSISTED fields. Many-to-many container members map to a junction
-        // table, not to a column, so they are invisible to INSERT/SELECT/UPDATE/SCHEMA (#203).
+      protected:
+        // Number of PERSISTED fields. Relation container members (many-to-many #203,
+        // reverse_fk #398) map to a separate query, not to a column, so they are
+        // invisible to INSERT/SELECT/UPDATE/SCHEMA.
         static consteval auto get_field_count() -> std::size_t {
             std::size_t count = 0;
             for (const auto member :
                  std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
-                if (!meta::is_m2m_field(member)) {
+                if (!meta::is_relation_field(member)) {
                     ++count;
                 }
             }
             return count;
         }
 
-        // Pre-compute all persisted field members at compile-time (m2m members filtered, #203)
+        // Pre-compute all persisted field members at compile-time (relation members
+        // filtered — m2m #203, reverse_fk #398).
         template <std::size_t N> static consteval auto get_all_field_members() -> std::array<std::meta::info, N> {
             std::array<std::meta::info, N> result{};
             std::size_t                    idx = 0;
             for (const auto member :
                  std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
-                if (!meta::is_m2m_field(member) && idx < N) {
+                if (!meta::is_relation_field(member) && idx < N) {
                     result[idx++] = member;
                 }
             }
@@ -402,6 +568,16 @@ export namespace storm::orm::statements {
             return std::ranges::any_of(
                     std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()),
                     [](std::meta::info m) { return meta::is_m2m_field(m); }
+            );
+        }();
+
+        // True if T has any reverse_fk container field (#398). Gates the two-query
+        // eager-load path the same way has_m2m_field_ does — a model without one
+        // never instantiates the reverse-FK select machinery.
+        static constexpr bool has_reverse_fk_field_ = []() consteval {
+            return std::ranges::any_of(
+                    std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()),
+                    [](std::meta::info m) { return meta::is_reverse_fk_field(m); }
             );
         }();
 
@@ -754,10 +930,12 @@ export namespace storm::orm::statements {
             return FieldType(data, data + size);
         }
 
+      public:
         // Shared column extraction utility — returns value of specified type from given
         // column index. Dispatches by storage class to one of the extract_* helpers above.
         // Supported FieldType groups: optional<T>, bool, int-stored ints, int64-stored
         // ints, enum, double, float, chrono duration, text-stored types, blob-stored types.
+        // Public so the free two-query join helpers (join.cppm, #398) can extract rows.
         template <typename FieldType, typename Statement>
         [[nodiscard]] __attribute__((always_inline)) static auto
         extract_column_value(Statement* stmt, int col_idx) noexcept -> FieldType {
@@ -795,6 +973,7 @@ export namespace storm::orm::statements {
             }
         }
 
+      protected:
         // =====================================================================
         // COLUMN EXTRACTION HELPERS - Moved here from SelectStatement so that
         // constexpr access to all_members_[Index] happens in base.cppm context
@@ -1013,6 +1192,10 @@ export namespace storm::orm::statements {
         }
         // LCOV_EXCL_STOP
 
+      public:
+        // ORDER BY / LIMIT / OFFSET appenders are public so the free two-query join
+        // helpers (join.cppm, #398) can assemble Q1/Q2 base clauses for any model.
+
         // Helper: Append ORDER BY clause to SQL from wrapper
         // NOTE: ORDER BY must come before LIMIT/OFFSET in SQLite
         // For PostgreSQL, adds NULLS FIRST/LAST to match SQLite semantics
@@ -1059,6 +1242,7 @@ export namespace storm::orm::statements {
             }
         }
 
+      protected:
         // Helper: Bind WHERE expression parameters to statement
         // Returns std::expected<void, Error> - resets statement on failure
         // Helper: bind a WHERE-style expression and convert the result. On
