@@ -319,6 +319,15 @@ CRUD; eager-loaded via `join<^^T::field>()`, several relations per call via
 `join<^^T::a, ^^T::b>()` (#392). See
 [docs/features/JOIN_OPERATIONS.md](docs/features/JOIN_OPERATIONS.md).
 
+**Reverse-FK (#398)**: `[[= storm::meta::reverse_fk<^^Owner>]]` on a container member declares the
+eager-load destination for "all `<Base>`, each with the `<Owner>`s that point at them". The argument
+is the OWNER TYPE (resolved to its unique FK back at the base — the Base⟷Owner reference cycle forbids
+a member splice in the annotation, so the owner must have exactly one FK to the base). Not a column.
+`select()` runs the m2m two-query load (Q2 hits the owner table directly, no junction). Aggregate/filter
+chains also accept a cross-model FK selector `join<^^Owner::fk>()`, which disambiguates multiple owner
+FKs (e.g. `^^Bug::author` vs `^^Bug::reviewer`). See
+[docs/features/JOIN_OPERATIONS.md](docs/features/JOIN_OPERATIONS.md).
+
 **Auto-timestamps (#209)**: `[[= FieldAttr::auto_create]]` / `[[= FieldAttr::auto_update]]` on a
 `std::chrono::system_clock::time_point` field auto-stamp `now()` — `auto_create` on INSERT only,
 `auto_update` on INSERT and UPDATE. **Bind-time only, no write-back** (the caller's object is never

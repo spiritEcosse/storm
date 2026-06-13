@@ -77,6 +77,225 @@ export namespace storm::orm::statements {
         }
     };
 
+    // =========================================================================
+    // SHARED TWO-QUERY HELPERS — used by both the m2m (#391/#392) and reverse-FK
+    // (#398) eager-load classes. Both run Q1 (base) + per-relation Q2 stitched by
+    // a pk→entity map; these are the pieces that don't depend on the junction.
+    // =========================================================================
+
+    // Append the base-entity clauses — WHERE / ORDER BY / LIMIT / OFFSET — to `sql`.
+    // Shared by Q1 (the base subquery) and Q2 (its IN-subquery): in both, these
+    // clauses select WHICH base entities load.
+    template <typename Base, storm::db::DatabaseConnection ConnType>
+    auto append_base_clauses(
+            std::string&                            sql,
+            const orm::where::ExpressionVariantPtr& where_expr,
+            const std::optional<OrderByWrapper>&    order_by,
+            const std::optional<int>&               limit,
+            const std::optional<int>&               offset
+    ) -> void {
+        if (where_expr) {
+            sql += " WHERE ";
+            sql += orm::where::to_sql(*where_expr);
+        }
+        Base::template append_order_by<ConnType>(sql, order_by);
+        Base::template append_limit_offset<ConnType>(sql, limit, offset);
+    }
+
+    // Append `value` into a relation container (push_back, or insert for plf::hive).
+    template <typename C, typename V> auto relation_insert_into(C& container, V&& value) -> void {
+        if constexpr (requires { container.push_back(std::forward<V>(value)); }) {
+            container.push_back(std::forward<V>(value));
+        } else {
+            container.insert(std::forward<V>(value)); // plf::hive
+        }
+    }
+
+    // Extract one FK column for a related/owner entity: pk-only FK object, NULL → nullopt.
+    // RelatedBase = BaseStatement of the entity being extracted (provides the extract
+    // helpers); Related = that entity type; Member = its FK data member.
+    template <typename RelatedBase, typename Related, typename FieldType, std::meta::info Member, typename Statement>
+    auto extract_relation_fk_column(Statement* stmt, Related& rel, int col) noexcept -> void {
+        using InnerFK        = utilities::optional_inner_type_t<FieldType>;
+        constexpr auto fk_pk = RelatedBase::template find_fk_primary_key<FieldType>();
+        using PKType         = std::remove_cvref_t<decltype(std::declval<InnerFK>().[:fk_pk:])>;
+        if constexpr (utilities::is_optional_v<FieldType>) {
+            if (stmt->is_null(col)) {
+                rel.[:Member:] = std::nullopt;
+                return;
+            }
+        }
+        InnerFK inner{};
+        inner.[:fk_pk:] = RelatedBase::template extract_column_value<PKType>(stmt, col);
+        rel.[:Member:]  = std::move(inner);
+    }
+
+    // Extract one related/owner member at column ColOffset+I — regular columns by
+    // value, FK columns as pk-only objects (mirrors plain-SELECT per-member semantics).
+    template <typename RelatedBase, typename Related, int ColOffset, std::size_t I, typename Statement>
+    auto extract_relation_member(Statement* stmt, Related& rel) noexcept -> void {
+        constexpr auto member = RelatedBase::all_members_[I];
+        constexpr int  col    = ColOffset + static_cast<int>(I);
+        using FieldType       = std::remove_cvref_t<decltype(rel.[:member:])>;
+        if constexpr (meta::is_fk_field(member)) {
+            extract_relation_fk_column<RelatedBase, Related, FieldType, member>(stmt, rel, col);
+        } else {
+            rel.[:member:] = RelatedBase::template extract_column_value<FieldType>(stmt, col);
+        }
+    }
+
+    // Extract a full related/owner entity from columns starting at ColOffset.
+    template <typename RelatedBase, typename Related, int ColOffset, typename Statement, std::size_t... Is>
+    auto extract_relation_entity(Statement* stmt, Related& rel, std::index_sequence<Is...> /*unused*/) noexcept
+            -> void {
+        ((extract_relation_member<RelatedBase, Related, ColOffset, Is>(stmt, rel)), ...);
+    }
+
+    // Q1 — the base entity subquery: SELECT <base cols> FROM <Base> [clauses]. Its
+    // text matches the subquery embedded in Q2's IN clause, keeping the two in lockstep.
+    template <typename Base, storm::db::DatabaseConnection ConnType>
+    auto build_base_subquery_sql(
+            const orm::where::ExpressionVariantPtr& where_expr,
+            const std::optional<OrderByWrapper>&    order_by,
+            const std::optional<int>&               limit,
+            const std::optional<int>&               offset
+    ) -> std::string {
+        std::string sql = "SELECT ";
+        sql += Base::field_names_array_.view();
+        sql += " FROM ";
+        sql += Base::table_name_;
+        append_base_clauses<Base, ConnType>(sql, where_expr, order_by, limit, offset);
+        return sql;
+    }
+
+    // Append " IN (SELECT <base.pk> FROM <Base>" — the open of the Q2 IN-subquery,
+    // shared by both Q2-prefix builders (the leading "<col>_id"/"<col>" WHERE clause
+    // and trailing ")" + base clauses are appended by the caller). Base supplies the
+    // pk + table name. ConstexprString size is per-instantiation, hence the `auto&`.
+    template <typename Base> consteval auto append_in_subquery_open(auto& result) -> void {
+        result.append(" IN (SELECT ");
+        result.append(Base::pk_name_);
+        result.append(" FROM ");
+        result.append(Base::table_name_);
+    }
+
+    // Byte size of what append_in_subquery_open emits: " IN (SELECT <pk> FROM <Base>".
+    template <typename Base> consteval auto in_subquery_open_size() -> std::size_t {
+        return 12 + Base::pk_name_.size() + 6 + Base::table_name_.size();
+    }
+
+    // Upper-bound byte size of the Q2 related/owner column block: per member, the
+    // ", t<a>.<col>" separator + name, plus a generous "_id" allowance for FK columns.
+    // RelatedBase provides the member list. The exact alias digit is absorbed by the
+    // ConstexprString's SMALL_BUFFER slack, so a fixed per-column constant suffices.
+    template <typename RelatedBase> consteval auto relation_columns_size() -> std::size_t {
+        std::size_t total = 0;
+        for (std::size_t i = 0; i < RelatedBase::field_count_; ++i) {
+            total += 2 + 3 + std::meta::identifier_of(RelatedBase::all_members_[i]).size() + 3;
+        }
+        return total;
+    }
+
+    // Append ", <sep_prefix><col>[_id]" for every member of RelatedBase — the Q2
+    // related/owner column block, leading-comma-separated. sep_prefix is the alias
+    // dot-prefix, e.g. "t3." (m2m related) or "t2." (reverse-FK owner). FK members
+    // emit the "_id" column suffix. RelatedBase provides the FK predicate + members.
+    template <typename RelatedBase>
+    consteval auto append_relation_columns(auto& result, std::string_view sep_prefix) -> void {
+        for (std::size_t i = 0; i < RelatedBase::field_count_; ++i) {
+            result.append(", ");
+            result.append(sep_prefix);
+            result.append(std::meta::identifier_of(RelatedBase::all_members_[i]));
+            if (meta::is_fk_field(RelatedBase::all_members_[i])) {
+                result.append("_id");
+            }
+        }
+    }
+
+    // Append the Q2 SELECT head: "SELECT t2.<owner_key>[_id]" + the RelatedBase column
+    // block (col_prefix-aliased). owner_key is the stitch key column (m2m: "<owner>",
+    // key_id_suffix=true → "<owner>_id"; reverse-FK: "<fk>_id", key_id_suffix=false).
+    template <typename RelatedBase>
+    consteval auto
+    append_q2_select_head(auto& result, std::string_view owner_key, bool key_id_suffix, std::string_view col_prefix)
+            -> void {
+        result.append("SELECT t2.");
+        result.append(owner_key);
+        if (key_id_suffix) {
+            result.append("_id");
+        }
+        append_relation_columns<RelatedBase>(result, col_prefix);
+    }
+
+    // The Q1 (base subquery) clause-builder fn-pointer for a two-query join statement
+    // First. Q1 text depends only on the base model + clauses, so one builder serves
+    // every relation. Shared by the m2m (#392) and reverse-FK (#398) wrapper factories.
+    template <typename First> auto make_q1_sql_fn() -> M2MClauseSqlFn {
+        return +[](const orm::where::ExpressionVariantPtr& where_expr,
+                   const std::optional<OrderByWrapper>&    order_by,
+                   const std::optional<int>&               limit,
+                   const std::optional<int>&               offset) -> std::string {
+            return First::build_base_subquery(where_expr, order_by, limit, offset);
+        };
+    }
+
+    // Q2 — `prefix` (everything up to the open IN-subquery) + the base clauses + ")".
+    // The clauses live inside the IN-subquery so they bound WHICH base entities load.
+    template <typename Base, storm::db::DatabaseConnection ConnType>
+    auto build_q2_sql_from_prefix(
+            std::string_view                        prefix,
+            const orm::where::ExpressionVariantPtr& where_expr,
+            const std::optional<OrderByWrapper>&    order_by,
+            const std::optional<int>&               limit,
+            const std::optional<int>&               offset
+    ) -> std::string {
+        std::string sql{prefix};
+        append_base_clauses<Base, ConnType>(sql, where_expr, order_by, limit, offset);
+        sql += ")";
+        return sql;
+    }
+
+    // Two-query base for the eager-load join statements (m2m #391/#392, reverse-FK
+    // #398). It owns the parts whose text is identical across both: Q1 (the base
+    // subquery), Q2 (the derived's q2 prefix + base clauses), the JOIN keyword, and
+    // the Q2 owner-pk extractor (column 0). The derived class supplies the prefix
+    // (q2_prefix_view()) and the relation-specific column/stitch logic.
+    template <typename Derived, typename Base, storm::db::DatabaseConnection ConnType, JoinType Type>
+    class TwoQueryJoinBase {
+      protected:
+        static consteval auto join_keyword() -> std::string_view {
+            return Type == JoinType::Inner ? " INNER JOIN " : " LEFT JOIN ";
+        }
+
+      public:
+        // Q1 — the base entity subquery.
+        static auto build_base_subquery(
+                const orm::where::ExpressionVariantPtr& where_expr,
+                const std::optional<OrderByWrapper>&    order_by,
+                const std::optional<int>&               limit,
+                const std::optional<int>&               offset
+        ) -> std::string {
+            return build_base_subquery_sql<Base, ConnType>(where_expr, order_by, limit, offset);
+        }
+
+        // Q2 — the derived's prefix (up to the open IN-subquery) + base clauses + ")".
+        static auto build_q2_sql(
+                const orm::where::ExpressionVariantPtr& where_expr,
+                const std::optional<OrderByWrapper>&    order_by,
+                const std::optional<int>&               limit,
+                const std::optional<int>&               offset
+        ) -> std::string {
+            return build_q2_sql_from_prefix<Base, ConnType>(
+                    Derived::q2_prefix_arr_.view(), where_expr, order_by, limit, offset
+            );
+        }
+
+        // Q2 row owner pk (column 0) — keys the stitch into the Q1 hash map.
+        static auto extract_q2_owner_pk(typename ConnType::Statement* stmt) noexcept -> std::int64_t {
+            return stmt->extract_int64(0);
+        }
+    };
+
     template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, std::meta::info... FKFields>
         requires(sizeof...(FKFields) >= 1 && (FKFieldOf<T, FKFields> && ...))
     class JoinStatement : private BaseStatement<T> {
@@ -441,10 +660,14 @@ export namespace storm::orm::statements {
     // =========================================================================
     template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, std::meta::info M2MField>
         requires M2MFieldOf<T, M2MField> && (Type == JoinType::Inner || Type == JoinType::Left)
-    class M2MJoinStatement : private BaseStatement<T> {
+    class M2MJoinStatement
+        : private BaseStatement<T>,
+          public TwoQueryJoinBase<M2MJoinStatement<T, ConnType, Type, M2MField>, BaseStatement<T>, ConnType, Type> {
         friend class BaseStatement<T>;
         using Base      = BaseStatement<T>;
         using Statement = typename ConnType::Statement;
+        using TwoQuery  = TwoQueryJoinBase<M2MJoinStatement, BaseStatement<T>, ConnType, Type>;
+        friend TwoQuery;
 
         // Re-derive the member from ^^T by identifier — annotation reads on a
         // reflection that crossed a BMI boundary segfault clang-p2996 (#262).
@@ -523,28 +746,12 @@ export namespace storm::orm::statements {
             }
         }
 
-        static consteval auto join_keyword() -> std::string_view {
-            return Type == JoinType::Inner ? " INNER JOIN " : " LEFT JOIN ";
-        }
-
         // ---- Complete-SQL fragments (#392) ------------------------------------
         // The modifier-free join SQL (aggregates / DISTINCT / set-ops) is
         // assembled per-wrapper in make_m2m_join_wrapper from these fragments so
         // several relations can chain with unique aliases: relation i uses
         // junction alias 2+2i, related alias 3+2i (relation 0 keeps t2/t3, so the
         // single-relation text is unchanged).
-
-        // Append ", t3.<col>[_id]" for every related member to `result` — the
-        // related block of build_q2_prefix, "t3"-aliased, leading-comma-separated.
-        static consteval auto append_related_columns(auto& result) -> void {
-            for (std::size_t i = 0; i < RelatedBase::field_count_; ++i) {
-                result.append(", t3.");
-                result.append(std::meta::identifier_of(RelatedBase::all_members_[i]));
-                if (Base::is_fk_field(RelatedBase::all_members_[i])) {
-                    result.append("_id");
-                }
-            }
-        }
 
         // base_cols_: "SELECT t1.<c1>, t1.<c2>[_id], …" — base columns only.
         static consteval auto calculate_base_cols_size() -> std::size_t {
@@ -597,7 +804,7 @@ export namespace storm::orm::statements {
         static constexpr std::string_view junction_name_v_ = junction_table_name();
         static constexpr std::string_view owner_col_v_     = owner_col_name();
         static constexpr std::string_view related_col_v_   = related_col_name();
-        static constexpr std::string_view join_kw_v_       = join_keyword();
+        static constexpr std::string_view join_kw_v_       = TwoQuery::join_keyword();
 
         struct RelatedCol {
             std::string_view name;
@@ -670,24 +877,6 @@ export namespace storm::orm::statements {
             sql += RelatedBase::pk_name_;
         }
 
-        // Append the base-entity clauses — WHERE / ORDER BY / LIMIT / OFFSET — to
-        // `sql`. Shared by build_base_subquery (Q1) and build_q2_sql (Q2's
-        // IN-subquery): in both, these clauses select WHICH base entities load.
-        static auto append_base_clauses(
-                std::string&                            sql,
-                const orm::where::ExpressionVariantPtr& where_expr,
-                const std::optional<OrderByWrapper>&    order_by,
-                const std::optional<int>&               limit,
-                const std::optional<int>&               offset
-        ) -> void {
-            if (where_expr) {
-                sql += " WHERE ";
-                sql += orm::where::to_sql(*where_expr);
-            }
-            Base::template append_order_by<ConnType>(sql, order_by);
-            Base::template append_limit_offset<ConnType>(sql, limit, offset);
-        }
-
         // =====================================================================
         // TWO-QUERY PREDICATE-PUSHDOWN PATH (#391)
         //
@@ -707,43 +896,24 @@ export namespace storm::orm::statements {
         // post-stitch filter, never an SQL difference.
         // =====================================================================
 
-        // Q1 — the base entity subquery. Identical text to the subquery embedded
-        // in Q2's IN clause, so the two stay in lockstep.
-        static auto build_base_subquery(
-                const orm::where::ExpressionVariantPtr& where_expr,
-                const std::optional<OrderByWrapper>&    order_by,
-                const std::optional<int>&               limit,
-                const std::optional<int>&               offset
-        ) -> std::string {
-            std::string sql = "SELECT ";
-            sql += Base::field_names_array_.view();
-            sql += " FROM ";
-            sql += Base::table_name_;
-            append_base_clauses(sql, where_expr, order_by, limit, offset);
-            return sql;
-        }
+        // Q1 (build_base_subquery), Q2 (build_q2_sql), and the owner-pk extractor are
+        // inherited from TwoQueryJoinBase; this class only supplies the Q2 prefix below.
 
         // q2_prefix_: "SELECT t2.<owner>_id, t3.<r…> FROM <junction> t2
         //              INNER JOIN <Related> t3 ON t2.<related>_id = t3.<rpk>
         //              WHERE t2.<owner>_id IN (SELECT <base.pk> FROM <Base>"
         static consteval auto calculate_q2_prefix_size() -> std::size_t {
             std::size_t total = 7 + 3 + owner_col_name().size() + 3; // "SELECT " + "t2." + owner + "_id"
-            for (std::size_t i = 0; i < RelatedBase::field_count_; ++i) {
-                total += 2 + 3 + std::meta::identifier_of(RelatedBase::all_members_[i]).size() + 3;
-            }
+            total += relation_columns_size<RelatedBase>();
             total += 6 + junction_table_name().size() + 13 + RelatedBase::table_name_.size() + 10 +
-                     related_col_name().size() + 9 + RelatedBase::pk_name_.size();   // FROM…ON…
-            total += 10 + owner_col_name().size() + 16 + Base::pk_name_.size() + 6 + // WHERE…IN (SELECT pk FROM
-                     Base::table_name_.size();
+                     related_col_name().size() + 9 + RelatedBase::pk_name_.size(); // FROM…ON…
+            total += 10 + owner_col_name().size() + in_subquery_open_size<Base>(); // WHERE t2.<owner>_id IN (…
             return total + utilities::sql_len::SMALL_BUFFER;
         }
 
         static consteval auto build_q2_prefix() {
             ConstexprString<calculate_q2_prefix_size()> result;
-            result.append("SELECT t2.");
-            result.append(owner_col_name());
-            result.append("_id");
-            append_related_columns(result);
+            append_q2_select_head<RelatedBase>(result, owner_col_name(), /*key_id_suffix=*/true, "t3.");
             result.append(" FROM ");
             result.append(junction_table_name());
             result.append(" t2 INNER JOIN ");
@@ -754,35 +924,14 @@ export namespace storm::orm::statements {
             result.append(RelatedBase::pk_name_);
             result.append(" WHERE t2.");
             result.append(owner_col_name());
-            result.append("_id IN (SELECT ");
-            result.append(Base::pk_name_);
-            result.append(" FROM ");
-            result.append(Base::table_name_);
+            result.append("_id");
+            append_in_subquery_open<Base>(result);
             return result;
         }
 
+        // Q2 prefix (everything up to the open IN-subquery) — TwoQueryJoinBase reads
+        // it directly to assemble build_q2_sql (base clauses + ")" appended there).
         static constexpr auto q2_prefix_arr_ = build_q2_prefix();
-
-        // Q2 — related rows for the entities selected by the same base subquery.
-        // The WHERE/ORDER BY/LIMIT/OFFSET live inside the IN-subquery so they
-        // bound which entities load (never the related collection), exactly as in
-        // the 1-query design. The trailing ")" closes the IN-subquery.
-        static auto build_q2_sql(
-                const orm::where::ExpressionVariantPtr& where_expr,
-                const std::optional<OrderByWrapper>&    order_by,
-                const std::optional<int>&               limit,
-                const std::optional<int>&               offset
-        ) -> std::string {
-            std::string sql{q2_prefix_arr_.view()};
-            append_base_clauses(sql, where_expr, order_by, limit, offset);
-            sql += ")";
-            return sql;
-        }
-
-        // Q2 row owner pk (column 0) — keys the stitch into the Q1 hash map.
-        static auto extract_q2_owner_pk(Statement* stmt) noexcept -> std::int64_t {
-            return stmt->extract_int64(0);
-        }
 
         // Append the Q2 row's related object into obj's container. Q2 related
         // columns start at index 1 (after the owner pk). Always present — Q2 is
@@ -798,95 +947,214 @@ export namespace storm::orm::statements {
         }
 
       private:
-        template <typename C, typename V> static auto insert_into(C& container, V&& value) -> void {
-            if constexpr (requires { container.push_back(std::forward<V>(value)); }) {
-                container.push_back(std::forward<V>(value));
-            } else {
-                container.insert(std::forward<V>(value)); // plf::hive
-            }
-        }
-
-        // Extract one Related from the row (columns start at RelColOffset) and
-        // append it to obj's container — wrapping in shared_ptr if the container
-        // holds shared_ptr elements. Used by append_related_q2 (Q2 related columns
-        // start at offset 1, after the owner pk).
+        // Extract one Related from the row (columns start at RelColOffset) and append
+        // it to obj's container, wrapping in shared_ptr if the container holds one.
+        // Extraction itself is the shared extract_relation_entity free helper.
         template <int RelColOffset> static auto insert_related(Statement* stmt, T& obj) noexcept -> void {
             Related rel{};
-            extract_related<RelColOffset>(stmt, rel, std::make_index_sequence<RelatedBase::field_count_>{});
+            extract_relation_entity<RelatedBase, Related, RelColOffset>(
+                    stmt, rel, std::make_index_sequence<RelatedBase::field_count_>{}
+            );
             using Elem = typename ContainerType::value_type;
             if constexpr (meta::is_shared_ptr_v<Elem>) {
-                insert_into(obj.[:m2m_member_:], std::make_shared<Related>(std::move(rel)));
+                relation_insert_into(obj.[:m2m_member_:], std::make_shared<Related>(std::move(rel)));
             } else {
-                insert_into(obj.[:m2m_member_:], std::move(rel));
+                relation_insert_into(obj.[:m2m_member_:], std::move(rel));
             }
-        }
-
-        // RelColOffset = column index where the related block starts. The 1-query
-        // path puts related columns after the base columns (offset Base::field_count_);
-        // the 2-query Q2 path puts them after the single owner-pk column (offset 1).
-        template <int RelColOffset, std::size_t... Is>
-        static auto extract_related(Statement* stmt, Related& rel, std::index_sequence<Is...> /*unused*/) noexcept
-                -> void {
-            ((extract_related_at<RelColOffset, Is>(stmt, rel)), ...);
-        }
-
-        // Mirrors plain-SELECT semantics per related member: regular columns extract
-        // by value; FK columns hold only the foreign pk (pk-only FK object).
-        template <int RelColOffset, std::size_t I>
-        static auto extract_related_at(Statement* stmt, Related& rel) noexcept -> void {
-            constexpr auto member = RelatedBase::all_members_[I];
-            constexpr int  col    = RelColOffset + static_cast<int>(I);
-            using FieldType       = std::remove_cvref_t<decltype(rel.[:member:])>;
-            if constexpr (Base::is_fk_field(member)) {
-                extract_related_fk<FieldType, member>(stmt, rel, col);
-            } else {
-                rel.[:member:] = Base::template extract_column_value<FieldType>(stmt, col);
-            }
-        }
-
-        template <typename FieldType, std::meta::info Member>
-        static auto extract_related_fk(Statement* stmt, Related& rel, int col) noexcept -> void {
-            using InnerFK        = utilities::optional_inner_type_t<FieldType>;
-            constexpr auto fk_pk = Base::template find_fk_primary_key<FieldType>();
-            using PKType         = std::remove_cvref_t<decltype(std::declval<InnerFK>().[:fk_pk:])>;
-            if constexpr (utilities::is_optional_v<FieldType>) {
-                if (stmt->is_null(col)) {
-                    rel.[:Member:] = std::nullopt;
-                    return;
-                }
-            }
-            InnerFK inner{};
-            inner.[:fk_pk:] = Base::template extract_column_value<PKType>(stmt, col);
-            rel.[:Member:]  = std::move(inner);
         }
     };
 
-    // Rejects join<^^T::courses, ^^T::courses>() — a duplicated m2m field would
-    // run its Q2 twice and silently double-fill the same container (#392).
-    template <std::meta::info... Fields> consteval auto m2m_fields_distinct() -> bool {
-        const std::array<std::string_view, sizeof...(Fields)> names{std::meta::identifier_of(Fields)...};
-        for (std::size_t i = 0; i < names.size(); ++i) {
-            for (std::size_t j = i + 1; j < names.size(); ++j) {
-                if (names[i] == names[j]) {
-                    return false;
+    // =========================================================================
+    // REVERSE-FK JOIN (#398) — "all Persons, each with the Tasks that point at them".
+    //
+    // The SQL identity Task RIGHT JOIN Person ≡ Person LEFT JOIN Task is expressed
+    // directly with the base model (Person) on the correct side. The selector is an
+    // FK field of the OWNING model (^^Task::assignee); the join key is t2.<fk>_id.
+    //
+    // Eager load reuses the m2m two-query predicate-pushdown path (#391) verbatim —
+    // SelectStatement::execute_m2m_2query stitches by a pk→entity map — but Q2 hits
+    // the owning table directly (no junction):
+    //
+    //   Q1 (build_base_subquery): the base entities to load —
+    //     SELECT <base cols> FROM <Base> [WHERE …][ORDER BY …][LIMIT/OFFSET]
+    //
+    //   Q2 (build_q2_sql): the owning rows that point at them —
+    //     SELECT t2.<fk>_id, t2.<owner cols>
+    //     FROM <Owner> t2
+    //     WHERE t2.<fk>_id IN (<the SAME base subquery as Q1>)
+    //
+    // WHERE/ORDER BY/LIMIT/OFFSET select WHICH base entities load (they live in Q1
+    // and Q2's IN-subquery). INNER drops zero-relation entities after the stitch;
+    // LEFT keeps them. The modifier-free complete SQL (for aggregates / anti-join /
+    // zero-group COUNT) is Person t1 <KW> Owner t2 ON t2.<fk>_id = t1.<pk>.
+    //
+    // FkField names an FK member of Owner whose (optional-unwrapped) type is T.
+    // =========================================================================
+    template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, std::meta::info FkField>
+        requires ReverseFKSelector<T, FkField> && (Type == JoinType::Inner || Type == JoinType::Left)
+    class ReverseFKJoinStatement : private BaseStatement<T>,
+                                   public TwoQueryJoinBase<
+                                           ReverseFKJoinStatement<T, ConnType, Type, FkField>,
+                                           BaseStatement<T>,
+                                           ConnType,
+                                           Type> {
+        friend class BaseStatement<T>;
+        using Base      = BaseStatement<T>;
+        using Statement = typename ConnType::Statement;
+        using TwoQuery  = TwoQueryJoinBase<ReverseFKJoinStatement, BaseStatement<T>, ConnType, Type>;
+        friend TwoQuery;
+
+        // Owning model carrying the FK — Owner = parent_of(FkField) (e.g. Task).
+        using Owner     = typename[:std::meta::parent_of(FkField):];
+        using OwnerBase = BaseStatement<Owner>;
+
+        static_assert(!std::same_as<Owner, T>, "reverse_fk must point from a different model (#398)");
+
+        // FK column on the owning table: "<fk identifier>_id" (e.g. "assignee_id").
+        static constexpr auto fk_col_arr_ = []() consteval {
+            ConstexprString<std::meta::identifier_of(FkField).size() + 4> name;
+            name.append(std::meta::identifier_of(FkField));
+            name.append("_id");
+            return name;
+        }();
+        static constexpr std::string_view fk_col_v_ = fk_col_arr_.view();
+
+        // The base member receiving the related rows on select() — the container
+        // annotated reverse_fk<FkField>. Re-derived from ^^T by matching the carried
+        // FK target (annotation reads on a BMI-crossing reflection segfault, #262).
+        // Only the select path uses it; aggregate/filter chains never reach append_*.
+        static consteval auto find_dest_member() -> std::optional<std::meta::info> {
+            for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+                // Resolve each reverse_fk member's target (owner type or FK field) to its
+                // concrete FK field and match against the one this statement keys on.
+                if (meta::is_reverse_fk_field(m) &&
+                    meta::resolve_reverse_fk_target(meta::reverse_fk_target_of(m), ^^T) == FkField) {
+                    return m;
                 }
             }
+            return std::nullopt;
         }
-        return true;
-    }
 
-    // Field pack accepted by QuerySet::join / left_join: all-FK, or all-m2m with
-    // no duplicates. Mixed FK + m2m in one call is rejected (out of scope, #392).
-    template <typename T, std::meta::info... Fields>
-    concept JoinableFields =
-            sizeof...(Fields) >= 1 &&
-            ((FKFieldOf<T, Fields> && ...) || ((M2MFieldOf<T, Fields> && ...) && m2m_fields_distinct<Fields...>()));
+      public:
+        // True when a reverse_fk container destination for THIS FkField exists on T —
+        // gates select() (needs a destination) vs aggregate/filter chains (do not).
+        static constexpr bool has_destination_ = find_dest_member().has_value();
 
-    // One M2MRelation descriptor (#392) — Q2 builder + stitch fns for one field.
-    template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, std::meta::info M2MField>
-        requires M2MFieldOf<T, M2MField>
-    [[nodiscard]] auto make_m2m_relation() -> M2MRelation {
-        using JS = M2MJoinStatement<T, ConnType, Type, M2MField>;
+        // ---- Modifier-free complete SQL (aggregates / anti-join / zero-group COUNT) ----
+        // SELECT t1.<base cols> FROM <Base> t1 <KW> <Owner> t2 ON t2.<fk>_id = t1.<pk>
+        static consteval auto calculate_complete_sql_size() -> std::size_t {
+            std::size_t total = 7; // "SELECT "
+            for (std::size_t i = 0; i < Base::field_count_; ++i) {
+                total += 2 + 3 + std::meta::identifier_of(Base::all_members_[i]).size() + 3;
+            }
+            total += 6 + Base::table_name_.size() + 3;                                    // " FROM <Base> t1"
+            total += TwoQuery::join_keyword().size() + OwnerBase::table_name_.size() + 3; // "<KW><Owner> t2"
+            total += 7 + fk_col_v_.size() + 6 + Base::pk_name_.size();                    // " ON t2.<fk>_id = t1.<pk>"
+            return total + utilities::sql_len::SMALL_BUFFER;
+        }
+
+        static consteval auto build_complete_sql() {
+            ConstexprString<calculate_complete_sql_size()> sql;
+            sql.append("SELECT ");
+            bool first = true;
+            for (std::size_t i = 0; i < Base::field_count_; ++i) {
+                if (!first) {
+                    sql.append(", ");
+                }
+                sql.append("t1.");
+                sql.append(std::meta::identifier_of(Base::all_members_[i]));
+                if (Base::is_fk_field(Base::all_members_[i])) {
+                    sql.append("_id");
+                }
+                first = false;
+            }
+            sql.append(" FROM ");
+            sql.append(Base::table_name_);
+            sql.append(" t1");
+            sql.append(TwoQuery::join_keyword());
+            sql.append(OwnerBase::table_name_);
+            sql.append(" t2 ON t2.");
+            sql.append(fk_col_v_);
+            sql.append(" = t1.");
+            sql.append(Base::pk_name_);
+            return sql;
+        }
+
+        static constexpr auto complete_sql_arr_ = build_complete_sql();
+
+        static auto get_complete_sql() -> const std::string& {
+            static const std::string str{complete_sql_arr_.data.data(), complete_sql_arr_.len};
+            return str;
+        }
+
+        // Q1 (build_base_subquery), Q2 (build_q2_sql), and the owner-pk extractor are
+        // inherited from TwoQueryJoinBase; this class only supplies the Q2 prefix below.
+
+        // ---- Q2 prefix: "SELECT t2.<fk>_id, t2.<owner cols> FROM <Owner> t2
+        //                  WHERE t2.<fk>_id IN (SELECT <base.pk> FROM <Base>" ----
+        static consteval auto calculate_q2_prefix_size() -> std::size_t {
+            std::size_t total = 7 + 3 + fk_col_v_.size(); // "SELECT " + "t2." + "<fk>_id"
+            total += relation_columns_size<OwnerBase>();
+            total += 6 + OwnerBase::table_name_.size() + 3;                 // " FROM <Owner> t2"
+            total += 10 + fk_col_v_.size() + in_subquery_open_size<Base>(); // " WHERE t2.<fk>_id IN (…
+            return total + utilities::sql_len::SMALL_BUFFER;
+        }
+
+        static consteval auto build_q2_prefix() {
+            ConstexprString<calculate_q2_prefix_size()> result;
+            append_q2_select_head<OwnerBase>(result, fk_col_v_, /*key_id_suffix=*/false, "t2.");
+            result.append(" FROM ");
+            result.append(OwnerBase::table_name_);
+            result.append(" t2 WHERE t2.");
+            result.append(fk_col_v_);
+            append_in_subquery_open<Base>(result);
+            return result;
+        }
+
+        static constexpr auto q2_prefix_arr_ = build_q2_prefix(); // TwoQueryJoinBase reads this for build_q2_sql
+
+        // Append the Q2 row's Owner object into the base entity's container. Owner
+        // columns start at index 1 (after the FK owner pk). Only ever called when
+        // has_destination_ — guarded in the wrapper factory.
+        static auto append_related_q2(Statement* stmt, T& obj) noexcept -> void {
+            insert_owner(stmt, obj);
+        }
+
+        static auto container_empty(const T& obj) noexcept -> bool {
+            return obj.[:dest_member_:].empty();
+        }
+
+      private:
+        // The destination container member (select path). When absent (a pure
+        // cross-model selector used only for aggregates/filters), fall back to the base
+        // pk so type_of/the splice below stay well-formed; the select-only methods that
+        // use it are never called for such instantiations (gated by has_destination_).
+        static constexpr auto dest_member_ = find_dest_member().value_or(Base::primary_key_);
+
+        using ContainerType = std::remove_cvref_t<typename[:std::meta::type_of(dest_member_):]>;
+
+        // Extract the Owner entity from Q2 columns (starting at 1, after the FK owner
+        // pk) via the shared extract_relation_entity helper and append to the base
+        // entity's reverse_fk container — wrapping in shared_ptr if it holds one.
+        static auto insert_owner(Statement* stmt, T& obj) noexcept -> void {
+            Owner rel{};
+            extract_relation_entity<OwnerBase, Owner, 1>(
+                    stmt, rel, std::make_index_sequence<OwnerBase::field_count_>{}
+            );
+            using Elem = typename ContainerType::value_type;
+            if constexpr (meta::is_shared_ptr_v<Elem>) {
+                relation_insert_into(obj.[:dest_member_:], std::make_shared<Owner>(std::move(rel)));
+            } else {
+                relation_insert_into(obj.[:dest_member_:], std::move(rel));
+            }
+        }
+    };
+
+    // Build the M2MRelation descriptor (Q2 builder + stitch fns) from any two-query
+    // join statement JS exposing build_q2_sql / extract_q2_owner_pk / append_related_q2
+    // / container_empty. Shared by the m2m (#392) and reverse-FK (#398) factories.
+    template <typename T, storm::db::DatabaseConnection ConnType, typename JS>
+    [[nodiscard]] auto make_relation_descriptor(bool is_left) -> M2MRelation {
         return M2MRelation{
                 .build_q2_sql_fn = +[](const orm::where::ExpressionVariantPtr& where_expr,
                                        const std::optional<OrderByWrapper>&    order_by,
@@ -902,8 +1170,76 @@ export namespace storm::orm::statements {
                 },
                 .container_empty_fn =
                         +[](ErasedObjectPtr obj) -> bool { return JS::container_empty(*static_cast<T*>(obj)); },
-                .is_left = (Type == JoinType::Left)
+                .is_left = is_left
         };
+    }
+
+    // One M2MRelation descriptor for a reverse-FK relation (#398). Reuses the m2m
+    // two-query stitch machinery: the Q2 builder hits the owning table directly and
+    // the stitch fns append a full Owner entity. Requires a reverse_fk destination
+    // container on T (select path); aggregate/filter chains never build a wrapper.
+    template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, std::meta::info FkField>
+        requires ReverseFKSelector<T, FkField>
+    [[nodiscard]] auto make_reverse_fk_relation() -> M2MRelation {
+        using JS = ReverseFKJoinStatement<T, ConnType, Type, FkField>;
+        static_assert(JS::has_destination_, "reverse-FK select() needs a reverse_fk<...> container on the base model");
+        return make_relation_descriptor<T, ConnType, JS>(Type == JoinType::Left);
+    }
+
+    // Rejects join<^^T::courses, ^^T::courses>() — a duplicated m2m field would
+    // run its Q2 twice and silently double-fill the same container (#392).
+    template <std::meta::info... Fields> consteval auto m2m_fields_distinct() -> bool {
+        const std::array<std::string_view, sizeof...(Fields)> names{std::meta::identifier_of(Fields)...};
+        for (std::size_t i = 0; i < names.size(); ++i) {
+            for (std::size_t j = i + 1; j < names.size(); ++j) {
+                if (names[i] == names[j]) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    // Reverse-FK selector resolution (#398): the selector the join machinery keys on
+    // is always the cross-model FK field (^^Task::assignee). When the user passes an
+    // annotated reverse_fk container (^^Person::tasks), resolve it to that FK; when
+    // they pass the FK directly (aggregate/filter chains), use it as-is.
+    template <typename T, std::meta::info Field> consteval auto resolve_reverse_fk_selector() -> std::meta::info {
+        if constexpr (ReverseFKFieldOf<T, Field>) {
+            // Re-derive the member from ^^T, read its reverse_fk target (owner type or
+            // FK field), and resolve it to the concrete FK field pointing back at T.
+            for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+                if (std::meta::identifier_of(m) == std::meta::identifier_of(Field)) {
+                    return meta::resolve_reverse_fk_target(meta::reverse_fk_target_of(m), ^^T);
+                }
+            }
+            std::unreachable();
+        } else {
+            return Field; // already a cross-model FK selector
+        }
+    }
+
+    // A field usable as a reverse-FK join selector: either an annotated reverse_fk
+    // container on T (#398, has a select() destination) or a cross-model FK pointing
+    // back at T (aggregate/filter chains).
+    template <typename T, std::meta::info Field>
+    concept ReverseFKJoinable = ReverseFKFieldOf<T, Field> || ReverseFKSelector<T, Field>;
+
+    // Field pack accepted by QuerySet::join / left_join: all-FK, all-m2m, or
+    // all-reverse-FK — each kind homogeneous, no duplicates. Mixed kinds in one call
+    // are rejected (out of scope, #392/#398).
+    template <typename T, std::meta::info... Fields>
+    concept JoinableFields =
+            sizeof...(Fields) >= 1 &&
+            ((FKFieldOf<T, Fields> && ...) || ((M2MFieldOf<T, Fields> && ...) && m2m_fields_distinct<Fields...>()) ||
+             ((ReverseFKJoinable<T, Fields> && ...) && m2m_fields_distinct<Fields...>()));
+
+    // One M2MRelation descriptor (#392) — Q2 builder + stitch fns for one field.
+    template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, std::meta::info M2MField>
+        requires M2MFieldOf<T, M2MField>
+    [[nodiscard]] auto make_m2m_relation() -> M2MRelation {
+        using JS = M2MJoinStatement<T, ConnType, Type, M2MField>;
+        return make_relation_descriptor<T, ConnType, JS>(Type == JoinType::Left);
     }
 
     // Modifier-free chained join SQL over every relation — relation i uses
@@ -935,16 +1271,47 @@ export namespace storm::orm::statements {
                 },
                 // Q1 text depends only on the base model + clauses — any relation
                 // yields the same string; take it from the first.
-                .build_q1_sql_fn = +[](const orm::where::ExpressionVariantPtr& where_expr,
-                                       const std::optional<OrderByWrapper>&    order_by,
-                                       const std::optional<int>&               limit,
-                                       const std::optional<int>&               offset) -> std::string {
-                    return First::build_base_subquery(where_expr, order_by, limit, offset);
-                }
+                .build_q1_sql_fn = make_q1_sql_fn<First>()
         };
         wrapper.m2m_relations.reserve(sizeof...(M2MFields));
         (wrapper.m2m_relations.push_back(make_m2m_relation<T, ConnType, Type, M2MFields>()), ...);
         return wrapper;
+    }
+
+    // Reverse-FK join wrapper (#398). Selectors are resolved to cross-model FK fields
+    // (annotated containers → their reverse_fk target). The wrapper carries:
+    //   - get_complete_sql_fn: Person t1 <KW> Owner t2 ON … (single relation) — used by
+    //     aggregates / anti-join / zero-group COUNT. Multi-relation aggregates are out
+    //     of scope; the wrapper is built per-relation by the select path below.
+    //   - build_q1_sql_fn + m2m_relations: the two-query eager-load (select), one Q2 per
+    //     relation, reusing the m2m stitch. Relations are added only when a reverse_fk
+    //     destination exists; a pure cross-model selector (aggregate chain) has none.
+    template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, std::meta::info... Selectors>
+        requires(sizeof...(Selectors) >= 1 && (ReverseFKJoinable<T, Selectors> && ...))
+    [[nodiscard]] auto make_reverse_fk_join_wrapper() -> JoinStatementWrapper {
+        // The FK fields the join keys on (annotated containers resolved to their target).
+        using First = ReverseFKJoinStatement<T, ConnType, Type, resolve_reverse_fk_selector<T, Selectors...[0]>()>;
+        JoinStatementWrapper wrapper{
+                .get_complete_sql_fn = +[]() -> const std::string& { return First::get_complete_sql(); },
+                .build_q1_sql_fn     = make_q1_sql_fn<First>()
+        };
+        // One relation per selector that has a destination container (the select path).
+        // Cross-model selectors used only for aggregates/filters have none — the
+        // wrapper then stays relation-free and routes through get_complete_sql().
+        (add_reverse_fk_relation_if_destination<T, ConnType, Type, resolve_reverse_fk_selector<T, Selectors>()>(
+                 wrapper
+         ),
+         ...);
+        return wrapper;
+    }
+
+    // Push a reverse-FK M2MRelation onto the wrapper iff a destination container exists
+    // for FkField on T (select path). Compile-time gate via has_destination_.
+    template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, std::meta::info FkField>
+    auto add_reverse_fk_relation_if_destination(JoinStatementWrapper& wrapper) -> void {
+        if constexpr (ReverseFKJoinStatement<T, ConnType, Type, FkField>::has_destination_) {
+            wrapper.m2m_relations.push_back(make_reverse_fk_relation<T, ConnType, Type, FkField>());
+        }
     }
 
 } // namespace storm::orm::statements

@@ -288,6 +288,87 @@ fan-out wins by 33–46%. `count()` and other aggregates still run the modifier-
 chained join (`get_complete_sql`) — `(base, related)` pairs for one relation,
 cartesian tuples when several relations are joined (#392).
 
+## Reverse-FK Joins (#398)
+
+Storm's other join selectors start from the base model: FK fields (`^^Task::assignee`)
+or m2m containers (`^^Student::courses`). A **reverse-FK join** starts from the
+*related* side: "all Persons, each with the Tasks that point at them". The SQL
+identity is `Task RIGHT JOIN Person ≡ Person LEFT JOIN Task` — Storm expresses the
+right-hand side directly, with the base model (`Person`) on the correct side.
+
+### 1. Annotated container destination (`select()`)
+
+`select()` returns `hive<Person>`, so `Person` needs a member to receive the tasks.
+Declare a reverse-FK container (not a column — invisible to CRUD, like m2m):
+
+```cpp
+struct Task; // forward declaration breaks the Person⟷Task reference cycle
+
+struct Person {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    std::string name;
+    int age{};
+    // Filled on eager load. The annotation names the OWNER TYPE; the unique FK
+    // back at Person is resolved at instantiation.
+    [[= storm::meta::reverse_fk<^^Task>]] std::vector<Task> tasks;
+};
+
+struct Task {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    std::string title;
+    [[= storm::meta::FieldAttr::fk]] Person assignee;   // FK → Person
+};
+
+person_qs.left_join<^^Person::tasks>().select();   // all Persons; .tasks empty when none
+person_qs.join<^^Person::tasks>().select();        // INNER: drops Persons with no Tasks
+```
+
+The annotation argument is **the owning model type** (`^^Task`), resolved to that
+model's unique `FieldAttr::fk` member pointing back at `Person`. The type form (not
+a member splice) is required: `Person` holds `vector<Task>` and `Task` holds `Person`
+by value, a reference cycle that only compiles when `Task` is forward-declared at the
+annotation site — which rules out a `^^Task::assignee` member splice there.
+The container element may be `T`, `plf::hive<T>`, or `vector<shared_ptr<T>>`, as for m2m.
+
+### 2. Cross-model FK selector (aggregate / filter chains)
+
+`join`/`left_join` also accept an FK field **of another model** that points at the
+base. No destination is needed because these chains never materialize base+related
+entities — they absorb the aggregate-over-RIGHT-JOIN capability that `right_join`
+(removed in #397) pretended to offer:
+
+```cpp
+// Tasks per person, INCLUDING persons with zero tasks (LEFT keeps the NULL row)
+QuerySet<Person>().left_join<^^Task::assignee>().count().execute();
+
+// Disambiguation: when the owner has several FKs to the base, name the exact field
+QuerySet<Reporter>().join<^^Bug::author>().count().execute();    // ON t2.author_id = t1.id
+QuerySet<Reporter>().join<^^Bug::reviewer>().count().execute();  // ON t2.reviewer_id = t1.id
+```
+
+### Execution & semantics
+
+Identical to m2m (#391): `select()` runs **two queries in one transaction** stitched
+by a `pk → entity` hash map. Q1 is the base subquery; Q2 hits the **owning table
+directly** (no junction) —
+`SELECT t2.<fk>_id, t2.<owner cols> FROM <Owner> t2 WHERE t2.<fk>_id IN (<base subquery>)`.
+WHERE / ORDER BY / LIMIT / OFFSET bound the **base** entities; INNER drops
+zero-relation entities after the stitch, LEFT keeps them. Multi-relation joins
+compose per #392 (one Q2 per relation, additive cost). Aggregates / anti-joins use
+the modifier-free complete SQL `Person t1 <KW> Owner t2 ON t2.<fk>_id = t1.<pk>`.
+
+### Limitations
+
+- **`select()` disambiguation** of several owner FKs to the base is not expressible:
+  the destination annotation must use the owner *type* (the reference cycle forbids a
+  member splice), so the owner must have exactly **one** FK back at the base.
+  Multi-FK disambiguation is available only on the aggregate/filter selector path
+  (`^^Bug::author` vs `^^Bug::reviewer`), which has no container and no cycle.
+- Eager only (no lazy loading), no tuple/pair result shapes, no `right_join`-style
+  base rows with defaulted fields (removed in #397).
+- The annotation spelling carries the owner type, not `FieldAttr::reverse_fk` —
+  `FieldAttr` is an enum, so a templated enumerator is impossible (as for m2m).
+
 ## Architecture
 
 ### Type-Erased SQL Builder Pattern

@@ -43,6 +43,12 @@ export namespace storm {
         using orm::statements::meta::many_to_many_through; // NOLINT(misc-unused-using-decls)
         using orm::statements::meta::ManyToMany;           // NOLINT(misc-unused-using-decls)
 
+        // Reverse-FK annotation (#398): reverse_fk<^^Owner::fk> on a container member
+        // names the FK of another model that points back at this model, declaring the
+        // eager-load destination ("all Persons, each with the Tasks that point at them").
+        using orm::statements::meta::reverse_fk; // NOLINT(misc-unused-using-decls)
+        using orm::statements::meta::ReverseFk;  // NOLINT(misc-unused-using-decls)
+
         // Check if member has primary attribute
         consteval auto has_primary_attr(std::meta::info member) -> bool {
             auto field_attr = std::meta::annotation_of_type<FieldAttr>(member);
