@@ -65,6 +65,14 @@ export namespace storm {
             return orm::statements::EraseStatement<T, ConnType>(conn_).query(objects);
         }
 
+        // Conditional bulk DELETE (#198) — deletes rows matching the current where().
+        // qs.where(cond).erase().execute() → std::expected<void, Error>.
+        // With NO where() set, .execute()/.to_sql() return std::unexpected and refuse
+        // to wipe the table; call erase_all() for an explicit full-table delete.
+        [[nodiscard]] auto erase() {
+            return orm::statements::EraseStatement<T, ConnType>(conn_).query_where(where_expr_);
+        }
+
         // Erase all rows — executes DELETE FROM <table> with no WHERE clause
         [[nodiscard]] auto erase_all() {
             return orm::statements::EraseStatement<T, ConnType>(conn_).query_all();
