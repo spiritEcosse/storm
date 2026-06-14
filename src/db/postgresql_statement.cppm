@@ -19,10 +19,9 @@ export namespace storm::db::postgresql {
         using Error = postgresql::Error;
 
         // Constants for step return codes
-        static constexpr int         ROW_AVAILABLE      = 1;
-        static constexpr int         NO_MORE_ROWS       = 0;
-        static constexpr bool        preserves_bindings = false; // reset() clears params
-        static constexpr std::size_t MAX_DB_VARIABLES   = 999;   // matches BaseStatement::MAX_DB_VARIABLES
+        static constexpr int         ROW_AVAILABLE    = 1;
+        static constexpr int         NO_MORE_ROWS     = 0;
+        static constexpr std::size_t MAX_DB_VARIABLES = 999; // matches BaseStatement::MAX_DB_VARIABLES
 
         explicit Statement(PGconn* conn, std::string stmt_name) : conn_(conn), stmt_name_(std::move(stmt_name)) {
             param_values_.reserve(MAX_DB_VARIABLES);
