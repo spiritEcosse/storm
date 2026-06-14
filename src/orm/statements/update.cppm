@@ -178,12 +178,6 @@ export namespace storm::orm::statements {
         static constexpr auto           update_sql_array  = build_update_sql_array();
         static inline const std::string update_sql_string = std::string(update_sql_array);
 
-      public:
-        // Public access to UPDATE SQL for QuerySet optimization
-        static auto get_update_sql_static() -> const std::string& {
-            return update_sql_string;
-        }
-
       private:
         // Generate UPDATE SQL string (compile-time computed, runtime accessible)
         static auto get_update_sql() -> const std::string& {
