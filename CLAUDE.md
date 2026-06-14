@@ -150,7 +150,8 @@ cmake/
 - **Close when done**: After all subtasks are checked off, close the issue with `gh issue close <N>`.
 
 ### Branching Rules
-- **GitHub Issue work**: Create and link a feature branch using `gh issue develop <N> --name feature/<N>-<short-description> --base develop --checkout` — this creates the branch, links it to the issue in GitHub, and checks it out in one step.
+- **ALWAYS start a feature branch in a git worktree, NOT in the default project folder** — create the branch in its own `git worktree` under `.claude/worktrees/<branch-name>/` so the main working directory stays clean and on `develop`. Do all work for the branch inside that worktree. Run `git worktree remove` after the branch is merged.
+- **GitHub Issue work**: Create and link a feature branch using `gh issue develop <N> --name feature/<N>-<short-description> --base develop --checkout` — this creates the branch, links it to the issue in GitHub. Then add it as a worktree (`git worktree add .claude/worktrees/<branch-name> feature/<N>-<short-description>`) and work from there instead of checking it out in place.
 - **Create pull request**: After pushing a feature branch, ALWAYS create a PR with `gh pr create --base develop` including `Closes #<N>` in the body to auto-link and auto-close the issue on merge.
 - **After creating a PR**: Wait 30 seconds, then run `/sonarcloud-status`. If there are **zero issues** on new code, check CI jobs with `gh pr checks <PR#> --watch`. Only merge after **both** SonarCloud gate AND all CI jobs (ninja-debug, ninja-asan-ubsan, ninja-tsan) pass (`gh pr merge --squash`). If ANY SonarCloud issues or CI failures, fix them all, push, and re-check until clean.
 - **Close issue after merge**: After merging a feature branch into `develop`, ALWAYS close the issue with `gh issue close <N>`. Do NOT wait to be asked.
