@@ -88,4 +88,42 @@ TEST_F(WhereLifetimeCollateTest, CollatedStringViewOperandSurvivesDeferredBind) 
     expect_single_bob<SqliteConn>(expr);
 }
 
+// Test: between() string-literal operands survive a deferred bind (#406).
+// between() used to store text operands by value-decay (BetweenExpr<const char*>),
+// bypassing the #352 normalize_operand text-copy. A string literal then dangles only
+// if the literal's storage dies — but a literal lives for the whole program, so to
+// prove the copy we route through a heap buffer that dies before the deferred bind.
+TYPED_TEST(WhereLifetimeTest, BetweenStringOperandSurvivesDeferredBind) {
+    // "Bob" BETWEEN "Bob" AND "Bob" matches exactly the one Bob.
+    Expr expr = [] {
+        auto        lo_owner = std::make_unique<std::array<char, 4>>(std::array<char, 4>{'B', 'o', 'b', '\0'});
+        auto        hi_owner = std::make_unique<std::array<char, 4>>(std::array<char, 4>{'B', 'o', 'b', '\0'});
+        const char* lo       = lo_owner->data();
+        const char* hi       = hi_owner->data();
+        return f<^^Person::name>().between(lo, hi); // node must copy, not keep the char*
+    }();
+
+    expect_single_bob<TypeParam>(expr);
+}
+
+// Test: between() with a literal compiles and binds correctly (#406 DoD).
+TYPED_TEST(WhereLifetimeTest, BetweenStringLiteralCompilesAndBinds) {
+    Expr expr = f<^^Person::name>().between("Bob", "Bob");
+    expect_single_bob<TypeParam>(expr);
+}
+
+// Test: CollatedField::between() string operands survive a deferred bind (#406).
+TEST_F(WhereLifetimeCollateTest, CollatedBetweenStringOperandSurvivesDeferredBind) {
+    Expr expr = [] {
+        auto        lo_owner = std::make_unique<std::array<char, 4>>(std::array<char, 4>{'b', 'o', 'b', '\0'});
+        auto        hi_owner = std::make_unique<std::array<char, 4>>(std::array<char, 4>{'b', 'o', 'b', '\0'});
+        const char* lo       = lo_owner->data();
+        const char* hi       = hi_owner->data();
+        return f<^^Person::name>().collate(storm::orm::utilities::Collate::NoCase).between(lo, hi);
+    }();
+
+    // Case-insensitive: "bob" BETWEEN-bounds finds "Bob".
+    expect_single_bob<SqliteConn>(expr);
+}
+
 // NOLINTEND(misc-const-correctness,performance-unnecessary-value-param,performance-unnecessary-copy-initialization)

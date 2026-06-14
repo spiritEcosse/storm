@@ -339,6 +339,20 @@ export namespace storm::orm::where {
         );
     }
 
+    // Build a value-owning BetweenExpr from its bounds. Both bounds go through normalize_operand
+    // (#406): text operands are copied into an owning std::string (closes the deferred-bind dangle
+    // #352 fixed for comparisons) and enums fold to int — the same rules as make_comparison_expr.
+    template <typename V>
+    [[nodiscard]] auto make_between_expr(const std::string& field_name, V&& min_val, V&& max_val) -> Expr {
+        auto stored_min = normalize_operand(std::forward<V>(min_val));
+        auto stored_max = normalize_operand(std::forward<V>(max_val));
+        return Expr(
+                std::make_shared<ExpressionVariant>(BetweenExpr<decltype(stored_min)>{
+                        .field_name_ = field_name, .min_val_ = std::move(stored_min), .max_val_ = std::move(stored_max)
+                })
+        );
+    }
+
     // CollatedField proxy - wraps field name with COLLATE clause
     // Created via f<^^Person::name>().collate(Collate::NoCase)
     // All comparison operators produce SQL like: "name COLLATE NOCASE = ?"
@@ -400,13 +414,7 @@ export namespace storm::orm::where {
         }
 
         template <typename V> auto between(V&& min_val, V&& max_val) const -> Expr {
-            return Expr(
-                    std::make_shared<ExpressionVariant>(BetweenExpr<std::decay_t<V>>{
-                            .field_name_ = collated_name_,
-                            .min_val_    = std::forward<V>(min_val),
-                            .max_val_    = std::forward<V>(max_val)
-                    })
-            );
+            return where::make_between_expr(collated_name_, std::forward<V>(min_val), std::forward<V>(max_val));
         }
 
       private:
@@ -499,25 +507,9 @@ export namespace storm::orm::where {
         }
 
         template <typename V> auto between(V&& min_val, V&& max_val) const -> Expr {
-            using D = std::decay_t<V>;
-            if constexpr (std::is_enum_v<D>) {
-                using StoredType = int;
-                return Expr(
-                        std::make_shared<ExpressionVariant>(BetweenExpr<StoredType>{
-                                .field_name_ = std::string(field_name_sv),
-                                .min_val_    = static_cast<StoredType>(static_cast<std::underlying_type_t<D>>(min_val)),
-                                .max_val_    = static_cast<StoredType>(static_cast<std::underlying_type_t<D>>(max_val))
-                        })
-                );
-            } else {
-                return Expr(
-                        std::make_shared<ExpressionVariant>(BetweenExpr<D>{
-                                .field_name_ = std::string(field_name_sv),
-                                .min_val_    = std::forward<V>(min_val),
-                                .max_val_    = std::forward<V>(max_val)
-                        })
-                );
-            }
+            return where::make_between_expr(
+                    std::string(field_name_sv), std::forward<V>(min_val), std::forward<V>(max_val)
+            );
         }
 
       private:
