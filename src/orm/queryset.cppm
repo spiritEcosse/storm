@@ -282,6 +282,18 @@ export namespace storm {
             return orm::statements::UpdateStatement<T, ConnType>(conn_).query(objects);
         }
 
+        // Conditional bulk UPDATE (#403) — updates rows matching the current where() filter.
+        // SET columns are the Members... NTTPs; values come from `proto`.
+        // qs.where(cond).update<^^T::a, ^^T::b>(T{...}).execute() → std::expected<void, Error>.
+        // With NO where() set, .execute()/.to_sql() return std::unexpected and refuse to
+        // write the whole table.
+        template <std::meta::info... Members>
+            requires(sizeof...(Members) > 0)
+        [[nodiscard]] auto update(const T& proto [[clang::lifetimebound]]) {
+            return orm::statements::UpdateStatement<T, ConnType>(conn_)
+                    .template query_where<Members...>(proto, where_expr_);
+        }
+
         // Reset WHERE, JOIN, LIMIT, and OFFSET state
         // Use this to clear conditions and start fresh with the same QuerySet instance
         // Example:

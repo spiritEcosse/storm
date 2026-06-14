@@ -284,6 +284,71 @@ namespace {
         EXPECT_EQ(sql.error().code(), -1);
     }
 
+    // Conditional bulk UPDATE (#403) error paths
+
+    TEST_F(ORMMockErrorTest, ConditionalUpdateFailsOnPrepareError) {
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        QuerySet<MockPerson> qs;
+        auto                 result = qs.where(storm::orm::where::f<^^MockPerson::age>() > 30)
+                              .update<^^MockPerson::name>(MockPerson{.name = "x"})
+                              .execute();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_ERROR);
+    }
+
+    TEST_F(ORMMockErrorTest, ConditionalUpdateFailsOnSetBindError) {
+        // SET binds the explicit column first (param index 1) — force that bind to fail.
+        MockSqlite3Config::bind_text_fails_on_call(1, SQLITE_NOMEM);
+
+        QuerySet<MockPerson> qs;
+        auto                 result = qs.where(storm::orm::where::f<^^MockPerson::age>() > 30)
+                              .update<^^MockPerson::name>(MockPerson{.name = "x"})
+                              .execute();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+    }
+
+    TEST_F(ORMMockErrorTest, ConditionalUpdateFailsOnWhereBindError) {
+        // SET binds name (text, param 1); WHERE binds age (int, param 2) — fail the WHERE bind.
+        MockSqlite3Config::bind_int_fails_on_call(1, SQLITE_NOMEM);
+
+        QuerySet<MockPerson> qs;
+        auto                 result = qs.where(storm::orm::where::f<^^MockPerson::age>() > 30)
+                              .update<^^MockPerson::name>(MockPerson{.name = "x"})
+                              .execute();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+    }
+
+    TEST_F(ORMMockErrorTest, ConditionalUpdateFailsOnStepError) {
+        MockSqlite3Config::step_returns(SQLITE_LOCKED);
+
+        QuerySet<MockPerson> qs;
+        auto                 result = qs.where(storm::orm::where::f<^^MockPerson::age>() > 30)
+                              .update<^^MockPerson::name>(MockPerson{.name = "x"})
+                              .execute();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_LOCKED);
+    }
+
+    // Empty WHERE is refused with a client-side error (no DB call) on both paths.
+    TEST_F(ORMMockErrorTest, ConditionalUpdateEmptyWhereRefused) {
+        QuerySet<MockPerson> qs;
+        auto                 result = qs.update<^^MockPerson::name>(MockPerson{.name = "x"}).execute();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), -1);
+
+        auto sql = qs.update<^^MockPerson::name>(MockPerson{.name = "x"}).to_sql();
+        ASSERT_FALSE(sql.has_value());
+        EXPECT_EQ(sql.error().code(), -1);
+    }
+
     // ============================================================================
     // Aggregate Error Tests
     // ============================================================================
