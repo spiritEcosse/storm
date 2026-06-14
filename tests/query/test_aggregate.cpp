@@ -180,6 +180,42 @@ TYPED_TEST(AggregateTest, TypeSafety_DoubleResult) {
 }
 
 // ============================================================================
+// SUM over floating-point columns — must NOT truncate (#420)
+// ============================================================================
+
+TYPED_TEST(AggregateTest, SumDoubleField_ReturnsDouble) {
+    auto result = this->qs->template sum<^^Person::salary>().execute();
+    ASSERT_TRUE(result.has_value());
+    static_assert(
+            std::is_same_v<std::remove_reference_t<decltype(result.value())>, double>,
+            "SUM over a double column should return double"
+    );
+}
+
+TYPED_TEST(AggregateTest, SumDoubleField_PreservesFraction) {
+    ASSERT_TRUE(this->qs->insert(Person{.id = 0, .name = "A", .age = 1, .salary = 100.25}).execute().has_value());
+    ASSERT_TRUE(this->qs->insert(Person{.id = 0, .name = "B", .age = 1, .salary = 200.50}).execute().has_value());
+
+    auto result = this->qs->template sum<^^Person::salary>().execute();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_DOUBLE_EQ(result.value(), 300.75);
+}
+
+TYPED_TEST(AggregateTest, SumMultiField_PromotesToDoubleIfAnyFloating) {
+    ASSERT_TRUE(this->qs->insert(Person{.id = 0, .name = "A", .age = 10, .salary = 100.50}).execute().has_value());
+    ASSERT_TRUE(this->qs->insert(Person{.id = 0, .name = "B", .age = 20, .salary = 200.25}).execute().has_value());
+
+    auto result = this->qs->template sum<^^Person::age, ^^Person::salary>().execute();
+    ASSERT_TRUE(result.has_value());
+    static_assert(
+            std::is_same_v<std::remove_reference_t<decltype(result.value())>, double>,
+            "SUM(int + double) should promote to double"
+    );
+    // 10 + 20 + 100.50 + 200.25 = 330.75
+    EXPECT_DOUBLE_EQ(result.value(), 330.75);
+}
+
+// ============================================================================
 // Statement Caching Tests
 // ============================================================================
 

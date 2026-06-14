@@ -139,7 +139,8 @@ qs.erase_all().execute();
 ```cpp
 // Scalar aggregates (no GROUP BY) — use .get()
 auto count = qs.count().execute();                           // int64_t
-auto total = qs.sum<^^Person::salary>().execute();           // int64_t
+auto total = qs.sum<^^Person::salary>().execute();           // double (SUM over a double/float column)
+auto age_total = qs.sum<^^Person::age>().execute();          // int64_t (SUM over an integer column)
 auto avg   = qs.avg<^^Person::salary>().execute();           // double
 auto lo    = qs.min<^^Person::age>().execute();              // int64_t
 auto hi    = qs.max<^^Person::age>().execute();              // int64_t
