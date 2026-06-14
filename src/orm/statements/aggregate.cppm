@@ -149,10 +149,29 @@ export namespace storm::orm::statements {
     }
     // LCOV_EXCL_STOP
 
-    // Result type: SUM/COUNT -> int64_t, AVG/MIN/MAX -> double
+    // True when any of the operation's summed fields is stored as a floating-point
+    // type (double/float). SUM(a + b) promotes to double if ANY operand is floating.
+    // LCOV_EXCL_START - compile-time only
+    template <typename Op> consteval auto op_has_floating_field() -> bool {
+        for (std::size_t i = 0; i < Op::field_count; ++i) {
+            const auto field_type = std::meta::dealias(std::meta::type_of(Op::field_infos[i]));
+            if (field_type == ^^double || field_type == ^^float) {
+                return true;
+            }
+        }
+        return false;
+    }
+    // LCOV_EXCL_STOP
+
+    // Result type:
+    //   COUNT            -> int64_t
+    //   SUM (integer)    -> int64_t
+    //   SUM (floating)   -> double (no truncation, #420)
+    //   AVG/MIN/MAX      -> double
     template <typename Op>
     using OpResult = std::conditional_t<
-            Op::agg_type == AggregateType::SUM || Op::agg_type == AggregateType::COUNT,
+            Op::agg_type == AggregateType::COUNT ||
+                    (Op::agg_type == AggregateType::SUM && !op_has_floating_field<Op>()),
             std::int64_t,
             double>;
 
