@@ -29,7 +29,12 @@
  * When STORM_BENCH_SOCKET is set, streams over the dashboard wire with
  * is_raw=true (run_start), producing the Storm-vs-raw baseline run.
  *
- * Schema is hand-rolled — no Storm model coupling.
+ * Schema is hand-rolled — no Storm model coupling — but mirrors the model each
+ * benchmark uses: the SELECT/WHERE anchors run on the FULL 10-field Person
+ * table and materialize every row into a plf::hive<PersonRow>, exactly as
+ * Storm's select().execute() builds a plf::hive<Person>, so both sides pay the
+ * same per-row construct + container cost (fairness audit #68). The INSERT
+ * anchors keep a narrow 4-field BenchPerson table.
  *
  * Kept as a plain .cpp (not .cppm). Converting to a module unit segfaults
  * clang-p2996 inside ASTWriter::GenerateNameLookupTable when it tries to
@@ -37,6 +42,7 @@
  */
 
 #include <benchmark/benchmark.h>
+#include <plf_hive/plf_hive.h>
 #include <sqlite3.h>
 
 #include "dashboard/reporter.h"
@@ -46,21 +52,35 @@
 #include <cstdio>
 #include <cstdlib>
 #include <format>
+#include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace {
 
-    // Plain INTEGER PRIMARY KEY mirrors Storm's schema generator, which now emits
-    // "id INTEGER PRIMARY KEY" by default (#379) — AUTOINCREMENT became opt-in.
-    // The raw anchor must NOT use AUTOINCREMENT, or it would pay the per-insert
-    // sqlite_sequence bookkeeping that Storm no longer pays, making the comparison
-    // unfair (see #345 fairness work).
+    // SELECT-family anchor schema. The SELECT/WHERE benchmarks run on the FULL
+    // 10-field Person model (shared/models.h) — Storm's select().execute()
+    // materializes a plf::hive<Person> where every row carries two strings, two
+    // optionals and a BLOB vector. The raw anchor must model the same columns,
+    // or it would read a far lighter row than Storm and the comparison would be
+    // unfair (#68). This byte-mirrors Storm's SQLite schema generator output for
+    // Person: plain "id INTEGER PRIMARY KEY" (no AUTOINCREMENT — that became
+    // opt-in in #379 and adds per-insert sqlite_sequence cost Storm no longer
+    // pays), "name TEXT NOT NULL UNIQUE" (FieldAttr::unique), "is_active INTEGER
+    // NOT NULL DEFAULT 0" (bool default clause), nullable score/nickname/avatar.
+    // The INSERT anchors keep their own narrow BenchPerson table (kCreateBenchPerson).
     constexpr auto kCreatePerson = "CREATE TABLE person ("
                                    "id INTEGER PRIMARY KEY,"
-                                   "name TEXT NOT NULL,"
+                                   "name TEXT NOT NULL UNIQUE,"
                                    "age INTEGER NOT NULL,"
-                                   "salary REAL NOT NULL"
+                                   "salary REAL NOT NULL,"
+                                   "is_active INTEGER NOT NULL DEFAULT 0,"
+                                   "years_experience INTEGER NOT NULL,"
+                                   "department TEXT NOT NULL,"
+                                   "score INTEGER,"
+                                   "nickname TEXT,"
+                                   "avatar BLOB"
                                    ")";
 
     auto die(sqlite3* db, char const* what) -> void {
@@ -99,27 +119,39 @@ namespace {
         return stmt;
     }
 
-    // Bind the shared (name, age, salary) columns for row i. is_active, when
-    // present, is bound separately by the caller (kept out of the helper to
-    // keep both seeders sharing a single bind path). SQLITE_TRANSIENT copies
-    // the name immediately, so the local string need not outlive the bind.
-    auto bind_person_base(sqlite3_stmt* ins, int i) -> void {
-        const std::string name = std::format("Person{}", i);
-        sqlite3_bind_text(ins, 1, name.c_str(), -1, SQLITE_TRANSIENT);
-        sqlite3_bind_int(ins, 2, 20 + (i % 50));
-        sqlite3_bind_double(ins, 3, 30'000.0 + static_cast<double>(i));
-    }
+    // Column list for the full-Person INSERT used to seed the SELECT/WHERE
+    // anchors. Mirrors the field set the Storm SELECT/WHERE benchmark inserts
+    // (QueryBenchmark::create_model for Person): name/age/salary/is_active/score
+    // are populated; years_experience defaults to 0, department to '', nickname
+    // and avatar stay NULL — so the seeded NULL distribution (and thus the
+    // per-row optional/blob extraction cost) matches Storm.
+    constexpr auto kInsertPersonFull =
+            "INSERT INTO person(name, age, salary, is_active, years_experience, department, score, nickname, avatar) "
+            "VALUES(?,?,?,?,?,?,?,?,?)";
 
-    // One seed driver for both schemas. When with_active is true the prepared
-    // INSERT has a fourth (is_active) placeholder, bound to i % 2.
-    auto seed_person_table(sqlite3* db, int rows, char const* insert_sql, bool with_active) -> void {
+    // Seed `rows` full-Person records, mirroring QueryBenchmark::create_model
+    // (i = index + 1): name "Person{i}", age 20+(i%50), salary 30000+(i*1000),
+    // is_active (i%2==0), score non-null only when (i%3==0). nickname and avatar
+    // bind NULL. One transaction wraps the seed (setup, outside any timed loop).
+    auto seed_person(sqlite3* db, int rows) -> void {
         exec(db, "BEGIN");
-        sqlite3_stmt* ins = prepare(db, insert_sql);
-        for (int i = 0; i < rows; ++i) {
-            bind_person_base(ins, i);
-            if (with_active) {
-                sqlite3_bind_int(ins, 4, i % 2);
+        sqlite3_stmt* ins = prepare(db, kInsertPersonFull);
+        for (int idx = 0; idx < rows; ++idx) {
+            int const         i    = idx + 1;
+            const std::string name = std::format("Person{}", i);
+            sqlite3_bind_text(ins, 1, name.c_str(), -1, SQLITE_TRANSIENT);
+            sqlite3_bind_int(ins, 2, 20 + (i % 50));
+            sqlite3_bind_double(ins, 3, 30'000.0 + (static_cast<double>(i) * 1000.0));
+            sqlite3_bind_int(ins, 4, (i % 2 == 0) ? 1 : 0);
+            sqlite3_bind_int(ins, 5, 0);                      // years_experience (default)
+            sqlite3_bind_text(ins, 6, "", -1, SQLITE_STATIC); // department (default "")
+            if (i % 3 == 0) {
+                sqlite3_bind_int(ins, 7, 60 + (i % 40)); // score (optional, set)
+            } else {
+                sqlite3_bind_null(ins, 7); // score (optional, nullopt)
             }
+            sqlite3_bind_null(ins, 8); // nickname (optional, nullopt)
+            sqlite3_bind_null(ins, 9); // avatar (BLOB, empty/NULL)
             if (sqlite3_step(ins) != SQLITE_DONE) {
                 die(db, "seed step");
             }
@@ -129,37 +161,86 @@ namespace {
         exec(db, "COMMIT");
     }
 
-    auto seed_person(sqlite3* db, int rows) -> void {
-        seed_person_table(db, rows, "INSERT INTO person(name, age, salary) VALUES(?,?,?)", /*with_active=*/false);
+    // Row materialized per SELECT result, mirroring the full Person struct
+    // (shared/models.h) that Storm's select().execute() builds. Storm collects
+    // these into a plf::hive<Person>; the raw anchor must materialize the same
+    // 10 fields into a plf::hive so both sides pay the identical per-row
+    // construct (strings, optionals, blob vector) + hive-insert cost (fairness
+    // rule "same container types", #68).
+    struct PersonRow {
+        int                        id;
+        std::string                name;
+        int                        age;
+        double                     salary;
+        bool                       is_active;
+        int                        years_experience;
+        std::string                department;
+        std::optional<int>         score;
+        std::optional<std::string> nickname;
+        std::vector<std::uint8_t>  avatar;
+    };
+
+    // Read column `col` as a std::string (TEXT NOT NULL — never NULL).
+    auto column_string(sqlite3_stmt* sel, int col) -> std::string {
+        return reinterpret_cast<char const*>(sqlite3_column_text(sel, col));
     }
 
-    // Plain INTEGER PRIMARY KEY to mirror Storm's default schema (see kCreatePerson note, #379).
-    constexpr auto kCreatePersonBool = "CREATE TABLE person ("
-                                       "id INTEGER PRIMARY KEY,"
-                                       "name TEXT NOT NULL,"
-                                       "age INTEGER NOT NULL,"
-                                       "salary REAL NOT NULL,"
-                                       "is_active INTEGER NOT NULL"
-                                       ")";
-
-    auto seed_person_bool(sqlite3* db, int rows) -> void {
-        seed_person_table(
-                db, rows, "INSERT INTO person(name, age, salary, is_active) VALUES(?,?,?,?)", /*with_active=*/true
-        );
-    }
-
-    // Step a prepared SELECT to exhaustion, touching all four (id, name, age,
-    // salary) columns so the optimizer can't elide the read. Returns the row
-    // count, then resets the statement for the next iteration.
-    auto drain_person_select(sqlite3_stmt* sel) -> int {
-        int rows = 0;
-        while (sqlite3_step(sel) == SQLITE_ROW) {
-            benchmark::DoNotOptimize(sqlite3_column_int(sel, 0));
-            benchmark::DoNotOptimize(sqlite3_column_text(sel, 1));
-            benchmark::DoNotOptimize(sqlite3_column_int(sel, 2));
-            benchmark::DoNotOptimize(sqlite3_column_double(sel, 3));
-            ++rows;
+    // Read a nullable INTEGER column into std::optional<int>, mirroring Storm's
+    // extract_column_value<optional<T>> (nullopt on SQLITE_NULL).
+    auto column_optional_int(sqlite3_stmt* sel, int col) -> std::optional<int> {
+        if (sqlite3_column_type(sel, col) == SQLITE_NULL) {
+            return std::nullopt;
         }
+        return sqlite3_column_int(sel, col);
+    }
+
+    // Read a nullable TEXT column into std::optional<std::string>.
+    auto column_optional_string(sqlite3_stmt* sel, int col) -> std::optional<std::string> {
+        if (sqlite3_column_type(sel, col) == SQLITE_NULL) {
+            return std::nullopt;
+        }
+        return column_string(sel, col);
+    }
+
+    // Read a BLOB column into std::vector<uint8_t>, mirroring Storm's
+    // extract_blob_like (empty vector when NULL / zero-length).
+    auto column_blob(sqlite3_stmt* sel, int col) -> std::vector<std::uint8_t> {
+        void const* blob = sqlite3_column_blob(sel, col);
+        int const   size = sqlite3_column_bytes(sel, col);
+        if (blob == nullptr || size <= 0) {
+            return {};
+        }
+        auto const* data = static_cast<std::uint8_t const*>(blob);
+        return {data, data + size};
+    }
+
+    // Step a prepared SELECT to exhaustion, materializing each row into a
+    // plf::hive<PersonRow> exactly as Storm's execute_query_loop does
+    // (`T obj; extractor(stmt, obj); results.insert(std::move(obj));`,
+    // select.cppm). All 10 Person columns are extracted with the same
+    // null-handling Storm uses, so both sides build byte-comparable rows.
+    // Returns the hive count, then resets the statement for the next iteration.
+    // The hive is kept alive past the loop via DoNotOptimize so the optimizer
+    // can't elide the inserts.
+    auto drain_person_select(sqlite3_stmt* sel) -> int {
+        plf::hive<PersonRow> results;
+        while (sqlite3_step(sel) == SQLITE_ROW) {
+            PersonRow obj{
+                    .id               = sqlite3_column_int(sel, 0),
+                    .name             = column_string(sel, 1),
+                    .age              = sqlite3_column_int(sel, 2),
+                    .salary           = sqlite3_column_double(sel, 3),
+                    .is_active        = sqlite3_column_int(sel, 4) != 0,
+                    .years_experience = sqlite3_column_int(sel, 5),
+                    .department       = column_string(sel, 6),
+                    .score            = column_optional_int(sel, 7),
+                    .nickname         = column_optional_string(sel, 8),
+                    .avatar           = column_blob(sel, 9),
+            };
+            results.insert(std::move(obj));
+        }
+        benchmark::DoNotOptimize(results);
+        int const rows = static_cast<int>(results.size());
         sqlite3_reset(sel);
         return rows;
     }
@@ -203,13 +284,19 @@ namespace {
         sqlite3_close(db);
     }
 
+    // Full-Person column list — Storm's SELECT materializes every Person field,
+    // so the raw anchors select all 10 columns (struct order) into PersonRow.
+    constexpr auto kSelectPersonCols = "SELECT id, name, age, salary, is_active, years_experience, department, score, "
+                                       "nickname, avatar FROM person";
+
     // Storm/WHERE/where_int_comparison_gt/N:10000 — SELECT … WHERE age > 30
     auto BM_Raw_Where_IntGt(benchmark::State& state) -> void {
         run_select_benchmark(
                 state,
                 kCreatePerson,
                 seed_person,
-                "SELECT id, name, age, salary FROM person WHERE age > 30",
+                "SELECT id, name, age, salary, is_active, years_experience, department, score, nickname, avatar FROM "
+                "person WHERE age > 30",
                 /*assert_full_count=*/false,
                 1
         );
@@ -220,9 +307,10 @@ namespace {
     auto BM_Raw_Where_BoolEq(benchmark::State& state) -> void {
         run_select_benchmark(
                 state,
-                kCreatePersonBool,
-                seed_person_bool,
-                "SELECT id, name, age, salary FROM person WHERE is_active = 1",
+                kCreatePerson,
+                seed_person,
+                "SELECT id, name, age, salary, is_active, years_experience, department, score, nickname, avatar FROM "
+                "person WHERE is_active = 1",
                 /*assert_full_count=*/false,
                 1
         );
@@ -235,12 +323,23 @@ namespace {
                 state,
                 kCreatePerson,
                 seed_person,
-                "SELECT id, name, age, salary FROM person",
+                kSelectPersonCols,
                 /*assert_full_count=*/true,
                 state.range(0)
         );
     }
     BENCHMARK(BM_Raw_Select_All)->Name("Storm/SELECT/select")->Arg(kSelectRows)->ArgName("N");
+
+    // The INSERT anchors model BenchPerson (id + name + age + salary, no UNIQUE),
+    // a deliberately narrow 4-field table — distinct from the full-Person table
+    // the SELECT/WHERE anchors use (kCreatePerson). Plain INTEGER PRIMARY KEY
+    // mirrors Storm's default schema (#379; see kCreatePerson note on AUTOINCREMENT).
+    constexpr auto kCreateBenchPerson = "CREATE TABLE person ("
+                                        "id INTEGER PRIMARY KEY,"
+                                        "name TEXT NOT NULL,"
+                                        "age INTEGER NOT NULL,"
+                                        "salary REAL NOT NULL"
+                                        ")";
 
     // Storm chunks a bulk INSERT at MAX_DB_VARIABLES / field_count_ rows. For the
     // INSERT-benchmark model (BenchPerson: id + name + age + salary → field_count_
@@ -359,7 +458,7 @@ namespace {
         int const  n             = static_cast<int>(state.range(0));
         bool const use_returning = returning && n == 1;
         sqlite3*   db            = open_memory_db();
-        exec(db, kCreatePerson);
+        exec(db, kCreateBenchPerson);
 
         InsertPlan const plan = make_insert_plan(db, n, use_returning);
 

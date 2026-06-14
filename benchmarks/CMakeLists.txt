@@ -117,8 +117,12 @@ apply_clang_flags(storm_anchors)
 # Treat warnings as errors on Storm-owned benchmark code (issue #317).
 target_compile_options(storm_anchors PRIVATE -Werror)
 # anchors_raw.cpp does #include "dashboard/reporter.h" (path relative to
-# benchmarks/), so the benchmarks/ dir must be on its include path.
-target_include_directories(storm_anchors PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+# benchmarks/), so the benchmarks/ dir must be on its include path. third_party
+# carries plf_hive (anchors_raw.cpp materializes SELECT rows into a plf::hive to
+# mirror Storm's result container — fairness rule, #68).
+target_include_directories(
+  storm_anchors PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
+                        "${CMAKE_SOURCE_DIR}/third_party")
 
 # anchors_raw.cpp needs the benchmark include dirs + BENCHMARK_STATIC_DEFINE.
 # dashboard/reporter.cpp's source-scoped properties are already set by the

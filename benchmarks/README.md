@@ -84,6 +84,14 @@ The raw baseline covers these pinned benchmarks (exact Google Benchmark names wi
 - `Storm/WHERE/where_int_comparison_gt/N:10000`
 - `Storm/WHERE/where_bool_equality/N:10000`
 - `Storm/SELECT/select/N:10000`
+  — these three run on the **full 10-field Person** model. The raw anchor mirrors
+  Storm's generated Person schema (all 10 columns, `name TEXT NOT NULL UNIQUE`,
+  `is_active … DEFAULT 0`, nullable `score`/`nickname`/`avatar`) and **materializes
+  each result row into a `plf::hive<PersonRow>`** — two strings, two optionals and
+  a BLOB vector per row — exactly as Storm's `select().execute()` builds a
+  `plf::hive<Person>`. Both sides therefore pay the same per-row construct +
+  container-insert cost (fairness audit #68); a raw anchor that only stepped
+  columns would read a far lighter row than Storm and understate Storm's efficiency.
 - `Storm/INSERT/insert/N:<n>` and `Storm/INSERT/insert_no_return/N:<n>` for the full
   `BATCH_STANDARD` sweep `{1, 10, 100, 500, 1000, 5000, 10000, 50000, 100000}`
   (mirrors `benchmarks/sizes.cppm`). Each iteration inserts `n` rows the way Storm
@@ -94,7 +102,7 @@ The raw baseline covers these pinned benchmarks (exact Google Benchmark names wi
 
 Matched Storm rows show **efficiency as `NN.N% of raw`** (green ≥95%, red below); unmatched rows show `— (no raw)`. The session summary becomes `session: N/M matched · avg NN.N% of raw · target ≥95%`. The raw baseline is **reused across Storm sessions** — refresh is a manual step: re-run `storm_anchors`, then restart the dashboard with `--baseline raw:last`.
 
-To extend the subset, add a benchmark to `benchmarks/anchors_raw.cpp` mirroring the target Storm benchmark's **exact** name via `->Name(...)->Arg(N)->ArgName("N")` and `state.SetComplexityN(state.range(0))`, so the `(test_name, dataset_size)` key matches the Storm row. The raw `CREATE TABLE` must also mirror Storm's generated schema — notably plain `id INTEGER PRIMARY KEY` (since #379 Storm emits plain `INTEGER PRIMARY KEY` by default; AUTOINCREMENT is opt-in via `FieldAttr::primary_autoincrement` and costs ~358 ns/insert of `sqlite_sequence` work — using AUTOINCREMENT in the raw anchor would make the INSERT comparison unfair). See `benchmarks/scripts/compare_against_raw.sh` for the orchestration driver.
+To extend the subset, add a benchmark to `benchmarks/anchors_raw.cpp` mirroring the target Storm benchmark's **exact** name via `->Name(...)->Arg(N)->ArgName("N")` and `state.SetComplexityN(state.range(0))`, so the `(test_name, dataset_size)` key matches the Storm row. The raw `CREATE TABLE` must also mirror Storm's generated schema — notably plain `id INTEGER PRIMARY KEY` (since #379 Storm emits plain `INTEGER PRIMARY KEY` by default; AUTOINCREMENT is opt-in via `FieldAttr::primary_autoincrement` and costs ~358 ns/insert of `sqlite_sequence` work — using AUTOINCREMENT in the raw anchor would make the INSERT comparison unfair). For SELECT-family anchors, also mirror the **full model column set** and **materialize results into a `plf::hive`** of a struct matching the model — Storm's `select()` always builds the complete entity, so a raw anchor that selects fewer columns or skips the container materialization is not a fair comparison (#68). See `benchmarks/scripts/compare_against_raw.sh` for the orchestration driver.
 
 See [docs/development/BENCHMARK_DASHBOARD.md](../docs/development/BENCHMARK_DASHBOARD.md) for full setup, schema, baseline selectors, backup/restore, and troubleshooting.
 
