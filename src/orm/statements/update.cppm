@@ -13,6 +13,7 @@ import std;
 import storm_orm_statements_base;
 import storm_orm_utilities;
 import storm_orm_transaction;
+import storm_orm_where;
 import storm_db_concept;
 
 export namespace storm::orm::statements {
@@ -75,6 +76,71 @@ export namespace storm::orm::statements {
 
         static constexpr auto field_assignments_ = build_field_assignments();
 
+        // --- Conditional bulk UPDATE (#403): SET-clause built from explicit member NTTPs ---
+
+        // Index of a member info within Base::all_members_ (compile-time).
+        static consteval auto index_of_member(std::meta::info member) -> std::size_t {
+            for (std::size_t i = 0; i < Base::all_members_.size(); ++i) {
+                if (Base::all_members_[i] == member) {
+                    return i;
+                }
+            }
+            std::unreachable(); // guarded by is_settable_member() at the call site
+        }
+
+        // Each SET target must be a non-static data member of T and not the primary key.
+        template <std::meta::info Member> static consteval auto is_settable_member() -> bool {
+            return std::meta::is_nonstatic_data_member(Member) && Member != Base::primary_key_;
+        }
+
+        // Append "<name>=?" (or "<name>_id=?" for FK fields) for one member.
+        template <typename Buf> static consteval auto append_one_assignment(Buf& buf, std::meta::info member) -> void {
+            buf.append(std::meta::identifier_of(member));
+            auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
+            if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
+                buf.append("_id=?");
+            } else {
+                buf.append("=?");
+            }
+        }
+
+        // Is `member` an auto_update field NOT already present in the explicit pack?
+        template <std::meta::info... Members>
+        static consteval auto is_unlisted_auto_update(std::meta::info member) -> bool {
+            return Base::is_auto_update_field(member) && ((member != Members) && ...);
+        }
+
+        // Build the SET clause for the explicit Members... pack, then append any
+        // auto_update field of T that the caller did not list. The column ORDER
+        // here is the canonical bind order used by bind_conditional_set().
+        template <std::meta::info... Members> static consteval auto build_conditional_set_clause() {
+            ConstexprString<utilities::buffer_size::SQL_MEDIUM> result;
+            bool                                                first = true;
+            // (1) explicit members, in the given order
+            (
+                    [&] {
+                        if (!first) {
+                            result.append(", ");
+                        }
+                        append_one_assignment(result, Members);
+                        first = false;
+                    }(),
+                    ...
+            );
+            // (2) auto_update fields not already listed (stamped now() at bind time)
+            for (const auto& member : Base::all_members_) {
+                if (is_unlisted_auto_update<Members...>(member)) {
+                    if (!first) {
+                        result.append(", ");
+                    }
+                    result.append(std::meta::identifier_of(member));
+                    result.append("=?");
+                    first = false;
+                }
+            }
+            return result;
+        }
+
         // Compile-time UPDATE SQL size calculation
         static consteval auto calculate_update_sql_size() -> std::size_t {
             using utilities::sql_len::SET;
@@ -124,6 +190,31 @@ export namespace storm::orm::statements {
             return update_sql_string;
         }
 
+        // std::unexpected returned when update<...>() is called with no WHERE filter,
+        // refusing to write the whole table by accident. -1 is the backend-agnostic
+        // "client-side validation" code (same shape as the conditional DELETE refusal).
+        static auto empty_where_error() -> std::unexpected<Error> {
+            return std::unexpected(Error{-1, "update() requires a WHERE clause; use update_all() to update all rows"});
+        }
+
+        // Conditional UPDATE (#403): build "UPDATE <table> SET <set_clause> WHERE <expr>".
+        // The SET clause is compile-time (keyed on the Members... pack); the WHERE body is
+        // dynamic (runtime to_sql), so the full string is assembled at runtime like SELECT's
+        // dynamic path — not a compile-time ConstexprString.
+        template <std::meta::info... Members>
+        static auto build_conditional_update_sql(const orm::where::ExpressionVariant& expr) -> std::string {
+            static const std::string set_clause = std::string(build_conditional_set_clause<Members...>());
+            std::string              sql;
+            sql.reserve(Base::table_name_.size() + set_clause.size() + 32);
+            sql += "UPDATE ";
+            sql += Base::table_name_;
+            sql += " SET ";
+            sql += set_clause;
+            sql += " WHERE ";
+            sql += orm::where::to_sql(expr);
+            return sql;
+        }
+
       public:
         explicit UpdateStatement(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
@@ -169,6 +260,29 @@ export namespace storm::orm::statements {
         // alive until the terminal call completes.
         auto query(std::span<const T> objects [[clang::lifetimebound]]) -> BulkQuery {
             return {{}, std::move(*this), objects};
+        }
+
+        // Conditional bulk UPDATE (#403): UPDATE <table> SET <set> WHERE <where_expr>.
+        // SET columns are the Members... pack; values come from `proto`. A null where_expr
+        // is refused at execute()/to_sql() time so a dropped where() cannot write the whole
+        // table (update_all() would be the explicit full-table path — not yet implemented).
+        template <std::meta::info... Members> struct ConditionalUpdateQuery {
+            UpdateStatement                  stmt;
+            const T&                         proto;
+            orm::where::ExpressionVariantPtr where_expr;
+            [[nodiscard]] auto               execute() -> std::expected<void, Error> {
+                return stmt.template execute_where<Members...>(proto, where_expr);
+            }
+            [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
+                return stmt.template to_sql_where<Members...>(proto, where_expr);
+            }
+        };
+
+        template <std::meta::info... Members>
+            requires(sizeof...(Members) > 0 && (is_settable_member<Members>() && ...))
+        auto query_where(const T& proto [[clang::lifetimebound]], orm::where::ExpressionVariantPtr where_expr)
+                -> ConditionalUpdateQuery<Members...> {
+            return {std::move(*this), proto, std::move(where_expr)};
         }
 
         // Returns SQL string with bound parameters inlined for a single UPDATE (for debugging)
@@ -310,6 +424,105 @@ export namespace storm::orm::statements {
 
             stmt->reset();
             return {};
+        }
+
+        // --- Conditional bulk UPDATE (#403) binding + execution ---
+
+        // Compile-time fold over field indices: for each index whose member is an
+        // unlisted auto_update field, bind now() at param_index (declaration order).
+        // `if constexpr` keeps consteval-only std::meta::info out of any runtime context.
+        template <std::meta::info... Members, std::size_t... Is>
+        [[nodiscard]] auto bind_unlisted_auto_updates(
+                Statement*                            stmt,
+                int&                                  param_index,
+                std::chrono::system_clock::time_point now,
+                std::index_sequence<Is...> /*unused*/
+        ) noexcept -> std::expected<void, Error> {
+            std::expected<void, Error> result{};
+            (
+                    [&] {
+                        if constexpr (is_unlisted_auto_update<Members...>(Base::all_members_[Is])) {
+                            if (result.has_value()) {
+                                result = Base::template bind_one<ConnType>(stmt, param_index, now);
+                            }
+                        }
+                    }(),
+                    ...
+            );
+            return result;
+        }
+
+        // Bind the SET values in the SAME order build_conditional_set_clause emits them:
+        // (1) explicit Members... from `proto`, (2) unlisted auto_update fields stamped now().
+        // param_index advances; WHERE binding continues from where this leaves off.
+        template <std::meta::info... Members>
+        [[nodiscard]] auto bind_conditional_set(Statement* stmt, const T& proto, int& param_index) noexcept
+                -> std::expected<void, Error> {
+            const auto now = Base::batch_now(); // one clock read; compiles away if no timestamp field
+
+            // (1) explicit members, in pack order. IsUpdate=true so an explicitly-listed
+            //     auto_update member is stamped now() (matches single-row UPDATE), and a
+            //     listed auto_create member binds the proto's stored value.
+            std::expected<void, Error> result{};
+            ((result = Base::template bind_field_at_index<ConnType, index_of_member(Members), false, true>(
+                      stmt, proto, param_index, now
+              ),
+              result.has_value()) &&
+             ...);
+            if (!result) {
+                return result;
+            }
+
+            // (2) unlisted auto_update fields — stamp now() in declaration order.
+            return bind_unlisted_auto_updates<Members...>(stmt, param_index, now, typename Base::field_indices_t{});
+        }
+
+        // Empty-WHERE check + prepare + SET-then-WHERE bind. Shared by execute/to_sql.
+        template <std::meta::info... Members>
+        [[nodiscard]] auto ready_conditional_update(const T& proto, const orm::where::ExpressionVariantPtr& where_expr)
+                -> std::expected<Statement*, Error> {
+            if (!where_expr) [[unlikely]] {
+                return empty_where_error();
+            }
+            auto prepare_result = conn_->prepare_cached(build_conditional_update_sql<Members...>(*where_expr));
+            if (!prepare_result) {
+                return std::unexpected(prepare_result.error());
+            }
+            Statement* stmt = *prepare_result;
+            stmt->reset();
+            int param_index = 1;
+            if (auto set_result = bind_conditional_set<Members...>(stmt, proto, param_index); !set_result) {
+                return std::unexpected(set_result.error());
+            }
+            // WHERE params continue from param_index (same continuation as bind_having_params).
+            if (auto where_result = Base::template bind_having_params<Statement, Error>(stmt, where_expr, param_index);
+                !where_result) {
+                return std::unexpected(where_result.error());
+            }
+            return stmt;
+        }
+
+        template <std::meta::info... Members>
+        [[nodiscard]] auto execute_where(const T& proto, const orm::where::ExpressionVariantPtr& where_expr)
+                -> std::expected<void, Error> {
+            auto stmt_result = ready_conditional_update<Members...>(proto, where_expr);
+            if (!stmt_result) {
+                return std::unexpected(stmt_result.error());
+            }
+            if (auto exec_result = (*stmt_result)->execute(); !exec_result) {
+                return std::unexpected(exec_result.error());
+            }
+            return {};
+        }
+
+        template <std::meta::info... Members>
+        [[nodiscard]] auto to_sql_where(const T& proto, const orm::where::ExpressionVariantPtr& where_expr)
+                -> std::expected<std::string, Error> {
+            auto stmt_result = ready_conditional_update<Members...>(proto, where_expr);
+            if (!stmt_result) {
+                return std::unexpected(stmt_result.error());
+            }
+            return (*stmt_result)->expanded_sql();
         }
 
       private:

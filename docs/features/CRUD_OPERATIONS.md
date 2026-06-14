@@ -144,6 +144,64 @@ auto result = queryset.update(std::span<const Person>(people));
 
 **Strategy**: Individual UPDATE statements within a transaction for consistency
 
+### Conditional UPDATE (#403)
+
+Update every row matching a `where()` filter in a single statement — no need to
+SELECT, mutate, and UPDATE row-by-row. Chain `update<Members...>(proto)` onto a
+filtered QuerySet. The `Members...` are member reflections (`^^T::field`) chosen at
+compile time; their new values are read from the `proto` object:
+
+```cpp
+using storm::orm::where::f;
+
+auto result = QuerySet<Person>()
+    .where(f<^^Person::salary>() < 50000)
+    .update<^^Person::salary, ^^Person::is_active>(Person{.salary = 60000, .is_active = true})
+    .execute();          // std::expected<void, Error>
+```
+
+**SQL Generated**:
+```sql
+UPDATE Person SET salary=?, is_active=? WHERE salary<?
+```
+
+The SET column list is compile-time; the WHERE body reuses the full expression
+system, so every operator works (`==`, `!=`, `<`, `<=`, `>`, `>=`, `IN`, `BETWEEN`,
+`LIKE`, `IS NULL`, `AND`/`OR`, nested groups). Chained `where()` calls are
+AND-combined. Bind order is SET parameters first, then WHERE.
+
+**FK columns** are written as `<name>_id`:
+
+```cpp
+QuerySet<Message>()
+    .where(f<^^Message::id>() == 1)
+    .update<^^Message::sender>(Message{.sender = Person{.id = 7}})
+    .execute();          // UPDATE Message SET sender_id=? WHERE id=?
+```
+
+**`auto_update` timestamps are refreshed automatically.** If the model has an
+`[[= FieldAttr::auto_update]]` `time_point` field, it is appended to the SET clause
+(stamped `now()`) even when not listed — matching single-row UPDATE semantics:
+
+```cpp
+QuerySet<TimestampedRecord>()
+    .where(f<^^TimestampedRecord::id>() == 1)
+    .update<^^TimestampedRecord::name>(TimestampedRecord{.name = "renamed"})
+    .execute();          // UPDATE ... SET name=?, updated_at=? WHERE id=?
+```
+
+**Safety — empty WHERE is refused.** Calling `update<...>()` with **no** `where()`
+filter would write the whole table, so it is rejected at `execute()`/`to_sql()` time
+with `std::unexpected(Error)`:
+
+```cpp
+QuerySet<Person>().update<^^Person::age>(Person{.age = 0}).execute();
+// → std::unexpected: refuses full-table write
+```
+
+Returns `std::expected<void, Error>` (consistent with the rest of the CRUD family).
+The primary key cannot be a SET target (compile-time rejected).
+
 ### Statement Caching
 
 UpdateStatement uses the 3-level caching pattern:
@@ -238,9 +296,8 @@ To intentionally delete every row, use the explicit `erase_all()`:
 QuerySet<Person>().erase_all().execute();   // DELETE FROM Person (explicit full wipe)
 ```
 
-> **Note:** conditional bulk **UPDATE** (`where(cond).update(fields)`) is not yet
-> implemented — it needs a SET-assignment syntax and is tracked as a follow-up to
-> #198.
+> **See also:** conditional bulk **UPDATE** (`where(cond).update<Members...>(proto)`)
+> shipped in #403 — see [Conditional UPDATE](#conditional-update-403) above.
 
 ## Error Handling
 

@@ -431,6 +431,17 @@ student_qs.join<^^Student::courses>().select();      // students with courses ag
 student_qs.left_join<^^Student::courses>().select(); // + students with no courses
 member_qs.join<^^Member::courses, ^^Member::clubs>().select(); // several m2m in one call (#392);
 // INNER drops members empty in ANY relation, LEFT fills each independently
+
+// Conditional bulk DELETE (#198) — deletes rows matching the current where().
+qs.where(f<^^Person::age>() > 30).erase().execute();   // → std::expected<void, Error>
+// Empty where() is refused (no full-table wipe); erase_all() is the explicit wipe.
+
+// Conditional bulk UPDATE (#403) — SET columns are compile-time member NTTPs,
+// values come from a prototype; FK cols emit <name>_id; auto_update auto-stamped now().
+qs.where(f<^^Person::salary>() < 50000)
+  .update<^^Person::salary, ^^Person::is_active>(Person{.salary=60000, .is_active=true})
+  .execute();                                          // → std::expected<void, Error>
+// Empty where() is refused (no full-table write).
 ```
 
 **Methods**: `where()`, `join()`, `order_by()`, `limit()`, `offset()`, `group_by()`, `having()`, `distinct()`, `values()`
