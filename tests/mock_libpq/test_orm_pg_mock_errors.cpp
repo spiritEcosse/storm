@@ -1047,6 +1047,51 @@ namespace {
     }
 
     // ============================================================================
+    // Statement destructor DEALLOCATE (issue #417)
+    //
+    // On cache eviction the unique_ptr<Statement> is destroyed. SQLite finalizes
+    // via the unique_ptr deleter; PG must symmetrically DEALLOCATE the server-side
+    // prepared statement, or it leaks on the backend for the connection lifetime.
+    // ============================================================================
+
+    TEST_F(PgStatementErrorTest, DestructorDeallocatesPreparedStatement) {
+        auto conn_result = PgConnection::open("host=localhost");
+        ASSERT_TRUE(conn_result.has_value());
+
+        {
+            auto stmt_result = conn_result->prepare("SELECT 1");
+            ASSERT_TRUE(stmt_result.has_value());
+            // No explicit finalize() — rely on the destructor when stmt_result
+            // (the std::expected holding the Statement) leaves this scope.
+        }
+
+        // The destructor must have issued exactly one DEALLOCATE for the
+        // server-side prepared statement.
+        EXPECT_EQ(MockPqConfig::get_deallocate_call_count(), 1);
+        EXPECT_TRUE(MockPqConfig::get_last_exec_query().starts_with("DEALLOCATE"))
+                << "last PQexec was: " << MockPqConfig::get_last_exec_query();
+    }
+
+    TEST_F(PgStatementErrorTest, MovedFromStatementDoesNotDeallocate) {
+        auto conn_result = PgConnection::open("host=localhost");
+        ASSERT_TRUE(conn_result.has_value());
+
+        {
+            auto stmt_result = conn_result->prepare("SELECT 1");
+            ASSERT_TRUE(stmt_result.has_value());
+
+            // Move the statement out; the moved-from source must NOT deallocate
+            // when it is destroyed (its stmt_name_ was swapped away).
+            PgStatement moved = std::move(*stmt_result);
+            // `moved` deallocates once here; `*stmt_result` (moved-from) must not.
+        }
+
+        // Exactly one DEALLOCATE total — no double-free / error spam from the
+        // moved-from husk.
+        EXPECT_EQ(MockPqConfig::get_deallocate_call_count(), 1);
+    }
+
+    // ============================================================================
     // Execute success test
     // ============================================================================
 

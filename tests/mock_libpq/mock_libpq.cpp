@@ -70,6 +70,10 @@ namespace {
         int exec_calls          = 0;
         int exec_prepared_calls = 0;
 
+        // Exec query tracking
+        std::string last_exec_query;
+        int         deallocate_calls = 0;
+
         auto reset() -> void {
             connectdb_null     = false;
             conn_status        = CONNECTION_OK;
@@ -94,6 +98,9 @@ namespace {
             prepare_calls       = 0;
             exec_calls          = 0;
             exec_prepared_calls = 0;
+
+            last_exec_query  = "";
+            deallocate_calls = 0;
         }
     };
 
@@ -213,6 +220,14 @@ namespace storm::test {
         return g_mock_config.exec_prepared_calls;
     }
 
+    auto MockPqConfig::get_last_exec_query() -> std::string {
+        return g_mock_config.last_exec_query;
+    }
+
+    auto MockPqConfig::get_deallocate_call_count() -> int {
+        return g_mock_config.deallocate_calls;
+    }
+
 } // namespace storm::test
 
 // ============================================================================
@@ -311,8 +326,12 @@ auto PQexecPrepared(
 
 auto PQexec(const PGconn* conn, const char* query) -> PGresult* {
     (void)conn;
-    (void)query;
     g_mock_config.exec_calls++;
+    if (query != nullptr) {
+        g_mock_config.last_exec_query = query;
+        if (std::strncmp(query, "DEALLOCATE", 10) == 0)
+            g_mock_config.deallocate_calls++;
+    }
 
     // Check for fail-on-call-N
     if (g_mock_config.exec_fail_on_call == g_mock_config.exec_calls) {

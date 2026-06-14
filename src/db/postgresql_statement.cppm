@@ -30,9 +30,14 @@ export namespace storm::db::postgresql {
             param_formats_.reserve(MAX_DB_VARIABLES);
         }
 
-        // Destructor - clears any pending result
+        // Destructor — DEALLOCATEs the server-side prepared statement (issue #417).
+        // SQLite finalizes on eviction via its unique_ptr deleter; PG must do the
+        // same here or the server-side `_storm_N` statement leaks for the
+        // connection's lifetime when the bounded L3 cache evicts this entry.
+        // finalize() is best-effort and noexcept-safe, and clears stmt_name_ so a
+        // moved-from Statement (whose name was swapped away) does nothing.
         ~Statement() {
-            clear_result();
+            finalize();
         }
 
         // Move semantics — swap-based to keep the field list in one place.
