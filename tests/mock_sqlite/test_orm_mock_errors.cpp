@@ -2424,6 +2424,20 @@ namespace {
             }
             return {};
         }
+
+        // Transaction-nesting hooks (#415) required by TransactionGuard::begin.
+        int                txn_depth = 0;
+        [[nodiscard]] auto in_transaction() const noexcept -> bool {
+            return txn_depth > 0;
+        }
+        auto enter_transaction() noexcept -> void {
+            ++txn_depth;
+        }
+        auto leave_transaction() noexcept -> void {
+            if (txn_depth > 0) {
+                --txn_depth;
+            }
+        }
     };
 
     TEST_F(ORMMockErrorTest, TransactionGuardDestructorRollbackSwallowsThrow) {
