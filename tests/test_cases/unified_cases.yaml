@@ -1633,6 +1633,21 @@
     - 70
     - 60
     - 0
+    group_agg_null:
+    - false
+    - false
+    - false
+    - false
+    - false
+    - false
+    - false
+    - false
+    - false
+    - true
+    - true
+    - false
+    - false
+    - true
 - name: group_by_age_max_score_score5
   model: person
   query_type: group_max
@@ -1675,6 +1690,21 @@
     - 70
     - 60
     - 0
+    group_agg_null:
+    - false
+    - false
+    - false
+    - false
+    - false
+    - false
+    - false
+    - false
+    - false
+    - true
+    - true
+    - false
+    - false
+    - true
 - name: select_where_salary_gt60k
   model: person
   query_type: select

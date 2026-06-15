@@ -399,8 +399,12 @@ auto old   = base.where(age > 50);    // base still unchanged
 
 // Scalar aggregates (no GROUP BY) → .get()
 qs.count().execute();                          // int64_t
-qs.sum<^^Person::age>().execute();             // int64_t
-qs.avg<^^Person::salary>().execute();          // double
+qs.sum<^^Person::age>().execute();             // int64_t (0 over an empty set)
+qs.avg<^^Person::salary>().execute();          // std::optional<double> — nullopt over empty set (#416)
+qs.min<^^Person::age>().execute();             // std::optional<double> — nullopt over empty set (#416)
+qs.max<^^Person::age>().execute();             // std::optional<double> — nullopt over empty set (#416)
+// MIN/MAX/AVG of no rows have NO value → std::nullopt, distinguishable from a real 0.
+// GROUP BY MIN/MAX/AVG tuple columns are std::optional<double> too (NULL within a group).
 
 // GROUP BY with aggregates → .select()
 qs.group_by<^^Person::department>().count().execute();
