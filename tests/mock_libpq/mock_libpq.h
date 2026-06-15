@@ -99,6 +99,12 @@ class MockPqConfig {
     static auto get_exec_call_count() -> int;
     static auto get_exec_prepared_call_count() -> int;
 
+    // Exec query inspection (records the most recent PQexec() query string, e.g.
+    // a DEALLOCATE issued by the Statement destructor) and a count of how many
+    // PQexec() queries began with "DEALLOCATE".
+    static auto get_last_exec_query() -> std::string;
+    static auto get_deallocate_call_count() -> int;
+
   private:
     static MockPqConfig instance_;
 };
