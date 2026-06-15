@@ -209,6 +209,22 @@ TYPED_TEST(M2MSeededTest, EagerLoadAggregatesCourses) {
     EXPECT_EQ(bob->courses[0].title, "Math");
 }
 
+// #414 / #9 — the m2m two-query prefetch opens its own TransactionGuard for
+// snapshot consistency. Inside an outer storm::begin() scope it must not fail on
+// a nested BEGIN; the prefetch goes passive and the outer guard owns the commit.
+TYPED_TEST(M2MSeededTest, EagerLoadInsideOuterTransactionSucceeds) {
+    QuerySet<Student, TypeParam> qs;
+    auto                         txn = storm::begin(QuerySet<Student, TypeParam>::get_default_connection());
+    ASSERT_TRUE(txn.has_value()) << "storm::begin should start a transaction";
+
+    auto rows = qs.template join<^^Student::courses>().select().execute();
+    ASSERT_TRUE(rows.has_value()) << "m2m prefetch inside outer txn must not fail on nested BEGIN: "
+                                  << (rows ? "" : rows.error().message());
+    ASSERT_EQ(rows->size(), 2U);
+
+    ASSERT_TRUE(txn->commit().has_value()) << "outer commit should succeed";
+}
+
 TYPED_TEST(M2MSeededTest, LeftJoinKeepsStudentsWithoutCourses) {
     QuerySet<Student, TypeParam> qs;
     auto                         rows = qs.template left_join<^^Student::courses>().select().execute();

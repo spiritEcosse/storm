@@ -40,6 +40,32 @@ template <typename ConnType> class PublicTransactionApiTest : public StormTestFi
         opts.batch_size = 2; // chunks of 2 → multiple inner BEGIN/COMMIT attempts.
         return opts;
     }
+
+    // Inserts `count` rows (committed) and returns them with their assigned PKs so
+    // update(span)/erase(span) can address existing rows.
+    static auto seed_with_ids(int count) -> std::vector<Person> {
+        using ReturnId = storm::orm::statements::ReturnId;
+        storm::QuerySet<Person, ConnType> qs;
+        auto                              rows = make_people(count);
+        auto ids = qs.template insert<ReturnId::Yes>(std::span<const Person>(rows)).execute();
+        EXPECT_TRUE(ids.has_value()) << "seed insert failed";
+        if (ids.has_value()) {
+            for (std::size_t i = 0; i < rows.size(); ++i) {
+                rows[i].id = ids.value()[i];
+            }
+        }
+        return rows;
+    }
+
+    // seed_with_ids + bump every row's age by 100 (the local copies, not yet
+    // persisted) so update(span) has a visible change to write and assert.
+    static auto seed_bumped(int count) -> std::vector<Person> {
+        auto rows = seed_with_ids(count);
+        for (auto& p : rows) {
+            p.age += 100;
+        }
+        return rows;
+    }
 };
 
 TYPED_TEST_SUITE(PublicTransactionApiTest, DatabaseTypes);
@@ -170,4 +196,60 @@ TYPED_TEST(PublicTransactionApiTest, TransactionScopeNestsChunkedBatch) {
 
     ASSERT_TRUE(result.has_value()) << "nested chunked batch must not conflict inside the scope";
     EXPECT_EQ(this->countPersons(), 5);
+}
+
+// ── nested batch UPDATE / ERASE inside an outer transaction (#9 / #414) ─────────
+// insert is covered above; update(span) (any size > 1) and chunked erase(span)
+// (> MAX_CHUNK_SIZE) drive their own inner TransactionGuard too and must nest.
+
+// update(span) of >1 row wraps its writes in a TransactionGuard. Inside an outer
+// transaction it must not raise a nested-BEGIN error, and the outer commit persists.
+TYPED_TEST(PublicTransactionApiTest, NestedBatchUpdateCooperatesAndCommits) {
+    storm::QuerySet<Person, TypeParam> qs;
+    auto                               rows = this->seed_bumped(3);
+
+    auto txn = storm::begin(this->conn());
+    ASSERT_TRUE(txn.has_value());
+    ASSERT_TRUE(qs.update(std::span<const Person>(rows)).execute().has_value())
+            << "nested batch update must not raise a nested-BEGIN error";
+    ASSERT_TRUE(txn->commit().has_value());
+
+    auto bumped = qs.where(storm::orm::where::f<^^Person::age>() >= 100).count().execute();
+    ASSERT_TRUE(bumped.has_value());
+    EXPECT_EQ(bumped.value(), 3) << "all updated rows persisted with the outer commit";
+}
+
+// Outer rollback must discard the nested batch update (the inner guard must not
+// have self-committed).
+TYPED_TEST(PublicTransactionApiTest, OuterRollbackDiscardsNestedBatchUpdate) {
+    storm::QuerySet<Person, TypeParam> qs;
+    auto                               rows = this->seed_bumped(3);
+
+    {
+        auto txn = storm::begin(this->conn());
+        ASSERT_TRUE(txn.has_value());
+        ASSERT_TRUE(qs.update(std::span<const Person>(rows)).execute().has_value());
+        // No commit — outer rollback on scope exit.
+    }
+
+    auto bumped = qs.where(storm::orm::where::f<^^Person::age>() >= 100).count().execute();
+    ASSERT_TRUE(bumped.has_value());
+    EXPECT_EQ(bumped.value(), 0) << "nested batch update must not have self-committed";
+}
+
+// chunked erase(span) (> MAX_CHUNK_SIZE, 799) wraps multiple DELETEs in a
+// TransactionGuard. Inside an outer transaction it must nest and the outer commit
+// persists the deletions.
+TYPED_TEST(PublicTransactionApiTest, NestedChunkedEraseCooperatesAndCommits) {
+    storm::QuerySet<Person, TypeParam> qs;
+    auto                               rows = this->seed_with_ids(850); // > 799 → chunked erase
+    ASSERT_EQ(this->countPersons(), 850);
+
+    auto txn = storm::begin(this->conn());
+    ASSERT_TRUE(txn.has_value());
+    ASSERT_TRUE(qs.erase(std::span<const Person>(rows)).execute().has_value())
+            << "nested chunked erase must not raise a nested-BEGIN error";
+    ASSERT_TRUE(txn->commit().has_value());
+
+    EXPECT_EQ(this->countPersons(), 0) << "all rows erased and persisted with the outer commit";
 }
