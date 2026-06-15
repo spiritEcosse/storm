@@ -10,6 +10,7 @@ import std;
 export import storm_orm_field_attr;
 export import storm_orm_generator;
 export import storm_orm_utilities;
+export import storm_orm_transaction;
 export import storm_db_concept;
 export import storm_db_sqlite;
 export import storm_db_postgresql;
@@ -31,6 +32,44 @@ export namespace storm {
 
     // Re-export UUID type for convenient access as storm::UUID
     using UUID = orm::utilities::UUID;
+
+    // Public transaction API (#415). TransactionGuard is the RAII transaction type
+    // (BEGIN on begin(), explicit commit(), auto-ROLLBACK on scope exit). storm::begin
+    // is the thin user-facing factory. Nested batch ops cooperate automatically: a
+    // begin() on an already-open connection returns a passive guard (no inner BEGIN),
+    // resolving the nested-BEGIN bug (#9).
+    template <typename ConnType> using TransactionGuard = orm::utilities::TransactionGuard<ConnType>;
+
+    template <typename ConnType>
+    [[nodiscard]] auto begin(std::shared_ptr<ConnType> conn)
+            -> std::expected<TransactionGuard<ConnType>, typename ConnType::Error> {
+        return orm::utilities::TransactionGuard<ConnType>::begin(std::move(conn));
+    }
+
+    // Scope helper (#415): runs `body(txn)` inside a transaction. `body` returns
+    // std::expected<T, Error>; on a value the scope COMMITs and forwards it, on a
+    // std::unexpected (or a throw) the guard ROLLBACKs and the error propagates.
+    // A thin convenience layer over storm::begin — same cooperative nesting (#9).
+    template <typename ConnType, typename Body>
+    [[nodiscard]] auto transaction(std::shared_ptr<ConnType> conn, Body&& body)
+            -> std::invoke_result_t<Body&, TransactionGuard<ConnType>&> {
+        using Ret = std::invoke_result_t<Body&, TransactionGuard<ConnType>&>;
+
+        auto guard = orm::utilities::TransactionGuard<ConnType>::begin(std::move(conn));
+        if (!guard) {
+            return Ret(std::unexpect, guard.error());
+        }
+
+        Ret result = std::forward<Body>(body)(*guard);
+        if (!result) {
+            return result; // guard destructor ROLLBACKs on the way out.
+        }
+
+        if (auto commit_result = guard->commit(); !commit_result) {
+            return Ret(std::unexpect, commit_result.error());
+        }
+        return result;
+    }
 
     // Meta functionality for ORM field attributes and reflection.
     // FieldAttr + is_primary_attr come from the storm_orm_field_attr leaf module

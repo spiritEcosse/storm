@@ -447,10 +447,36 @@ qs.where(f<^^Person::salary>() < 50000)
   .update<^^Person::salary, ^^Person::is_active>(Person{.salary=60000, .is_active=true})
   .execute();                                          // → std::expected<void, Error>
 // Empty where() is refused (no full-table write).
+
+// Public transaction API (#415) — storm::begin(conn) returns an RAII
+// storm::TransactionGuard<ConnType> (both re-exported from `storm`). BEGIN on
+// begin(), explicit txn->commit(), auto-ROLLBACK on early return / throw / scope
+// exit without commit. NEVER use raw conn->execute("BEGIN TRANSACTION"): chunked
+// batch ops issue their own inner transaction and a raw outer BEGIN collides.
+// The guard cooperates — begin() on an already-open connection returns a PASSIVE
+// guard (no nested BEGIN; the outer guard owns the single commit/rollback),
+// resolving the nested-BEGIN bug (#9). Nesting is tracked by a per-Connection
+// depth counter (in_transaction()/enter_transaction()/leave_transaction()).
+auto conn = QuerySet<Person, ConnType>::get_default_connection();
+auto txn  = storm::begin(conn);
+if (!txn) return std::unexpected(txn.error());
+if (auto r = qs.insert(a).execute(); !r) return std::unexpected(r.error());
+if (auto r = qs.update(b).execute(); !r) return std::unexpected(r.error());
+return txn->commit();                                  // → std::expected<void, Error>
+
+// Scope helper storm::transaction(conn, body) — convenience layer over begin().
+// body returns std::expected<T, Error>: a value COMMITs and is forwarded, a
+// std::unexpected (or throw) ROLLBACKs and propagates. Same cooperative nesting.
+auto r = storm::transaction(conn, [&](auto& txn) -> std::expected<int, Error> {
+    if (auto x = qs.insert(a).execute(); !x) return std::unexpected(x.error());
+    if (auto x = qs.update(b).execute(); !x) return std::unexpected(x.error());
+    return 42;                                          // forwarded out on commit
+});                                                     // → std::expected<int, Error>
 ```
 
 **Methods**: `where()`, `join()`, `order_by()`, `limit()`, `offset()`, `group_by()`, `having()`, `distinct()`, `values()`
 **Aggregates**: `count()`, `sum()`, `avg()`, `min()`, `max()`
+**Transactions**: `storm::begin(conn)` → `storm::TransactionGuard` (RAII), or `storm::transaction(conn, body)` scope helper; both cooperative with batch ops (#415/#9)
 
 ## Testing
 

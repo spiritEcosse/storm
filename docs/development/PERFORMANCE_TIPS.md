@@ -28,13 +28,17 @@ qs.insert(objects);
 
 ```cpp
 // FAST: ~1.7M ops/sec - single commit at end
-const auto& conn = QuerySet<Person>::get_default_connection();
-conn->execute("BEGIN TRANSACTION");
+auto conn = QuerySet<Person>::get_default_connection();
+auto txn  = storm::begin(conn);          // RAII guard (#415)
 for (auto& obj : objects) {
     qs.insert(obj);
 }
-conn->execute("COMMIT");
+(void)txn->commit();                       // single COMMIT; auto-ROLLBACK on early exit
 ```
+
+Prefer `storm::begin(conn)` over raw `conn->execute("BEGIN TRANSACTION")`: the
+guard rolls back on failure and cooperates with batch ops' inner transactions
+(no nested-BEGIN collision, #9).
 
 ### Benchmark Results (10,000 inserts, in-memory SQLite)
 

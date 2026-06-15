@@ -421,6 +421,22 @@ export namespace storm::db::sqlite {
             return db.get();
         }
 
+        // Transaction-nesting state (#415). The public transaction guard calls
+        // enter_transaction() after a successful BEGIN and leave_transaction()
+        // after COMMIT/ROLLBACK; batch ops query in_transaction() and skip their
+        // own inner BEGIN/COMMIT when an outer scope is already active (fixes #9).
+        [[nodiscard]] constexpr auto in_transaction() const noexcept -> bool {
+            return txn_depth_ > 0;
+        }
+        constexpr auto enter_transaction() noexcept -> void {
+            ++txn_depth_;
+        }
+        constexpr auto leave_transaction() noexcept -> void {
+            if (txn_depth_ > 0) {
+                --txn_depth_;
+            }
+        }
+
       private:
         explicit Connection(SqlitePtr db_ptr, Config config) : db(std::move(db_ptr)) {
             cache_.capacity = config.statement_cache_capacity; // Issue #273
@@ -446,6 +462,9 @@ export namespace storm::db::sqlite {
         // for insert/clear/evict. mutable so const accessors (cached_statement_count,
         // cache_stats) can take a shared_lock.
         mutable storm::db::StatementCacheState<Statement> cache_;
+
+        // Transaction-nesting depth (#415). 0 = autocommit; >0 = inside a guard.
+        int txn_depth_ = 0;
     };
 
     // Verify concepts are satisfied

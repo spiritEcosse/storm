@@ -400,12 +400,51 @@ FK fields are ignored during DELETE - only the primary key matters:
 auto result = message_qs.erase(msg);  // Only msg.id is used
 ```
 
+## Transactions
+
+To run several CRUD operations atomically, wrap them in a `storm::begin()` scope
+(#415) — a RAII guard that issues `BEGIN`, commits on `txn->commit()`, and
+auto-`ROLLBACK`s on any early return, exception, or scope exit without a commit.
+
+```cpp
+auto conn = storm::QuerySet<Person, ConnType>::get_default_connection();
+
+auto txn = storm::begin(conn);
+if (!txn) return std::unexpected(txn.error());
+
+storm::QuerySet<Person, ConnType> qs;
+if (auto r = qs.insert(alice).execute(); !r) return std::unexpected(r.error());
+if (auto r = qs.insert(bob).execute();   !r) return std::unexpected(r.error());
+
+return txn->commit();   // both inserts commit together; any failure rolls back
+```
+
+For a more compact style, `storm::transaction(conn, body)` wraps the same guard:
+the body returns `std::expected<T, Error>`, a value COMMITs (and is forwarded), a
+`std::unexpected` or thrown exception ROLLBACKs and propagates.
+
+```cpp
+auto r = storm::transaction(conn, [&](auto& txn) -> std::expected<void, Error> {
+    if (auto x = qs.insert(alice).execute(); !x) return std::unexpected(x.error());
+    if (auto x = qs.insert(bob).execute();   !x) return std::unexpected(x.error());
+    return {};
+});   // commit/rollback handled automatically
+```
+
+`storm::TransactionGuard<ConnType>` is the underlying type (re-exported from
+`storm`); `storm::begin(conn)` is the thin factory. **Do not** use raw
+`conn->execute("BEGIN TRANSACTION")` — batch ops issue their own inner
+transaction for chunked writes, and a raw outer BEGIN collides with it. The guard
+handles this: a `begin()` on an already-open connection returns a *passive* guard
+(no nested BEGIN), so nested batch ops cooperate with the outer scope (fixes #9).
+
 ## Performance Optimization Tips
 
 1. **Use batch operations** for multiple inserts/updates/deletes
 2. **Reuse QuerySet instances** to benefit from statement caching
 3. **Pre-allocate vectors** for batch operations
-4. **Use transactions** explicitly for complex multi-operation workflows
+4. **Use the public transaction API** (`storm::begin(conn)` → `txn->commit()`) for
+   complex multi-operation workflows — see [Transactions](#transactions) below
 5. **Avoid unnecessary copies** - use const references and std::span
 
 ## Testing

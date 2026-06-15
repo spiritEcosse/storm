@@ -2288,6 +2288,45 @@ namespace {
         EXPECT_EQ(result.error().code(), SQLITE_BUSY);
     }
 
+    TEST_F(ORMMockErrorTest, TransactionScopeBeginFailurePropagates) {
+        // storm::transaction (#415) error path: BEGIN fails → body never runs,
+        // the begin error propagates as std::unexpected.
+        auto conn_result = db::sqlite::Connection::open(":memory:");
+        ASSERT_TRUE(conn_result.has_value());
+        auto conn = std::make_shared<db::sqlite::Connection>(std::move(*conn_result));
+
+        // Step 1: BEGIN TRANSACTION fails.
+        MockSqlite3Config::step_fails_on_call(1, SQLITE_BUSY);
+
+        bool body_ran = false;
+        auto result   = storm::transaction(conn, [&](auto& /*txn*/) -> std::expected<int, db::Error> {
+            body_ran = true;
+            return 1;
+        });
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_BUSY);
+        EXPECT_FALSE(body_ran) << "body must not run when BEGIN fails";
+    }
+
+    TEST_F(ORMMockErrorTest, TransactionScopeCommitFailurePropagates) {
+        // storm::transaction (#415) error path: body succeeds but COMMIT fails →
+        // the commit error propagates (guard already rolled back).
+        auto conn_result = db::sqlite::Connection::open(":memory:");
+        ASSERT_TRUE(conn_result.has_value());
+        auto conn = std::make_shared<db::sqlite::Connection>(std::move(*conn_result));
+
+        // Step 1: BEGIN (succeeds), Step 2: COMMIT (fails with BUSY).
+        MockSqlite3Config::step_fails_on_call(2, SQLITE_BUSY);
+
+        auto result = storm::transaction(conn, [&](auto& /*txn*/) -> std::expected<int, db::Error> {
+            return 7; // body succeeds → scope attempts COMMIT.
+        });
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_BUSY);
+    }
+
     TEST_F(ORMMockErrorTest, TransactionGuardCommitFailureDoesNotDoubleRollback) {
         // #353 nit: commit() failure issues one in-commit() ROLLBACK; the
         // destructor must NOT issue a second redundant ROLLBACK.
@@ -2423,6 +2462,20 @@ namespace {
                 throw std::bad_alloc{}; // emulates OOM building/caching the ROLLBACK statement
             }
             return {};
+        }
+
+        // Transaction-nesting hooks (#415) required by TransactionGuard::begin.
+        int                txn_depth = 0;
+        [[nodiscard]] auto in_transaction() const noexcept -> bool {
+            return txn_depth > 0;
+        }
+        auto enter_transaction() noexcept -> void {
+            ++txn_depth;
+        }
+        auto leave_transaction() noexcept -> void {
+            if (txn_depth > 0) {
+                --txn_depth;
+            }
         }
     };
 

@@ -364,22 +364,32 @@ for (int i = 0; i < 1000; ++i) {
 }
 ```
 
-### 4. Use Explicit Transactions
+### 4. Use the Public Transaction API
 
-For complex workflows combining multiple operations:
+For complex workflows combining multiple operations, wrap them in a
+`storm::begin()` scope (#415) instead of raw `conn->execute("BEGIN TRANSACTION")`:
 
 ```cpp
-conn.execute("BEGIN TRANSACTION");
+auto txn = storm::begin(conn);            // RAII guard; BEGIN issued
+if (!txn) return std::unexpected(txn.error());
 
-// Multiple batch operations
-queryset.insert(std::span<const Person>(new_people));
-queryset.update(std::span<const Person>(modified_people));
-queryset.erase(std::span<const Person>(deleted_people));
+// Multiple batch operations — any early return / throw auto-ROLLBACKs.
+if (auto r = queryset.insert(std::span<const Person>(new_people)).execute(); !r)
+    return std::unexpected(r.error());
+if (auto r = queryset.update(std::span<const Person>(modified_people)).execute(); !r)
+    return std::unexpected(r.error());
+if (auto r = queryset.erase(std::span<const Person>(deleted_people)).execute(); !r)
+    return std::unexpected(r.error());
 
-conn.execute("COMMIT");
+return txn->commit();                       // explicit COMMIT
 ```
 
-**Benefit**: Single commit for all operations (faster than individual commits)
+**Benefit**: Single commit for all operations (faster than individual commits),
+RAII rollback on any failure, and — unlike a raw `BEGIN TRANSACTION` — the inner
+chunked-batch transactions cooperate with the outer scope instead of colliding
+with it (fixes the nested-BEGIN bug, #9). A `storm::begin()` on a connection that
+is already inside a transaction returns a passive guard: no nested BEGIN, the
+outer guard owns the single commit/rollback.
 
 ## Benchmarking
 
