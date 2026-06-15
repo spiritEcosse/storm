@@ -419,6 +419,18 @@ if (auto r = qs.insert(bob).execute();   !r) return std::unexpected(r.error());
 return txn->commit();   // both inserts commit together; any failure rolls back
 ```
 
+For a more compact style, `storm::transaction(conn, body)` wraps the same guard:
+the body returns `std::expected<T, Error>`, a value COMMITs (and is forwarded), a
+`std::unexpected` or thrown exception ROLLBACKs and propagates.
+
+```cpp
+auto r = storm::transaction(conn, [&](auto& txn) -> std::expected<void, Error> {
+    if (auto x = qs.insert(alice).execute(); !x) return std::unexpected(x.error());
+    if (auto x = qs.insert(bob).execute();   !x) return std::unexpected(x.error());
+    return {};
+});   // commit/rollback handled automatically
+```
+
 `storm::TransactionGuard<ConnType>` is the underlying type (re-exported from
 `storm`); `storm::begin(conn)` is the thin factory. **Do not** use raw
 `conn->execute("BEGIN TRANSACTION")` — batch ops issue their own inner

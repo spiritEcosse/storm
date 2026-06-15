@@ -46,6 +46,31 @@ export namespace storm {
         return orm::utilities::TransactionGuard<ConnType>::begin(std::move(conn));
     }
 
+    // Scope helper (#415): runs `body(txn)` inside a transaction. `body` returns
+    // std::expected<T, Error>; on a value the scope COMMITs and forwards it, on a
+    // std::unexpected (or a throw) the guard ROLLBACKs and the error propagates.
+    // A thin convenience layer over storm::begin — same cooperative nesting (#9).
+    template <typename ConnType, typename Body>
+    [[nodiscard]] auto transaction(std::shared_ptr<ConnType> conn, Body&& body)
+            -> std::invoke_result_t<Body&, TransactionGuard<ConnType>&> {
+        using Ret = std::invoke_result_t<Body&, TransactionGuard<ConnType>&>;
+
+        auto guard = orm::utilities::TransactionGuard<ConnType>::begin(std::move(conn));
+        if (!guard) {
+            return Ret(std::unexpect, guard.error());
+        }
+
+        Ret result = std::forward<Body>(body)(*guard);
+        if (!result) {
+            return result; // guard destructor ROLLBACKs on the way out.
+        }
+
+        if (auto commit_result = guard->commit(); !commit_result) {
+            return Ret(std::unexpect, commit_result.error());
+        }
+        return result;
+    }
+
     // Meta functionality for ORM field attributes and reflection.
     // FieldAttr + is_primary_attr come from the storm_orm_field_attr leaf module
     // (re-exported above), which already declares them in storm::meta (#387).

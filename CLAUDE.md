@@ -463,11 +463,20 @@ if (!txn) return std::unexpected(txn.error());
 if (auto r = qs.insert(a).execute(); !r) return std::unexpected(r.error());
 if (auto r = qs.update(b).execute(); !r) return std::unexpected(r.error());
 return txn->commit();                                  // → std::expected<void, Error>
+
+// Scope helper storm::transaction(conn, body) — convenience layer over begin().
+// body returns std::expected<T, Error>: a value COMMITs and is forwarded, a
+// std::unexpected (or throw) ROLLBACKs and propagates. Same cooperative nesting.
+auto r = storm::transaction(conn, [&](auto& txn) -> std::expected<int, Error> {
+    if (auto x = qs.insert(a).execute(); !x) return std::unexpected(x.error());
+    if (auto x = qs.update(b).execute(); !x) return std::unexpected(x.error());
+    return 42;                                          // forwarded out on commit
+});                                                     // → std::expected<int, Error>
 ```
 
 **Methods**: `where()`, `join()`, `order_by()`, `limit()`, `offset()`, `group_by()`, `having()`, `distinct()`, `values()`
 **Aggregates**: `count()`, `sum()`, `avg()`, `min()`, `max()`
-**Transactions**: `storm::begin(conn)` → `storm::TransactionGuard` (RAII; cooperative with batch ops, #415/#9)
+**Transactions**: `storm::begin(conn)` → `storm::TransactionGuard` (RAII), or `storm::transaction(conn, body)` scope helper; both cooperative with batch ops (#415/#9)
 
 ## Testing
 
