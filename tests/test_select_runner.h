@@ -26,6 +26,23 @@ namespace storm::test {
 // Re-use the shared field dispatcher — no duplication with bench side.
 using storm::orm::query_builder::dispatch_field;
 
+// MIN/MAX/AVG results are std::optional<double> (#416). Over a non-empty set the
+// optional holds the value; over an empty (or all-NULL) set it is nullopt.
+inline auto expect_opt_near(const std::optional<double> &actual, double expected) -> void {
+    ASSERT_TRUE(actual.has_value()) << "aggregate over non-empty set must hold a value";
+    EXPECT_NEAR(actual.value(), expected, 0.01);
+}
+
+// Variant for cases that may target an empty set: when expect_null, the
+// aggregate must be nullopt; otherwise it must equal `expected`.
+inline auto expect_opt_near(const std::optional<double> &actual, double expected, bool expect_null) -> void {
+    if (expect_null) {
+        EXPECT_FALSE(actual.has_value()) << "MIN/MAX/AVG over empty set must be nullopt (#416)";
+    } else {
+        expect_opt_near(actual, expected);
+    }
+}
+
 // ============================================================================
 // WHERE expression builder — dispatches on operator string at compile time
 // ============================================================================
@@ -118,16 +135,29 @@ template <typename Model, typename ConnType> class SelectQueryRunnerBase : publi
 // Shared group-by result verification helpers
 // ---------------------------------------------------------------------------
 
-template <const auto &Tc, typename V>
-auto check_group_keys_and_agg(const std::vector<std::pair<int, V>> &groups, bool is_int) -> void {
+template <const auto &Tc>
+auto check_group_keys_and_int_agg(const std::vector<std::pair<int, std::int64_t>> &groups) -> void {
     ASSERT_EQ(groups.size(), Tc.expected.groups_count);
     for (std::size_t g = 0; g < Tc.expected.groups_count; ++g) {
         EXPECT_EQ(groups[g].first, Tc.expected.group_keys[g]) << "Group key mismatch at index " << g;
-        if (is_int)
-            EXPECT_EQ(static_cast<std::int64_t>(groups[g].second), Tc.expected.group_agg_int[g])
+        EXPECT_EQ(groups[g].second, Tc.expected.group_agg_int[g]) << "Group agg mismatch at index " << g;
+    }
+}
+
+// MIN/MAX/AVG group aggregates are std::optional<double> (#416). A group whose
+// aggregate column is all-NULL reads back as nullopt (flagged group_agg_null).
+template <const auto &Tc>
+auto check_group_keys_and_dbl_agg(const std::vector<std::pair<int, std::optional<double>>> &groups) -> void {
+    ASSERT_EQ(groups.size(), Tc.expected.groups_count);
+    for (std::size_t g = 0; g < Tc.expected.groups_count; ++g) {
+        EXPECT_EQ(groups[g].first, Tc.expected.group_keys[g]) << "Group key mismatch at index " << g;
+        if (Tc.expected.group_agg_null[g]) {
+            EXPECT_FALSE(groups[g].second.has_value()) << "Group agg should be nullopt at index " << g;
+        } else {
+            ASSERT_TRUE(groups[g].second.has_value()) << "Group agg should hold a value at index " << g;
+            EXPECT_NEAR(groups[g].second.value(), Tc.expected.group_agg_dbl[g], 0.01)
                 << "Group agg mismatch at index " << g;
-        else
-            EXPECT_NEAR(groups[g].second, Tc.expected.group_agg_dbl[g], 0.01) << "Group agg mismatch at index " << g;
+        }
     }
 }
 
@@ -136,15 +166,15 @@ template <const auto &Tc> auto verify_group_int_results(const auto &result) -> v
     for (const auto &[key, agg] : result)
         groups.emplace_back(static_cast<int>(key), agg);
     std::ranges::sort(groups);
-    check_group_keys_and_agg<Tc>(groups, true);
+    check_group_keys_and_int_agg<Tc>(groups);
 }
 
 template <const auto &Tc> auto verify_group_dbl_results(const auto &result) -> void {
-    std::vector<std::pair<int, double>> groups;
+    std::vector<std::pair<int, std::optional<double>>> groups;
     for (const auto &[key, agg] : result)
         groups.emplace_back(static_cast<int>(key), agg);
-    std::ranges::sort(groups);
-    check_group_keys_and_agg<Tc>(groups, false);
+    std::ranges::sort(groups, [](const auto &a, const auto &b) { return a.first < b.first; });
+    check_group_keys_and_dbl_agg<Tc>(groups);
 }
 
 // ---------------------------------------------------------------------------
@@ -241,19 +271,19 @@ template <typename Model, typename ConnType> class AggregateRunner : public Sele
             constexpr auto fi = dispatch_field<Model>(Tc.bench.aggregate.field.view());
             auto r = this->qs_.template avg<fi>().execute();
             ASSERT_TRUE(r.has_value()) << r.error().message();
-            EXPECT_NEAR(r.value(), Tc.expected.dbl_val, 0.01);
+            expect_opt_near(r.value(), Tc.expected.dbl_val, Tc.dataset.view() == "empty");
 
         } else if constexpr (Tc.query_type == "min") {
             constexpr auto fi = dispatch_field<Model>(Tc.bench.aggregate.field.view());
             auto r = this->qs_.template min<fi>().execute();
             ASSERT_TRUE(r.has_value()) << r.error().message();
-            EXPECT_NEAR(r.value(), Tc.expected.dbl_val, 0.01);
+            expect_opt_near(r.value(), Tc.expected.dbl_val, Tc.dataset.view() == "empty");
 
         } else if constexpr (Tc.query_type == "max") {
             constexpr auto fi = dispatch_field<Model>(Tc.bench.aggregate.field.view());
             auto r = this->qs_.template max<fi>().execute();
             ASSERT_TRUE(r.has_value()) << r.error().message();
-            EXPECT_NEAR(r.value(), Tc.expected.dbl_val, 0.01);
+            expect_opt_near(r.value(), Tc.expected.dbl_val, Tc.dataset.view() == "empty");
 
         } else if constexpr (Tc.query_type == "count_field") {
             constexpr auto fi = dispatch_field<Model>(Tc.bench.aggregate.field.view());
@@ -273,9 +303,9 @@ template <typename Model, typename ConnType> class ChainAggRunner : public Selec
         auto [v0, v1, v2, v3, v4] = r.value();
         EXPECT_EQ(v0, static_cast<std::int64_t>(Tc.aggregations[0].res_value));
         EXPECT_EQ(v1, static_cast<std::int64_t>(Tc.aggregations[1].res_value));
-        EXPECT_NEAR(v2, Tc.aggregations[2].res_value, 0.01);
-        EXPECT_NEAR(v3, Tc.aggregations[3].res_value, 0.01);
-        EXPECT_NEAR(v4, Tc.aggregations[4].res_value, 0.01);
+        expect_opt_near(v2, Tc.aggregations[2].res_value);
+        expect_opt_near(v3, Tc.aggregations[3].res_value);
+        expect_opt_near(v4, Tc.aggregations[4].res_value);
     }
 
     template <const auto &Tc> auto run_chain2_sum_or_count() -> void {
@@ -294,7 +324,7 @@ template <typename Model, typename ConnType> class ChainAggRunner : public Selec
             constexpr auto fi1 = dispatch_field<Model>(Tc.aggregations[1].field.view());
             auto [v0, v1] = this->qs_.template sum<fi0>().template avg<fi1>().execute().value();
             EXPECT_EQ(v0, static_cast<std::int64_t>(Tc.aggregations[0].res_value));
-            EXPECT_NEAR(v1, Tc.aggregations[1].res_value, 0.01);
+            expect_opt_near(v1, Tc.aggregations[1].res_value);
         }
     }
 
@@ -302,18 +332,18 @@ template <typename Model, typename ConnType> class ChainAggRunner : public Selec
         constexpr auto fi0 = dispatch_field<Model>(Tc.aggregations[0].field.view());
         if constexpr (Tc.aggregations[1].func == "count") {
             auto [v0, v1] = this->qs_.template avg<fi0>().count().execute().value();
-            EXPECT_NEAR(v0, Tc.aggregations[0].res_value, 0.01);
+            expect_opt_near(v0, Tc.aggregations[0].res_value);
             EXPECT_EQ(v1, static_cast<std::int64_t>(Tc.aggregations[1].res_value));
         } else {
             constexpr auto fi1 = dispatch_field<Model>(Tc.aggregations[1].field.view());
             if constexpr (Tc.aggregations[1].func == "min") {
                 auto [v0, v1] = this->qs_.template avg<fi0>().template min<fi1>().execute().value();
-                EXPECT_NEAR(v0, Tc.aggregations[0].res_value, 0.01);
-                EXPECT_NEAR(v1, Tc.aggregations[1].res_value, 0.01);
+                expect_opt_near(v0, Tc.aggregations[0].res_value);
+                expect_opt_near(v1, Tc.aggregations[1].res_value);
             } else {
                 auto [v0, v1] = this->qs_.template avg<fi0>().template max<fi1>().execute().value();
-                EXPECT_NEAR(v0, Tc.aggregations[0].res_value, 0.01);
-                EXPECT_NEAR(v1, Tc.aggregations[1].res_value, 0.01);
+                expect_opt_near(v0, Tc.aggregations[0].res_value);
+                expect_opt_near(v1, Tc.aggregations[1].res_value);
             }
         }
     }
@@ -323,20 +353,20 @@ template <typename Model, typename ConnType> class ChainAggRunner : public Selec
         constexpr auto fi1 = dispatch_field<Model>(Tc.aggregations[1].field.view());
         if constexpr (Tc.aggregations[0].func == "min" && Tc.aggregations[1].func == "max") {
             auto [v0, v1] = this->qs_.template min<fi0>().template max<fi1>().execute().value();
-            EXPECT_NEAR(v0, Tc.aggregations[0].res_value, 0.01);
-            EXPECT_NEAR(v1, Tc.aggregations[1].res_value, 0.01);
+            expect_opt_near(v0, Tc.aggregations[0].res_value);
+            expect_opt_near(v1, Tc.aggregations[1].res_value);
         } else if constexpr (Tc.aggregations[0].func == "min") {
             auto [v0, v1] = this->qs_.template min<fi0>().template sum<fi1>().execute().value();
-            EXPECT_NEAR(v0, Tc.aggregations[0].res_value, 0.01);
+            expect_opt_near(v0, Tc.aggregations[0].res_value);
             EXPECT_EQ(v1, static_cast<std::int64_t>(Tc.aggregations[1].res_value));
         } else if constexpr (Tc.aggregations[0].func == "max" && Tc.aggregations[1].func == "avg") {
             auto [v0, v1] = this->qs_.template max<fi0>().template avg<fi1>().execute().value();
-            EXPECT_NEAR(v0, Tc.aggregations[0].res_value, 0.01);
-            EXPECT_NEAR(v1, Tc.aggregations[1].res_value, 0.01);
+            expect_opt_near(v0, Tc.aggregations[0].res_value);
+            expect_opt_near(v1, Tc.aggregations[1].res_value);
         } else if constexpr (Tc.aggregations[0].func == "max") {
             auto [v0, v1] = this->qs_.template max<fi0>().template min<fi1>().execute().value();
-            EXPECT_NEAR(v0, Tc.aggregations[0].res_value, 0.01);
-            EXPECT_NEAR(v1, Tc.aggregations[1].res_value, 0.01);
+            expect_opt_near(v0, Tc.aggregations[0].res_value);
+            expect_opt_near(v1, Tc.aggregations[1].res_value);
         }
     }
 
@@ -358,7 +388,7 @@ template <typename Model, typename ConnType> class ChainAggRunner : public Selec
             auto [v0, v1, v2] = r.value();
             EXPECT_EQ(v0, static_cast<std::int64_t>(Tc.aggregations[0].res_value));
             EXPECT_EQ(v1, static_cast<std::int64_t>(Tc.aggregations[1].res_value));
-            EXPECT_NEAR(v2, Tc.aggregations[2].res_value, 0.01);
+            expect_opt_near(v2, Tc.aggregations[2].res_value, Tc.dataset.view() == "empty");
         } else if constexpr (Tc.aggregations[0].func == "count") {
             constexpr auto fi1 = dispatch_field<Model>(Tc.aggregations[1].field.view());
             constexpr auto fi2 = dispatch_field<Model>(Tc.aggregations[2].field.view());
@@ -367,7 +397,7 @@ template <typename Model, typename ConnType> class ChainAggRunner : public Selec
             auto [v0, v1, v2] = r.value();
             EXPECT_EQ(v0, static_cast<std::int64_t>(Tc.aggregations[0].res_value));
             EXPECT_EQ(v1, static_cast<std::int64_t>(Tc.aggregations[1].res_value));
-            EXPECT_NEAR(v2, Tc.aggregations[2].res_value, 0.01);
+            expect_opt_near(v2, Tc.aggregations[2].res_value, Tc.dataset.view() == "empty");
         }
     }
 
@@ -380,8 +410,8 @@ template <typename Model, typename ConnType> class ChainAggRunner : public Selec
         auto [v0, v1, v2, v3] = r.value();
         EXPECT_EQ(v0, static_cast<std::int64_t>(Tc.aggregations[0].res_value));
         EXPECT_EQ(v1, static_cast<std::int64_t>(Tc.aggregations[1].res_value));
-        EXPECT_NEAR(v2, Tc.aggregations[2].res_value, 0.01);
-        EXPECT_NEAR(v3, Tc.aggregations[3].res_value, 0.01);
+        expect_opt_near(v2, Tc.aggregations[2].res_value);
+        expect_opt_near(v3, Tc.aggregations[3].res_value);
     }
 
     template <const auto &Tc> auto chain5_tail(auto &&head) -> void {

@@ -29,7 +29,8 @@ TYPED_TEST(AggregateTest, AvgMultipleFields) {
 
     auto result = this->qs->template avg<^^Person::age, ^^Person::years_experience>().execute();
     ASSERT_TRUE(result.has_value()) << "AVG multi-field failed: " << result.error().message();
-    EXPECT_NEAR(result.value(), 42.56, 0.01);
+    ASSERT_TRUE(result.value().has_value());
+    EXPECT_NEAR(result.value().value(), 42.56, 0.01);
 }
 
 TYPED_TEST(AggregateTest, MinMultipleFields) {
@@ -37,7 +38,8 @@ TYPED_TEST(AggregateTest, MinMultipleFields) {
 
     auto result = this->qs->template min<^^Person::age, ^^Person::years_experience>().execute();
     ASSERT_TRUE(result.has_value()) << "MIN multi-field failed: " << result.error().message();
-    EXPECT_DOUBLE_EQ(result.value(), 27.0);
+    ASSERT_TRUE(result.value().has_value());
+    EXPECT_DOUBLE_EQ(result.value().value(), 27.0);
 }
 
 TYPED_TEST(AggregateTest, MaxMultipleFields) {
@@ -45,7 +47,8 @@ TYPED_TEST(AggregateTest, MaxMultipleFields) {
 
     auto result = this->qs->template max<^^Person::age, ^^Person::years_experience>().execute();
     ASSERT_TRUE(result.has_value()) << "MAX multi-field failed: " << result.error().message();
-    EXPECT_DOUBLE_EQ(result.value(), 60.0);
+    ASSERT_TRUE(result.value().has_value());
+    EXPECT_DOUBLE_EQ(result.value().value(), 60.0);
 }
 
 // ============================================================================
@@ -89,7 +92,8 @@ TYPED_TEST(AggregateTest, SingleAggregates_WithWhereAndJoin) {
                               .template min<^^Message::value>()
                               .execute();
     ASSERT_TRUE(min_result.has_value()) << "MIN with WHERE+JOIN failed: " << min_result.error().message();
-    EXPECT_DOUBLE_EQ(min_result.value(), 30.0);
+    ASSERT_TRUE(min_result.value().has_value());
+    EXPECT_DOUBLE_EQ(min_result.value().value(), 30.0);
 }
 
 TYPED_TEST(AggregateTest, SingleRow_AllAggregates) {
@@ -108,15 +112,18 @@ TYPED_TEST(AggregateTest, SingleRow_AllAggregates) {
 
     auto avg = this->qs->template avg<^^Person::age>().execute();
     ASSERT_TRUE(avg.has_value());
-    EXPECT_DOUBLE_EQ(avg.value(), 25.0);
+    ASSERT_TRUE(avg.value().has_value());
+    EXPECT_DOUBLE_EQ(avg.value().value(), 25.0);
 
     auto min_val = this->qs->template min<^^Person::age>().execute();
     ASSERT_TRUE(min_val.has_value());
-    EXPECT_DOUBLE_EQ(min_val.value(), 25.0);
+    ASSERT_TRUE(min_val.value().has_value());
+    EXPECT_DOUBLE_EQ(min_val.value().value(), 25.0);
 
     auto max_val = this->qs->template max<^^Person::age>().execute();
     ASSERT_TRUE(max_val.has_value());
-    EXPECT_DOUBLE_EQ(max_val.value(), 25.0);
+    ASSERT_TRUE(max_val.value().has_value());
+    EXPECT_DOUBLE_EQ(max_val.value().value(), 25.0);
 }
 
 // ============================================================================
@@ -169,13 +176,14 @@ TYPED_TEST(AggregateTest, TypeSafety_IntegerResult) {
     );
 }
 
-TYPED_TEST(AggregateTest, TypeSafety_DoubleResult) {
+TYPED_TEST(AggregateTest, TypeSafety_OptionalDoubleResult) {
     this->insert_test_data();
 
     auto result = this->qs->template avg<^^Person::age>().execute();
     ASSERT_TRUE(result.has_value());
     static_assert(
-            std::is_same_v<std::remove_reference_t<decltype(result.value())>, double>, "AVG should return double"
+            std::is_same_v<std::remove_reference_t<decltype(result.value())>, std::optional<double>>,
+            "AVG should return std::optional<double> (#416)"
     );
 }
 
@@ -243,7 +251,8 @@ TYPED_TEST(AggregateTest, StatementCaching_DifferentAggregates) {
 
         auto avg = this->qs->template avg<^^Person::salary>().execute();
         ASSERT_TRUE(avg.has_value());
-        EXPECT_NEAR(avg.value(), 68080.0, 0.01);
+        ASSERT_TRUE(avg.value().has_value());
+        EXPECT_NEAR(avg.value().value(), 68080.0, 0.01);
     }
 }
 

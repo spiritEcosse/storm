@@ -137,13 +137,21 @@ qs.erase_all().execute();
 ## Aggregates
 
 ```cpp
-// Scalar aggregates (no GROUP BY) — use .get()
-auto count = qs.count().execute();                           // int64_t
-auto total = qs.sum<^^Person::salary>().execute();           // double (SUM over a double/float column)
-auto age_total = qs.sum<^^Person::age>().execute();          // int64_t (SUM over an integer column)
-auto avg   = qs.avg<^^Person::salary>().execute();           // double
-auto lo    = qs.min<^^Person::age>().execute();              // int64_t
-auto hi    = qs.max<^^Person::age>().execute();              // int64_t
+// Scalar aggregates (no GROUP BY). execute() returns std::expected<T, Error>.
+// COUNT/SUM are never NULL; MIN/MAX/AVG over an empty set are NULL -> nullopt (#416).
+auto count     = qs.count().execute();               // expected<int64_t>
+auto total     = qs.sum<^^Person::salary>().execute(); // expected<double>  (SUM over double/float, #420; 0.0 on empty)
+auto age_total = qs.sum<^^Person::age>().execute();    // expected<int64_t> (SUM over integer; 0 on empty)
+auto avg       = qs.avg<^^Person::salary>().execute(); // expected<std::optional<double>>
+auto lo        = qs.min<^^Person::age>().execute();    // expected<std::optional<double>>
+auto hi        = qs.max<^^Person::age>().execute();    // expected<std::optional<double>>
+
+// MIN/MAX/AVG: nullopt means "no rows" — distinguishable from a genuine 0.
+if (lo && lo->has_value()) {
+    use(lo->value());        // a real minimum exists
+} else if (lo) {
+    // empty / all-filtered-out set: no minimum
+}
 
 // With WHERE
 auto active_count = qs.where(f<^^Person::is_active>() == true).count().execute();

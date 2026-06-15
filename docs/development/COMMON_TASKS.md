@@ -263,12 +263,14 @@ auto values = qs.values<^^Person::name, ^^Person::age>().execute();
 ### Aggregate Mode (via aggregates)
 
 ```cpp
-// Standalone aggregates - return scalar values via .get()
-auto min_age = qs.min<^^Person::age>().execute();
-auto max_age = qs.max<^^Person::age>().execute();
-auto count = qs.count().execute();
+// Standalone aggregates - return scalar values via execute().
+// MIN/MAX/AVG -> std::optional<double> (nullopt over an empty set, #416);
+// COUNT -> int64_t; SUM -> int64_t (0 over an empty set).
+auto min_age = qs.min<^^Person::age>().execute();   // expected<std::optional<double>>
+auto max_age = qs.max<^^Person::age>().execute();   // expected<std::optional<double>>
+auto count = qs.count().execute();                  // expected<int64_t>
 
-// GROUP BY + aggregate - returns tuples
+// GROUP BY + aggregate - returns tuples (MIN/MAX/AVG columns are std::optional<double>)
 auto by_dept = qs.group_by<^^Person::department>().count().execute();
 // Returns: plf::hive<std::tuple<DeptType, int64_t>>
 

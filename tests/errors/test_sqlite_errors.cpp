@@ -976,10 +976,10 @@ TEST_F(ORMErrorTest, AggregateOnEmptyTable) {
     ASSERT_TRUE(sum_result.has_value()) << "SUM on empty table should succeed";
     EXPECT_EQ(sum_result.value(), 0);
 
-    // AVG on empty table should return 0.0
+    // AVG on empty table has no value -> nullopt, not a real 0.0 (#416)
     auto avg_result = qs.avg<^^Person::age>().execute();
     ASSERT_TRUE(avg_result.has_value()) << "AVG on empty table should succeed";
-    EXPECT_DOUBLE_EQ(avg_result.value(), 0.0);
+    EXPECT_FALSE(avg_result.value().has_value()) << "AVG over empty set must be nullopt";
 }
 
 TEST_F(ORMErrorTest, AggregateWithWhereNoMatch) {

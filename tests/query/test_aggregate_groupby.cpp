@@ -53,14 +53,15 @@ TYPED_TEST(AggregateTest, GroupByWithAvg) {
     ASSERT_TRUE(result.has_value()) << "GROUP BY + AVG failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 3);
 
-    double avg_5 = 0.0; // NOLINT(misc-const-correctness) - modified in loop
+    std::optional<double> avg_5; // NOLINT(misc-const-correctness) - modified in loop
     for (const auto& [years, salary_avg] : result.value()) {
         if (years == 5) {
             avg_5 = salary_avg;
             break;
         }
     }
-    EXPECT_NEAR(avg_5, 50300.0, 0.01);
+    ASSERT_TRUE(avg_5.has_value());
+    EXPECT_NEAR(avg_5.value(), 50300.0, 0.01);
 }
 
 TYPED_TEST(AggregateTest, GroupByWithMin) {
@@ -70,14 +71,15 @@ TYPED_TEST(AggregateTest, GroupByWithMin) {
     ASSERT_TRUE(result.has_value()) << "GROUP BY + MIN failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 3);
 
-    double min_5 = 0.0; // NOLINT(misc-const-correctness) - modified in loop
+    std::optional<double> min_5; // NOLINT(misc-const-correctness) - modified in loop
     for (const auto& [years, salary_min] : result.value()) {
         if (years == 5) {
             min_5 = salary_min;
             break;
         }
     }
-    EXPECT_NEAR(min_5, 32000.0, 0.01);
+    ASSERT_TRUE(min_5.has_value());
+    EXPECT_NEAR(min_5.value(), 32000.0, 0.01);
 }
 
 TYPED_TEST(AggregateTest, GroupByWithMax) {
@@ -87,14 +89,15 @@ TYPED_TEST(AggregateTest, GroupByWithMax) {
     ASSERT_TRUE(result.has_value()) << "GROUP BY + MAX failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 3);
 
-    double max_5 = 0.0; // NOLINT(misc-const-correctness) - modified in loop
+    std::optional<double> max_5; // NOLINT(misc-const-correctness) - modified in loop
     for (const auto& [years, age_max] : result.value()) {
         if (years == 5) {
             max_5 = age_max;
             break;
         }
     }
-    EXPECT_NEAR(max_5, 36.0, 0.01);
+    ASSERT_TRUE(max_5.has_value());
+    EXPECT_NEAR(max_5.value(), 36.0, 0.01);
 }
 
 TYPED_TEST(AggregateTest, GroupByWithJoinAndSum) {
@@ -168,7 +171,8 @@ TYPED_TEST(AggregateTest, GroupByFullChain_SumAndAvg) {
     ASSERT_TRUE(avg_result.has_value()) << "Full chain AVG failed: " << avg_result.error().message();
     EXPECT_EQ(avg_result.value().size(), 8);
     for (const auto& [value, avg_val] : avg_result.value()) {
-        EXPECT_NEAR(avg_val, static_cast<double>(value), 0.01);
+        ASSERT_TRUE(avg_val.has_value());
+        EXPECT_NEAR(avg_val.value(), static_cast<double>(value), 0.01);
     }
 }
 

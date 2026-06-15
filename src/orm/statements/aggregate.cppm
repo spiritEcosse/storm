@@ -164,16 +164,20 @@ export namespace storm::orm::statements {
     // LCOV_EXCL_STOP
 
     // Result type:
-    //   COUNT            -> int64_t
-    //   SUM (integer)    -> int64_t
-    //   SUM (floating)   -> double (no truncation, #420)
-    //   AVG/MIN/MAX      -> double
+    //   COUNT / COUNT(DISTINCT) -> int64_t (never NULL)
+    //   SUM (integer)           -> int64_t (#420; 0 over an empty set)
+    //   SUM (floating)          -> double  (#420, no truncation; 0.0 over an empty set)
+    //   AVG/MIN/MAX             -> std::optional<double> (#416)
+    // MIN/MAX/AVG over an empty (or fully-filtered-out) set, or over an all-NULL
+    // column within a GROUP BY group, return SQL NULL — surfaced as std::nullopt
+    // so "no value" is distinguishable from a genuine 0. SUM keeps the 0-on-empty
+    // convention, so it stays a plain (non-optional) numeric.
     template <typename Op>
     using OpResult = std::conditional_t<
-            Op::agg_type == AggregateType::COUNT ||
+            Op::agg_type == AggregateType::COUNT || Op::agg_type == AggregateType::COUNT_DISTINCT ||
                     (Op::agg_type == AggregateType::SUM && !op_has_floating_field<Op>()),
             std::int64_t,
-            double>;
+            std::conditional_t<Op::agg_type == AggregateType::SUM, double, std::optional<double>>>;
 
     // ============================================================================
     // AggregateStatement - Single class for all aggregate queries

@@ -69,7 +69,8 @@ TYPED_TEST(OptionalAggregateTest, AvgWithNullValues) {
 
     auto avg = this->qs->template avg<^^Person::score>().execute();
     ASSERT_TRUE(avg.has_value());
-    EXPECT_NEAR(avg.value(), 30.0, 0.01);
+    ASSERT_TRUE(avg.value().has_value());
+    EXPECT_NEAR(avg.value().value(), 30.0, 0.01);
 }
 
 TYPED_TEST(OptionalAggregateTest, MinMaxWithNullValues) {
@@ -82,11 +83,13 @@ TYPED_TEST(OptionalAggregateTest, MinMaxWithNullValues) {
 
     auto min_val = this->qs->template min<^^Person::score>().execute();
     ASSERT_TRUE(min_val.has_value());
-    EXPECT_NEAR(min_val.value(), 25.0, 0.01);
+    ASSERT_TRUE(min_val.value().has_value());
+    EXPECT_NEAR(min_val.value().value(), 25.0, 0.01);
 
     auto max_val = this->qs->template max<^^Person::score>().execute();
     ASSERT_TRUE(max_val.has_value());
-    EXPECT_NEAR(max_val.value(), 45.0, 0.01);
+    ASSERT_TRUE(max_val.value().has_value());
+    EXPECT_NEAR(max_val.value().value(), 45.0, 0.01);
 }
 
 TYPED_TEST(OptionalAggregateTest, CountDistinctWithNullValues) {
@@ -155,6 +158,98 @@ TYPED_TEST(OptionalAggregateTest, GroupByWithMixedNullAndNonNullValues) {
 }
 
 // =============================================================================
+// Empty / All-Filtered-Out Set Tests (#416)
+// MIN/MAX/AVG over no rows have no value -> nullopt (distinguishable from real 0).
+// SUM over no rows keeps the SQL-conventional 0. COUNT over no rows is 0.
+// =============================================================================
+
+TYPED_TEST(OptionalAggregateTest, MinOverEmptySetIsNullopt) {
+    ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
+            {.name = "Alice", .age = 25},
+            {.name = "Bob", .age = 35},
+    })));
+
+    auto result = this->qs->where(storm::orm::where::f<^^Person::age>() > 9999).template min<^^Person::age>().execute();
+    ASSERT_TRUE(result.has_value()) << result.error().message();
+    EXPECT_FALSE(result.value().has_value()) << "MIN over empty set must be nullopt, not 0";
+}
+
+TYPED_TEST(OptionalAggregateTest, MaxOverEmptySetIsNullopt) {
+    ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
+            {.name = "Alice", .age = 25},
+            {.name = "Bob", .age = 35},
+    })));
+
+    auto result = this->qs->where(storm::orm::where::f<^^Person::age>() > 9999).template max<^^Person::age>().execute();
+    ASSERT_TRUE(result.has_value()) << result.error().message();
+    EXPECT_FALSE(result.value().has_value()) << "MAX over empty set must be nullopt, not 0";
+}
+
+TYPED_TEST(OptionalAggregateTest, AvgOverEmptySetIsNullopt) {
+    ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
+            {.name = "Alice", .age = 25},
+            {.name = "Bob", .age = 35},
+    })));
+
+    auto result = this->qs->where(storm::orm::where::f<^^Person::age>() > 9999).template avg<^^Person::age>().execute();
+    ASSERT_TRUE(result.has_value()) << result.error().message();
+    EXPECT_FALSE(result.value().has_value()) << "AVG over empty set must be nullopt, not 0.0";
+}
+
+TYPED_TEST(OptionalAggregateTest, MinMaxAvgOverEmptySetVsRealZeroAreDistinguishable) {
+    ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
+            {.name = "Zero", .age = 0},
+    })));
+
+    // Real zero: a row with age == 0 -> the aggregate IS 0, present.
+    auto real_min = this->qs->where(storm::orm::where::f<^^Person::age>() == 0).template min<^^Person::age>().execute();
+    ASSERT_TRUE(real_min.has_value()) << real_min.error().message();
+    ASSERT_TRUE(real_min.value().has_value()) << "MIN over a present 0 must hold a value";
+    EXPECT_DOUBLE_EQ(real_min.value().value(), 0.0);
+
+    // Empty set: no rows -> nullopt, NOT a real 0.
+    auto empty_min =
+            this->qs->where(storm::orm::where::f<^^Person::age>() > 9999).template min<^^Person::age>().execute();
+    ASSERT_TRUE(empty_min.has_value()) << empty_min.error().message();
+    EXPECT_FALSE(empty_min.value().has_value());
+}
+
+TYPED_TEST(OptionalAggregateTest, SumOverEmptySetKeepsZeroConvention) {
+    ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
+            {.name = "Alice", .age = 25},
+    })));
+
+    auto result = this->qs->where(storm::orm::where::f<^^Person::age>() > 9999).template sum<^^Person::age>().execute();
+    ASSERT_TRUE(result.has_value()) << result.error().message();
+    EXPECT_EQ(result.value(), 0) << "SUM over empty set keeps the 0 convention";
+}
+
+TYPED_TEST(OptionalAggregateTest, CountOverEmptySetIsZero) {
+    ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
+            {.name = "Alice", .age = 25},
+    })));
+
+    auto result = this->qs->where(storm::orm::where::f<^^Person::age>() > 9999).count().execute();
+    ASSERT_TRUE(result.has_value()) << result.error().message();
+    EXPECT_EQ(result.value(), 0);
+}
+
+// GROUP BY: an aggregate can be NULL within a group whose agg column is all-NULL.
+TYPED_TEST(OptionalAggregateTest, GroupByAvgOfAllNullColumnInGroupIsNullopt) {
+    // Two rows share department-less grouping key (name), score all NULL -> AVG(score) is NULL per group.
+    ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
+            {.name = "Solo", .salary = 50000.0, .score = std::nullopt},
+    })));
+
+    auto result = this->qs->template group_by<^^Person::name>().template avg<^^Person::score>().execute();
+    ASSERT_TRUE(result.has_value()) << result.error().message();
+    ASSERT_EQ(result.value().size(), 1U);
+    auto it                 = result.value().begin();
+    auto [name_key, avg_sc] = *it;
+    EXPECT_FALSE(avg_sc.has_value()) << "AVG of an all-NULL column within a group must be nullopt";
+}
+
+// =============================================================================
 // Negative Number Tests
 // =============================================================================
 
@@ -181,7 +276,8 @@ TYPED_TEST(AggregateTest, NegativeNumbersInAvg) {
 
     auto avg = this->qs->template avg<^^Person::age>().execute();
     ASSERT_TRUE(avg.has_value());
-    EXPECT_NEAR(avg.value(), -2.0, 0.01);
+    ASSERT_TRUE(avg.value().has_value());
+    EXPECT_NEAR(avg.value().value(), -2.0, 0.01);
 }
 
 TYPED_TEST(AggregateTest, NegativeNumbersInMinMax) {
@@ -194,11 +290,13 @@ TYPED_TEST(AggregateTest, NegativeNumbersInMinMax) {
 
     auto min_val = this->qs->template min<^^Person::age>().execute();
     ASSERT_TRUE(min_val.has_value());
-    EXPECT_NEAR(min_val.value(), -20.0, 0.01);
+    ASSERT_TRUE(min_val.value().has_value());
+    EXPECT_NEAR(min_val.value().value(), -20.0, 0.01);
 
     auto max_val = this->qs->template max<^^Person::age>().execute();
     ASSERT_TRUE(max_val.has_value());
-    EXPECT_NEAR(max_val.value(), 15.0, 0.01);
+    ASSERT_TRUE(max_val.value().has_value());
+    EXPECT_NEAR(max_val.value().value(), 15.0, 0.01);
 }
 
 TYPED_TEST(AggregateTest, NegativeNumbersInCount) {

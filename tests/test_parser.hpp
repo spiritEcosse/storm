@@ -558,8 +558,11 @@ namespace storm::test {
         std::array<int, MAX_GROUPS>    group_keys{};
         std::array<int, MAX_GROUPS>    group_agg_int{};
         std::array<double, MAX_GROUPS> group_agg_dbl{};
-        std::size_t                    groups_count = 0;
-        constexpr ExpectedSpec()                    = default;
+        // #416: per-group flag — true when MIN/MAX/AVG over an all-NULL column in
+        // that group is SQL NULL (-> std::nullopt). Defaults to all-false.
+        std::array<bool, MAX_GROUPS> group_agg_null{};
+        std::size_t                  groups_count = 0;
+        constexpr ExpectedSpec()                  = default;
     };
 
     struct ChainAggSpec {
@@ -643,6 +646,18 @@ namespace storm::test {
         return n;
     }
 
+    template <std::size_t MaxLen>
+    constexpr auto parse_bool_array(std::string_view j, std::size_t& p, std::array<bool, MaxLen>& out) -> std::size_t {
+        std::size_t n = 0;
+        parse_array(j, p, [&](std::string_view jj, std::size_t& pp) {
+            if (n < MaxLen)
+                out.data()[n++] = parse_bool(jj, pp);
+            else
+                skip_value(jj, pp);
+        });
+        return n;
+    }
+
     constexpr auto
     parse_expected_group_key(const char* ptr, JsonKeyRef kr, std::string_view jj, std::size_t& pp, ExpectedSpec& e)
             -> bool {
@@ -657,6 +672,9 @@ namespace storm::test {
             return true;
         } else if (jkey_eq(ptr, kr.start, kr.len, "group_agg_dbl")) {
             parse_double_array<ExpectedSpec::MAX_GROUPS>(jj, pp, e.group_agg_dbl);
+            return true;
+        } else if (jkey_eq(ptr, kr.start, kr.len, "group_agg_null")) {
+            parse_bool_array<ExpectedSpec::MAX_GROUPS>(jj, pp, e.group_agg_null);
             return true;
         }
         return false;

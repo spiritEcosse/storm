@@ -443,19 +443,22 @@ TYPED_TEST(QueryResetTest, ResetBetweenDifferentOperations) {
 
     auto avg1 = this->qs->template avg<^^Person::age>().execute();
     ASSERT_TRUE(avg1.has_value());
-    EXPECT_NEAR(avg1.value(), 33.16, 0.01);
+    ASSERT_TRUE(avg1.value().has_value());
+    EXPECT_NEAR(avg1.value().value(), 33.16, 0.01);
 
     (*this->qs).reset();
 
     auto min1 = this->qs->template min<^^Person::age>().execute();
     ASSERT_TRUE(min1.has_value());
-    EXPECT_EQ(min1.value(), 22);
+    ASSERT_TRUE(min1.value().has_value());
+    EXPECT_EQ(min1.value().value(), 22);
 
     (*this->qs).reset();
 
     auto max1 = this->qs->template max<^^Person::age>().execute();
     ASSERT_TRUE(max1.has_value());
-    EXPECT_EQ(max1.value(), 48);
+    ASSERT_TRUE(max1.value().has_value());
+    EXPECT_EQ(max1.value().value(), 48);
 }
 
 TYPED_TEST(QueryResetTest, AggregatesWithWhere) {

@@ -112,6 +112,19 @@ template <typename ConnType> auto verify_group_by_counts(QuerySet<Person, ConnTy
     }
 }
 
+// Compares a GROUP BY result (key -> optional<double> aggregate) against expected
+// values. MIN/MAX/AVG columns are std::optional<double> (#416); every key present
+// in the result and in `expected` must hold a value matching within tolerance.
+template <typename Hive>
+auto verify_optional_agg_groups(const Hive& rows, const std::map<int, double>& expected) -> void {
+    for (const auto& [ye, v] : rows) {
+        if (auto it = expected.find(ye); it != expected.end()) {
+            ASSERT_TRUE(v.has_value());
+            EXPECT_NEAR(v.value(), it->second, 0.01);
+        }
+    }
+}
+
 template <typename ConnType> auto verify_group_by_sum_avg_min_max(QuerySet<Person, ConnType>& qs) -> void {
     const std::map<int, std::int64_t> exp_sum = {{5, 268}, {10, 285}, {15, 276}};
     const std::map<int, double>       exp_avg = {{5, 26.8}, {10, 35.625}, {15, 39.43}};
@@ -130,29 +143,17 @@ template <typename ConnType> auto verify_group_by_sum_avg_min_max(QuerySet<Perso
     qs.reset();
     auto avg = qs.template group_by<^^Person::years_experience>().template avg<^^Person::age>().execute();
     ASSERT_TRUE(avg.has_value());
-    for (const auto& [ye, v] : avg.value()) {
-        if (auto it = exp_avg.find(ye); it != exp_avg.end()) {
-            EXPECT_NEAR(v, it->second, 0.01);
-        }
-    }
+    verify_optional_agg_groups(avg.value(), exp_avg);
 
     qs.reset();
     auto mn = qs.template group_by<^^Person::years_experience>().template min<^^Person::age>().execute();
     ASSERT_TRUE(mn.has_value());
-    for (const auto& [ye, v] : mn.value()) {
-        if (auto it = exp_min.find(ye); it != exp_min.end()) {
-            EXPECT_NEAR(v, it->second, 0.01);
-        }
-    }
+    verify_optional_agg_groups(mn.value(), exp_min);
 
     qs.reset();
     auto mx = qs.template group_by<^^Person::years_experience>().template max<^^Person::age>().execute();
     ASSERT_TRUE(mx.has_value());
-    for (const auto& [ye, v] : mx.value()) {
-        if (auto it = exp_max.find(ye); it != exp_max.end()) {
-            EXPECT_NEAR(v, it->second, 0.01);
-        }
-    }
+    verify_optional_agg_groups(mx.value(), exp_max);
 }
 
 TYPED_TEST(AggregateTest, GroupByWithAllAggregateTypes) {
