@@ -199,6 +199,17 @@ QuerySet<Person>().update<^^Person::age>(Person{.age = 0}).execute();
 // → std::unexpected: refuses full-table write
 ```
 
+To intentionally update every row, use the explicit `update_all<...>()` (the symmetric
+counterpart of `erase_all()`):
+
+```cpp
+QuerySet<Person>().update_all<^^Person::department>(Person{.department = "Global"}).execute();
+// UPDATE Person SET department=?   (no WHERE — explicit full-table write)
+```
+
+`update_all<...>()` shares the SET-clause behaviour of conditional `update<...>()`: FK
+columns emit `<name>_id` and `auto_update` fields are auto-appended and stamped `now()`.
+
 Returns `std::expected<void, Error>` (consistent with the rest of the CRUD family).
 The primary key cannot be a SET target (compile-time rejected).
 

@@ -209,6 +209,20 @@ export namespace storm::orm::statements {
             return sql;
         }
 
+        // Full-table UPDATE (#409): build "UPDATE <table> SET <set_clause>" with NO WHERE.
+        // Same SET clause as the conditional path (Members... + unlisted auto_update fields);
+        // it just omits the WHERE — the explicit escape hatch mirroring DELETE's delete_all_sql.
+        template <std::meta::info... Members> static auto build_update_all_sql() -> std::string {
+            static const std::string set_clause = std::string(build_conditional_set_clause<Members...>());
+            std::string              sql;
+            sql.reserve(Base::table_name_.size() + set_clause.size() + 16);
+            sql += "UPDATE ";
+            sql += Base::table_name_;
+            sql += " SET ";
+            sql += set_clause;
+            return sql;
+        }
+
       public:
         explicit UpdateStatement(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
@@ -259,7 +273,7 @@ export namespace storm::orm::statements {
         // Conditional bulk UPDATE (#403): UPDATE <table> SET <set> WHERE <where_expr>.
         // SET columns are the Members... pack; values come from `proto`. A null where_expr
         // is refused at execute()/to_sql() time so a dropped where() cannot write the whole
-        // table (update_all() would be the explicit full-table path — not yet implemented).
+        // table (update_all() is the explicit full-table path — see UpdateAllQuery, #409).
         template <std::meta::info... Members> struct ConditionalUpdateQuery {
             UpdateStatement                  stmt;
             const T&                         proto;
@@ -277,6 +291,25 @@ export namespace storm::orm::statements {
         auto query_where(const T& proto [[clang::lifetimebound]], orm::where::ExpressionVariantPtr where_expr)
                 -> ConditionalUpdateQuery<Members...> {
             return {std::move(*this), proto, std::move(where_expr)};
+        }
+
+        // Full-table UPDATE (#409): UPDATE <table> SET <set> with NO WHERE. The explicit
+        // escape hatch named by the empty-WHERE refusal, mirroring DeleteAllQuery.
+        template <std::meta::info... Members> struct UpdateAllQuery {
+            UpdateStatement    stmt;
+            const T&           proto;
+            [[nodiscard]] auto execute() -> std::expected<void, Error> {
+                return stmt.template execute_all<Members...>(proto);
+            }
+            [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
+                return stmt.template to_sql_all<Members...>(proto);
+            }
+        };
+
+        template <std::meta::info... Members>
+            requires(sizeof...(Members) > 0 && (is_settable_member<Members>() && ...))
+        auto query_all(const T& proto [[clang::lifetimebound]]) -> UpdateAllQuery<Members...> {
+            return {std::move(*this), proto};
         }
 
         // Returns SQL string with bound parameters inlined for a single UPDATE (for debugging)
@@ -471,6 +504,24 @@ export namespace storm::orm::statements {
             return bind_unlisted_auto_updates<Members...>(stmt, param_index, now, typename Base::field_indices_t{});
         }
 
+        // Prepare `sql`, reset, then bind the SET values — the prefix shared by the
+        // conditional (WHERE, #403) and full-table (#409) paths. Conditional appends WHERE.
+        template <std::meta::info... Members>
+        [[nodiscard]] auto prepare_bind_set(const std::string& sql, const T& proto, int& param_index)
+                -> std::expected<Statement*, Error> {
+            auto prepare_result = conn_->prepare_cached(sql);
+            if (!prepare_result) {
+                return std::unexpected(prepare_result.error());
+            }
+            Statement* stmt = *prepare_result;
+            stmt->reset();
+            param_index = 1;
+            if (auto set_result = bind_conditional_set<Members...>(stmt, proto, param_index); !set_result) {
+                return std::unexpected(set_result.error());
+            }
+            return stmt;
+        }
+
         // Empty-WHERE check + prepare + SET-then-WHERE bind. Shared by execute/to_sql.
         template <std::meta::info... Members>
         [[nodiscard]] auto ready_conditional_update(const T& proto, const orm::where::ExpressionVariantPtr& where_expr)
@@ -478,16 +529,14 @@ export namespace storm::orm::statements {
             if (!where_expr) [[unlikely]] {
                 return empty_where_error();
             }
-            auto prepare_result = conn_->prepare_cached(build_conditional_update_sql<Members...>(*where_expr));
-            if (!prepare_result) {
-                return std::unexpected(prepare_result.error());
+            int  param_index = 0; // set by prepare_bind_set; WHERE bind continues from it
+            auto stmt_result = prepare_bind_set<Members...>(
+                    build_conditional_update_sql<Members...>(*where_expr), proto, param_index
+            );
+            if (!stmt_result) {
+                return stmt_result;
             }
-            Statement* stmt = *prepare_result;
-            stmt->reset();
-            int param_index = 1;
-            if (auto set_result = bind_conditional_set<Members...>(stmt, proto, param_index); !set_result) {
-                return std::unexpected(set_result.error());
-            }
+            Statement* stmt = *stmt_result;
             // WHERE params continue from param_index (same continuation as bind_having_params).
             if (auto where_result = Base::template bind_having_params<Statement, Error>(stmt, where_expr, param_index);
                 !where_result) {
@@ -496,10 +545,17 @@ export namespace storm::orm::statements {
             return stmt;
         }
 
+        // Full-table UPDATE (#409): prepare + bind SET only (no WHERE). No empty-WHERE
+        // guard — writing the whole table is the documented intent here.
         template <std::meta::info... Members>
-        [[nodiscard]] auto execute_where(const T& proto, const orm::where::ExpressionVariantPtr& where_expr)
+        [[nodiscard]] auto ready_update_all(const T& proto) -> std::expected<Statement*, Error> {
+            int param_index = 0; // out-param; no WHERE bind follows, so the final value is unused
+            return prepare_bind_set<Members...>(build_update_all_sql<Members...>(), proto, param_index);
+        }
+
+        // Terminal shapes shared by the conditional and full-table paths: execute / expand.
+        [[nodiscard]] static auto run_execute(std::expected<Statement*, Error> stmt_result)
                 -> std::expected<void, Error> {
-            auto stmt_result = ready_conditional_update<Members...>(proto, where_expr);
             if (!stmt_result) {
                 return std::unexpected(stmt_result.error());
             }
@@ -508,15 +564,34 @@ export namespace storm::orm::statements {
             }
             return {};
         }
-
-        template <std::meta::info... Members>
-        [[nodiscard]] auto to_sql_where(const T& proto, const orm::where::ExpressionVariantPtr& where_expr)
+        [[nodiscard]] static auto run_to_sql(std::expected<Statement*, Error> stmt_result)
                 -> std::expected<std::string, Error> {
-            auto stmt_result = ready_conditional_update<Members...>(proto, where_expr);
             if (!stmt_result) {
                 return std::unexpected(stmt_result.error());
             }
             return (*stmt_result)->expanded_sql();
+        }
+
+        template <std::meta::info... Members>
+        [[nodiscard]] auto execute_where(const T& proto, const orm::where::ExpressionVariantPtr& where_expr)
+                -> std::expected<void, Error> {
+            return run_execute(ready_conditional_update<Members...>(proto, where_expr));
+        }
+
+        template <std::meta::info... Members>
+        [[nodiscard]] auto to_sql_where(const T& proto, const orm::where::ExpressionVariantPtr& where_expr)
+                -> std::expected<std::string, Error> {
+            return run_to_sql(ready_conditional_update<Members...>(proto, where_expr));
+        }
+
+        template <std::meta::info... Members>
+        [[nodiscard]] auto execute_all(const T& proto) -> std::expected<void, Error> {
+            return run_execute(ready_update_all<Members...>(proto));
+        }
+
+        template <std::meta::info... Members>
+        [[nodiscard]] auto to_sql_all(const T& proto) -> std::expected<std::string, Error> {
+            return run_to_sql(ready_update_all<Members...>(proto));
         }
 
       private:
