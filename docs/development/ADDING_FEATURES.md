@@ -224,12 +224,13 @@ auto bind_all(Statement& stmt, const T& obj, std::index_sequence<Is...>) {
 ### Transaction Wrapping
 
 ```cpp
-auto execute_batch(std::span<const T> objects) {
-    return Base::execute_with_transaction([&]() {
-        for (const auto& obj : objects) {
-            execute_single(obj);
-        }
-    });
+auto execute_batch(std::span<const T> objects) -> std::expected<void, Error> {
+    auto txn = TransactionGuard<ConnType>::begin(conn_);   // RAII; auto-ROLLBACK on early return
+    if (!txn) return std::unexpected(txn.error());
+    for (const auto& obj : objects) {
+        if (auto r = execute_single(obj); !r) return r;    // guard rolls back on scope exit
+    }
+    return txn->commit();
 }
 ```
 

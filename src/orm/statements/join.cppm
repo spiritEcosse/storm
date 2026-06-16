@@ -8,6 +8,7 @@ export module storm_orm_statements_join;
 import std;
 
 import storm_orm_statements_base;
+import storm_orm_statements_extract;
 import storm_orm_statements_orderby;
 import storm_orm_utilities;
 import storm_orm_where;
@@ -126,7 +127,7 @@ export namespace storm::orm::statements {
             }
         }
         InnerFK inner{};
-        inner.[:fk_pk:] = RelatedBase::template extract_column_value<PKType>(stmt, col);
+        inner.[:fk_pk:] = ColumnExtractor::template extract_column_value<PKType>(stmt, col);
         rel.[:Member:]  = std::move(inner);
     }
 
@@ -140,7 +141,7 @@ export namespace storm::orm::statements {
         if constexpr (meta::is_fk_field(member)) {
             extract_relation_fk_column<RelatedBase, Related, FieldType, member>(stmt, rel, col);
         } else {
-            rel.[:member:] = RelatedBase::template extract_column_value<FieldType>(stmt, col);
+            rel.[:member:] = ColumnExtractor::template extract_column_value<FieldType>(stmt, col);
         }
     }
 
@@ -527,7 +528,7 @@ export namespace storm::orm::statements {
                     return;
                 } else {
                     using FieldType = std::remove_cvref_t<decltype(obj.[:member:])>;
-                    obj.[:member:]  = Base::template extract_column_value<FieldType>(stmt, col_idx);
+                    obj.[:member:]  = ColumnExtractor::template extract_column_value<FieldType>(stmt, col_idx);
                     col_idx++;
                 }
             }
@@ -550,7 +551,7 @@ export namespace storm::orm::statements {
             if constexpr (FieldIdx < FKBase::field_count_) {
                 constexpr auto member = FKBase::all_members_[FieldIdx];
                 using FieldType       = std::remove_cvref_t<decltype(fk_obj.[:member:])>;
-                fk_obj.[:member:]     = Base::template extract_column_value<FieldType>(stmt, col_idx);
+                fk_obj.[:member:]     = ColumnExtractor::template extract_column_value<FieldType>(stmt, col_idx);
             }
         }
 

@@ -20,7 +20,7 @@ When implementing features:
    - Bulk SQL when batch ≤ `999/field_count`; chunked transactions for larger batches
    - `SMALL_THRESHOLD=10`: always bulk SQL for very small batches
    - `FALLBACK_BATCH_SIZE=50`: safe minimum constant in the adaptive algorithm
-6. Use `execute_with_transaction()` from BaseStatement for transaction management
+6. Use `TransactionGuard` (`storm::begin(conn)`) for transaction management — cooperative with batch ops (#415)
 7. Cache SQL strings using static methods like `get_insert_sql()`
 8. Handle `SQLITE_MAX_VARIABLE_NUMBER` (999) in all batch operations
 

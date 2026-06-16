@@ -29,7 +29,7 @@ You are the performance specialist for Storm ORM, with expertise in benchmarking
   - `FALLBACK_BATCH_SIZE=50`: safe minimum constant in adaptive algorithm
 - **DELETE**: IN clause chunking — max chunk = `(999 * 4) / 5 = 799` (80% of SQLite limit)
 - Respect `SQLITE_MAX_VARIABLE_NUMBER` (999) in all batch operations
-- Wrap large batches in explicit transactions via `execute_with_transaction()`
+- Wrap large batches in explicit transactions via `TransactionGuard` (`storm::begin(conn)`)
 
 ### 3. SQL Generation Review
 - Prefer static SQL generation using `std::format` (no constexpr due to compiler limitations)
