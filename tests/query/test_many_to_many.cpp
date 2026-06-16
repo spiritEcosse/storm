@@ -84,18 +84,62 @@ TEST(M2MSchemaTest, JunctionTableSqlPostgreSQL) {
     EXPECT_TRUE(sql.contains("Course_id BIGINT NOT NULL")) << sql;
 }
 
+// ── Referential integrity on the auto-junction (#412) ───────────────────────
+// Each junction column carries a FOREIGN KEY ... REFERENCES ... ON DELETE
+// CASCADE so deleting an owner/related row removes its junction rows instead of
+// leaving orphans. The composite PK still rejects duplicate pairs.
+
+// Both sides must carry FOREIGN KEY ... REFERENCES ... ON DELETE CASCADE; shared
+// by the SQLite and PostgreSQL cases (the junction FK DDL is dialect-independent).
+namespace {
+    void expect_junction_cascade_fks(std::string_view sql) {
+        EXPECT_TRUE(sql.contains("FOREIGN KEY (Student_id) REFERENCES Student(id) ON DELETE CASCADE")) << sql;
+        EXPECT_TRUE(sql.contains("FOREIGN KEY (Course_id) REFERENCES Course(id) ON DELETE CASCADE")) << sql;
+    }
+} // namespace
+
+TEST(M2MSchemaTest, JunctionEmitsForeignKeysSqlite) {
+    expect_junction_cascade_fks(
+            storm::orm::schema::SchemaStatement<Student>::junction_table_sql<storm::orm::schema::Dialect::SQLite>()
+    );
+}
+
+TEST(M2MSchemaTest, JunctionEmitsForeignKeysPostgreSQL) {
+    expect_junction_cascade_fks(
+            storm::orm::schema::SchemaStatement<Student>::junction_table_sql<storm::orm::schema::Dialect::PostgreSQL>()
+    );
+}
+
 // A through-model m2m field must NOT produce an auto junction table.
 static_assert(!storm::orm::schema::SchemaStatement<Pupil>::has_m2m_junction_);
 static_assert(storm::orm::schema::SchemaStatement<Student>::has_m2m_junction_);
 
 TYPED_TEST(M2MBaseTest, JunctionTableIsCreatedAndWritable) {
     auto conn = QuerySet<Student, TypeParam>::get_default_connection();
+
+    // Seed the referenced rows — the junction FKs (#412) require a real Student and
+    // Course before a link row may be inserted.
+    QuerySet<Student, TypeParam> student_qs;
+    QuerySet<Course, TypeParam>  course_qs;
+    auto                         student_id = student_qs.insert(Student{.name = "S", .age = 20}).execute();
+    ASSERT_TRUE(student_id.has_value()) << student_id.error().message();
+    auto course_id = course_qs.insert(Course{.title = "C"}).execute();
+    ASSERT_TRUE(course_id.has_value()) << course_id.error().message();
+
+    const std::string pair = std::format(
+            "INSERT INTO Student_Course (Student_id, Course_id) VALUES ({}, {})", student_id.value(), course_id.value()
+    );
+
     // The fixture ran create_table_if_not_exists<Student> — the junction must exist.
-    auto ins = conn->execute("INSERT INTO Student_Course (Student_id, Course_id) VALUES (1, 1)");
+    auto ins = conn->execute(pair);
     ASSERT_TRUE(ins.has_value()) << ins.error().message();
     // Composite PK rejects duplicate pairs.
-    auto dup = conn->execute("INSERT INTO Student_Course (Student_id, Course_id) VALUES (1, 1)");
+    auto dup = conn->execute(pair);
     EXPECT_FALSE(dup.has_value());
+
+    // A junction row with a dangling FK is rejected (referential integrity, #412).
+    auto dangling = conn->execute("INSERT INTO Student_Course (Student_id, Course_id) VALUES (99999, 99999)");
+    EXPECT_FALSE(dangling.has_value()) << "Junction FK must reject a dangling owner/related id";
 }
 
 // ============================================================================
@@ -207,6 +251,29 @@ TYPED_TEST(M2MSeededTest, EagerLoadAggregatesCourses) {
     ASSERT_NE(bob, nullptr);
     ASSERT_EQ(bob->courses.size(), 1U);
     EXPECT_EQ(bob->courses[0].title, "Math");
+}
+
+// Referential integrity (#412): deleting an owner cascades to its junction rows.
+// Alice (id 1) owns two Student_Course links (Math, Physics); deleting her must
+// leave no orphaned junction rows for Student_id = 1 (ON DELETE CASCADE).
+TYPED_TEST(M2MSeededTest, DeletingOwnerCascadesJunctionRows) {
+    auto conn = QuerySet<Student, TypeParam>::get_default_connection();
+
+    auto before = conn->prepare("SELECT COUNT(*) FROM Student_Course WHERE Student_id = 1");
+    ASSERT_TRUE(before.has_value());
+    auto before_stmt = std::move(before.value());
+    ASSERT_EQ(before_stmt.step_raw(), decltype(before_stmt)::ROW_AVAILABLE);
+    ASSERT_EQ(before_stmt.extract_int64(0), 2) << "Alice should start with two junction rows";
+
+    QuerySet<Student, TypeParam> sqs;
+    auto                         del = sqs.where(storm::orm::where::f<^^Student::id>() == 1).erase().execute();
+    ASSERT_TRUE(del.has_value()) << "Deleting Alice failed: " << del.error().message();
+
+    auto after = conn->prepare("SELECT COUNT(*) FROM Student_Course WHERE Student_id = 1");
+    ASSERT_TRUE(after.has_value());
+    auto after_stmt = std::move(after.value());
+    ASSERT_EQ(after_stmt.step_raw(), decltype(after_stmt)::ROW_AVAILABLE);
+    EXPECT_EQ(after_stmt.extract_int64(0), 0) << "Junction rows must cascade away when the owner is deleted";
 }
 
 // #414 / #9 — the m2m two-query prefetch opens its own TransactionGuard for

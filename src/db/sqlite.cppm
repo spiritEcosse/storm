@@ -314,7 +314,8 @@ export namespace storm::db::sqlite {
                 return std::unexpected(error);
             }
 
-            // Issue #410: apply connection tuning before handing the handle out.
+            // Issue #410: apply connection tuning (busy_timeout, journal mode) and #412:
+            // referential-integrity PRAGMA before handing the handle out.
             if (auto tuned = apply_tuning(raw_db, config); !tuned.has_value()) {
                 sqlite3_close_v2(raw_db);
                 return std::unexpected(tuned.error());
@@ -483,6 +484,14 @@ export namespace storm::db::sqlite {
                 if (rc != SQLITE_OK) {
                     return std::unexpected(Error{rc, sqlite3_errmsg(raw_db)});
                 }
+            }
+
+            // Enforce referential integrity (#412). SQLite parses FK syntax always but
+            // ignores it unless this PRAGMA is set, per connection — the docs recommend
+            // applications turn it on. PG enforces FKs natively, so no equivalent there.
+            if (const int rc = sqlite3_exec(raw_db, "PRAGMA foreign_keys = ON", nullptr, nullptr, nullptr);
+                rc != SQLITE_OK) {
+                return std::unexpected(Error{rc, sqlite3_errmsg(raw_db)});
             }
 
             return {};
