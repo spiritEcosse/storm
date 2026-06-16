@@ -3274,19 +3274,33 @@ namespace {
     // ============================================================================
 
     TEST_F(ORMMockErrorTest, CreateIndexesFailsOnExecError) {
-        // Configure exec to fail (create_indexes_if_not_exist uses conn->execute)
-        MockSqlite3Config::exec_returns(SQLITE_ERROR);
-        MockSqlite3Config::exec_error_message("index creation failed");
-
+        // Open first — open() issues PRAGMA foreign_keys = ON via sqlite3_exec (#412),
+        // so the exec-failure must be configured AFTER a successful open, not before.
         auto conn_result = db::sqlite::Connection::open(":memory:");
         ASSERT_TRUE(conn_result.has_value());
         auto conn = std::make_shared<db::sqlite::Connection>(std::move(conn_result.value()));
+
+        // Configure exec to fail (create_indexes_if_not_exist uses conn->execute)
+        MockSqlite3Config::exec_returns(SQLITE_ERROR);
+        MockSqlite3Config::exec_error_message("index creation failed");
 
         // MockIndexedPerson has Index<name, department> → exec runs → fails
         auto result = orm::schema::SchemaStatement<MockIndexedPerson>::create_indexes_if_not_exist(conn);
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
+    }
+
+    // open() issues PRAGMA foreign_keys = ON via sqlite3_exec (#412). When that exec
+    // fails, open() must surface the error and not return a half-initialised connection.
+    TEST_F(ORMMockErrorTest, OpenFailsWhenForeignKeysPragmaFails) {
+        MockSqlite3Config::exec_returns(SQLITE_ERROR);
+        MockSqlite3Config::exec_error_message("pragma failed");
+
+        auto conn_result = db::sqlite::Connection::open(":memory:");
+
+        ASSERT_FALSE(conn_result.has_value()) << "open() must fail when the foreign_keys PRAGMA exec fails";
+        EXPECT_EQ(conn_result.error().code(), SQLITE_ERROR);
     }
 
     // ============================================================================

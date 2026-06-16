@@ -490,21 +490,19 @@ TYPED_TEST(FKFieldTest, LeftJoinReturnsAllMessages) {
     ASSERT_TRUE(alice_result.has_value());
     std::int64_t const alice_id = alice_result.value();
 
-    // Insert a task with a non-existent reviewer ID (999)
-    // This simulates an orphaned FK reference
-    const auto& conn = QuerySet<Person, TypeParam>::get_default_connection();
-    auto stmt_result = conn->prepare("INSERT INTO Task (assignee_id, reviewer_id, description) VALUES (?, ?, ?)");
-    ASSERT_TRUE(stmt_result.has_value()) << "Prepare failed: " << stmt_result.error().message();
+    // Insert a task whose reviewer FK points at a real Person (Alice) but is NOT
+    // joined in the query below. With referential integrity always on (#412) the
+    // reviewer_id must reference an existing row; the point of this test is that a
+    // non-JOINed FK stays default in the result, not that a dangling FK is stored.
+    Task const msg{
+            .id          = 0,
+            .assignee    = Person{.id = static_cast<int>(alice_id)},
+            .reviewer    = Person{.id = static_cast<int>(alice_id)},
+            .description = "Reviewer not joined"
+    };
+    ASSERT_TRUE(message_qs.insert(msg).execute().has_value());
 
-    auto stmt = std::move(stmt_result.value());
-    ASSERT_TRUE(stmt.bind_int(1, alice_id).has_value());
-    ASSERT_TRUE(stmt.bind_int(2, 999).has_value());
-    ASSERT_TRUE(stmt.bind_text(3, "Orphaned message").has_value());
-
-    int const step_result = stmt.step_raw();
-    ASSERT_EQ(step_result, decltype(stmt)::NO_MORE_ROWS) << "Direct INSERT failed";
-
-    // LEFT JOIN on assignee - should return task even though reviewer doesn't exist
+    // LEFT JOIN on assignee only — reviewer is not fetched, so it stays default.
     auto join_result = message_qs.template left_join<^^Task::assignee>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "LEFT JOIN failed: " << join_result.error().message();
 
@@ -517,11 +515,11 @@ TYPED_TEST(FKFieldTest, LeftJoinReturnsAllMessages) {
     EXPECT_EQ(it->assignee.name, "Alice") << "LEFT JOIN should populate existing FK";
     EXPECT_EQ(it->assignee.age, 30);
 
-    // Verify reviewer is not populated (doesn't exist in Person table)
+    // Verify reviewer is not populated (not part of the JOIN)
     EXPECT_EQ(it->reviewer.id, 0) << "Non-JOINed FK should remain default";
 
     // Verify task description
-    EXPECT_EQ(it->description, "Orphaned message");
+    EXPECT_EQ(it->description, "Reviewer not joined");
 }
 
 // Test: LEFT JOIN with multiple FK fields
