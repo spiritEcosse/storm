@@ -455,7 +455,8 @@ qs.where(f<^^Person::age>() > 30).erase().execute();   // → std::expected<void
 qs.where(f<^^Person::salary>() < 50000)
   .update<^^Person::salary, ^^Person::is_active>(Person{.salary=60000, .is_active=true})
   .execute();                                          // → std::expected<void, Error>
-// Empty where() is refused (no full-table write).
+// Empty where() is refused (no full-table write); update_all<>() is the explicit wipe (#409).
+qs.update_all<^^Person::department>(Person{.department="Global"}).execute(); // UPDATE … SET, no WHERE
 
 // Public transaction API (#415) — storm::begin(conn) returns an RAII
 // storm::TransactionGuard<ConnType> (both re-exported from `storm`). BEGIN on

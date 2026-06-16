@@ -294,6 +294,15 @@ export namespace storm {
                     .template query_where<Members...>(proto, where_expr_);
         }
 
+        // Update all rows (#409) — UPDATE <table> SET <set> with NO WHERE clause.
+        // SET columns are the Members... NTTPs; values come from `proto`. The explicit
+        // full-table escape hatch named by update<>()'s empty-WHERE refusal (mirrors erase_all()).
+        template <std::meta::info... Members>
+            requires(sizeof...(Members) > 0)
+        [[nodiscard]] auto update_all(const T& proto [[clang::lifetimebound]]) {
+            return orm::statements::UpdateStatement<T, ConnType>(conn_).template query_all<Members...>(proto);
+        }
+
         // Reset WHERE, JOIN, LIMIT, and OFFSET state
         // Use this to clear conditions and start fresh with the same QuerySet instance
         // Example:

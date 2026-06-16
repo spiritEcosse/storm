@@ -319,6 +319,8 @@ TYPED_TEST(ConditionalUpdateTest, EmptyWhereIsRefused) {
     storm::QuerySet<Person, TypeParam> qs;
     auto                               result = qs.template update<^^Person::age>(Person{.age = 0}).execute();
     ASSERT_FALSE(result.has_value()) << "update<...>() with no where() must refuse";
+    // The refusal message must point at update_all() — the method that actually exists (#409).
+    EXPECT_TRUE(result.error().message().contains("update_all()")) << result.error().message();
     EXPECT_EQ(this->getPerson(1).age, 30) << "Table must be untouched";
 }
 
@@ -402,6 +404,61 @@ TYPED_TEST(ConditionalUpdateTest, NoTimestampNoExtraColumn) {
     const auto set_clause = s.substr(set_pos + 4, where_pos - (set_pos + 4));
     EXPECT_FALSE(set_clause.contains(',')) << "no extra column appended: " << set_clause;
     EXPECT_TRUE(set_clause.contains("age")) << set_clause;
+}
+
+// --- update_all(): explicit full-table write (#409) ------------------------
+// Symmetry with erase_all(): the documented escape hatch for an unfiltered update.
+TYPED_TEST(ConditionalUpdateTest, UpdateAllWritesEveryRow) {
+    storm::QuerySet<Person, TypeParam> qs;
+    ASSERT_TRUE(qs.template update_all<^^Person::department>(Person{.department = "Global"}).execute().has_value());
+    // Every seeded row must now carry the new department.
+    for (int id = 1; id <= 5; ++id) {
+        EXPECT_EQ(this->getPerson(id).department, "Global") << "row " << id << " not updated";
+    }
+}
+
+TYPED_TEST(ConditionalUpdateTest, UpdateAllMultipleColumns) {
+    storm::QuerySet<Person, TypeParam> qs;
+    ASSERT_TRUE((qs.template update_all<^^Person::age, ^^Person::is_active>(Person{.age = 99, .is_active = true})
+                         .execute()
+                         .has_value()));
+    for (int id = 1; id <= 5; ++id) {
+        EXPECT_EQ(this->getPerson(id).age, 99) << "row " << id;
+        EXPECT_TRUE(this->getPerson(id).is_active) << "row " << id;
+    }
+}
+
+TYPED_TEST(ConditionalUpdateTest, UpdateAllToSqlHasNoWhere) {
+    storm::QuerySet<Person, TypeParam> qs;
+    auto                               sql = qs.template update_all<^^Person::salary>(Person{.salary = 1.0}).to_sql();
+    ASSERT_TRUE(sql.has_value());
+    EXPECT_TRUE(sql.value().contains("UPDATE")) << sql.value();
+    EXPECT_TRUE(sql.value().contains("SET")) << sql.value();
+    EXPECT_TRUE(sql.value().contains("salary")) << sql.value();
+    EXPECT_FALSE(sql.value().contains("WHERE")) << "update_all() must emit no WHERE: " << sql.value();
+}
+
+// auto_update column is auto-appended and stamped on the full-table write too.
+TYPED_TEST(ConditionalUpdateTest, UpdateAllStampsAutoUpdate) {
+    using std::chrono::system_clock;
+    using storm::orm::where::f;
+    storm::QuerySet<TimestampedRecord, TypeParam> tqs;
+    const auto                                    stale = system_clock::time_point{};
+    ASSERT_TRUE(tqs.insert(TimestampedRecord{.id = 0, .name = "seed", .created_at = stale, .updated_at = stale})
+                        .execute()
+                        .has_value());
+    auto sql = tqs.template update_all<^^TimestampedRecord::name>(TimestampedRecord{.name = "renamed"}).to_sql();
+    ASSERT_TRUE(sql.has_value());
+    EXPECT_TRUE(sql.value().contains("updated_at")) << sql.value() << "auto_update must be auto-appended";
+
+    ASSERT_TRUE(tqs.template update_all<^^TimestampedRecord::name>(TimestampedRecord{.name = "renamed"})
+                        .execute()
+                        .has_value());
+    auto rows = tqs.where(f<^^TimestampedRecord::name>() == "renamed").select().execute();
+    ASSERT_TRUE(rows.has_value());
+    ASSERT_EQ(rows.value().size(), 1U);
+    EXPECT_GT(rows.value().begin()->updated_at.time_since_epoch().count(), stale.time_since_epoch().count())
+            << "auto_update column must advance past the stale value";
 }
 
 // NOLINTEND(readability-implicit-bool-conversion)
