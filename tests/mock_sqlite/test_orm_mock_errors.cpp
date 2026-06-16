@@ -422,6 +422,29 @@ namespace {
         EXPECT_EQ(conn_result.error().code(), SQLITE_CANTOPEN);
     }
 
+    // Issue #410: open() applies busy_timeout via sqlite3_busy_timeout(); a failure
+    // there aborts open() and reports the error (default config has a non-zero
+    // busy_timeout, so the call always happens).
+    TEST_F(ORMMockErrorTest, ConnectionOpenFailsOnBusyTimeoutError) {
+        MockSqlite3Config::busy_timeout_returns(SQLITE_ERROR);
+
+        auto conn_result = db::sqlite::Connection::open(":memory:");
+
+        ASSERT_FALSE(conn_result.has_value());
+        EXPECT_EQ(conn_result.error().code(), SQLITE_ERROR);
+    }
+
+    // Issue #410: with journal_mode = WAL, open() issues PRAGMA journal_mode=WAL via
+    // sqlite3_exec(); a failure there aborts open() and reports the error.
+    TEST_F(ORMMockErrorTest, ConnectionOpenFailsOnWalPragmaError) {
+        MockSqlite3Config::exec_returns(SQLITE_ERROR);
+
+        auto conn_result = db::sqlite::Connection::open(":memory:", {.journal_mode = db::sqlite::JournalMode::WAL});
+
+        ASSERT_FALSE(conn_result.has_value());
+        EXPECT_EQ(conn_result.error().code(), SQLITE_ERROR);
+    }
+
     // ============================================================================
     // DISTINCT Error Tests
     // ============================================================================

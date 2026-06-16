@@ -15,6 +15,7 @@ src/orm/schema.cppm:               file-size
 tests/db/test_pool.cpp:                          file-size, duplicate
 tests/mock_libpq/test_orm_pg_mock_errors.cpp:    file-size, duplicate
 tests/mock_sqlite/test_orm_mock_errors.cpp:     file-size, duplicate
+tests/mock_sqlite/mock_sqlite3.cpp:             file-size
 tests/mock_sqlite/test_sqlite_mock.cpp:        duplicate
 tests/schema/test_types.cpp:                     file-size, duplicate, length
 tests/crud/test_insert_returning.cpp:            duplicate

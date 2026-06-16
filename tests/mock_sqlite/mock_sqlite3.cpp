@@ -40,16 +40,17 @@ namespace {
     // Global mock configuration
     struct MockConfig { // NOSONAR(cpp:S1820) - mock config needs all fields for full SQLite API coverage
         // Return codes for various functions
-        int bind_int_return    = SQLITE_OK;
-        int bind_text_return   = SQLITE_OK;
-        int bind_int64_return  = SQLITE_OK;
-        int bind_double_return = SQLITE_OK;
-        int bind_null_return   = SQLITE_OK;
-        int bind_blob_return   = SQLITE_OK;
-        int step_return        = SQLITE_DONE;
-        int prepare_return     = SQLITE_OK;
-        int open_return        = SQLITE_OK;
-        int exec_return        = SQLITE_OK;
+        int bind_int_return     = SQLITE_OK;
+        int bind_text_return    = SQLITE_OK;
+        int bind_int64_return   = SQLITE_OK;
+        int bind_double_return  = SQLITE_OK;
+        int bind_null_return    = SQLITE_OK;
+        int bind_blob_return    = SQLITE_OK;
+        int step_return         = SQLITE_DONE;
+        int prepare_return      = SQLITE_OK;
+        int open_return         = SQLITE_OK;
+        int exec_return         = SQLITE_OK;
+        int busy_timeout_return = SQLITE_OK; // Issue #410
 
         // Error messages
         std::string prepare_error_message = "mock error";
@@ -87,16 +88,17 @@ namespace {
         int exec_calls        = 0;
 
         auto reset() -> void {
-            bind_int_return    = SQLITE_OK;
-            bind_text_return   = SQLITE_OK;
-            bind_int64_return  = SQLITE_OK;
-            bind_double_return = SQLITE_OK;
-            bind_null_return   = SQLITE_OK;
-            bind_blob_return   = SQLITE_OK;
-            step_return        = SQLITE_DONE;
-            prepare_return     = SQLITE_OK;
-            open_return        = SQLITE_OK;
-            exec_return        = SQLITE_OK;
+            bind_int_return     = SQLITE_OK;
+            bind_text_return    = SQLITE_OK;
+            bind_int64_return   = SQLITE_OK;
+            bind_double_return  = SQLITE_OK;
+            bind_null_return    = SQLITE_OK;
+            bind_blob_return    = SQLITE_OK;
+            step_return         = SQLITE_DONE;
+            prepare_return      = SQLITE_OK;
+            open_return         = SQLITE_OK;
+            exec_return         = SQLITE_OK;
+            busy_timeout_return = SQLITE_OK; // Issue #410
 
             prepare_error_message = "mock error";
             open_error_message    = "mock open error";
@@ -223,6 +225,11 @@ namespace storm::test {
         return instance_;
     }
 
+    auto MockSqlite3Config::busy_timeout_returns(int return_code) -> MockSqlite3Config& {
+        g_mock_config.busy_timeout_return = return_code;
+        return instance_;
+    }
+
     auto MockSqlite3Config::bind_int_fails_on_call(int call_number, int return_code) -> MockSqlite3Config& {
         g_mock_config.bind_int_fail_on_call = call_number;
         g_mock_config.bind_int_fail_code    = return_code;
@@ -310,6 +317,15 @@ auto sqlite3_close_v2(const sqlite3* db) -> int {
     (void)db;
     // In mock, we don't actually clean up - memory is managed by g_fake_dbs
     return SQLITE_OK;
+}
+
+// Issue #410: Connection::open() now applies a busy_timeout. The mock handle is a
+// FakeSqlite3 (not a real sqlite3*), so the real sqlite3_busy_timeout would crash
+// dereferencing it — provide a no-op stub.
+auto sqlite3_busy_timeout(const sqlite3* db, int timeout_ms) -> int {
+    (void)db;
+    (void)timeout_ms;
+    return g_mock_config.busy_timeout_return;
 }
 
 auto sqlite3_prepare_v2(sqlite3* db, const char* zSql, int nByte, sqlite3_stmt** ppStmt, const char** pzTail) -> int {

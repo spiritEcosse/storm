@@ -14,6 +14,20 @@ export namespace storm::db::sqlite {
         constexpr std::size_t STMT_CACHE_RESERVE = 32; // Initial statement cache capacity
     } // namespace cache
 
+    // Issue #410: SQLite journal mode. Re-exported from the backend-neutral
+    // definition in storm_db_concept so callers can spell storm::db::sqlite::WAL.
+    using storm::db::JournalMode;
+
+    // Issue #410: SQLite connection tuning. SQLite-specific (PostgreSQL keeps the
+    // shared StatementCacheConfig). The statement_cache_capacity field name is kept
+    // identical to StatementCacheConfig so existing designated-init call sites
+    // (Connection::open(":memory:", {.statement_cache_capacity = N})) keep compiling.
+    struct Config {
+        std::size_t statement_cache_capacity = 512;                  // Issue #273: 0 = unbounded
+        int         busy_timeout_ms          = 5000;                 // Issue #410: 0 = no wait (legacy)
+        JournalMode journal_mode             = JournalMode::Default; // Issue #410: WAL opt-in
+    };
+
     // Custom deleter for sqlite3
     struct SqliteDeleter {
         auto operator()(sqlite3* db) const noexcept -> void {
@@ -276,8 +290,8 @@ export namespace storm::db::sqlite {
         static constexpr bool supports_strict_tables = false;
 #endif
 
-        // Issue #273: per-Connection cache configuration (capacity 0 = unbounded).
-        using Config = storm::db::StatementCacheConfig;
+        // Issue #410: per-Connection tuning (cache capacity + busy_timeout + WAL).
+        using Config = sqlite::Config;
 
         // Factory method with error handling and thread-safe flags
         [[nodiscard]] static auto open(std::string_view db_path, Config config = {})
@@ -298,6 +312,12 @@ export namespace storm::db::sqlite {
                     sqlite3_close_v2(raw_db);
                 }
                 return std::unexpected(error);
+            }
+
+            // Issue #410: apply connection tuning before handing the handle out.
+            if (auto tuned = apply_tuning(raw_db, config); !tuned.has_value()) {
+                sqlite3_close_v2(raw_db);
+                return std::unexpected(tuned.error());
             }
 
             return Connection{SqlitePtr{raw_db}, config};
@@ -444,6 +464,28 @@ export namespace storm::db::sqlite {
             // stability across rehash is guaranteed by the unique_ptr in CacheEntry
             // (Issue #215).
             cache_.map.reserve(cache::STMT_CACHE_RESERVE);
+        }
+
+        // Issue #410: apply connection tuning (busy_timeout, journal_mode) to a
+        // freshly opened raw handle. busy_timeout uses the dedicated C API;
+        // journal_mode goes through a PRAGMA. WAL is silently ignored by SQLite on
+        // :memory:/temp databases, so a non-WAL result there is not an error.
+        [[nodiscard]] static auto apply_tuning(sqlite3* raw_db, const Config& config) -> std::expected<void, Error> {
+            if (config.busy_timeout_ms > 0) {
+                const int rc = sqlite3_busy_timeout(raw_db, config.busy_timeout_ms);
+                if (rc != SQLITE_OK) {
+                    return std::unexpected(Error{rc, sqlite3_errmsg(raw_db)});
+                }
+            }
+
+            if (config.journal_mode == JournalMode::WAL) {
+                const int rc = sqlite3_exec(raw_db, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
+                if (rc != SQLITE_OK) {
+                    return std::unexpected(Error{rc, sqlite3_errmsg(raw_db)});
+                }
+            }
+
+            return {};
         }
 
         // Single source of truth for sqlite3_prepare_v2 + error wrapping.

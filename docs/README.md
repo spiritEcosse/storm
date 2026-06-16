@@ -17,6 +17,7 @@ Welcome to Storm ORM - a modern C++26 ORM library using compile-time reflection 
 - **[WHERE Clauses](features/WHERE_CLAUSES.md)** - Type-safe filtering with pure C++26 reflection
 - **[JOIN Operations](features/JOIN_OPERATIONS.md)** - Single and multi-FK JOINs with type erasure
 - **[Batch Operations](features/BATCH_OPERATIONS.md)** - Bulk INSERT/UPDATE/DELETE with smart thresholds
+- **[Connection Tuning](features/CONNECTION_TUNING.md)** - SQLite busy_timeout default, optional WAL, pooled concurrency
 
 ## Architecture
 
