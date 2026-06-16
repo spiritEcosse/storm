@@ -72,6 +72,7 @@ struct ExtendedTypes {
     float approx{};
     unsigned int u_int{};
     long long ll_signed{};
+    std::uint64_t big_unsigned{}; // 64-bit unsigned — stored as signed int64 (#419)
     std::optional<double> opt_double;
     std::optional<int64_t> opt_int64;
     std::string label;
