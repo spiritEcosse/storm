@@ -10,6 +10,7 @@ export module storm_orm_statements_insert;
 import std;
 
 import storm_orm_statements_base;
+import storm_orm_statements_field_names;
 import storm_orm_utilities;
 import storm_orm_transaction;
 import storm_db_concept;
@@ -71,7 +72,7 @@ export namespace storm::orm::statements {
             size += 2; // " ("
 
             // Field names length
-            size += Base::calculate_field_names_size();
+            size += FieldNameGrammar<Base>::calculate_field_names_size();
 
             size += VALUES_OPEN; // ") VALUES ("
 
@@ -95,7 +96,7 @@ export namespace storm::orm::statements {
             result.append("INSERT INTO ");
             result.append(Base::table_name_);
             result.append(" (");
-            result.append(Base::build_non_pk_field_names_list());
+            result.append(FieldNameGrammar<Base>::build_non_pk_field_names_list());
             result.append(") VALUES (");
             result.append(placeholders_);
             if constexpr (WithReturning) {
@@ -125,7 +126,7 @@ export namespace storm::orm::statements {
             size += INSERT_INTO; // "INSERT INTO "
             size += Base::table_name_.size();
             size += 2; // " ("
-            size += Base::calculate_field_names_size();
+            size += FieldNameGrammar<Base>::calculate_field_names_size();
             size += VALUES_OPEN; // ") VALUES "
             size += 1;           // null terminator
             return size;
@@ -139,7 +140,7 @@ export namespace storm::orm::statements {
             result.append("INSERT INTO ");
             result.append(Base::table_name_);
             result.append(" (");
-            result.append(Base::build_non_pk_field_names_list());
+            result.append(FieldNameGrammar<Base>::build_non_pk_field_names_list());
             result.append(") VALUES ");
 
             return result;

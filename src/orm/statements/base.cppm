@@ -1,7 +1,8 @@
 module;
 
 // Single cohesive class template; thresholds intentionally relaxed (see #264 finding).
-// `duplicate` removed in #277 Phase 3 (for_each_field_name + bind_bulk_objects_impl + bind_expr_or_reset helpers).
+// `duplicate` removed in #277 Phase 3 (bind_bulk_objects_impl + bind_expr_or_reset helpers; the
+// for_each_field_name dedup now lives in storm_orm_statements_field_names, #434).
 
 #include <meta>
 
@@ -12,6 +13,8 @@ import std;
 import storm_db_concept;
 import storm_orm_field_attr;
 import storm_orm_utilities;
+import storm_orm_statements_extract;
+import storm_orm_statements_field_names;
 import storm_orm_statements_orderby;
 import storm_orm_where;
 
@@ -341,8 +344,7 @@ export namespace storm::orm::statements {
     // Shared reflection utilities for all statement types
     template <typename T>
         requires ModelWithPrimaryKey<T>
-    class BaseStatement { // NOSONAR(cpp:S1448) - statement base centralises all shared reflection utilities; splitting
-                          // would scatter compile-time SQL logic
+    class BaseStatement {
       public:
         // Compile-time accessor for table name (used in SQL generation)
         static consteval auto get_table_name() -> std::string_view {
@@ -465,78 +467,11 @@ export namespace storm::orm::statements {
             return result;
         }
 
-        // Shared iterator over data members, honouring SkipPrimaryKey, invoking
-        // `body(i, is_fk, name)` per emitted field. The size-calculator and the
-        // list-builder used to spell out this loop independently.
-        template <bool SkipPrimaryKey, typename Body> static consteval auto for_each_field_name(Body body) -> void {
-            bool first = true;
-            for (std::size_t i = 0; i < field_count_; ++i) {
-                if constexpr (SkipPrimaryKey) {
-                    if (all_members_[i] == primary_key_) {
-                        continue;
-                    }
-                }
-                auto       field_attr = std::meta::annotation_of_type<meta::FieldAttr>(all_members_[i]);
-                bool const is_fk      = field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk;
-                body(i, is_fk, !first);
-                first = false;
-            }
-        }
-
-        // Unified field name size calculation at compile-time
-        // Template parameter controls whether to skip primary key (for INSERT vs SELECT)
-        template <bool SkipPrimaryKey> static consteval auto calculate_field_names_size_impl() -> std::size_t {
-            std::size_t size = 0;
-            for_each_field_name<SkipPrimaryKey>([&](std::size_t i, bool is_fk, bool needs_comma) {
-                if (needs_comma) {
-                    size += 2; // ", "
-                }
-                size += std::meta::identifier_of(all_members_[i]).size();
-                if (is_fk) {
-                    size += 3; // "_id"
-                }
-            });
-            return size;
-        }
-
-        // Calculate size of all field names string at compile-time
-        static consteval auto calculate_field_names_size() -> std::size_t {
-            return calculate_field_names_size_impl<false>();
-        }
-
-        // Calculate size of non-PK field names string at compile-time
-        static consteval auto calculate_non_pk_field_names_size() -> std::size_t {
-            return calculate_field_names_size_impl<true>();
-        }
-
-        // Unified field name list builder at compile-time
-        // Template parameter controls whether to skip primary key (for INSERT vs SELECT)
-        template <bool SkipPrimaryKey> static consteval auto build_field_names_list_impl() {
-            constexpr std::size_t size = calculate_field_names_size_impl<SkipPrimaryKey>() + 10;
-            ConstexprString<size> result;
-            for_each_field_name<SkipPrimaryKey>([&](std::size_t i, bool is_fk, bool needs_comma) {
-                if (needs_comma) {
-                    result.append(", ");
-                }
-                result.append(std::meta::identifier_of(all_members_[i]));
-                if (is_fk) {
-                    result.append("_id");
-                }
-            });
-            return result;
-        }
-
-        // Build comma-separated list of all field names (for SELECT statements)
-        // FK fields are mapped to their column names (User sender → sender_id)
-        static consteval auto build_all_field_names_list() {
-            return build_field_names_list_impl<false>();
-        }
-
-        // Build comma-separated list of NON-PRIMARY KEY fields (for INSERT statements)
-        // Excludes primary key to allow auto-increment
-        static consteval auto build_non_pk_field_names_list() {
-            return build_field_names_list_impl<true>();
-        }
+        // Field-name SQL grammar (#434): for_each_field_name + the size-calculators and
+        // list-builders that produce "col1, col2, fk_id, ..." now live in
+        // FieldNameGrammar<BaseStatement>. INSERT/SELECT call it directly; this class uses
+        // it only to seed field_names_array_ below.
+        using FieldNames = FieldNameGrammar<BaseStatement>;
 
       public:
         // Pre-computed field information - made public for QuerySet and JOIN optimization
@@ -547,7 +482,7 @@ export namespace storm::orm::statements {
         // loosened, instead of producing UB at the divide.
         static_assert(field_count_ >= 1, "A model must have at least one field (its primary key)");
         static constexpr auto           all_members_       = get_all_field_members<field_count_>();
-        static constexpr auto           field_names_array_ = build_all_field_names_list();
+        static constexpr auto           field_names_array_ = FieldNames::build_all_field_names_list();
         static inline const std::string field_names_       = std::string(field_names_array_);
 
         // True if T has any auto_create/auto_update field (#209). Gates the per-operation
@@ -797,182 +732,6 @@ export namespace storm::orm::statements {
             );
         }
 
-        // ---- Storage-class predicates ---------------------------------------------------
-        // Each predicate groups the source types that share one extract_* backend call.
-        // Used by extract_column_value() to dispatch by storage class, not by source type.
-
-        template <typename FT>
-        static constexpr bool is_int_stored_v =
-                std::is_same_v<FT, int> || std::is_same_v<FT, short> || std::is_same_v<FT, unsigned short> ||
-                std::is_same_v<FT, unsigned int> || std::is_same_v<FT, signed char> ||
-                std::is_same_v<FT, unsigned char> || std::is_same_v<FT, char>;
-
-        template <typename FT>
-        static constexpr bool is_int64_stored_v =
-                std::is_same_v<FT, std::int64_t> || std::is_same_v<FT, long> || std::is_same_v<FT, long long> ||
-                std::is_same_v<FT, std::uint64_t> || std::is_same_v<FT, unsigned long> ||
-                std::is_same_v<FT, unsigned long long>;
-
-        template <typename FT> static constexpr bool is_integer_stored_v = is_int_stored_v<FT> || is_int64_stored_v<FT>;
-
-        template <typename FT>
-        static constexpr bool is_floating_stored_v = std::is_same_v<FT, double> || std::is_same_v<FT, float>;
-
-        template <typename FT>
-        static constexpr bool is_blob_stored_v =
-                std::is_same_v<FT, std::vector<std::uint8_t>> || std::is_same_v<FT, std::vector<unsigned char>> ||
-                std::is_same_v<FT, std::vector<std::byte>>;
-
-        template <typename FT>
-        static constexpr bool is_text_stored_v = std::is_same_v<FT, std::chrono::year_month_day> ||
-                                                 std::is_same_v<FT, std::chrono::system_clock::time_point> ||
-                                                 std::is_same_v<FT, std::filesystem::path> ||
-                                                 std::is_same_v<FT, utilities::UUID> || std::is_same_v<FT, std::string>;
-
-        // ---- Storage-class extraction helpers --------------------------------------------
-        // Each helper handles one storage class. extract_column_value() dispatches to
-        // exactly one helper per FieldType. All marked always_inline so the call site
-        // collapses to the same machine code as the inlined branch did before.
-
-        template <typename Statement>
-        [[nodiscard]] __attribute__((always_inline)) static auto read_text_view(Statement* stmt, int col_idx) noexcept
-                -> std::string_view {
-            const unsigned char* text = stmt->extract_text_ptr(col_idx);
-            if (text == nullptr) {
-                return {};
-            }
-            return std::string_view(reinterpret_cast<const char*>(text), stmt->extract_bytes(col_idx));
-        }
-
-        template <typename FieldType, typename Statement>
-        [[nodiscard]] __attribute__((always_inline)) static auto extract_int_like(Statement* stmt, int col_idx) noexcept
-                -> FieldType {
-            if constexpr (is_int_stored_v<FieldType>) {
-                return static_cast<FieldType>(stmt->extract_int(col_idx));
-            } else {
-                static_assert(is_int64_stored_v<FieldType>, "extract_int_like: caller must pre-check storage class");
-                return static_cast<FieldType>(stmt->extract_int64(col_idx));
-            }
-        }
-
-        template <typename FieldType, typename Statement>
-        [[nodiscard]] __attribute__((always_inline)) static auto
-        extract_floating_like(Statement* stmt, int col_idx) noexcept -> FieldType {
-            if constexpr (std::is_same_v<FieldType, double>) {
-                return stmt->extract_double(col_idx);
-            } else {
-                static_assert(
-                        std::is_same_v<FieldType, float>, "extract_floating_like: caller must pre-check storage class"
-                );
-                return stmt->extract_float(col_idx);
-            }
-        }
-
-        template <typename FieldType, typename Statement>
-        [[nodiscard]] __attribute__((always_inline)) static auto extract_enum(Statement* stmt, int col_idx) noexcept
-                -> FieldType {
-            using Underlying = std::underlying_type_t<FieldType>;
-            if constexpr (sizeof(Underlying) <= sizeof(int)) {
-                return static_cast<FieldType>(stmt->extract_int(col_idx));
-            } else {
-                return static_cast<FieldType>(stmt->extract_int64(col_idx));
-            }
-        }
-
-        template <typename FieldType, typename Statement>
-        [[nodiscard]] __attribute__((always_inline)) static auto
-        extract_text_like(Statement* stmt, int col_idx) noexcept -> FieldType {
-            const std::string_view view = read_text_view(stmt, col_idx);
-            if constexpr (std::is_same_v<FieldType, std::chrono::year_month_day>) {
-                // LCOV_EXCL_START — NOT NULL column, defensive fallback for empty text
-                if (view.empty()) {
-                    return FieldType{};
-                }
-                // LCOV_EXCL_STOP
-                return utilities::chrono_conv::string_to_ymd(view);
-            } else if constexpr (std::is_same_v<FieldType, std::chrono::system_clock::time_point>) {
-                // LCOV_EXCL_START — NOT NULL column, defensive fallback for empty text
-                if (view.empty()) {
-                    return FieldType{};
-                }
-                // LCOV_EXCL_STOP
-                return utilities::chrono_conv::string_to_tp(view);
-            } else if constexpr (std::is_same_v<FieldType, std::filesystem::path>) {
-                // LCOV_EXCL_START — NOT NULL column, defensive fallback for empty text
-                if (view.empty()) {
-                    return FieldType{};
-                }
-                // LCOV_EXCL_STOP
-                return std::filesystem::path(std::string(view));
-            } else if constexpr (std::is_same_v<FieldType, utilities::UUID>) {
-                // LCOV_EXCL_START — NOT NULL column, defensive fallback for empty text
-                if (view.empty()) {
-                    return FieldType{};
-                }
-                // LCOV_EXCL_STOP
-                return utilities::UUID{std::string(view)};
-            } else {
-                static_assert(std::is_same_v<FieldType, std::string>, "extract_text_like: unhandled text storage type");
-                return FieldType(view);
-            }
-        }
-
-        template <typename FieldType, typename Statement>
-        [[nodiscard]] __attribute__((always_inline)) static auto
-        extract_blob_like(Statement* stmt, int col_idx) noexcept -> FieldType {
-            const void* blob = stmt->extract_blob_ptr(col_idx);
-            const int   size = stmt->extract_bytes(col_idx);
-            if (blob == nullptr || size <= 0) {
-                return FieldType{};
-            }
-            using Byte       = typename FieldType::value_type;
-            const auto* data = static_cast<const Byte*>(blob);
-            return FieldType(data, data + size);
-        }
-
-      public:
-        // Shared column extraction utility — returns value of specified type from given
-        // column index. Dispatches by storage class to one of the extract_* helpers above.
-        // Supported FieldType groups: optional<T>, bool, int-stored ints, int64-stored
-        // ints, enum, double, float, chrono duration, text-stored types, blob-stored types.
-        // Public so the free two-query join helpers (join.cppm, #398) can extract rows.
-        template <typename FieldType, typename Statement>
-        [[nodiscard]] __attribute__((always_inline)) static auto
-        extract_column_value(Statement* stmt, int col_idx) noexcept -> FieldType {
-            if constexpr (utilities::is_optional_v<FieldType>) {
-                using InnerType = typename FieldType::value_type;
-                if (stmt->is_null(col_idx)) {
-                    return std::nullopt;
-                }
-                return FieldType{extract_column_value<InnerType>(stmt, col_idx)};
-            } else if constexpr (std::is_same_v<FieldType, bool>) {
-                return stmt->extract_bool(col_idx);
-            } else if constexpr (is_integer_stored_v<FieldType>) {
-                return extract_int_like<FieldType>(stmt, col_idx);
-            } else if constexpr (std::is_enum_v<FieldType>) {
-                return extract_enum<FieldType>(stmt, col_idx);
-            } else if constexpr (is_floating_stored_v<FieldType>) {
-                return extract_floating_like<FieldType>(stmt, col_idx);
-            } else if constexpr (utilities::is_chrono_duration_v<FieldType>) {
-                return FieldType{static_cast<typename FieldType::rep>(stmt->extract_int64(col_idx))};
-            } else if constexpr (is_text_stored_v<FieldType>) {
-                return extract_text_like<FieldType>(stmt, col_idx);
-            } else if constexpr (is_blob_stored_v<FieldType>) {
-                return extract_blob_like<FieldType>(stmt, col_idx);
-            } else {
-                // FieldType-dependent false so the assertion only fires when this
-                // branch is selected (i.e. when none of the supported groups matched).
-                static_assert(
-                        !std::is_same_v<FieldType, FieldType>,
-                        "Unsupported field type for column extraction. Supported types: "
-                        "int, int64_t, long, short, char, unsigned variants, enum, "
-                        "float, double, bool, std::string, chrono types, "
-                        "filesystem::path, UUID, std::optional<T>, "
-                        "std::vector<uint8_t>, std::vector<std::byte>"
-                );
-            }
-        }
-
       protected:
         // =====================================================================
         // COLUMN EXTRACTION HELPERS - Moved here from SelectStatement so that
@@ -991,7 +750,7 @@ export namespace storm::orm::statements {
                 obj.[:member:] = std::nullopt;
             } else {
                 InnerFKType fk_inner{};
-                fk_inner.[:fk_pk_member:] = extract_column_value<PKType>(stmt, Index);
+                fk_inner.[:fk_pk_member:] = ColumnExtractor::extract_column_value<PKType>(stmt, Index);
                 obj.[:member:]            = std::move(fk_inner);
             }
         }
@@ -1010,10 +769,10 @@ export namespace storm::orm::statements {
                         obj.[:member:]              = FieldType{};
                         constexpr auto fk_pk_member = find_fk_primary_key<FieldType>();
                         using PKType                = std::remove_cvref_t<decltype(obj.[:member:].[:fk_pk_member:])>;
-                        obj.[:member:].[:fk_pk_member:] = extract_column_value<PKType>(stmt, Index);
+                        obj.[:member:].[:fk_pk_member:] = ColumnExtractor::extract_column_value<PKType>(stmt, Index);
                     }
                 } else {
-                    obj.[:member:] = extract_column_value<FieldType>(stmt, Index);
+                    obj.[:member:] = ColumnExtractor::extract_column_value<FieldType>(stmt, Index);
                 }
             }
         }
@@ -1029,140 +788,6 @@ export namespace storm::orm::statements {
         template <typename Statement>
         __attribute__((always_inline)) static void extract_all_columns(Statement* stmt, T& obj) noexcept {
             extract_all_columns_impl(stmt, obj, field_indices_t{});
-        }
-
-        // Transaction management utilities
-        template <typename ConnType>
-        [[nodiscard]] static auto begin_transaction(ConnType& conn) noexcept
-                -> std::expected<void, typename ConnType::Error> {
-            return conn.execute("BEGIN TRANSACTION");
-        }
-
-        template <typename ConnType>
-        [[nodiscard]] static auto commit_transaction(ConnType& conn) noexcept
-                -> std::expected<void, typename ConnType::Error> {
-            return conn.execute("COMMIT");
-        }
-
-        template <typename ConnType> static auto rollback_transaction(ConnType& conn) noexcept -> void {
-            (void)conn.execute("ROLLBACK");
-        }
-
-        // Utility to determine if transaction should be used
-        template <typename ContainerType> // NOSONAR(cpp:S6024) - static member needed for access to class template
-                                          // context
-        static constexpr auto should_use_transaction(const ContainerType& container) -> bool {
-            return container.size() > 1;
-        }
-
-        // Unified statement execution logic for cached/non-cached connections
-        template <typename ConnType, typename PrepareFunc, typename BindExecuteFunc>
-        [[nodiscard]] static auto execute_statement(
-                ConnType&                      conn,
-                const std::string&             sql,
-                [[maybe_unused]] PrepareFunc&& prepare_func,
-                BindExecuteFunc&&              bind_execute_func
-        ) noexcept -> decltype(bind_execute_func(std::declval<typename ConnType::Statement>())) {
-            // Use cached prepared statement if available
-            if constexpr (requires { conn.prepare_cached(sql); }) {
-                return conn.prepare_cached(sql).and_then(
-                        [bind_execute_func = std::forward<BindExecuteFunc>(bind_execute_func)](
-                                auto* stmt
-                        ) -> decltype(bind_execute_func(std::declval<typename ConnType::Statement>())) {
-                            return bind_execute_func(*stmt);
-                        }
-                );
-            } else {
-                // Fallback to regular prepare
-                return conn.prepare(sql).and_then(
-                        [bind_execute_func = std::forward<BindExecuteFunc>(bind_execute_func)](
-                                typename ConnType::Statement stmt
-                        ) -> decltype(bind_execute_func(std::move(stmt))) { return bind_execute_func(std::move(stmt)); }
-                );
-            }
-        }
-
-        // Unified transaction wrapper for batch operations
-        template <typename ConnType, typename Operation>
-        [[nodiscard]] static auto
-        execute_with_transaction(ConnType& conn, bool use_transaction, const Operation& op) noexcept -> decltype(op()) {
-            if (!use_transaction) {
-                return op();
-            }
-
-            // Begin transaction with monadic composition
-            return begin_transaction(conn).and_then([&op, &conn]() -> decltype(op()) {
-                auto op_result = op();
-                if (!op_result) {
-                    rollback_transaction(conn);
-                    return op_result;
-                }
-
-                // Commit transaction
-                if (auto commit_result = commit_transaction(conn); !commit_result) {
-                    rollback_transaction(conn);
-                    return std::unexpected(commit_result.error());
-                }
-
-                return op_result;
-            });
-        }
-
-        // Generic helper for executing with cached or non-cached statements
-        template <typename ConnType, typename ExecuteFunc>
-        [[nodiscard]] static auto
-        execute_with_statement(ConnType& conn, const std::string& sql, const ExecuteFunc& execute_func) noexcept
-                -> decltype(execute_func(std::declval<typename ConnType::Statement&>())) {
-            // Try cached statement first if available
-            if constexpr (requires { conn.prepare_cached(sql); }) {
-                return conn.prepare_cached(sql).and_then([&execute_func](auto* stmt) -> decltype(auto) {
-                    return execute_func(*stmt);
-                });
-            } else {
-                // Fallback to regular prepare
-                return conn.prepare(sql).and_then(
-                        [&execute_func](typename ConnType::Statement stmt) mutable -> decltype(auto) {
-                            return execute_func(stmt);
-                        }
-                );
-            }
-        }
-
-        // Monadic helper for bind and execute operations
-        template <typename BindResult, typename Statement>
-        [[nodiscard]] static auto bind_and_execute(BindResult bind_result, Statement& stmt) noexcept -> BindResult {
-            return bind_result.and_then([&stmt]() -> decltype(auto) { return stmt.execute(); });
-        }
-
-        // Monadic helper for reset, bind, and execute sequence
-        template <typename Statement, typename BindFunc>
-        [[nodiscard]] static auto reset_bind_and_execute(Statement& stmt, const BindFunc& bind_func) noexcept
-                -> decltype(bind_func(stmt)) {
-            stmt.reset();
-            return bind_func(stmt).and_then([&stmt]() -> decltype(auto) { return stmt.execute(); });
-        }
-
-        // Dispatch helper for WHERE/JOIN execution paths
-        // Eliminates repeated branching logic in aggregate statements
-        template <typename SimpleF, typename WhereF, typename JoinF, typename WhereJoinF>
-        [[nodiscard]] static auto dispatch_execute(
-                bool              has_join,
-                bool              has_where,
-                const SimpleF&    simple_fn,
-                const WhereF&     where_fn,
-                const JoinF&      join_fn,
-                const WhereJoinF& where_join_fn
-        ) -> decltype(simple_fn()) {
-            if (has_join && has_where) {
-                return where_join_fn();
-            }
-            if (has_join) {
-                return join_fn();
-            }
-            if (has_where) {
-                return where_fn();
-            }
-            return simple_fn();
         }
 
         // =====================================================================

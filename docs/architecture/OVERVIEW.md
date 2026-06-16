@@ -83,9 +83,12 @@ src/
     ├── utilities.cppm              # ConstexprString, SQLCache
     └── statements/
         ├── base.cppm               # BaseStatement utilities
+        ├── extract.cppm            # ColumnExtractor — row→value converters (#434)
+        ├── field_names.cppm        # FieldNameGrammar — column-list SQL builders (#434)
         ├── insert.cppm             # InsertStatement
         ├── select.cppm             # SelectStatement + JOIN
         ├── update.cppm             # UpdateStatement
+        ├── update_grammar.cppm     # UpdateGrammar — UPDATE SQL builders (#434)
         ├── erase.cppm              # EraseStatement
         └── join.cppm               # JoinStatement (SQL builder)
 ```

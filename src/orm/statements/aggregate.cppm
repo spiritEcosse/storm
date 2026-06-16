@@ -13,6 +13,7 @@ import std;
 
 import storm_db_concept;
 import storm_orm_statements_base;
+import storm_orm_statements_extract;
 import storm_orm_statements_join;
 import storm_orm_statements_orderby;
 import storm_orm_utilities;
@@ -386,13 +387,10 @@ export namespace storm::orm::statements {
             ResultType result;
             // LCOV_EXCL_START — if constexpr: only one branch instantiated per NumOps
             if constexpr (NumOps == 1) {
-                result = Base::template extract_column_value<ResultType>(stmt, 0);
+                result = ColumnExtractor::template extract_column_value<ResultType>(stmt, 0);
             } else {
-                result = ResultType{
-                        Base::template extract_column_value<OpResult<std::tuple_element_t<Is, std::tuple<Ops...>>>>(
-                                stmt, Is
-                        )...
-                };
+                result = ResultType{ColumnExtractor::template extract_column_value<
+                        OpResult<std::tuple_element_t<Is, std::tuple<Ops...>>>>(stmt, Is)...};
             }
             // LCOV_EXCL_STOP
 
@@ -406,10 +404,9 @@ export namespace storm::orm::statements {
                 Statement* stmt, std::index_sequence<GIs...> /*unused*/, std::index_sequence<AIs...> /*unused*/
         ) -> GroupedTuple {
             return GroupedTuple{
-                    Base::template extract_column_value<typename GroupFieldType<GIs>::type>(stmt, GIs)...,
-                    Base::template extract_column_value<OpResult<std::tuple_element_t<AIs, std::tuple<Ops...>>>>(
-                            stmt, NumGroupFields + AIs
-                    )...
+                    ColumnExtractor::template extract_column_value<typename GroupFieldType<GIs>::type>(stmt, GIs)...,
+                    ColumnExtractor::template extract_column_value<
+                            OpResult<std::tuple_element_t<AIs, std::tuple<Ops...>>>>(stmt, NumGroupFields + AIs)...
             };
         }
 
@@ -564,13 +561,10 @@ export namespace storm::orm::statements {
             }
 
             if constexpr (NumOps == 1) {
-                return Base::template extract_column_value<ResultType>(stmt, 0);
+                return ColumnExtractor::template extract_column_value<ResultType>(stmt, 0);
             } else {
-                return ResultType{
-                        Base::template extract_column_value<OpResult<std::tuple_element_t<Is, std::tuple<Ops...>>>>(
-                                stmt, Is
-                        )...
-                };
+                return ResultType{ColumnExtractor::template extract_column_value<
+                        OpResult<std::tuple_element_t<Is, std::tuple<Ops...>>>>(stmt, Is)...};
             }
         }
 

@@ -33,7 +33,7 @@ You are a senior C++ code reviewer specializing in the Storm ORM project, with d
 
 ### 4. BaseStatement Consolidation
 - New statement classes inherit from `BaseStatement<T>`
-- Common execution patterns use `execute_with_transaction()` from BaseStatement
+- Batch transactions use `TransactionGuard` (`storm::begin(conn)`), not raw BEGIN/COMMIT
 - SQL string caching via static methods like `get_insert_sql()`
 - Minimize code duplication through shared binding helpers
 

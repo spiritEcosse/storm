@@ -12,6 +12,7 @@ import std;
 
 import storm_db_concept;
 import storm_orm_statements_base;
+import storm_orm_statements_extract;
 import storm_orm_statements_join;
 import storm_orm_statements_orderby;
 import storm_orm_utilities;
@@ -259,14 +260,13 @@ export namespace storm::orm::statements {
             while ((rc = stmt->step_raw()) == Statement::ROW_AVAILABLE) {
                 if constexpr (NumFields == 1) {
                     using FieldType = std::tuple_element_t<0, FieldTypesTuple>;
-                    results.insert(Base::template extract_column_value<FieldType>(stmt, 0));
+                    results.insert(ColumnExtractor::template extract_column_value<FieldType>(stmt, 0));
                 } else {
                     [&]<std::size_t... Is>(std::index_sequence<Is...>) {
                         results.insert(
                                 std::make_tuple(
-                                        Base::template extract_column_value<std::tuple_element_t<Is, FieldTypesTuple>>(
-                                                stmt, Is
-                                        )...
+                                        ColumnExtractor::template extract_column_value<
+                                                std::tuple_element_t<Is, FieldTypesTuple>>(stmt, Is)...
                                 )
                         );
                     }(std::make_index_sequence<NumFields>{});
