@@ -19,6 +19,10 @@ export namespace storm::db {
         int         idle_timeout_ms          = 600000;  // 10 min (0 = never expire idle)
         bool        validate_on_checkout     = true;    // is_open() check before handing out
         std::size_t statement_cache_capacity = 512;     // Issue #273: 0 = unbounded
+        // Issue #410: SQLite connection tuning propagated to each pooled connection.
+        // Ignored by backends (PostgreSQL) whose Config lacks these fields.
+        int         busy_timeout_ms = 5000;                 // Issue #410: 0 = no wait (legacy)
+        JournalMode journal_mode    = JournalMode::Default; // Issue #410: WAL opt-in
     };
 
     // Forward declaration
@@ -28,6 +32,22 @@ export namespace storm::db {
 
         using Clock     = std::chrono::steady_clock;
         using TimePoint = Clock::time_point;
+
+        // Issue #410: build the backend-specific open() Config from a PoolConfig.
+        // The SQLite-only tuning fields are set only when the backend's Config
+        // actually has them (detected via requires), so this stays compilable for
+        // PostgreSQL whose Config is just StatementCacheConfig. Also dedupes the
+        // two identical inline braced-inits in try_grow()/create_entry().
+        template <CachedDatabaseConnection ConnType>
+        [[nodiscard]] auto make_conn_config(const PoolConfig& pool_config) -> typename ConnType::Config {
+            typename ConnType::Config cfg{};
+            cfg.statement_cache_capacity = pool_config.statement_cache_capacity;
+            if constexpr (requires { cfg.busy_timeout_ms; }) {
+                cfg.busy_timeout_ms = pool_config.busy_timeout_ms;
+                cfg.journal_mode    = pool_config.journal_mode;
+            }
+            return cfg;
+        }
 
         template <CachedDatabaseConnection ConnType> struct PoolEntry {
             std::unique_ptr<ConnType> conn;
@@ -215,7 +235,7 @@ export namespace storm::db {
                     return std::nullopt;
                 }
                 lock.unlock();
-                auto result = ConnType::open(conninfo_, {.statement_cache_capacity = config_.statement_cache_capacity});
+                auto result = ConnType::open(conninfo_, make_conn_config<ConnType>(config_));
                 lock.lock();
 
                 if (shutdown_) {
@@ -256,7 +276,7 @@ export namespace storm::db {
             }
 
             auto create_entry() -> std::expected<void, Error> {
-                auto result = ConnType::open(conninfo_, {.statement_cache_capacity = config_.statement_cache_capacity});
+                auto result = ConnType::open(conninfo_, make_conn_config<ConnType>(config_));
                 if (!result) {
                     return std::unexpected(result.error());
                 }

@@ -142,6 +142,9 @@ class MockSqlite3Config {
     static auto exec_returns(int return_code) -> MockSqlite3Config &;
     static auto exec_error_message(std::string_view msg) -> MockSqlite3Config &;
 
+    // Configure busy_timeout to fail (Issue #410)
+    static auto busy_timeout_returns(int return_code) -> MockSqlite3Config &;
+
     // Configure for specific call counts (e.g., "fail on 3rd bind_int call")
     static auto bind_int_fails_on_call(int call_number, int return_code) -> MockSqlite3Config &;
     static auto bind_int64_fails_on_call(int call_number, int return_code) -> MockSqlite3Config &;
@@ -196,6 +199,7 @@ extern "C" {
 auto sqlite3_open_v2(const char *filename, sqlite3 **ppDb, int flags, const char *zVfs) -> int;
 
 auto sqlite3_close_v2(const sqlite3 *db) -> int;
+auto sqlite3_busy_timeout(const sqlite3 *db, int timeout_ms) -> int; // Issue #410: configurable stub
 
 // Statement preparation
 auto sqlite3_prepare_v2(sqlite3 *db, const char *zSql, int nByte, sqlite3_stmt **ppStmt, const char **pzTail) -> int;

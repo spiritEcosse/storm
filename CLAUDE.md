@@ -380,6 +380,15 @@ void worker() {
 }
 ```
 
+**SQLite connection tuning (#410)**: `sqlite::Config` carries `busy_timeout_ms`
+(default `5000`; `0` = legacy fail-immediately) and `journal_mode`
+(`JournalMode::Default`/`WAL`), applied once in `Connection::open()` (cold path,
+zero query-hot-path cost). `PoolConfig` propagates both to every pooled
+connection via `detail::make_conn_config<ConnType>()` (an `if constexpr (requires
+{ cfg.busy_timeout_ms; })` guard keeps it compilable for PG, whose `Config` is
+just `StatementCacheConfig`). WAL is silently ignored on `:memory:`/temp DBs. See
+[docs/features/CONNECTION_TUNING.md](docs/features/CONNECTION_TUNING.md).
+
 ## QuerySet API
 
 **Immutable `where()`**: Returns a new QuerySet — the original is never modified (Django-style).

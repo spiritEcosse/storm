@@ -77,8 +77,9 @@ struct MockPoolConnection {
         }
     };
     using Statement = MockStatement;
+    using Config    = storm::db::StatementCacheConfig; // Issue #410: matches real backends' Config alias
 
-    [[nodiscard]] static auto open(std::string_view /*unused*/, storm::db::StatementCacheConfig /*unused*/ = {})
+    [[nodiscard]] static auto open(std::string_view /*unused*/, Config /*unused*/ = {})
             -> std::expected<MockPoolConnection, Error> {
         auto& cfg = mock_config();
         ++cfg.open_call_count;

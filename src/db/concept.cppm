@@ -63,6 +63,12 @@ export namespace storm::db {
         std::size_t statement_cache_capacity = 512;
     };
 
+    // Issue #410: SQLite journal mode. Lives here (backend-neutral) so the generic
+    // PoolConfig can carry it without depending on the SQLite backend module.
+    // Default leaves the engine default (rollback journal); WAL opts into
+    // write-ahead logging. Honoured only by the SQLite backend; PG ignores it.
+    enum class JournalMode : std::uint8_t { Default, WAL };
+
     // Snapshot of per-Connection cache statistics (Issue #273). Counters are
     // lifetime totals (not reset by clear_statement_cache); current_size is the
     // live entry count. Declared before CachedDatabaseConnection, which requires
