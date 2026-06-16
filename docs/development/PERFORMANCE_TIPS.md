@@ -110,10 +110,12 @@ if (success) {
 Nested lambdas add overhead from captures, indirect calls, and inlining barriers:
 
 ```cpp
-// ❌ SLOW: Nested lambdas (90% efficiency)
-execute_with_transaction(conn, true,
+// ❌ SLOW: Nested-lambda monadic wrappers (90% efficiency).
+// (The old execute_with_transaction/execute_with_statement helpers that encoded
+//  this shape were removed in #434 once every caller had moved to flat code.)
+prepare_and_transact(conn, true,
     [this, objects]() {                          // Lambda 1: captures
-        return execute_with_statement(conn, sql,
+        return run_with_statement(conn, sql,
             [this, objects](auto& stmt) {        // Lambda 2: captures again
                 for (...) { ... }
             });

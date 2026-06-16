@@ -423,7 +423,7 @@ export namespace storm::orm::statements {
 
       protected: // Changed to protected so BaseStatement can access
         // Execute large batches using chunked IN clauses
-        // NOTE: Transaction is handled by caller (execute_with_transaction in base.cppm)
+        // NOTE: Transaction is handled by the caller via TransactionGuard (#415).
         // Optimized: pre-cache max bulk statement, only lookup remainder once
         [[nodiscard]] __attribute__((hot)) auto execute_chunked(std::span<const T> objects)
                 -> std::expected<void, Error> {

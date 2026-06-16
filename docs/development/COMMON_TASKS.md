@@ -80,7 +80,7 @@ for (int i = 0; i < 100; ++i) {
 
 ## Optimizing Statement Performance
 
-1. **Use BaseStatement utilities**: `execute_with_transaction()`, shared binding
+1. **Use shared utilities**: `TransactionGuard` (`storm::begin`) for batch transactions, BaseStatement shared binding
 2. **Implement compile-time field binding** with index sequences and fold expressions
 3. **Smart thresholds**: Consider SQLite variable limit (999)
 4. **Cache SQL strings**: Static methods + thread-local caching
