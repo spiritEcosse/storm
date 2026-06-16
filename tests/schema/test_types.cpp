@@ -1842,5 +1842,77 @@ TEST(PgDialectTypesSchemaTest, OptionalSpecialTypesSqliteUnchanged) {
     EXPECT_NE(sql.find("opt_bool INTEGER"), std::string::npos) << "SQLite should use INTEGER for opt bool: " << sql;
 }
 
+// ===== 64-BIT UNSIGNED SIGNED-STORAGE CAVEAT TESTS (#419) =====
+//
+// uint64_t / unsigned long / unsigned long long are bound and stored as a signed
+// int64 (SQLite has no unsigned integer; PostgreSQL maps them to BIGINT, also
+// signed). For values <= INT64_MAX everything is exact. For values > INT64_MAX the
+// value wraps to a negative int64 on write. It still round-trips for EQUALITY
+// (the read casts the signed bits back to unsigned), but:
+//   1. ORDER BY / range comparisons sort by the signed reinterpretation, so a huge
+//      uint64 (>= 2^63) sorts *before* a small one.
+//   2. Any external reader (raw SQL, BI tool) sees the negative signed value.
+// These tests PIN that behavior so it is intentional, not accidental. See
+// docs/reference/FIELD_TYPES.md "Signed storage caveat for 64-bit unsigned types".
+
+template <typename ConnType> class Uint64SignedStorageTest : public StormTestFixture<ExtendedTypes, ConnType> {};
+TYPED_TEST_SUITE(Uint64SignedStorageTest, DatabaseTypes);
+
+// A uint64 > INT64_MAX round-trips for EQUALITY: the read casts the stored signed
+// bits back to unsigned, recovering the exact value.
+TYPED_TEST(Uint64SignedStorageTest, ValueAboveInt64MaxRoundTripsForEquality) {
+    constexpr std::uint64_t            above_max = (std::uint64_t{1} << 63) + 1; // 2^63 + 1 > INT64_MAX
+    QuerySet<ExtendedTypes, TypeParam> qs;
+
+    auto result = qs.insert(ExtendedTypes{.big_unsigned = above_max, .label = "above_max"}).execute();
+    ASSERT_TRUE(result.has_value()) << result.error().message();
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value()) << selected.error().message();
+    ASSERT_EQ(selected.value().size(), 1);
+    EXPECT_EQ(selected.value().begin()->big_unsigned, above_max);
+}
+
+// The full unsigned 64-bit max also round-trips for equality.
+TYPED_TEST(Uint64SignedStorageTest, Uint64MaxRoundTripsForEquality) {
+    constexpr std::uint64_t            u64_max = std::numeric_limits<std::uint64_t>::max();
+    QuerySet<ExtendedTypes, TypeParam> qs;
+
+    auto result = qs.insert(ExtendedTypes{.big_unsigned = u64_max, .label = "u64_max"}).execute();
+    ASSERT_TRUE(result.has_value()) << result.error().message();
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value()) << selected.error().message();
+    EXPECT_EQ(selected.value().begin()->big_unsigned, u64_max);
+}
+
+// DOCUMENTED TRAP: ORDER BY sorts by the SIGNED interpretation. A uint64 >= 2^63 is
+// stored as a negative int64, so it sorts BEFORE a small value — the opposite of
+// unsigned order. This is intentional given signed storage (#419).
+TYPED_TEST(Uint64SignedStorageTest, OrderBySortsBySignedInterpretation) {
+    constexpr std::uint64_t            above_max = (std::uint64_t{1} << 63) + 1; // huge: stored negative
+    constexpr std::uint64_t            small     = 1;                            // stored as +1
+    QuerySet<ExtendedTypes, TypeParam> qs;
+
+    auto result = qs.insert(std::vector<ExtendedTypes>{
+                                    {.big_unsigned = above_max, .label = "huge"},
+                                    {.big_unsigned = small, .label = "small"},
+                            })
+                          .execute();
+    ASSERT_TRUE(result.has_value()) << result.error().message();
+
+    // ORDER BY big_unsigned ASC. By unsigned value, "small" (1) < "huge" (2^63+1),
+    // so "small" should come first. But signed storage flips it: the huge value is
+    // a negative int64, so "huge" sorts FIRST. We pin the (wrong-for-unsigned) order.
+    auto selected = qs.template order_by<^^ExtendedTypes::big_unsigned>().select().execute();
+    ASSERT_TRUE(selected.has_value()) << selected.error().message();
+    ASSERT_EQ(selected.value().size(), 2);
+    auto it = selected.value().begin();
+    // uint64 >= 2^63 sorts first (signed storage), not last.
+    EXPECT_EQ(it->label, "huge");
+    ++it;
+    EXPECT_EQ(it->label, "small");
+}
+
 // NOLINTEND(readability-identifier-length,readability-uppercase-literal-suffix,modernize-use-std-numbers)
 // NOLINTEND(misc-const-correctness)

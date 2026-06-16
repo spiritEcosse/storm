@@ -13,9 +13,34 @@ Storm ORM supports all standard SQLite types through compile-time type dispatch 
 | `int64_t` | INTEGER | `bind_int64()` | `extract_int64()` |
 | `long` | INTEGER | `bind_int64()` | `extract_int64()` |
 | `long long` | INTEGER | `bind_int64()` | `extract_int64()` |
-| `uint64_t` | INTEGER | `bind_int64()` (cast) | `extract_int64()` (cast) |
-| `unsigned long` | INTEGER | `bind_int64()` (cast) | `extract_int64()` (cast) |
-| `unsigned long long` | INTEGER | `bind_int64()` (cast) | `extract_int64()` (cast) |
+| `uint64_t` | INTEGER | `bind_int64()` (cast ⚠️) | `extract_int64()` (cast ⚠️) |
+| `unsigned long` | INTEGER | `bind_int64()` (cast ⚠️) | `extract_int64()` (cast ⚠️) |
+| `unsigned long long` | INTEGER | `bind_int64()` (cast ⚠️) | `extract_int64()` (cast ⚠️) |
+
+> ⚠️ **Signed storage caveat for 64-bit unsigned types (#419).** Neither SQLite
+> nor PostgreSQL has an unsigned 64-bit integer type. Storm maps `uint64_t` /
+> `unsigned long` / `unsigned long long` to a **signed** 8-byte column (`INTEGER`
+> on SQLite, `BIGINT` on PostgreSQL) and casts to `std::int64_t` at bind time.
+>
+> - **Values ≤ `INT64_MAX` (`9223372036854775807`, i.e. 2⁶³−1) are exact** — no caveat.
+> - **Values > `INT64_MAX` (the upper half of the unsigned range) are stored as a
+>   negative `int64`** (two's-complement reinterpretation). For such values:
+>   1. **Equality still round-trips.** A `SELECT` through Storm casts the stored
+>      signed bits back to unsigned, recovering the original value, so `WHERE col = v`
+>      and reading the field both work.
+>   2. **Ordering is wrong.** `ORDER BY`, `>`, `<`, `BETWEEN` sort by the *signed*
+>      interpretation, so a `uint64` of `2⁶³ + 1` sorts **before** `1`.
+>   3. **External readers see a negative number.** Raw SQL, a BI/report tool, or
+>      another application querying the column directly sees the signed value, not
+>      the intended unsigned one. (PostgreSQL `BIGINT` would also *reject* the true
+>      unsigned value with `bigint out of range`; Storm avoids that error only
+>      because it pre-casts to signed.)
+>
+> **Recommendation:** if you need the full unsigned 64-bit range *with* correct
+> ordering and external readability, store the value as `TEXT` (zero-padded) or a
+> `BLOB` you compare/sort yourself, rather than the native integer column. This
+> behavior is identical on SQLite and PostgreSQL and is pinned by
+> `Uint64SignedStorageTest` in `tests/schema/test_types.cpp`.
 
 **Usage:**
 ```cpp
