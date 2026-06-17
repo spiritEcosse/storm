@@ -72,7 +72,9 @@ struct ExtendedTypes {
     float approx{};
     unsigned int u_int{};
     long long ll_signed{};
-    std::uint64_t big_unsigned{}; // 64-bit unsigned — stored as signed int64 (#419)
+    [[= storm::meta::FieldAttr::signed_storage]] std::uint64_t big_unsigned{}; // signed int64 storage (#419/#436)
+    [[= storm::meta::FieldAttr::full_unsigned]] std::uint64_t
+        big_unsigned_full{}; // order-preserving full-range storage (#436)
     std::optional<double> opt_double;
     std::optional<int64_t> opt_int64;
     std::string label;

@@ -11,6 +11,7 @@ import std;
 import storm_orm_statements_base;
 import storm_orm_indexes;
 import storm_orm_utilities;
+import storm_orm_field_attr;
 import storm_db_concept;
 
 export namespace storm::orm::schema {
@@ -113,6 +114,16 @@ export namespace storm::orm::schema {
         }
         template <Dialect D> consteval auto blob_type() -> std::string_view {
             return D == Dialect::PostgreSQL ? "BYTEA" : "BLOB";
+        }
+
+        // Order-preserving full-range unsigned-64 storage (#436): PostgreSQL
+        // NUMERIC(20,0) holds the whole 0..2^64-1 range; SQLite TEXT stores a
+        // zero-padded 20-char decimal so lexicographic order == numeric order.
+        template <Dialect D> consteval auto full_unsigned_type() -> std::string_view {
+            return D == Dialect::PostgreSQL ? "NUMERIC(20,0)" : "TEXT";
+        }
+        template <Dialect D> consteval auto full_unsigned_type_nn() -> std::string_view {
+            return D == Dialect::PostgreSQL ? "NUMERIC(20,0) NOT NULL" : "TEXT NOT NULL";
         }
 
         // NOT NULL counterparts (same dialect dispatch). Splitting them keeps each helper
@@ -355,6 +366,19 @@ export namespace storm::orm::schema {
             // FK field — "<name>_id INTEGER/BIGINT [NOT NULL] REFERENCES <Related>(id)" (#412).
             else if constexpr (Base::is_fk_field(member)) {
                 append_fk_column_def<member, D>(col);
+            }
+            // full_unsigned field (#436) — order-preserving NUMERIC(20,0)/TEXT, regardless
+            // of the C++ uint64 type. Checked before the type-driven branches because the
+            // storage class comes from the annotation, not storage_class_of<FieldType>.
+            else if constexpr (storm::meta::has_full_unsigned_attr(member)) {
+                using FieldType = std::remove_cvref_t<typename[:std::meta::type_of(member):]>;
+                col.append(std::meta::identifier_of(member));
+                col.append(" ");
+                if constexpr (storm::orm::utilities::is_optional_v<FieldType>) {
+                    col.append(detail::full_unsigned_type<D>());
+                } else {
+                    col.append(detail::full_unsigned_type_nn<D>());
+                }
             }
             // Unique field — same as regular but with UNIQUE constraint
             else if constexpr (Base::is_unique_field(member)) {

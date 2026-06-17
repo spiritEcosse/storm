@@ -1914,5 +1914,137 @@ TYPED_TEST(Uint64SignedStorageTest, OrderBySortsBySignedInterpretation) {
     EXPECT_EQ(it->label, "small");
 }
 
+// ===== 64-BIT UNSIGNED FULL-RANGE STORAGE TESTS (#436) =====
+//
+// FieldAttr::full_unsigned stores an unsigned-64 field order-preservingly:
+// PostgreSQL NUMERIC(20,0), SQLite zero-padded 20-char TEXT (lexicographic ==
+// numeric order). Unlike signed_storage (#419), values > INT64_MAX both round-trip
+// AND sort correctly, and external readers see the true unsigned value.
+// FieldAttr::signed_storage keeps today's signed BIGINT/INTEGER storage.
+
+// --- Compile-time refusal: a bare unsigned-64 field is rejected (#436) ---
+// ModelStorageAnnotated<T> is false for a model with an un-annotated uint64 field, so
+// BaseStatement<T> (and thus QuerySet<T>) fails to instantiate with a clear constraint
+// violation. The annotated variants satisfy it. These static_asserts pin that contract
+// without needing a compile-fail harness.
+namespace {
+    struct BareUint64Model {
+        [[= storm::meta::FieldAttr::primary]] int id{};
+        std::uint64_t                             value{}; // bare — no storage annotation
+    };
+    struct SignedStorageModel {
+        [[= storm::meta::FieldAttr::primary]] int                  id{};
+        [[= storm::meta::FieldAttr::signed_storage]] std::uint64_t value{};
+    };
+    struct FullUnsignedModel {
+        [[= storm::meta::FieldAttr::primary]] int                 id{};
+        [[= storm::meta::FieldAttr::full_unsigned]] std::uint64_t value{};
+    };
+    static_assert(
+            !storm::orm::statements::ModelStorageAnnotated<BareUint64Model>,
+            "bare unsigned-64 field must NOT satisfy ModelStorageAnnotated"
+    );
+    static_assert(
+            storm::orm::statements::ModelStorageAnnotated<SignedStorageModel>,
+            "signed_storage uint64 field must satisfy ModelStorageAnnotated"
+    );
+    static_assert(
+            storm::orm::statements::ModelStorageAnnotated<FullUnsignedModel>,
+            "full_unsigned uint64 field must satisfy ModelStorageAnnotated"
+    );
+} // namespace
+
+// --- Schema: the storage class drives the column type per dialect ---
+
+TYPED_TEST(NewTypesSchemaTest, SignedStorageKeepsIntegerColumn) {
+    // SQLite: signed_storage uint64 stays INTEGER (byte-identical to today).
+    const auto& sqlite_sql = storm::create_table_sql<ExtendedTypes>();
+    EXPECT_NE(sqlite_sql.find("big_unsigned INTEGER NOT NULL"), std::string::npos) << sqlite_sql;
+    // PostgreSQL: signed_storage uint64 stays BIGINT.
+    const std::string& pg_sql = SchemaStatement<ExtendedTypes>::create_table_sql<Dialect::PostgreSQL>();
+    EXPECT_NE(pg_sql.find("big_unsigned BIGINT NOT NULL"), std::string::npos) << pg_sql;
+}
+
+TYPED_TEST(NewTypesSchemaTest, FullUnsignedUsesOrderPreservingColumn) {
+    // SQLite: full_unsigned uint64 maps to TEXT (zero-padded decimal on write).
+    const auto& sqlite_sql = storm::create_table_sql<ExtendedTypes>();
+    EXPECT_NE(sqlite_sql.find("big_unsigned_full TEXT NOT NULL"), std::string::npos) << sqlite_sql;
+    // PostgreSQL: full_unsigned uint64 maps to NUMERIC(20,0).
+    const std::string& pg_sql = SchemaStatement<ExtendedTypes>::create_table_sql<Dialect::PostgreSQL>();
+    EXPECT_NE(pg_sql.find("big_unsigned_full NUMERIC(20,0) NOT NULL"), std::string::npos) << pg_sql;
+}
+
+// --- Round-trip: full_unsigned recovers the exact value across the full range ---
+
+template <typename ConnType> class Uint64FullUnsignedTest : public StormTestFixture<ExtendedTypes, ConnType> {};
+TYPED_TEST_SUITE(Uint64FullUnsignedTest, DatabaseTypes);
+
+TYPED_TEST(Uint64FullUnsignedTest, ValueAboveInt64MaxRoundTrips) {
+    constexpr std::uint64_t            above_max = (std::uint64_t{1} << 63) + 1; // 2^63 + 1 > INT64_MAX
+    QuerySet<ExtendedTypes, TypeParam> qs;
+
+    auto result = qs.insert(ExtendedTypes{.big_unsigned_full = above_max, .label = "above_max"}).execute();
+    ASSERT_TRUE(result.has_value()) << result.error().message();
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value()) << selected.error().message();
+    ASSERT_EQ(selected.value().size(), 1);
+    EXPECT_EQ(selected.value().begin()->big_unsigned_full, above_max);
+}
+
+TYPED_TEST(Uint64FullUnsignedTest, Uint64MaxRoundTrips) {
+    constexpr std::uint64_t            u64_max = std::numeric_limits<std::uint64_t>::max();
+    QuerySet<ExtendedTypes, TypeParam> qs;
+
+    auto result = qs.insert(ExtendedTypes{.big_unsigned_full = u64_max, .label = "u64_max"}).execute();
+    ASSERT_TRUE(result.has_value()) << result.error().message();
+
+    auto selected = qs.select().execute();
+    ASSERT_TRUE(selected.has_value()) << selected.error().message();
+    EXPECT_EQ(selected.value().begin()->big_unsigned_full, u64_max);
+}
+
+TYPED_TEST(Uint64FullUnsignedTest, ZeroAndSmallValuesRoundTrip) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+    auto                               result = qs.insert(std::vector<ExtendedTypes>{
+                                    {.big_unsigned_full = 0, .label = "zero"},
+                                    {.big_unsigned_full = 42, .label = "small"},
+                            })
+                          .execute();
+    ASSERT_TRUE(result.has_value()) << result.error().message();
+
+    auto selected = qs.template order_by<^^ExtendedTypes::id>().select().execute();
+    ASSERT_TRUE(selected.has_value()) << selected.error().message();
+    ASSERT_EQ(selected.value().size(), 2);
+    auto it = selected.value().begin();
+    EXPECT_EQ(it->big_unsigned_full, 0U);
+    ++it;
+    EXPECT_EQ(it->big_unsigned_full, 42U);
+}
+
+// THE FIX: ORDER BY sorts by the TRUE unsigned value. A uint64 >= 2^63 sorts
+// AFTER a small value — the opposite of the signed_storage trap (#419).
+TYPED_TEST(Uint64FullUnsignedTest, OrderBySortsByUnsignedValue) {
+    constexpr std::uint64_t            above_max = (std::uint64_t{1} << 63) + 1; // huge
+    constexpr std::uint64_t            small     = 1;
+    QuerySet<ExtendedTypes, TypeParam> qs;
+
+    auto result = qs.insert(std::vector<ExtendedTypes>{
+                                    {.big_unsigned_full = above_max, .label = "huge"},
+                                    {.big_unsigned_full = small, .label = "small"},
+                            })
+                          .execute();
+    ASSERT_TRUE(result.has_value()) << result.error().message();
+
+    auto selected = qs.template order_by<^^ExtendedTypes::big_unsigned_full>().select().execute();
+    ASSERT_TRUE(selected.has_value()) << selected.error().message();
+    ASSERT_EQ(selected.value().size(), 2);
+    auto it = selected.value().begin();
+    // Correct unsigned order: small (1) first, huge (2^63+1) last.
+    EXPECT_EQ(it->label, "small");
+    ++it;
+    EXPECT_EQ(it->label, "huge");
+}
+
 // NOLINTEND(readability-identifier-length,readability-uppercase-literal-suffix,modernize-use-std-numbers)
 // NOLINTEND(misc-const-correctness)
