@@ -363,6 +363,17 @@ export namespace storm::orm::statements {
         return count == 1;
     }();
 
+    // Parse a decimal string to uint64 for full_unsigned extraction (#436); leading
+    // zeros from the SQLite zero-padded TEXT (or PG NUMERIC) are ignored. Defensive 0
+    // on an unexpected empty/garbage value — the column is NOT NULL decimal by
+    // construction. Free function (no model state) so it stays off BaseStatement's
+    // method count (cpp:S1448).
+    inline auto parse_full_unsigned(std::string_view text) noexcept -> std::uint64_t {
+        std::uint64_t value = 0;
+        std::from_chars(text.data(), text.data() + text.size(), value);
+        return value;
+    }
+
     // Shared reflection utilities for all statement types
     template <typename T>
         requires ModelWithPrimaryKey<T> && ModelStorageAnnotated<T>
@@ -622,37 +633,26 @@ export namespace storm::orm::statements {
                 return bind_fk_field_at_index<ConnType, Index>(stmt, obj, param_index);
             }
             // full_unsigned field (#436): order-preserving storage — bind a 20-char
-            // zero-padded decimal string instead of the signed int64 hot path.
+            // zero-padded decimal string instead of the signed int64 hot path. uint64_max
+            // (18446744073709551615) is 20 digits, so every value pads to the same width
+            // and lexicographic order == numeric order (SQLite TEXT); PG NUMERIC(20,0)
+            // parses the same string, leading zeros ignored. Optional binds NULL via the
+            // optional<string> dispatch in bind_parameter_value. Slow path (format +
+            // bind_text), paid only by full_unsigned fields.
             else if constexpr (storm::meta::has_full_unsigned_attr(member)) {
-                return bind_full_unsigned_field_at_index<ConnType, Index>(stmt, obj, param_index);
+                using FieldType = std::remove_cvref_t<decltype(obj.[:member:])>;
+                if constexpr (utilities::is_optional_v<FieldType>) {
+                    return bind_one<ConnType>(
+                            stmt, param_index, obj.[:member:]
+                                    .has_value()
+                                            ? std::optional<std::string>(std::format("{:020}", obj.[:member:].value()))
+                                            : std::nullopt
+                    );
+                } else {
+                    return bind_one<ConnType>(stmt, param_index, std::format("{:020}", obj.[:member:]));
+                }
             } else {
                 return bind_one<ConnType>(stmt, param_index, obj.[:member:]);
-            }
-        }
-
-        // Bind a full_unsigned field (#436) as a 20-char zero-padded decimal. uint64_max
-        // (18446744073709551615) is 20 digits, so every value pads to the same width and
-        // lexicographic order == numeric order (SQLite TEXT); PostgreSQL NUMERIC(20,0)
-        // parses the same string, leading zeros ignored. Optional binds NULL when empty.
-        // Slow path (format + bind_text), paid only by full_unsigned fields.
-        template <typename ConnType, std::size_t Index>
-        [[nodiscard]] static auto
-        bind_full_unsigned_field_at_index(typename ConnType::Statement* stmt, const T& obj, int& param_index) noexcept
-                -> std::expected<void, typename ConnType::Error> {
-            constexpr auto member = all_members_[Index];
-            using FieldType       = std::remove_cvref_t<decltype(obj.[:member:])>;
-            if constexpr (utilities::is_optional_v<FieldType>) {
-                if (!obj.[:member:].has_value()) {
-                    auto null_result = stmt->bind_null(param_index);
-                    if (!null_result) {
-                        return std::unexpected(null_result.error());
-                    }
-                    ++param_index;
-                    return {};
-                }
-                return bind_one<ConnType>(stmt, param_index, std::format("{:020}", obj.[:member:].value()));
-            } else {
-                return bind_one<ConnType>(stmt, param_index, std::format("{:020}", obj.[:member:]));
             }
         }
 
@@ -808,31 +808,6 @@ export namespace storm::orm::statements {
             }
         }
 
-        // Extract a full_unsigned column (#436): parse the decimal text (SQLite
-        // zero-padded TEXT or PG NUMERIC) back to uint64. std::from_chars ignores the
-        // leading zeros. Optional sets nullopt on a NULL column.
-        template <std::size_t Index, typename Statement, typename FieldType>
-        __attribute__((always_inline)) static void extract_full_unsigned_column(Statement* stmt, T& obj) noexcept {
-            constexpr auto member = all_members_[Index];
-            if constexpr (utilities::is_optional_v<FieldType>) {
-                if (stmt->is_null(Index)) {
-                    obj.[:member:] = std::nullopt;
-                    return;
-                }
-                obj.[:member:] = parse_full_unsigned(ColumnExtractor::read_text_view(stmt, Index));
-            } else {
-                obj.[:member:] = parse_full_unsigned(ColumnExtractor::read_text_view(stmt, Index));
-            }
-        }
-
-        // Parse a decimal string to uint64 (leading zeros ignored). Defensive 0 on an
-        // unexpected empty/garbage value — the column is NOT NULL decimal by construction.
-        static auto parse_full_unsigned(std::string_view text) noexcept -> std::uint64_t {
-            std::uint64_t value = 0;
-            std::from_chars(text.data(), text.data() + text.size(), value);
-            return value;
-        }
-
         // Extract single column into obj at compile-time index
         // Statement is deduced from stmt pointer; all_members_[Index] is valid here
         template <std::size_t Index, typename Statement>
@@ -850,7 +825,17 @@ export namespace storm::orm::statements {
                         obj.[:member:].[:fk_pk_member:] = ColumnExtractor::extract_column_value<PKType>(stmt, Index);
                     }
                 } else if constexpr (storm::meta::has_full_unsigned_attr(member)) {
-                    extract_full_unsigned_column<Index, Statement, FieldType>(stmt, obj);
+                    // full_unsigned (#436): parse the decimal text (SQLite zero-padded
+                    // TEXT or PG NUMERIC) back to uint64; nullopt on a NULL optional.
+                    if constexpr (utilities::is_optional_v<FieldType>) {
+                        if (stmt->is_null(Index)) {
+                            obj.[:member:] = std::nullopt;
+                        } else {
+                            obj.[:member:] = parse_full_unsigned(ColumnExtractor::read_text_view(stmt, Index));
+                        }
+                    } else {
+                        obj.[:member:] = parse_full_unsigned(ColumnExtractor::read_text_view(stmt, Index));
+                    }
                 } else {
                     obj.[:member:] = ColumnExtractor::extract_column_value<FieldType>(stmt, Index);
                 }
