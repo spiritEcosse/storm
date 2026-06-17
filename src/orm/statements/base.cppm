@@ -374,6 +374,21 @@ export namespace storm::orm::statements {
         return value;
     }
 
+    // Extract a full_unsigned column (#436) into obj.[:Member:]: parse the decimal text
+    // (SQLite zero-padded TEXT or PG NUMERIC) back to uint64; nullopt on a NULL optional.
+    // Free function template (Member NTTP) so it stays off BaseStatement's method count
+    // (cpp:S1448) and keeps extract_column_fast's nesting under the limit (cpp:S134).
+    template <std::meta::info Member, typename FieldType, typename Obj, typename Statement>
+    __attribute__((always_inline)) void extract_full_unsigned_into(Statement* stmt, Obj& obj, int col_idx) noexcept {
+        if constexpr (utilities::is_optional_v<FieldType>) {
+            obj.[:Member:] = stmt->is_null(col_idx)
+                                     ? std::optional<std::uint64_t>(std::nullopt)
+                                     : parse_full_unsigned(ColumnExtractor::read_text_view(stmt, col_idx));
+        } else {
+            obj.[:Member:] = parse_full_unsigned(ColumnExtractor::read_text_view(stmt, col_idx));
+        }
+    }
+
     // Shared reflection utilities for all statement types
     template <typename T>
         requires ModelWithPrimaryKey<T> && ModelStorageAnnotated<T>
@@ -825,17 +840,7 @@ export namespace storm::orm::statements {
                         obj.[:member:].[:fk_pk_member:] = ColumnExtractor::extract_column_value<PKType>(stmt, Index);
                     }
                 } else if constexpr (storm::meta::has_full_unsigned_attr(member)) {
-                    // full_unsigned (#436): parse the decimal text (SQLite zero-padded
-                    // TEXT or PG NUMERIC) back to uint64; nullopt on a NULL optional.
-                    if constexpr (utilities::is_optional_v<FieldType>) {
-                        if (stmt->is_null(Index)) {
-                            obj.[:member:] = std::nullopt;
-                        } else {
-                            obj.[:member:] = parse_full_unsigned(ColumnExtractor::read_text_view(stmt, Index));
-                        }
-                    } else {
-                        obj.[:member:] = parse_full_unsigned(ColumnExtractor::read_text_view(stmt, Index));
-                    }
+                    extract_full_unsigned_into<member, FieldType>(stmt, obj, Index);
                 } else {
                     obj.[:member:] = ColumnExtractor::extract_column_value<FieldType>(stmt, Index);
                 }
