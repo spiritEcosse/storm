@@ -13,34 +13,48 @@ Storm ORM supports all standard SQLite types through compile-time type dispatch 
 | `int64_t` | INTEGER | `bind_int64()` | `extract_int64()` |
 | `long` | INTEGER | `bind_int64()` | `extract_int64()` |
 | `long long` | INTEGER | `bind_int64()` | `extract_int64()` |
-| `uint64_t` | INTEGER | `bind_int64()` (cast ⚠️) | `extract_int64()` (cast ⚠️) |
-| `unsigned long` | INTEGER | `bind_int64()` (cast ⚠️) | `extract_int64()` (cast ⚠️) |
-| `unsigned long long` | INTEGER | `bind_int64()` (cast ⚠️) | `extract_int64()` (cast ⚠️) |
+| `uint64_t` | *annotation-gated* | see below | see below |
+| `unsigned long` | *annotation-gated* | see below | see below |
+| `unsigned long long` | *annotation-gated* | see below | see below |
 
-> ⚠️ **Signed storage caveat for 64-bit unsigned types (#419).** Neither SQLite
-> nor PostgreSQL has an unsigned 64-bit integer type. Storm maps `uint64_t` /
-> `unsigned long` / `unsigned long long` to a **signed** 8-byte column (`INTEGER`
-> on SQLite, `BIGINT` on PostgreSQL) and casts to `std::int64_t` at bind time.
+> ⚠️ **64-bit unsigned fields require an explicit storage annotation (#436).**
+> Neither SQLite nor PostgreSQL has an unsigned 64-bit integer type, so a bare
+> `uint64_t` / `unsigned long` / `unsigned long long` field is a **compile-time
+> error**. Annotate the field with exactly one of:
 >
-> - **Values ≤ `INT64_MAX` (`9223372036854775807`, i.e. 2⁶³−1) are exact** — no caveat.
-> - **Values > `INT64_MAX` (the upper half of the unsigned range) are stored as a
->   negative `int64`** (two's-complement reinterpretation). For such values:
->   1. **Equality still round-trips.** A `SELECT` through Storm casts the stored
->      signed bits back to unsigned, recovering the original value, so `WHERE col = v`
->      and reading the field both work.
->   2. **Ordering is wrong.** `ORDER BY`, `>`, `<`, `BETWEEN` sort by the *signed*
->      interpretation, so a `uint64` of `2⁶³ + 1` sorts **before** `1`.
->   3. **External readers see a negative number.** Raw SQL, a BI/report tool, or
->      another application querying the column directly sees the signed value, not
->      the intended unsigned one. (PostgreSQL `BIGINT` would also *reject* the true
->      unsigned value with `bigint out of range`; Storm avoids that error only
->      because it pre-casts to signed.)
+> | Annotation | Column type | Range with correct ordering | Cost |
+> |---|---|---|---|
+> | `FieldAttr::signed_storage` | `INTEGER` (SQLite) / `BIGINT` (PG) | `0 .. INT64_MAX` (2⁶³−1) | none — same `bind_int64`/`extract_int64` hot path |
+> | `FieldAttr::full_unsigned` | zero-padded 20-char `TEXT` (SQLite) / `NUMERIC(20,0)` (PG) | `0 .. 2⁶⁴−1` (full range) | slower string bind/extract, wider column |
 >
-> **Recommendation:** if you need the full unsigned 64-bit range *with* correct
-> ordering and external readability, store the value as `TEXT` (zero-padded) or a
-> `BLOB` you compare/sort yourself, rather than the native integer column. This
-> behavior is identical on SQLite and PostgreSQL and is pinned by
-> `Uint64SignedStorageTest` in `tests/schema/test_types.cpp`.
+> **`signed_storage`** keeps today's behavior. It is byte-identical to a plain
+> signed 8-byte column and routes through the same `bind_int64`/`extract_int64`
+> calls, so there is **zero performance change**. Use it when the values are
+> always ≤ `INT64_MAX`. **Caveat:** a value > `INT64_MAX` is stored as a negative
+> `int64` — equality still round-trips (the read casts the signed bits back), but
+> `ORDER BY` / `>` / `<` / `BETWEEN` sort by the signed interpretation (so `2⁶³+1`
+> sorts *before* `1`) and any external reader (raw SQL, a BI tool) sees a negative
+> number. Pinned by `Uint64SignedStorageTest` in `tests/schema/test_types.cpp`.
+>
+> **`full_unsigned`** stores the value order-preservingly: a 20-character
+> zero-padded decimal string on SQLite (`uint64_max` = `18446744073709551615` is
+> 20 digits, so lexicographic order == numeric order) and `NUMERIC(20,0)` on
+> PostgreSQL. The **full `0 .. 2⁶⁴−1` range round-trips for equality AND sorts
+> correctly**, and external readers see the true unsigned value. It pays a string
+> bind/extract on every access, so reach for it only when you actually need values
+> above `INT64_MAX`. Pinned by `Uint64FullUnsignedTest` in the same file.
+>
+> Signed 64-bit types (`int64_t` / `long` / `long long`) and all smaller integer
+> types are unaffected — no annotation needed.
+
+**Usage (64-bit unsigned):**
+```cpp
+struct Account {
+    [[=storm::meta::FieldAttr::primary]] int id;
+    [[=storm::meta::FieldAttr::signed_storage]] std::uint64_t small_id;   // ≤ INT64_MAX
+    [[=storm::meta::FieldAttr::full_unsigned]]  std::uint64_t full_range; // 0 .. 2⁶⁴−1
+};
+```
 
 **Usage:**
 ```cpp

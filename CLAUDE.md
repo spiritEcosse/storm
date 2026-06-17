@@ -335,6 +335,15 @@ FKs (e.g. `^^Bug::author` vs `^^Bug::reviewer`). See
 mutated; re-SELECT to read the value). UPDATE preserves `created_at` by binding the object's stored
 value, so pass the original `created_at` when updating. Zero cost on models without timestamp fields.
 
+**64-bit unsigned storage (#436)**: a bare `uint64_t` / `unsigned long` / `unsigned long long` field
+is a **compile-time error** (`ModelStorageAnnotated<T>` constraint on `BaseStatement`). Annotate with
+exactly one: `[[= FieldAttr::signed_storage]]` keeps today's signed `INTEGER`/`BIGINT` (byte-identical,
+same `bind_int64`/`extract_int64` hot path, zero perf change) for values ≤ INT64_MAX; or
+`[[= FieldAttr::full_unsigned]]` for order-preserving full-range `0..2⁶⁴−1` storage — SQLite zero-padded
+20-char `TEXT` (lexicographic == numeric order), PG `NUMERIC(20,0)`, slower string bind/extract. Both
+the `full_unsigned` bind/extract branches and the concept gate are compile-time-dispatched, so unrelated
+types and signed-64/smaller integers are unaffected. Signed-64 types stay correct as `BIGINT`/`INTEGER`.
+
 See [docs/reference/FIELD_TYPES.md](docs/reference/FIELD_TYPES.md).
 
 ## Known Compiler Issues

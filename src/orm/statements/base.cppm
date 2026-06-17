@@ -224,6 +224,28 @@ export namespace storm::orm::statements {
         return false;
     }();
 
+    // Concept: every 64-bit unsigned field of T must carry an explicit storage
+    // annotation — FieldAttr::signed_storage or FieldAttr::full_unsigned (#436). A bare
+    // unsigned-64 field would silently store > INT64_MAX values as a negative int64
+    // (equality round-trips, but ORDER BY and external readers see the signed value),
+    // so we refuse it at the call site instead. Signed-64 and all smaller types are
+    // exempt. optional<uint64_t> is checked on its inner type. The annotation is read
+    // directly on members from nonstatic_data_members_of(^^T) (the ModelWithPrimaryKey
+    // pattern), which is BMI-safe (#262).
+    template <typename T>
+    concept ModelStorageAnnotated = []() consteval {
+        for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+            if (storm::meta::is_unsigned64_member(m)) {
+                auto attr = std::meta::annotation_of_type<meta::FieldAttr>(m);
+                if (!attr.has_value() || (attr.value() != meta::FieldAttr::signed_storage &&
+                                          attr.value() != meta::FieldAttr::full_unsigned)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }();
+
     // A field carrying auto_create/auto_update must be a system_clock::time_point (#209).
     // Referenced by a static_assert in bind_field_at_index so a wrong-typed timestamp field
     // fails to compile with a clear message rather than deep inside parameter binding.
@@ -343,7 +365,7 @@ export namespace storm::orm::statements {
 
     // Shared reflection utilities for all statement types
     template <typename T>
-        requires ModelWithPrimaryKey<T>
+        requires ModelWithPrimaryKey<T> && ModelStorageAnnotated<T>
     class BaseStatement {
       public:
         // Compile-time accessor for table name (used in SQL generation)
@@ -598,8 +620,39 @@ export namespace storm::orm::statements {
             // FK field - extract and bind the PK value from the foreign object
             else if constexpr (is_fk_field(member)) {
                 return bind_fk_field_at_index<ConnType, Index>(stmt, obj, param_index);
+            }
+            // full_unsigned field (#436): order-preserving storage — bind a 20-char
+            // zero-padded decimal string instead of the signed int64 hot path.
+            else if constexpr (storm::meta::has_full_unsigned_attr(member)) {
+                return bind_full_unsigned_field_at_index<ConnType, Index>(stmt, obj, param_index);
             } else {
                 return bind_one<ConnType>(stmt, param_index, obj.[:member:]);
+            }
+        }
+
+        // Bind a full_unsigned field (#436) as a 20-char zero-padded decimal. uint64_max
+        // (18446744073709551615) is 20 digits, so every value pads to the same width and
+        // lexicographic order == numeric order (SQLite TEXT); PostgreSQL NUMERIC(20,0)
+        // parses the same string, leading zeros ignored. Optional binds NULL when empty.
+        // Slow path (format + bind_text), paid only by full_unsigned fields.
+        template <typename ConnType, std::size_t Index>
+        [[nodiscard]] static auto
+        bind_full_unsigned_field_at_index(typename ConnType::Statement* stmt, const T& obj, int& param_index) noexcept
+                -> std::expected<void, typename ConnType::Error> {
+            constexpr auto member = all_members_[Index];
+            using FieldType       = std::remove_cvref_t<decltype(obj.[:member:])>;
+            if constexpr (utilities::is_optional_v<FieldType>) {
+                if (!obj.[:member:].has_value()) {
+                    auto null_result = stmt->bind_null(param_index);
+                    if (!null_result) {
+                        return std::unexpected(null_result.error());
+                    }
+                    ++param_index;
+                    return {};
+                }
+                return bind_one<ConnType>(stmt, param_index, std::format("{:020}", obj.[:member:].value()));
+            } else {
+                return bind_one<ConnType>(stmt, param_index, std::format("{:020}", obj.[:member:]));
             }
         }
 
@@ -755,6 +808,31 @@ export namespace storm::orm::statements {
             }
         }
 
+        // Extract a full_unsigned column (#436): parse the decimal text (SQLite
+        // zero-padded TEXT or PG NUMERIC) back to uint64. std::from_chars ignores the
+        // leading zeros. Optional sets nullopt on a NULL column.
+        template <std::size_t Index, typename Statement, typename FieldType>
+        __attribute__((always_inline)) static void extract_full_unsigned_column(Statement* stmt, T& obj) noexcept {
+            constexpr auto member = all_members_[Index];
+            if constexpr (utilities::is_optional_v<FieldType>) {
+                if (stmt->is_null(Index)) {
+                    obj.[:member:] = std::nullopt;
+                    return;
+                }
+                obj.[:member:] = parse_full_unsigned(ColumnExtractor::read_text_view(stmt, Index));
+            } else {
+                obj.[:member:] = parse_full_unsigned(ColumnExtractor::read_text_view(stmt, Index));
+            }
+        }
+
+        // Parse a decimal string to uint64 (leading zeros ignored). Defensive 0 on an
+        // unexpected empty/garbage value — the column is NOT NULL decimal by construction.
+        static auto parse_full_unsigned(std::string_view text) noexcept -> std::uint64_t {
+            std::uint64_t value = 0;
+            std::from_chars(text.data(), text.data() + text.size(), value);
+            return value;
+        }
+
         // Extract single column into obj at compile-time index
         // Statement is deduced from stmt pointer; all_members_[Index] is valid here
         template <std::size_t Index, typename Statement>
@@ -771,6 +849,8 @@ export namespace storm::orm::statements {
                         using PKType                = std::remove_cvref_t<decltype(obj.[:member:].[:fk_pk_member:])>;
                         obj.[:member:].[:fk_pk_member:] = ColumnExtractor::extract_column_value<PKType>(stmt, Index);
                     }
+                } else if constexpr (storm::meta::has_full_unsigned_attr(member)) {
+                    extract_full_unsigned_column<Index, Statement, FieldType>(stmt, obj);
                 } else {
                     obj.[:member:] = ColumnExtractor::extract_column_value<FieldType>(stmt, Index);
                 }
