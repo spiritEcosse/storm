@@ -1,8 +1,9 @@
 module;
 
 // Single cohesive class template; thresholds intentionally relaxed (see #264 finding).
-// `duplicate` removed in #277 Phase 3 (prepare_stmt + reset_bind_execute helpers; QueryBase::sql() shared by
-// SingleQuery/BulkQuery proxies).
+// `duplicate` removed in #277 Phase 3 (prepare_stmt + reset_bind_execute helpers; UpdateQueryBase::sql()
+// shared by SingleQuery/BulkQuery proxies). Query-proxy structs lifted to namespace `detail` in #438 so
+// their methods stop counting toward UpdateStatement's S1448 method total.
 
 #include <meta>
 
@@ -22,6 +23,82 @@ export namespace storm::orm::statements {
     // Import utilities for code convenience
     using storm::orm::utilities::ConstexprString;
     using storm::orm::utilities::TransactionGuard;
+
+    template <typename T, storm::db::DatabaseConnection ConnType> class UpdateStatement;
+
+    // Query-proxy structs (#438): lifted OUT of UpdateStatement so their sql()/execute()/to_sql()
+    // methods no longer count toward UpdateStatement's method total (cpp:S1448 — SonarCloud sums
+    // the methods of nested classes into the enclosing class). Each proxy is the terminal of one
+    // UpdateStatement::query*() builder: it owns the moved-in statement and forwards .execute()/
+    // .to_sql() to the matching UpdateStatement method. They name the public UpdateStatement API
+    // only, so namespace scope changes nothing about access.
+    namespace detail {
+
+        // Both single/bulk proxies' static `sql()` returned the same compile-time UPDATE string.
+        template <typename T> struct UpdateQueryBase {
+            [[nodiscard]] static auto sql() -> std::string {
+                return UpdateGrammar<T>::update_sql_string;
+            }
+        };
+
+        template <typename T, storm::db::DatabaseConnection ConnType> struct SingleQuery : UpdateQueryBase<T> {
+            using Error = typename ConnType::Error;
+            UpdateStatement<T, ConnType> stmt;
+            const T&                     obj;
+            [[nodiscard]] auto           execute() -> std::expected<void, Error> {
+                return stmt.execute_single_optimized(obj);
+            }
+            [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
+                return stmt.to_sql(obj);
+            }
+        };
+
+        template <typename T, storm::db::DatabaseConnection ConnType> struct BulkQuery : UpdateQueryBase<T> {
+            using Error = typename ConnType::Error;
+            UpdateStatement<T, ConnType> stmt;
+            std::span<const T>           objects;
+            [[nodiscard]] auto           execute() -> std::expected<void, Error> {
+                return stmt.execute(objects);
+            }
+            [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
+                return stmt.to_sql(objects);
+            }
+        };
+
+        // Conditional bulk UPDATE (#403): UPDATE <table> SET <set> WHERE <where_expr>.
+        // SET columns are the Members... pack; values come from `proto`. A null where_expr
+        // is refused at execute()/to_sql() time so a dropped where() cannot write the whole
+        // table (update_all() is the explicit full-table path — see UpdateAllQuery, #409).
+        template <typename T, storm::db::DatabaseConnection ConnType, std::meta::info... Members>
+        struct ConditionalUpdateQuery {
+            using Error = typename ConnType::Error;
+            UpdateStatement<T, ConnType>     stmt;
+            const T&                         proto;
+            orm::where::ExpressionVariantPtr where_expr;
+            [[nodiscard]] auto               execute() -> std::expected<void, Error> {
+                return stmt.template execute_where<Members...>(proto, where_expr);
+            }
+            [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
+                return stmt.template to_sql_where<Members...>(proto, where_expr);
+            }
+        };
+
+        // Full-table UPDATE (#409): UPDATE <table> SET <set> with NO WHERE. The explicit
+        // escape hatch named by the empty-WHERE refusal, mirroring DeleteAllQuery.
+        template <typename T, storm::db::DatabaseConnection ConnType, std::meta::info... Members>
+        struct UpdateAllQuery {
+            using Error = typename ConnType::Error;
+            UpdateStatement<T, ConnType> stmt;
+            const T&                     proto;
+            [[nodiscard]] auto           execute() -> std::expected<void, Error> {
+                return stmt.template execute_all<Members...>(proto);
+            }
+            [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
+                return stmt.template to_sql_all<Members...>(proto);
+            }
+        };
+
+    } // namespace detail
 
     // Statement class for ORM update operations
     template <typename T, storm::db::DatabaseConnection ConnType> class UpdateStatement : private BaseStatement<T> {
@@ -87,38 +164,7 @@ export namespace storm::orm::statements {
       public:
         explicit UpdateStatement(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
-        // Both proxies' static `sql()` returned `update_sql_string`. Keep it
-        // in one place so SingleQuery / BulkQuery only carry the
-        // execute/to_sql shapes that genuinely differ.
-        struct QueryBase {
-            [[nodiscard]] static auto sql() -> std::string {
-                return Grammar::update_sql_string;
-            }
-        };
-
-        struct SingleQuery : QueryBase {
-            UpdateStatement    stmt;
-            const T&           obj;
-            [[nodiscard]] auto execute() -> std::expected<void, Error> {
-                return stmt.execute_single_optimized(obj);
-            }
-            [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
-                return stmt.to_sql(obj);
-            }
-        };
-
-        struct BulkQuery : QueryBase {
-            UpdateStatement    stmt;
-            std::span<const T> objects;
-            [[nodiscard]] auto execute() -> std::expected<void, Error> {
-                return stmt.execute(objects);
-            }
-            [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
-                return stmt.to_sql(objects);
-            }
-        };
-
-        auto query(const T& obj [[clang::lifetimebound]]) -> SingleQuery {
+        auto query(const T& obj [[clang::lifetimebound]]) -> detail::SingleQuery<T, ConnType> {
             return {{}, std::move(*this), obj};
         }
         // LIFETIME CONTRACT (issue #357, finding B): the returned BulkQuery holds a
@@ -127,49 +173,20 @@ export namespace storm::orm::statements {
         // container that dies before .execute()/.to_sql() runs still dangles silently at
         // runtime. Treat the proxy as single-expression-use: keep the backing container
         // alive until the terminal call completes.
-        auto query(std::span<const T> objects [[clang::lifetimebound]]) -> BulkQuery {
+        auto query(std::span<const T> objects [[clang::lifetimebound]]) -> detail::BulkQuery<T, ConnType> {
             return {{}, std::move(*this), objects};
         }
-
-        // Conditional bulk UPDATE (#403): UPDATE <table> SET <set> WHERE <where_expr>.
-        // SET columns are the Members... pack; values come from `proto`. A null where_expr
-        // is refused at execute()/to_sql() time so a dropped where() cannot write the whole
-        // table (update_all() is the explicit full-table path — see UpdateAllQuery, #409).
-        template <std::meta::info... Members> struct ConditionalUpdateQuery {
-            UpdateStatement                  stmt;
-            const T&                         proto;
-            orm::where::ExpressionVariantPtr where_expr;
-            [[nodiscard]] auto               execute() -> std::expected<void, Error> {
-                return stmt.template execute_where<Members...>(proto, where_expr);
-            }
-            [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
-                return stmt.template to_sql_where<Members...>(proto, where_expr);
-            }
-        };
 
         template <std::meta::info... Members>
             requires(sizeof...(Members) > 0 && (Grammar::template is_settable_member<Members>() && ...))
         auto query_where(const T& proto [[clang::lifetimebound]], orm::where::ExpressionVariantPtr where_expr)
-                -> ConditionalUpdateQuery<Members...> {
+                -> detail::ConditionalUpdateQuery<T, ConnType, Members...> {
             return {std::move(*this), proto, std::move(where_expr)};
         }
 
-        // Full-table UPDATE (#409): UPDATE <table> SET <set> with NO WHERE. The explicit
-        // escape hatch named by the empty-WHERE refusal, mirroring DeleteAllQuery.
-        template <std::meta::info... Members> struct UpdateAllQuery {
-            UpdateStatement    stmt;
-            const T&           proto;
-            [[nodiscard]] auto execute() -> std::expected<void, Error> {
-                return stmt.template execute_all<Members...>(proto);
-            }
-            [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
-                return stmt.template to_sql_all<Members...>(proto);
-            }
-        };
-
         template <std::meta::info... Members>
             requires(sizeof...(Members) > 0 && (Grammar::template is_settable_member<Members>() && ...))
-        auto query_all(const T& proto [[clang::lifetimebound]]) -> UpdateAllQuery<Members...> {
+        auto query_all(const T& proto [[clang::lifetimebound]]) -> detail::UpdateAllQuery<T, ConnType, Members...> {
             return {std::move(*this), proto};
         }
 
