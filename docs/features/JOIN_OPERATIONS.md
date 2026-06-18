@@ -17,13 +17,13 @@ Key features:
 
 ```cpp
 struct User {
-    [[=storm::meta::FieldAttr::primary]] int id;
+    [[=storm::FieldAttr::primary]] int id;
     std::string username;
     int level;
 };
 
 struct Message {
-    [[=storm::meta::FieldAttr::primary]] int id;
+    [[=storm::FieldAttr::primary]] int id;
     std::string content;
     User sender;  // FK field
 };
@@ -52,7 +52,7 @@ INNER JOIN User t2 ON t2.id = t1.sender_id
 
 ```cpp
 struct Message {
-    [[=storm::meta::FieldAttr::primary]] int id;
+    [[=storm::FieldAttr::primary]] int id;
     std::string content;
     User sender;    // First FK
     User receiver;  // Second FK
@@ -123,15 +123,15 @@ Several m2m fields of the same model can be loaded in **one call** (#392) — se
 
 ```cpp
 struct Course {
-    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::FieldAttr::primary]] int id{};
     std::string title;
 };
 
 struct Student {
-    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::FieldAttr::primary]] int id{};
     std::string name;
     int age{};
-    [[= storm::meta::many_to_many<>]] std::vector<Course> courses;
+    [[= storm::many_to_many<>]] std::vector<Course> courses;
 };
 
 // Two queries (in one transaction): base students, then their courses, stitched
@@ -169,16 +169,16 @@ Q2's `IN (…)` subquery, so both pick exactly the same base entities.
 
 ```cpp
 struct Enrollment {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    [[= storm::meta::fk<>]] Pupil pupil;
-    [[= storm::meta::fk<>]] Course course;
+    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::fk<>]] Pupil pupil;
+    [[= storm::fk<>]] Course course;
     std::string grade;  // relationship metadata
 };
 
 struct Pupil {
-    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::FieldAttr::primary]] int id{};
     std::string name;
-    [[= storm::meta::many_to_many_through<Enrollment>]] std::vector<Course> courses;
+    [[= storm::many_to_many_through<Enrollment>]] std::vector<Course> courses;
 };
 
 // Simple access — metadata ignored, same two-query eager load
@@ -202,11 +202,11 @@ any subset of them:
 
 ```cpp
 struct Member {
-    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::FieldAttr::primary]] int id{};
     std::string name;
     int age{};
-    [[= storm::meta::many_to_many<>]] std::vector<Course> courses;
-    [[= storm::meta::many_to_many<>]] std::vector<Club> clubs;
+    [[= storm::many_to_many<>]] std::vector<Course> courses;
+    [[= storm::many_to_many<>]] std::vector<Club> clubs;
 };
 
 // One Q1 (base members) + one Q2 PER relation, all in one transaction:
@@ -305,18 +305,18 @@ Declare a reverse-FK container (not a column — invisible to CRUD, like m2m):
 struct Task; // forward declaration breaks the Person⟷Task reference cycle
 
 struct Person {
-    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::FieldAttr::primary]] int id{};
     std::string name;
     int age{};
     // Filled on eager load. The annotation names the OWNER TYPE; the unique FK
     // back at Person is resolved at instantiation.
-    [[= storm::meta::reverse_fk<^^Task>]] std::vector<Task> tasks;
+    [[= storm::reverse_fk<^^Task>]] std::vector<Task> tasks;
 };
 
 struct Task {
-    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::FieldAttr::primary]] int id{};
     std::string title;
-    [[= storm::meta::fk<>]] Person assignee;   // FK → Person
+    [[= storm::fk<>]] Person assignee;   // FK → Person
 };
 
 person_qs.left_join<^^Person::tasks>().select();   // all Persons; .tasks empty when none

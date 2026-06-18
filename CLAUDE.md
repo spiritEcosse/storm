@@ -313,7 +313,13 @@ See [docs/development/PERFORMANCE_GUIDELINES.md](docs/development/PERFORMANCE_GU
 
 `int`, `int64_t`, `double`, `float`, `bool`, `std::string`, `std::string_view`, `std::optional<T>`, `std::vector<uint8_t>` (BLOB)
 
-**Foreign keys (#431)**: `[[= storm::meta::fk<>]]` marks an FK field (bare = `RESTRICT`,
+**Annotation spelling (#442)**: annotation names are re-exported into the top-level `storm`
+namespace — write `storm::FieldAttr::primary`, `storm::fk<>`, `storm::many_to_many<>`,
+`storm::reverse_fk<...>` instead of the longer `storm::meta::...`. The `storm::meta::` spelling
+still works (re-exports are additive). Internal reflection helpers (`is_fk_field`,
+`find_primary_key`, …) stay in `storm::meta`.
+
+**Foreign keys (#431)**: `[[= storm::fk<>]]` marks an FK field (bare = `RESTRICT`,
 the SQL default — no `ON DELETE` clause emitted). The `ON DELETE` policy is the template
 arg: `fk<RefAction::Cascade>` / `fk<RefAction::SetNull>` / `fk<RefAction::Restrict>` /
 `fk<RefAction::NoAction>`. `SetNull` REQUIRES a nullable FK (`std::optional<Related>`) —
@@ -322,15 +328,15 @@ members can't be templated); FK detection runs through `meta::is_fk_field`. `ON 
 not emitted (identity PKs never change). See
 [docs/features/REFERENTIAL_INTEGRITY.md](docs/features/REFERENTIAL_INTEGRITY.md).
 
-**Many-to-many (#203)**: `[[= storm::meta::many_to_many<>]]` (auto junction `<Owner>_<Related>`,
-one junction table per field) or `[[= storm::meta::many_to_many_through<Model>]]` on a container
+**Many-to-many (#203)**: `[[= storm::many_to_many<>]]` (auto junction `<Owner>_<Related>`,
+one junction table per field) or `[[= storm::many_to_many_through<Model>]]` on a container
 member (`std::vector<T>`, `plf::hive<T>`, `vector<shared_ptr<T>>`). Not a column — invisible to
 CRUD; eager-loaded via `join<^^T::field>()`, several relations per call via
 `join<^^T::a, ^^T::b>()` (#392). The auto-junction `ON DELETE` defaults to CASCADE on both
 sides, overridable via `many_to_many<RefAction::...>` (#431). See
 [docs/features/JOIN_OPERATIONS.md](docs/features/JOIN_OPERATIONS.md).
 
-**Reverse-FK (#398)**: `[[= storm::meta::reverse_fk<^^Owner>]]` on a container member declares the
+**Reverse-FK (#398)**: `[[= storm::reverse_fk<^^Owner>]]` on a container member declares the
 eager-load destination for "all `<Base>`, each with the `<Owner>`s that point at them". The argument
 is the OWNER TYPE (resolved to its unique FK back at the base — the Base⟷Owner reference cycle forbids
 a member splice in the annotation, so the owner must have exactly one FK to the base). Not a column.
@@ -453,7 +459,7 @@ message_qs.join<^^Message::sender>().where(...).select();
 message_qs.left_join<^^Message::sender, ^^Message::receiver>().select();
 
 // Many-to-many (#203 model/schema; #391 two-query execution; #392 multi-relation)
-// — container field annotated [[= storm::meta::many_to_many]] (auto junction) or
+// — container field annotated [[= storm::many_to_many]] (auto junction) or
 // many_to_many_through<Enrollment> (explicit junction model). Eager load runs as
 // Q1 (base entities) + one Q2 PER relation (owner_pk, related.*) WHERE owner_id
 // IN (base subquery), stitched by one pk→entity hash map, all in one transaction.

@@ -47,9 +47,9 @@ TEST(SchemaFkRefTest, TaskBothFksEmitReferencesSqlite) {
 
 // Test: a nullable FK (optional<Related>) still emits REFERENCES, without NOT NULL.
 struct NullableFkRow {
-    [[= storm::meta::FieldAttr::primary]] int     id{};
-    [[= storm::meta::fk<>]] std::optional<Person> owner;
-    std::string                                   label;
+    [[= storm::FieldAttr::primary]] int     id{};
+    [[= storm::fk<>]] std::optional<Person> owner;
+    std::string                             label;
 };
 
 TEST(SchemaFkRefTest, NullableFkEmitsReferencesWithoutNotNull) {

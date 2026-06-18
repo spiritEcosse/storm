@@ -77,8 +77,8 @@ TYPED_TEST(BatchInsertReturningTest, ReturnedIdsMatchInsertedRows) {
 // also auto-assigns ids (the keyword adds a guarantee, it does not change that
 // you INSERT with id=0 and the DB fills it in).
 struct AutoIncRecord {
-    [[= storm::meta::FieldAttr::primary_autoincrement]] int id{};
-    int                                                     value{};
+    [[= storm::FieldAttr::primary_autoincrement]] int id{};
+    int                                               value{};
 };
 
 template <typename ConnType> class AutoIncrementInsertTest : public StormTestFixture<AutoIncRecord, ConnType> {};

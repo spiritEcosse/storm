@@ -115,6 +115,21 @@ export namespace storm {
         }
     } // namespace meta
 
+    // Convenience re-exports of the user-facing annotation names into the top-level
+    // `storm` namespace (#442). Model declarations can spell `storm::FieldAttr::primary`,
+    // `storm::fk<>`, `storm::many_to_many<>` etc. instead of the longer `storm::meta::...`.
+    // Purely additive — the `storm::meta::` spelling keeps working. Internal reflection
+    // helpers (is_fk_field, find_primary_key, …) stay in storm::meta, not re-exported here.
+    using meta::FieldAttr;            // NOLINT(misc-unused-using-decls)
+    using meta::fk;                   // NOLINT(misc-unused-using-decls)
+    using meta::Fk;                   // NOLINT(misc-unused-using-decls)
+    using meta::many_to_many;         // NOLINT(misc-unused-using-decls)
+    using meta::many_to_many_through; // NOLINT(misc-unused-using-decls)
+    using meta::ManyToMany;           // NOLINT(misc-unused-using-decls)
+    using meta::RefAction;            // NOLINT(misc-unused-using-decls)
+    using meta::reverse_fk;           // NOLINT(misc-unused-using-decls)
+    using meta::ReverseFk;            // NOLINT(misc-unused-using-decls)
+
     // Returns the compile-time generated CREATE TABLE SQL for model T and dialect D.
     template <typename T, orm::schema::Dialect D = orm::schema::Dialect::SQLite>
     auto create_table_sql() -> const std::string& {

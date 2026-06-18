@@ -35,9 +35,9 @@ using storm::test::MockSqlite3Config;
 
 // Struct with indexes — must be at namespace scope for Indexes<> specialization
 struct MockIndexedPerson {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    std::string                               name;
-    int                                       department{};
+    [[= storm::FieldAttr::primary]] int id{};
+    std::string                         name;
+    int                                 department{};
 };
 
 template <> struct storm::Indexes<MockIndexedPerson> {
@@ -48,16 +48,16 @@ namespace {
 
     // Test model for ORM operations
     struct MockPerson {
-        [[= storm::meta::FieldAttr::primary]] std::int64_t id{};
-        std::string                                        name;
-        int                                                age{};
+        [[= storm::FieldAttr::primary]] std::int64_t id{};
+        std::string                                  name;
+        int                                          age{};
     };
 
     // Test model with optional fields
     struct MockPersonOptional {
-        [[= storm::meta::FieldAttr::primary]] std::int64_t id{};
-        std::optional<std::string>                         name;
-        std::optional<int>                                 age;
+        [[= storm::FieldAttr::primary]] std::int64_t id{};
+        std::optional<std::string>                   name;
+        std::optional<int>                           age;
     };
 
     /**
@@ -526,9 +526,9 @@ namespace {
 
     // Test model with double field for bind_double coverage
     struct MockPersonWithDouble {
-        [[= storm::meta::FieldAttr::primary]] std::int64_t id{};
-        std::string                                        name;
-        double                                             salary{};
+        [[= storm::FieldAttr::primary]] std::int64_t id{};
+        std::string                                  name;
+        double                                       salary{};
     };
 
     TEST_F(ORMMockErrorTest, InsertFailsOnBindDoubleNomem) {
@@ -549,9 +549,9 @@ namespace {
 
     // Test model with blob field for bind_blob coverage
     struct MockPersonWithBlob {
-        [[= storm::meta::FieldAttr::primary]] std::int64_t id{};
-        std::string                                        name;
-        std::vector<std::uint8_t>                          data;
+        [[= storm::FieldAttr::primary]] std::int64_t id{};
+        std::string                                  name;
+        std::vector<std::uint8_t>                    data;
     };
 
     TEST_F(ORMMockErrorTest, InsertFailsOnBindBlobNomem) {
@@ -1191,15 +1191,15 @@ namespace {
     // ============================================================================
 
     struct MockUser {
-        [[= storm::meta::FieldAttr::primary]] int id{};
-        std::string                               name;
-        int                                       age{};
+        [[= storm::FieldAttr::primary]] int id{};
+        std::string                         name;
+        int                                 age{};
     };
 
     struct MockMessage {
-        [[= storm::meta::FieldAttr::primary]] int id{};
-        [[= storm::meta::fk<>]] MockUser          sender;
-        std::string                               text;
+        [[= storm::FieldAttr::primary]] int id{};
+        [[= storm::fk<>]] MockUser          sender;
+        std::string                         text;
     };
 
     class JoinMockErrorTest : public ::testing::Test {
@@ -3232,9 +3232,9 @@ namespace {
     // ============================================================================
 
     struct MockOptionalFKMessage {
-        [[= storm::meta::FieldAttr::primary]] int       id{};
-        [[= storm::meta::fk<>]] std::optional<MockUser> sender;
-        std::string                                     text;
+        [[= storm::FieldAttr::primary]] int       id{};
+        [[= storm::fk<>]] std::optional<MockUser> sender;
+        std::string                               text;
     };
 
     TEST_F(ORMMockErrorTest, InsertOptionalFKBindFailure) {
@@ -3429,14 +3429,14 @@ namespace {
     // ============================================================================
 
     struct MockCourse {
-        [[= storm::meta::FieldAttr::primary]] std::int64_t id{};
-        std::string                                        title;
+        [[= storm::FieldAttr::primary]] std::int64_t id{};
+        std::string                                  title;
     };
 
     struct MockStudent {
-        [[= storm::meta::FieldAttr::primary]] std::int64_t        id{};
-        std::string                                               name;
-        [[= storm::meta::many_to_many<>]] std::vector<MockCourse> courses;
+        [[= storm::FieldAttr::primary]] std::int64_t        id{};
+        std::string                                         name;
+        [[= storm::many_to_many<>]] std::vector<MockCourse> courses;
     };
 
     TEST_F(ORMMockErrorTest, M2MSelectFailsOnStepError) {
@@ -3568,15 +3568,15 @@ namespace {
     // ============================================================================
 
     struct MockClub {
-        [[= storm::meta::FieldAttr::primary]] std::int64_t id{};
-        std::string                                        name;
+        [[= storm::FieldAttr::primary]] std::int64_t id{};
+        std::string                                  name;
     };
 
     struct MockMember {
-        [[= storm::meta::FieldAttr::primary]] std::int64_t        id{};
-        std::string                                               name;
-        [[= storm::meta::many_to_many<>]] std::vector<MockCourse> courses;
-        [[= storm::meta::many_to_many<>]] std::vector<MockClub>   clubs;
+        [[= storm::FieldAttr::primary]] std::int64_t        id{};
+        std::string                                         name;
+        [[= storm::many_to_many<>]] std::vector<MockCourse> courses;
+        [[= storm::many_to_many<>]] std::vector<MockClub>   clubs;
     };
 
     // Prepare order: calls 1-3 = connection/BEGIN bring-up, 4 = Q1, 5 = Q2a

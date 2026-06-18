@@ -24,7 +24,7 @@ using storm::QuerySet;
 // it. The table-level estimator sizes from identifier length, so the table
 // buffer would fit — the divergence was purely in the per-column buffer.
 struct LongFieldNameRecord {
-    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::FieldAttr::primary]] int id{};
     int this_is_a_deliberately_very_long_column_identifier_that_exceeds_one_hundred_and_ten_characters_to_trigger_trunc{};
 };
 
@@ -39,8 +39,8 @@ inline constexpr std::string_view kLongFieldName = "this_is_a_deliberately_very_
 // 45 + 26 + 200 = 271 > 255 usable bytes, so a fixed 256-byte buffer silently
 // truncated the generated CREATE UNIQUE INDEX statement.
 struct LongIdxRecord {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    [[= storm::meta::FieldAttr::unique]] int
+    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::FieldAttr::unique]] int
             this_is_a_deliberately_very_long_unique_column_identifier_that_exceeds_one_hundred_characters_to_truncate{};
 };
 
@@ -211,8 +211,8 @@ TEST(SchemaUnitTest, PersonSqlEndsWithClosingParen) {
 // purpose (PK detection, INSERT skip, etc.) — the only difference is the
 // emitted DDL keyword.
 struct AuditRecord {
-    [[= storm::meta::FieldAttr::primary_autoincrement]] int id{};
-    int                                                     value{};
+    [[= storm::FieldAttr::primary_autoincrement]] int id{};
+    int                                               value{};
 };
 
 // Test: primary_autoincrement PK emits `id INTEGER PRIMARY KEY AUTOINCREMENT`
