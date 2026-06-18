@@ -186,6 +186,26 @@ is_known_unparseable() {
 }
 export -f is_known_unparseable
 
+# Files clang-tidy must NEVER touch — even when it can parse them cleanly.
+# Used to short-circuit run_tidy() (full/all modes) and filter_skiplist_from_diff()
+# (--diff mode) so clang-tidy --fix never mutates the file.
+#
+# src/orm/generator.cppm is the upstream P2168 std::generator reference
+# implementation (Lewis Baker / Corentin Jabot). clang-tidy's
+# readability-identifier-naming rewrites `_T → T` and `__manual_lifetime →
+# _manual_lifetime` on the primary template but misses the reference
+# specialization, producing ill-formed code. Storm does not own this file;
+# treat it as vendored — never lint, never auto-fix.
+is_always_skip_file() {
+    local file="$1"
+    case "$file" in
+        src/orm/generator.cppm) return 0 ;;
+        */src/orm/generator.cppm) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+export -f is_always_skip_file
+
 # ─── --diff mode short path ─────────────────────────────────────────────────
 # Pipe `git diff -U0 --cached` through clang-tidy-diff.py — it only emits
 # diagnostics on lines the staged commit touches. Pre-existing warnings on
@@ -217,7 +237,14 @@ if [[ "$MODE" == "diff" ]]; then
             if [[ "$line" == "diff --git "* ]]; then
                 # path is the b-side: "diff --git a/<p> b/<p>"
                 path="${line##* b/}"
-                if is_known_unparseable "$path"; then keep=0; else keep=1; fi
+                # Drop both unparseable files AND always-skip vendored files
+                # (e.g. generator.cppm) — the latter must never be linted in any
+                # mode, but clang-tidy-diff.py has no concept of either skip-list.
+                if is_known_unparseable "$path" || is_always_skip_file "$path"; then
+                    keep=0
+                else
+                    keep=1
+                fi
             fi
             [[ "$keep" == 1 ]] && printf '%s\n' "$line"
         done
@@ -330,25 +357,6 @@ trap "rm -rf $TEMP_DIR" EXIT
 # Export variables for subshells
 export CLANG_TIDY BUILD_DIR FIX_FLAG TEMP_DIR
 
-
-# Files clang-tidy must NEVER touch — even when it can parse them cleanly.
-# Used to short-circuit run_tidy() so clang-tidy --fix never mutates the file.
-#
-# src/orm/generator.cppm is the upstream P2168 std::generator reference
-# implementation (Lewis Baker / Corentin Jabot). clang-tidy's
-# readability-identifier-naming rewrites `_T → T` and `__manual_lifetime →
-# _manual_lifetime` on the primary template but misses the reference
-# specialization, producing ill-formed code. Storm does not own this file;
-# treat it as vendored — never lint, never auto-fix.
-is_always_skip_file() {
-    local file="$1"
-    case "$file" in
-        src/orm/generator.cppm) return 0 ;;
-        */src/orm/generator.cppm) return 0 ;;
-        *) return 1 ;;
-    esac
-}
-export -f is_always_skip_file
 
 # Function to run clang-tidy on a single file (called in parallel)
 # Uses .clang-tidy config file automatically (clang-tidy searches parent directories)
