@@ -11,14 +11,14 @@ import std;
 
 // ── Local structs (used only in this file) ──────────────────────────────────
 struct NullableFKMessage {
-    [[= storm::meta::FieldAttr::primary]] int              id{};
-    [[= storm::meta::FieldAttr::fk]] std::optional<Person> sender;
-    [[= storm::meta::FieldAttr::fk]] Person                receiver;
-    std::string                                            text;
+    [[= storm::meta::FieldAttr::primary]] int     id{};
+    [[= storm::meta::fk<>]] std::optional<Person> sender;
+    [[= storm::meta::fk<>]] Person                receiver;
+    std::string                                   text;
 };
 struct Project {
     [[= storm::meta::FieldAttr::primary]] int id{};
-    [[= storm::meta::FieldAttr::fk]] Person   manager;
+    [[= storm::meta::fk<>]] Person            manager;
     std::string                               title;
     double                                    budget{};
 };
@@ -34,14 +34,14 @@ struct Counter {
     long                                      count{};
 };
 struct Reading {
-    [[= storm::meta::FieldAttr::primary]] int    id{};
-    [[= storm::meta::FieldAttr::fk]] Measurement measurement;
-    std::string                                  reading_type;
-    float                                        value{};
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::meta::fk<>]] Measurement       measurement;
+    std::string                               reading_type;
+    float                                     value{};
 };
 struct Summary {
     [[= storm::meta::FieldAttr::primary]] int id{};
-    [[= storm::meta::FieldAttr::fk]] Counter  counter;
+    [[= storm::meta::fk<>]] Counter           counter;
     std::string                               report_type;
 };
 

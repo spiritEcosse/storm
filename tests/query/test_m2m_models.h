@@ -25,7 +25,7 @@ struct Student {
     [[= storm::meta::FieldAttr::primary]] int id{};
     std::string name;
     int age{};
-    [[= storm::meta::many_to_many]] std::vector<Course> courses;
+    [[= storm::meta::many_to_many<>]] std::vector<Course> courses;
 };
 
 // Phase 2: explicit junction model with metadata. ManyToMany<Enrollment> only
@@ -41,8 +41,8 @@ struct Pupil {
 
 struct Enrollment {
     [[= storm::meta::FieldAttr::primary]] int id{};
-    [[= storm::meta::FieldAttr::fk]] Pupil pupil;
-    [[= storm::meta::FieldAttr::fk]] Course course;
+    [[= storm::meta::fk<>]] Pupil pupil;
+    [[= storm::meta::fk<>]] Course course;
     std::string grade;
 };
 
@@ -55,13 +55,13 @@ struct Track {
 struct Playlist {
     [[= storm::meta::FieldAttr::primary]] int id{};
     std::string name;
-    [[= storm::meta::many_to_many]] plf::hive<Track> tracks;
+    [[= storm::meta::many_to_many<>]] plf::hive<Track> tracks;
 };
 
 struct Album {
     [[= storm::meta::FieldAttr::primary]] int id{};
     std::string name;
-    [[= storm::meta::many_to_many]] std::vector<std::shared_ptr<Track>> tracks;
+    [[= storm::meta::many_to_many<>]] std::vector<std::shared_ptr<Track>> tracks;
 };
 
 // Multi-relation model (#392): two auto-junction m2m fields on one owner.
@@ -74,8 +74,8 @@ struct Member {
     [[= storm::meta::FieldAttr::primary]] int id{};
     std::string name;
     int age{};
-    [[= storm::meta::many_to_many]] std::vector<Course> courses;
-    [[= storm::meta::many_to_many]] std::vector<Club> clubs;
+    [[= storm::meta::many_to_many<>]] std::vector<Course> courses;
+    [[= storm::meta::many_to_many<>]] std::vector<Club> clubs;
 };
 
 // Related model WITH an FK field (#392): the aggregate complete SQL must emit
@@ -88,13 +88,26 @@ struct Topic {
 struct Lesson {
     [[= storm::meta::FieldAttr::primary]] int id{};
     std::string title;
-    [[= storm::meta::FieldAttr::fk]] Topic topic;
+    [[= storm::meta::fk<>]] Topic topic;
 };
 
 struct Tutor {
     [[= storm::meta::FieldAttr::primary]] int id{};
     std::string name;
-    [[= storm::meta::many_to_many]] std::vector<Lesson> lessons;
+    [[= storm::meta::many_to_many<>]] std::vector<Lesson> lessons;
+};
+
+// Junction ON DELETE override (#431): many_to_many<RefAction::Restrict> on the m2m
+// field flips BOTH junction FK sides from the CASCADE default to RESTRICT.
+struct RestrictedClub {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    std::string name;
+};
+
+struct RestrictedMember {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    std::string name;
+    [[= storm::meta::many_to_many<storm::meta::RefAction::Restrict>]] std::vector<RestrictedClub> clubs;
 };
 
 namespace storm::test {

@@ -111,7 +111,7 @@ auto result = message_qs.left_join<^^Message::sender>().select();
 
 ## Many-to-Many Joins (#203)
 
-Many-to-many relationships use a container field annotated with `many_to_many`
+Many-to-many relationships use a container field annotated with `many_to_many<>`
 (auto-generated junction table) or `many_to_many_through<Model>` (explicit
 junction model). The same `join<^^Field>()` API eager-loads the relationship with
 a **predicate-pushdown two-query** strategy (#391) — no N+1 problem. See
@@ -131,7 +131,7 @@ struct Student {
     [[= storm::meta::FieldAttr::primary]] int id{};
     std::string name;
     int age{};
-    [[= storm::meta::many_to_many]] std::vector<Course> courses;
+    [[= storm::meta::many_to_many<>]] std::vector<Course> courses;
 };
 
 // Two queries (in one transaction): base students, then their courses, stitched
@@ -170,8 +170,8 @@ Q2's `IN (…)` subquery, so both pick exactly the same base entities.
 ```cpp
 struct Enrollment {
     [[= storm::meta::FieldAttr::primary]] int id{};
-    [[= storm::meta::FieldAttr::fk]] Pupil pupil;
-    [[= storm::meta::FieldAttr::fk]] Course course;
+    [[= storm::meta::fk<>]] Pupil pupil;
+    [[= storm::meta::fk<>]] Course course;
     std::string grade;  // relationship metadata
 };
 
@@ -193,7 +193,7 @@ auto enrollments = QuerySet<Enrollment>()
 
 The junction table is the through model's own table; FK columns come from its
 field names (`pupil_id`, `course_id`). The through model must have exactly one
-`FieldAttr::fk` field per side (enforced at compile time).
+`fk<>` field per side (enforced at compile time).
 
 ### Multiple m2m relations (#392)
 
@@ -205,8 +205,8 @@ struct Member {
     [[= storm::meta::FieldAttr::primary]] int id{};
     std::string name;
     int age{};
-    [[= storm::meta::many_to_many]] std::vector<Course> courses;
-    [[= storm::meta::many_to_many]] std::vector<Club> clubs;
+    [[= storm::meta::many_to_many<>]] std::vector<Course> courses;
+    [[= storm::meta::many_to_many<>]] std::vector<Club> clubs;
 };
 
 // One Q1 (base members) + one Q2 PER relation, all in one transaction:
@@ -248,7 +248,7 @@ auto members = QuerySet<Member>()
 - Write-side helpers (`add()`/`remove()`) are not provided — insert junction
   rows via the through model (`QuerySet<Enrollment>`) or raw SQL for Phase 1.
 - The annotation spelling differs from issue #203's sketch
-  (`FieldAttr::many_to_many<T>` is impossible — `FieldAttr` is an enum).
+  (`FieldAttr::many_to_many<T>` is impossible — `FieldAttr` is an enum; the FK marker `fk<>` is likewise a class-template annotation, not an enumerator).
 
 ### Execution Strategy (#391)
 
@@ -316,7 +316,7 @@ struct Person {
 struct Task {
     [[= storm::meta::FieldAttr::primary]] int id{};
     std::string title;
-    [[= storm::meta::FieldAttr::fk]] Person assignee;   // FK → Person
+    [[= storm::meta::fk<>]] Person assignee;   // FK → Person
 };
 
 person_qs.left_join<^^Person::tasks>().select();   // all Persons; .tasks empty when none
@@ -324,7 +324,7 @@ person_qs.join<^^Person::tasks>().select();        // INNER: drops Persons with 
 ```
 
 The annotation argument is **the owning model type** (`^^Task`), resolved to that
-model's unique `FieldAttr::fk` member pointing back at `Person`. The type form (not
+model's unique `fk<>` member pointing back at `Person`. The type form (not
 a member splice) is required: `Person` holds `vector<Task>` and `Task` holds `Person`
 by value, a reference cycle that only compiles when `Task` is forward-declared at the
 annotation site — which rules out a `^^Task::assignee` member splice there.

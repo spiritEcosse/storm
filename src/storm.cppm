@@ -88,6 +88,13 @@ export namespace storm {
         using orm::statements::meta::reverse_fk; // NOLINT(misc-unused-using-decls)
         using orm::statements::meta::ReverseFk;  // NOLINT(misc-unused-using-decls)
 
+        // Foreign-key annotation (#431): fk<> (bare, RESTRICT) or fk<RefAction::...> to
+        // carry the ON DELETE policy. The junction policy for an auto-junction m2m field
+        // is the RefAction template arg of many_to_many<RefAction::...> above. RefAction
+        // itself is re-exported from the storm_orm_field_attr leaf module above.
+        using orm::statements::meta::fk; // NOLINT(misc-unused-using-decls)
+        using orm::statements::meta::Fk; // NOLINT(misc-unused-using-decls)
+
         // Check if member has primary attribute
         consteval auto has_primary_attr(std::meta::info member) -> bool {
             auto field_attr = std::meta::annotation_of_type<FieldAttr>(member);

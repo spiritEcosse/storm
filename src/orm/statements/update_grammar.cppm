@@ -36,8 +36,7 @@ export namespace storm::orm::statements {
                         result.append(", ");
                     }
                     // Check if this is a FK field
-                    auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
-                    if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
+                    if (meta::is_fk_field(member)) {
                         // FK field: use field_name_id
                         result.append(std::meta::identifier_of(member));
                         result.append("_id=?");
@@ -74,8 +73,7 @@ export namespace storm::orm::statements {
         // Append "<name>=?" (or "<name>_id=?" for FK fields) for one member.
         template <typename Buf> static consteval auto append_one_assignment(Buf& buf, std::meta::info member) -> void {
             buf.append(std::meta::identifier_of(member));
-            auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
-            if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
+            if (meta::is_fk_field(member)) {
                 buf.append("_id=?");
             } else {
                 buf.append("=?");

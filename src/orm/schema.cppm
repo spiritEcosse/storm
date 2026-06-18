@@ -278,7 +278,14 @@ export namespace storm::orm::schema {
             if constexpr (Base::is_fk_field(member)) {
                 using FieldType   = std::remove_cvref_t<typename[:std::meta::type_of(member):]>;
                 using RelatedType = detail::col_inner_t<FieldType>;
-                return 12 + std::meta::identifier_of(std::meta::dealias(^^RelatedType)).size() + 4;
+                std::size_t len   = 12 + std::meta::identifier_of(std::meta::dealias(^^RelatedType)).size() + 4;
+                // " ON DELETE <action>" when the FK carries an on_delete policy (#431):
+                // 11 = len(" ON DELETE ") + the action keyword (NO ACTION = 9 is longest).
+                if constexpr (constexpr auto action = statements::meta::fk_on_delete_action_of(member);
+                              action.has_value()) {
+                    len += 11 + statements::meta::ref_action_sql(action.value()).size();
+                }
+                return len;
             } else {
                 return 0;
             }
@@ -311,8 +318,11 @@ export namespace storm::orm::schema {
             for (std::size_t i = 0; i < Base::field_count_; ++i) {
                 max_name_len = std::max(max_name_len, std::meta::identifier_of(Base::all_members_[i]).size());
             }
-            // +1 for the trailing '\0' guard in ConstexprString (len < N - 1).
-            return max_name_len + max_fixed_suffix + 1;
+            // +2 for the trailing '\0' guard in ConstexprString (len < N - 1): a column
+            // whose name IS the longest field and is itself an FK (e.g. CascadeChild::owner
+            // with an ON DELETE clause, #431) makes max_name_len + max_fixed_suffix an exact
+            // fit, so N must exceed len by 2, not 1.
+            return max_name_len + max_fixed_suffix + 2;
         }
 
         // True when the model's PK opted into the SQLite never-reuse guarantee
@@ -323,10 +333,12 @@ export namespace storm::orm::schema {
         }
 
         // Append an FK column definition: "<name>_id INTEGER/BIGINT [NOT NULL] REFERENCES
-        // <Related>(id)". The REFERENCES clause enforces referential integrity (#412):
-        // the related table is the FK field's C++ type identifier (optional-unwrapped) and
-        // the related PK is always "id". Plain REFERENCES = ON DELETE NO ACTION / RESTRICT,
-        // the SQL default. Extracted from build_column_def to keep it single-purpose.
+        // <Related>(id) [ON DELETE <action>]". The REFERENCES clause enforces referential
+        // integrity (#412): the related table is the FK field's C++ type identifier
+        // (optional-unwrapped) and the related PK is always "id". An unannotated FK emits
+        // plain REFERENCES (= ON DELETE NO ACTION / RESTRICT, the SQL default); an
+        // fk<RefAction::...> policy (#431) appends the chosen ON DELETE clause.
+        // Extracted from build_column_def to keep it single-purpose.
         template <std::meta::info Member, Dialect D, typename SqlT>
         static consteval void append_fk_column_def(SqlT& col) {
             using FieldType   = std::remove_cvref_t<typename[:std::meta::type_of(Member):]>;
@@ -343,6 +355,13 @@ export namespace storm::orm::schema {
             col.append(" REFERENCES ");
             col.append(std::meta::identifier_of(std::meta::dealias(^^RelatedType)));
             col.append("(id)");
+            // Per-FK ON DELETE policy (#431): emitted only when the field's fk<RefAction>
+            // is a non-default action, so bare fk<>/fk<Restrict> stay byte-identical.
+            if constexpr (constexpr auto action = statements::meta::fk_on_delete_action_of(Member);
+                          action.has_value()) {
+                col.append(" ON DELETE ");
+                col.append(statements::meta::ref_action_sql(action.value()));
+            }
         }
 
         // Build column definition for field at compile-time index
@@ -428,9 +447,8 @@ export namespace storm::orm::schema {
                 if (Base::all_members_[i] == Base::primary_key_) {
                     size += pk_size;
                 } else {
-                    auto field_attr = std::meta::annotation_of_type<statements::meta::FieldAttr>(Base::all_members_[i]);
                     size += std::meta::identifier_of(Base::all_members_[i]).size();
-                    if (field_attr.has_value() && field_attr.value() == statements::meta::FieldAttr::fk) {
+                    if (statements::meta::is_fk_field(Base::all_members_[i])) {
                         size += max_fk_suffix;
                     } else {
                         // " " + type def + bool DEFAULT clause (" DEFAULT FALSE" = 14) + " UNIQUE" (7)
@@ -647,28 +665,35 @@ export namespace storm::orm::schema {
             return members;
         }();
 
-        // Append "FOREIGN KEY (<name>_id) REFERENCES <name>(id) ON DELETE CASCADE" for one
-        // junction side (#412). CASCADE because an orphaned junction row is meaningless once
-        // its owner/related entity is gone — deleting the entity removes its links.
-        template <typename SqlT> static consteval void append_junction_fk(SqlT& sql, std::string_view name) {
+        // Append "FOREIGN KEY (<name>_id) REFERENCES <name>(id) ON DELETE <action>" for one
+        // junction side (#412). The default action is CASCADE — an orphaned junction row is
+        // meaningless once its owner/related entity is gone — but it is overridable per m2m
+        // field via many_to_many<RefAction::...> (#431), applied to both sides.
+        template <typename SqlT>
+        static consteval void append_junction_fk(SqlT& sql, std::string_view name, std::string_view action) {
             sql.append("FOREIGN KEY (");
             sql.append(name);
             sql.append("_id) REFERENCES ");
             sql.append(name);
-            sql.append("(id) ON DELETE CASCADE");
+            sql.append("(id) ON DELETE ");
+            sql.append(action);
         }
 
         // Junction DDL: <T>_<Related> (<T>_id, <Related>_id, PRIMARY KEY (both),
-        // FOREIGN KEY each side ON DELETE CASCADE). The composite PK rejects duplicate
+        // FOREIGN KEY each side ON DELETE <action>). The composite PK rejects duplicate
         // relation pairs and doubles as the index; the FKs enforce referential integrity (#412).
+        // The ON DELETE action is CASCADE unless the m2m field carries
+        // many_to_many<RefAction::...> (#431), which overrides BOTH sides.
         template <Dialect D, std::meta::info Member> static consteval auto build_junction_sql() {
             constexpr auto related      = statements::meta::related_type_from_container(std::meta::type_of(Member));
             constexpr auto owner_name   = std::meta::identifier_of(^^T);
             constexpr auto related_name = std::meta::identifier_of(related);
             constexpr std::string_view id_type =
                     (D == Dialect::PostgreSQL) ? "_id BIGINT NOT NULL" : "_id INTEGER NOT NULL";
+            constexpr std::string_view action =
+                    statements::meta::ref_action_sql(statements::meta::m2m_junction_on_delete_of(Member));
             // owner/related names each appear 5× (column ×2, PK ×2, FK clause once more);
-            // 256 fixed covers the CREATE/FOREIGN KEY/REFERENCES/ON DELETE CASCADE scaffolding.
+            // 256 fixed covers the CREATE/FOREIGN KEY/REFERENCES/ON DELETE <action> scaffolding.
             ConstexprString<((owner_name.size() + related_name.size()) * 5) + 256> sql;
             sql.append("CREATE TABLE ");
             sql.append(owner_name);
@@ -685,9 +710,9 @@ export namespace storm::orm::schema {
             sql.append("_id, ");
             sql.append(related_name);
             sql.append("_id),\n    ");
-            append_junction_fk(sql, owner_name);
+            append_junction_fk(sql, owner_name, action);
             sql.append(",\n    ");
-            append_junction_fk(sql, related_name);
+            append_junction_fk(sql, related_name, action);
             sql.append("\n)");
             return sql;
         }

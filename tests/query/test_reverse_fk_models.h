@@ -40,7 +40,7 @@ struct RfPerson {
 struct RfTask {
     [[= storm::meta::FieldAttr::primary]] int id{};
     std::string title;
-    [[= storm::meta::FieldAttr::fk]] RfPerson assignee;
+    [[= storm::meta::fk<>]] RfPerson assignee;
 };
 
 // shared_ptr container coverage: RfBoard collects the notes pinned to it.
@@ -55,7 +55,7 @@ struct RfBoard {
 struct RfNote {
     [[= storm::meta::FieldAttr::primary]] int id{};
     std::string body;
-    [[= storm::meta::FieldAttr::fk]] RfBoard board;
+    [[= storm::meta::fk<>]] RfBoard board;
 };
 
 // Multi-FK disambiguation (aggregate/selector path — no reverse container, no
@@ -68,8 +68,8 @@ struct RfReporter {
 struct RfBug {
     [[= storm::meta::FieldAttr::primary]] int id{};
     std::string summary;
-    [[= storm::meta::FieldAttr::fk]] RfReporter author;
-    [[= storm::meta::FieldAttr::fk]] RfReporter reviewer;
+    [[= storm::meta::fk<>]] RfReporter author;
+    [[= storm::meta::fk<>]] RfReporter reviewer;
 };
 
 namespace storm::test {

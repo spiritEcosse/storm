@@ -110,6 +110,33 @@ TEST(M2MSchemaTest, JunctionEmitsForeignKeysPostgreSQL) {
     );
 }
 
+// Junction ON DELETE override (#431): many_to_many<RefAction::Restrict>
+// on the m2m field flips BOTH junction sides from the CASCADE default to RESTRICT.
+namespace {
+    void expect_junction_restrict_fks(std::string_view sql) {
+        EXPECT_TRUE(
+                sql.contains("FOREIGN KEY (RestrictedMember_id) REFERENCES RestrictedMember(id) ON DELETE RESTRICT")
+        ) << sql;
+        EXPECT_TRUE(sql.contains("FOREIGN KEY (RestrictedClub_id) REFERENCES RestrictedClub(id) ON DELETE RESTRICT"))
+                << sql;
+        EXPECT_FALSE(sql.contains("ON DELETE CASCADE")) << "override must replace CASCADE on both sides: " << sql;
+    }
+} // namespace
+
+TEST(M2MSchemaTest, JunctionOnDeleteOverrideSqlite) {
+    expect_junction_restrict_fks(
+            storm::orm::schema::SchemaStatement<RestrictedMember>::junction_table_sql<
+                    storm::orm::schema::Dialect::SQLite>()
+    );
+}
+
+TEST(M2MSchemaTest, JunctionOnDeleteOverridePostgreSQL) {
+    expect_junction_restrict_fks(
+            storm::orm::schema::SchemaStatement<RestrictedMember>::junction_table_sql<
+                    storm::orm::schema::Dialect::PostgreSQL>()
+    );
+}
+
 // A through-model m2m field must NOT produce an auto junction table.
 static_assert(!storm::orm::schema::SchemaStatement<Pupil>::has_m2m_junction_);
 static_assert(storm::orm::schema::SchemaStatement<Student>::has_m2m_junction_);

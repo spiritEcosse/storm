@@ -704,9 +704,7 @@ export namespace storm::orm::statements {
         // ---- Junction descriptor ---------------------------------------------
         template <typename Side> static consteval auto find_through_fk() -> std::meta::info {
             for (auto m : std::meta::nonstatic_data_members_of(^^Through, std::meta::access_context::unchecked())) {
-                auto attr = std::meta::annotation_of_type<meta::FieldAttr>(m);
-                if (attr.has_value() && attr.value() == meta::FieldAttr::fk &&
-                    std::meta::dealias(std::meta::type_of(m)) == std::meta::dealias(^^Side)) {
+                if (meta::is_fk_field(m) && std::meta::dealias(std::meta::type_of(m)) == std::meta::dealias(^^Side)) {
                     return m;
                 }
             }

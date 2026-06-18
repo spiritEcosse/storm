@@ -28,8 +28,8 @@ namespace storm::benchmark {
 
     struct FKMessage {
         [[= storm::meta::FieldAttr::primary]] int id;
-        [[= storm::meta::FieldAttr::fk]] User     sender;
-        [[= storm::meta::FieldAttr::fk]] User     receiver;
+        [[= storm::meta::fk<>]] User              sender;
+        [[= storm::meta::fk<>]] User              receiver;
         std::string                               text;
     };
 

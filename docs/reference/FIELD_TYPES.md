@@ -2,6 +2,13 @@
 
 Storm ORM supports all standard SQLite types through compile-time type dispatch in `BaseStatement::bind_value_by_type()` (src/orm/statements/base.cppm) and `SelectStatement::extract_column_inline_fast()` (src/orm/statements/select.cppm).
 
+> **Reducing annotation verbosity.** All field annotations live in `storm::meta`. To avoid
+> spelling `storm::meta::` on every attribute, add a `using namespace storm::meta;` (or
+> targeted `using storm::meta::fk; using storm::meta::FieldAttr; using storm::meta::RefAction;`)
+> **after** `import storm;` in the model's translation unit. Examples in this document use the
+> fully-qualified form for clarity; in your own models you can write `[[= FieldAttr::primary]]`,
+> `[[= fk<>]]`, `[[= fk<RefAction::Cascade>]]` bare.
+
 ## Integer Types
 
 | C++ Type | SQLite Type | Binding Method | Extraction Method |
@@ -227,16 +234,16 @@ QuerySet<User>().update(u).execute();
 The column maps to `TIMESTAMP` (PostgreSQL) / `TEXT` (SQLite) and round-trips via the
 existing `time_point` ↔ `"YYYY-MM-DD HH:MM:SS"` conversion.
 
-## Many-to-Many Container Fields (`many_to_many` / `many_to_many_through`)
+## Many-to-Many Container Fields (`many_to_many<>` / `many_to_many_through`)
 
-A container member annotated with `[[= storm::meta::many_to_many]]` (or
+A container member annotated with `[[= storm::meta::many_to_many<>]]` (or
 `many_to_many_through<JunctionModel>`) declares a many-to-many relationship (#203):
 
 ```cpp
 struct Student {
     [[= storm::meta::FieldAttr::primary]] int id{};
     std::string name;
-    [[= storm::meta::many_to_many]] std::vector<Course> courses;
+    [[= storm::meta::many_to_many<>]] std::vector<Course> courses;
 };
 ```
 
@@ -246,7 +253,7 @@ struct Student {
 - **Supported containers:** `std::vector<T>`, `plf::hive<T>`, `std::deque<T>`,
   and smart-pointer elements (`std::vector<std::shared_ptr<T>>`); the related
   model type is extracted via C++26 `std::meta`.
-- **Junction DDL** is auto-generated for the `many_to_many` form (see
+- **Junction DDL** is auto-generated for the `many_to_many<>` form (see
   [JOIN_OPERATIONS.md](../features/JOIN_OPERATIONS.md#many-to-many-joins-203)).
 
 ## Type Dispatch Implementation
