@@ -313,11 +313,21 @@ See [docs/development/PERFORMANCE_GUIDELINES.md](docs/development/PERFORMANCE_GU
 
 `int`, `int64_t`, `double`, `float`, `bool`, `std::string`, `std::string_view`, `std::optional<T>`, `std::vector<uint8_t>` (BLOB)
 
-**Many-to-many (#203)**: `[[= storm::meta::many_to_many]]` (auto junction `<Owner>_<Related>`,
+**Foreign keys (#431)**: `[[= storm::meta::fk<>]]` marks an FK field (bare = `RESTRICT`,
+the SQL default — no `ON DELETE` clause emitted). The `ON DELETE` policy is the template
+arg: `fk<RefAction::Cascade>` / `fk<RefAction::SetNull>` / `fk<RefAction::Restrict>` /
+`fk<RefAction::NoAction>`. `SetNull` REQUIRES a nullable FK (`std::optional<Related>`) —
+enforced at compile time by `ModelFkPoliciesValid<T>`. NOT a FieldAttr enumerator (enum
+members can't be templated); FK detection runs through `meta::is_fk_field`. `ON UPDATE` is
+not emitted (identity PKs never change). See
+[docs/features/REFERENTIAL_INTEGRITY.md](docs/features/REFERENTIAL_INTEGRITY.md).
+
+**Many-to-many (#203)**: `[[= storm::meta::many_to_many<>]]` (auto junction `<Owner>_<Related>`,
 one junction table per field) or `[[= storm::meta::many_to_many_through<Model>]]` on a container
 member (`std::vector<T>`, `plf::hive<T>`, `vector<shared_ptr<T>>`). Not a column — invisible to
 CRUD; eager-loaded via `join<^^T::field>()`, several relations per call via
-`join<^^T::a, ^^T::b>()` (#392). See
+`join<^^T::a, ^^T::b>()` (#392). The auto-junction `ON DELETE` defaults to CASCADE on both
+sides, overridable via `many_to_many<RefAction::...>` (#431). See
 [docs/features/JOIN_OPERATIONS.md](docs/features/JOIN_OPERATIONS.md).
 
 **Reverse-FK (#398)**: `[[= storm::meta::reverse_fk<^^Owner>]]` on a container member declares the

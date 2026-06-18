@@ -31,7 +31,7 @@ struct Message {
     [[= storm::meta::FieldAttr::primary]] int id{};
     std::string content;
     int value{};
-    [[= storm::meta::FieldAttr::fk]] Person sender;
+    [[= storm::meta::fk<>]] Person sender;
 };
 
 enum class Color : int { Red = 0, Green = 1, Blue = 2 };
@@ -63,8 +63,8 @@ struct ExtendedTypes {
 
 struct Task {
     [[= storm::meta::FieldAttr::primary]] int id{};
-    [[= storm::meta::FieldAttr::fk]] Person assignee;
-    [[= storm::meta::FieldAttr::fk]] Person reviewer;
+    [[= storm::meta::fk<>]] Person assignee;
+    [[= storm::meta::fk<>]] Person reviewer;
     std::string description;
 };
 

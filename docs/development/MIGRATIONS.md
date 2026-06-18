@@ -48,7 +48,7 @@ struct Post {
     [[= storm::meta::FieldAttr::primary]] int id{};
     std::string title;
     std::string body;
-    [[= storm::meta::FieldAttr::fk]] User author;
+    [[= storm::meta::fk<>]] User author;
 };
 
 // Add 1000 more models — all auto-discovered, no registration needed.

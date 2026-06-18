@@ -1954,6 +1954,35 @@ namespace {
     );
 } // namespace
 
+// --- Compile-time refusal: SET NULL requires a nullable FK (#431) ---
+// ModelFkPoliciesValid<T> is false for a model whose fk<RefAction::SetNull>
+// sits on a NOT NULL (non-optional) FK, so BaseStatement<T> fails to instantiate with
+// a clear constraint violation. CASCADE/RESTRICT on a non-nullable FK are fine, and
+// SET NULL on a std::optional FK is fine. static_asserts pin the contract without a
+// compile-fail harness.
+namespace {
+    struct SetNullNonNullableFk {
+        [[= storm::meta::FieldAttr::primary]] int                     id{};
+        [[= storm::meta::fk<storm::meta::RefAction::SetNull>]] Person owner; // non-optional → invalid
+    };
+    struct CascadeNonNullableFk {
+        [[= storm::meta::FieldAttr::primary]] int                     id{};
+        [[= storm::meta::fk<storm::meta::RefAction::Cascade>]] Person owner;
+    };
+    static_assert(
+            !storm::orm::statements::ModelFkPoliciesValid<SetNullNonNullableFk>,
+            "SET NULL on a non-nullable FK must NOT satisfy ModelFkPoliciesValid"
+    );
+    static_assert(
+            storm::orm::statements::ModelFkPoliciesValid<CascadeNonNullableFk>,
+            "CASCADE on a non-nullable FK must satisfy ModelFkPoliciesValid"
+    );
+    static_assert(
+            storm::orm::statements::ModelFkPoliciesValid<SetNullChild>,
+            "SET NULL on an optional FK must satisfy ModelFkPoliciesValid"
+    );
+} // namespace
+
 // --- Schema: the storage class drives the column type per dialect ---
 
 TYPED_TEST(NewTypesSchemaTest, SignedStorageKeepsIntegerColumn) {

@@ -85,7 +85,8 @@ When tests fail, systematically check:
 
 ### 3. Reflection-Related Issues
 - Primary key field annotations: `[[=storm::meta::FieldAttr::primary]]`
-- Many-to-many annotations (#203): `[[=storm::meta::many_to_many]]` / `many_to_many_through<Model>` — m2m test models live in `tests/query/test_m2m_models.h` (textual header, include after `import storm;` + `plf_hive` before the imports)
+- Foreign-key annotation (#431): `[[=storm::meta::fk<>]]` (bare) or `fk<RefAction::{Cascade,SetNull,Restrict,NoAction}>` for the `ON DELETE` policy — NOT a `FieldAttr` value. `SetNull` requires `std::optional<Related>` (compile-time-enforced; pin with `static_assert(!ModelFkPoliciesValid<BadModel>)`, like the #436 storage asserts). Policy SQL tests assert the `REFERENCES … ON DELETE <action>` substring (Restrict = no clause); runtime TYPED_TESTs cover CASCADE-deletes-children / SET-NULL-nulls-FK / RESTRICT-blocks-parent on SQLite+PG.
+- Many-to-many annotations (#203): `[[=storm::meta::many_to_many<>]]` / `many_to_many_through<Model>` (junction `ON DELETE` overridable via `many_to_many<RefAction::...>`, #431) — m2m test models live in `tests/query/test_m2m_models.h` (textual header, include after `import storm;` + `plf_hive` before the imports)
 - Splice operator usage: `obj.[:primary_key_:]`
 - Meta functionality in struct definitions
 - Module import hierarchy problems

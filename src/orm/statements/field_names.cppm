@@ -21,7 +21,8 @@ export namespace storm::orm::statements {
 
     namespace meta {
         using storm::meta::FieldAttr;
-    }
+        using storm::meta::is_fk_field;
+    } // namespace meta
 
     template <typename Base> struct FieldNameGrammar {
         // Shared iterator over data members, honouring SkipPrimaryKey, invoking
@@ -35,8 +36,7 @@ export namespace storm::orm::statements {
                         continue;
                     }
                 }
-                auto       field_attr = std::meta::annotation_of_type<meta::FieldAttr>(Base::all_members_[i]);
-                bool const is_fk      = field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk;
+                bool const is_fk = meta::is_fk_field(Base::all_members_[i]);
                 body(i, is_fk, !first);
                 first = false;
             }

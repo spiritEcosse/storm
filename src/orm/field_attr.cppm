@@ -14,12 +14,15 @@ export namespace storm::meta {
 
     // Field annotation attributes read via C++26 reflection, e.g.
     //   [[= storm::meta::FieldAttr::primary]] int id;
+    // NOTE: foreign keys are NOT a FieldAttr enumerator — they use the class-template
+    // annotation storm::meta::fk<RefAction> (see statements::meta::Fk in base.cppm),
+    // because the FK carries an optional ON DELETE policy (#431) and an enum member
+    // cannot be templated. Bare FK is spelled [[= storm::meta::fk<>]].
     enum class FieldAttr : std::uint8_t {
         primary,
         primary_autoincrement,
         indexed,
         unique,
-        fk,
         auto_create,
         auto_update,
         // 64-bit unsigned storage opt-ins (#436). A bare unsigned-64 field is a
@@ -31,6 +34,34 @@ export namespace storm::meta {
         signed_storage,
         full_unsigned
     };
+
+    // Referential action for a foreign key's ON DELETE policy (#431). Carried as the
+    // template argument of the FK annotation `fk<RefAction>` (and of `many_to_many<RefAction>`
+    // for the auto-junction). `Restrict` is the SQL default and Storm's pre-#431 behaviour:
+    // a bare `fk<>` emits no ON DELETE clause at all, so existing DDL is byte-identical.
+    enum class RefAction : std::uint8_t {
+        Cascade,  // delete the child rows when the parent row is deleted
+        SetNull,  // set the child FK column to NULL (requires a nullable FK)
+        Restrict, // block the parent delete while children exist (SQL default)
+        NoAction, // defer the check; like Restrict for immediate constraints
+    };
+
+    // The SQL keyword phrase for a RefAction, e.g. RefAction::SetNull → "SET NULL".
+    // Longest phrase ("NO ACTION") is 9 chars; " ON DELETE NO ACTION" is 20.
+    consteval auto ref_action_sql(RefAction action) -> std::string_view {
+        using enum RefAction;
+        switch (action) {
+        case Cascade:
+            return "CASCADE";
+        case SetNull:
+            return "SET NULL";
+        case Restrict:
+            return "RESTRICT";
+        case NoAction:
+            return "NO ACTION";
+        }
+        return {};
+    }
 
     // A field is "a primary key" for either annotation variant: plain `primary`
     // (plain INTEGER PRIMARY KEY) or `primary_autoincrement` (the SQLite never-reuse
@@ -72,6 +103,50 @@ export namespace storm::meta {
     consteval auto has_signed_storage_attr(std::meta::info member) -> bool {
         auto attr = std::meta::annotation_of_type<FieldAttr>(member);
         return attr.has_value() && attr.value() == FieldAttr::signed_storage;
+    }
+
+    // Foreign-key annotation (#431). A class-template annotation carries the optional
+    // ON DELETE policy (RefAction); a FieldAttr enumerator cannot be templated, and an FK
+    // needs the extra parameter. It lives in this leaf module so every statement module
+    // (schema, join, field_names, distinct, base) can detect FK fields without importing
+    // each other.
+    //   [[= storm::meta::fk<>]] Person sender;                       // bare FK (RESTRICT)
+    //   [[= storm::meta::fk<RefAction::Cascade>]] Person owner;      // ON DELETE CASCADE
+    //   [[= storm::meta::fk<RefAction::SetNull>]] std::optional<Person> owner;  // SET NULL
+    // The default RefAction::Restrict matches the SQL default, so bare fk<> emits a plain
+    // REFERENCES with no ON DELETE clause (byte-identical to pre-#431 DDL).
+    template <RefAction Action = RefAction::Restrict> struct Fk {
+        static constexpr RefAction on_delete = Action;
+    };
+    // NOLINTNEXTLINE(readability-identifier-length) — `fk` is the public annotation spelling
+    template <RefAction Action = RefAction::Restrict> inline constexpr Fk<Action> fk{};
+
+    // Reflection of the Fk<...> annotation TYPE carried by `member`, if any.
+    consteval auto fk_annotation_type_of(std::meta::info member) -> std::optional<std::meta::info> {
+        for (const auto annotation : std::meta::annotations_of(member)) {
+            const auto type = std::meta::type_of(annotation);
+            if (std::meta::has_template_arguments(type) && std::meta::template_of(type) == ^^Fk) {
+                return type;
+            }
+        }
+        return std::nullopt;
+    }
+
+    // True when `member` carries an fk<...> annotation (#431) — the FK-field predicate.
+    consteval auto is_fk_field(std::meta::info member) -> bool {
+        return fk_annotation_type_of(member).has_value();
+    }
+
+    // The ON DELETE RefAction of an fk<...> FK, or std::nullopt when the field is not an FK
+    // or carries the default RESTRICT (caller emits no clause then, keeping the
+    // plain-REFERENCES DDL byte-identical).
+    consteval auto fk_on_delete_action_of(std::meta::info member) -> std::optional<RefAction> {
+        const auto type = fk_annotation_type_of(member);
+        if (!type.has_value()) {
+            return std::nullopt;
+        }
+        const auto action = std::meta::extract<RefAction>(std::meta::template_arguments_of(type.value())[0]);
+        return action == RefAction::Restrict ? std::nullopt : std::optional<RefAction>(action);
     }
 
 } // namespace storm::meta

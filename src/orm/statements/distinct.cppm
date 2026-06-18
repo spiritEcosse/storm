@@ -64,9 +64,8 @@ export namespace storm::orm::statements {
 
         // Calculate field size at compile-time
         template <std::size_t I> static consteval auto get_field_size() -> std::size_t {
-            std::size_t    size       = std::meta::identifier_of(member_infos_[I]).size();
-            constexpr auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member_infos_[I]);
-            if constexpr (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
+            std::size_t size = std::meta::identifier_of(member_infos_[I]).size();
+            if constexpr (meta::is_fk_field(member_infos_[I])) {
                 size += 3; // "_id"
             }
             if constexpr (I > 0) {
@@ -83,9 +82,8 @@ export namespace storm::orm::statements {
 
         // Append column name for field I (with FK _id suffix if needed)
         template <std::size_t I, std::size_t N> static consteval void append_column_name(ConstexprString<N>& result) {
-            constexpr auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member_infos_[I]);
             result.append(std::meta::identifier_of(member_infos_[I]));
-            if constexpr (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
+            if constexpr (meta::is_fk_field(member_infos_[I])) {
                 result.append("_id");
             }
         }

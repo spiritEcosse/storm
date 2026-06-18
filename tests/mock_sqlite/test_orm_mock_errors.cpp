@@ -1198,7 +1198,7 @@ namespace {
 
     struct MockMessage {
         [[= storm::meta::FieldAttr::primary]] int id{};
-        [[= storm::meta::FieldAttr::fk]] MockUser sender;
+        [[= storm::meta::fk<>]] MockUser          sender;
         std::string                               text;
     };
 
@@ -3232,9 +3232,9 @@ namespace {
     // ============================================================================
 
     struct MockOptionalFKMessage {
-        [[= storm::meta::FieldAttr::primary]] int                id{};
-        [[= storm::meta::FieldAttr::fk]] std::optional<MockUser> sender;
-        std::string                                              text;
+        [[= storm::meta::FieldAttr::primary]] int       id{};
+        [[= storm::meta::fk<>]] std::optional<MockUser> sender;
+        std::string                                     text;
     };
 
     TEST_F(ORMMockErrorTest, InsertOptionalFKBindFailure) {
@@ -3434,9 +3434,9 @@ namespace {
     };
 
     struct MockStudent {
-        [[= storm::meta::FieldAttr::primary]] std::int64_t      id{};
-        std::string                                             name;
-        [[= storm::meta::many_to_many]] std::vector<MockCourse> courses;
+        [[= storm::meta::FieldAttr::primary]] std::int64_t        id{};
+        std::string                                               name;
+        [[= storm::meta::many_to_many<>]] std::vector<MockCourse> courses;
     };
 
     TEST_F(ORMMockErrorTest, M2MSelectFailsOnStepError) {
@@ -3573,10 +3573,10 @@ namespace {
     };
 
     struct MockMember {
-        [[= storm::meta::FieldAttr::primary]] std::int64_t      id{};
-        std::string                                             name;
-        [[= storm::meta::many_to_many]] std::vector<MockCourse> courses;
-        [[= storm::meta::many_to_many]] std::vector<MockClub>   clubs;
+        [[= storm::meta::FieldAttr::primary]] std::int64_t        id{};
+        std::string                                               name;
+        [[= storm::meta::many_to_many<>]] std::vector<MockCourse> courses;
+        [[= storm::meta::many_to_many<>]] std::vector<MockClub>   clubs;
     };
 
     // Prepare order: calls 1-3 = connection/BEGIN bring-up, 4 = Q1, 5 = Q2a

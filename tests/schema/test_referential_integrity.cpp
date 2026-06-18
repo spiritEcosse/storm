@@ -47,9 +47,9 @@ TEST(SchemaFkRefTest, TaskBothFksEmitReferencesSqlite) {
 
 // Test: a nullable FK (optional<Related>) still emits REFERENCES, without NOT NULL.
 struct NullableFkRow {
-    [[= storm::meta::FieldAttr::primary]] int              id{};
-    [[= storm::meta::FieldAttr::fk]] std::optional<Person> owner;
-    std::string                                            label;
+    [[= storm::meta::FieldAttr::primary]] int     id{};
+    [[= storm::meta::fk<>]] std::optional<Person> owner;
+    std::string                                   label;
 };
 
 TEST(SchemaFkRefTest, NullableFkEmitsReferencesWithoutNotNull) {
@@ -60,6 +60,115 @@ TEST(SchemaFkRefTest, NullableFkEmitsReferencesWithoutNotNull) {
     ASSERT_NE(owner_pos, std::string::npos);
     EXPECT_EQ(sql.substr(owner_pos, 16).find("NOT NULL"), std::string::npos)
             << "Nullable FK must not carry NOT NULL, got: " << sql.substr(owner_pos, 40);
+}
+
+// ============================================================================
+// Per-FK ON DELETE policy — SQL generation (#431)
+//
+// fk<RefAction::...> appends the chosen ON DELETE clause to the FK's REFERENCES
+// (RESTRICT = default = no clause). SET NULL requires a nullable FK. Both dialects.
+// ============================================================================
+
+TEST(SchemaFkPolicyTest, CascadeEmitsOnDeleteCascade) {
+    for (std::string_view sql :
+         {std::string_view(storm::create_table_sql<CascadeChild>()),
+          std::string_view(storm::create_table_sql<CascadeChild, Dialect::PostgreSQL>())}) {
+        EXPECT_TRUE(sql.contains("REFERENCES Person(id) ON DELETE CASCADE"))
+                << "CASCADE FK must emit ON DELETE CASCADE in: " << sql;
+    }
+}
+
+TEST(SchemaFkPolicyTest, SetNullEmitsOnDeleteSetNullOnNullableFk) {
+    const std::string& sql = storm::create_table_sql<SetNullChild>();
+    EXPECT_TRUE(sql.contains("owner_id INTEGER REFERENCES Person(id) ON DELETE SET NULL"))
+            << "SET NULL FK must be nullable and emit ON DELETE SET NULL in: " << sql;
+    EXPECT_FALSE(sql.contains("owner_id INTEGER NOT NULL"))
+            << "SET NULL FK column must be nullable (no NOT NULL) in: " << sql;
+}
+
+// fk<RefAction::Restrict> is the SQL default, so it emits a plain REFERENCES with NO
+// ON DELETE clause — byte-identical to a bare fk<>. The DB still enforces RESTRICT.
+TEST(SchemaFkPolicyTest, RestrictEmitsPlainReferencesNoClause) {
+    const std::string& sql = storm::create_table_sql<RestrictChild>();
+    EXPECT_TRUE(sql.contains("owner_id INTEGER NOT NULL REFERENCES Person(id)"))
+            << "RESTRICT FK must emit a plain REFERENCES in: " << sql;
+    EXPECT_FALSE(sql.contains("ON DELETE")) << "RESTRICT is the default — no ON DELETE clause expected in: " << sql;
+}
+
+// An unannotated FK (Message::sender) must NOT gain an ON DELETE clause — the
+// pre-#431 DDL stays byte-identical (plain REFERENCES = RESTRICT default).
+TEST(SchemaFkPolicyTest, UnannotatedFkHasNoOnDeleteClause) {
+    const std::string& sql = storm::create_table_sql<Message>();
+    EXPECT_FALSE(sql.contains("ON DELETE")) << "Unannotated FK must not emit an ON DELETE clause in: " << sql;
+}
+
+// ============================================================================
+// Per-FK ON DELETE policy — runtime enforcement (#431)
+//
+// TYPED_TEST over SQLite + PostgreSQL. CASCADE deletes children; SET NULL nulls
+// the child FK; RESTRICT blocks the parent delete.
+// ============================================================================
+
+template <typename ConnType>
+class FkPolicyTest : public StormTestFixture<Person, ConnType, CascadeChild, SetNullChild, RestrictChild> {
+  public:
+    static auto seed_person() -> int {
+        QuerySet<Person, ConnType> user_qs;
+        auto                       result = user_qs.insert(Person{.id = 0, .name = "Alice", .age = 30}).execute();
+        EXPECT_TRUE(result.has_value()) << (result.has_value() ? std::string{} : result.error().message());
+        return result.has_value() ? static_cast<int>(result.value()) : 0;
+    }
+};
+
+TYPED_TEST_SUITE(FkPolicyTest, DatabaseTypes);
+
+// CASCADE: deleting the parent removes the child rows that reference it.
+TYPED_TEST(FkPolicyTest, CascadeDeletesChildren) {
+    using storm::orm::where::f;
+    QuerySet<Person, TypeParam>       person_qs;
+    QuerySet<CascadeChild, TypeParam> child_qs;
+    int const                         alice_id = TestFixture::seed_person();
+
+    ASSERT_TRUE(
+            child_qs.insert(CascadeChild{.id = 0, .owner = Person{.id = alice_id}, .label = "c"}).execute().has_value()
+    );
+    ASSERT_TRUE(person_qs.where(f<^^Person::id>() == alice_id).erase().execute().has_value())
+            << "CASCADE must allow deleting the referenced parent";
+
+    EXPECT_EQ(child_qs.count().execute(), 0) << "CASCADE must delete the child rows";
+}
+
+// SET NULL: deleting the parent nulls the child FK (child row survives).
+TYPED_TEST(FkPolicyTest, SetNullNullsChildFk) {
+    using storm::orm::where::f;
+    QuerySet<Person, TypeParam>       person_qs;
+    QuerySet<SetNullChild, TypeParam> child_qs;
+    int const                         alice_id = TestFixture::seed_person();
+
+    ASSERT_TRUE(
+            child_qs.insert(SetNullChild{.id = 0, .owner = Person{.id = alice_id}, .label = "s"}).execute().has_value()
+    );
+    ASSERT_TRUE(person_qs.where(f<^^Person::id>() == alice_id).erase().execute().has_value())
+            << "SET NULL must allow deleting the referenced parent";
+
+    auto rows = child_qs.select().execute();
+    ASSERT_TRUE(rows.has_value());
+    ASSERT_EQ(rows->size(), 1U) << "SET NULL must keep the child row";
+    EXPECT_FALSE(rows->begin()->owner.has_value()) << "SET NULL must null the child FK";
+}
+
+// RESTRICT: deleting a still-referenced parent is rejected.
+TYPED_TEST(FkPolicyTest, RestrictBlocksParentDelete) {
+    using storm::orm::where::f;
+    QuerySet<Person, TypeParam>        person_qs;
+    QuerySet<RestrictChild, TypeParam> child_qs;
+    int const                          alice_id = TestFixture::seed_person();
+
+    ASSERT_TRUE(
+            child_qs.insert(RestrictChild{.id = 0, .owner = Person{.id = alice_id}, .label = "r"}).execute().has_value()
+    );
+    auto del = person_qs.where(f<^^Person::id>() == alice_id).erase().execute();
+    EXPECT_FALSE(del.has_value()) << "RESTRICT must block deleting a referenced parent";
 }
 
 // Junction-table FOREIGN KEY tests (#412) live in tests/query/test_many_to_many.cpp,

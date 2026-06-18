@@ -29,17 +29,24 @@ export namespace storm::orm::statements {
         // modules keep using the meta:: qualifier.
         using storm::meta::FieldAttr;
         using storm::meta::is_primary_attr;
+        using storm::meta::ref_action_sql; // NOLINT(misc-unused-using-decls) — used by storm_orm_schema
+        using storm::meta::RefAction;
 
-        // Many-to-many annotation (#203). Phase 1 (auto-generated junction table):
-        //   [[= storm::meta::many_to_many]] std::vector<Course> courses;
+        // Many-to-many annotation (#203, #431). Phase 1 (auto-generated junction table):
+        //   [[= storm::meta::many_to_many<>]] std::vector<Course> courses;
+        //   [[= storm::meta::many_to_many<RefAction::Restrict>]] std::vector<Course> courses;
         // Phase 2 (explicit junction model):
         //   [[= storm::meta::many_to_many_through<Enrollment>]] std::vector<Course> courses;
-        // FieldAttr is an enum, so a templated enumerator is impossible — a class-template
-        // annotation carries the optional through-model type instead.
-        template <typename Through = void> struct ManyToMany {
-            using through_type = Through;
+        // A class-template annotation carries the optional through-model type AND the
+        // junction ON DELETE policy (#431, both junction sides). Through type stays at
+        // template arg [0] so is_m2m_auto / m2m_through_t are unchanged; the RefAction is
+        // arg [1], defaulting to CASCADE (an orphaned junction row is meaningless).
+        template <typename Through = void, RefAction JunctionOnDelete = RefAction::Cascade> struct ManyToMany {
+            using through_type                            = Through;
+            static constexpr RefAction junction_on_delete = JunctionOnDelete;
         };
-        inline constexpr ManyToMany<>                                    many_to_many{};
+        template <RefAction JunctionOnDelete = RefAction::Cascade>
+        inline constexpr ManyToMany<void, JunctionOnDelete>              many_to_many{};
         template <typename Through> inline constexpr ManyToMany<Through> many_to_many_through{};
 
         // Reflection of the ManyToMany<...> annotation TYPE carried by `member`, if any.
@@ -57,13 +64,14 @@ export namespace storm::orm::statements {
             return m2m_annotation_type_of(member).has_value();
         }
 
-        // Free FieldAttr::fk predicate — same check as BaseStatement::is_fk_field, but
-        // callable from the free join helpers (#398). Safe on members re-derived from
-        // a model inside the instantiating TU (not on BMI-crossing NTTPs, #262).
-        consteval auto is_fk_field(std::meta::info member) -> bool {
-            auto attr = std::meta::annotation_of_type<FieldAttr>(member);
-            return attr.has_value() && attr.value() == FieldAttr::fk;
-        }
+        // Foreign-key annotation (#431) lives in the storm_orm_field_attr leaf module so
+        // every statement module can detect FK fields without importing this one. Re-exposed
+        // here so statement modules keep using the meta:: qualifier (mirrors FieldAttr).
+        using storm::meta::fk;                    // NOLINT(misc-unused-using-decls)
+        using storm::meta::Fk;                    // NOLINT(misc-unused-using-decls)
+        using storm::meta::fk_annotation_type_of; // NOLINT(misc-unused-using-decls)
+        using storm::meta::fk_on_delete_action_of;
+        using storm::meta::is_fk_field;
 
         // Reverse-FK annotation (#398): on a container member of the base model, it
         // declares the eager-load destination for "all <Base>, each with the <Owner>s
@@ -174,6 +182,14 @@ export namespace storm::orm::statements {
             return type.has_value() && std::meta::dealias(std::meta::template_arguments_of(type.value())[0]) == ^^void;
         }
 
+        // Junction ON DELETE RefAction of an auto-junction m2m member (#431): template arg
+        // [1] of its ManyToMany annotation, applied to BOTH junction FK sides. Defaults to
+        // CASCADE. Precondition: `member` is an m2m field (callers gate on is_m2m_field).
+        consteval auto m2m_junction_on_delete_of(std::meta::info member) -> RefAction {
+            const auto type = m2m_annotation_type_of(member).value(); // NOLINT(bugprone-unchecked-optional-access)
+            return std::meta::extract<RefAction>(std::meta::template_arguments_of(type)[1]);
+        }
+
         // Through model of an m2m member (void = auto-generated junction table).
         template <std::meta::info Member>
         using m2m_through_t = typename[:std::meta::template_arguments_of(m2m_annotation_type_of(Member).value())[0]:];
@@ -246,6 +262,28 @@ export namespace storm::orm::statements {
         return true;
     }();
 
+    // Concept: every FK field carrying fk<RefAction::SetNull> must be a nullable FK —
+    // std::optional<Related> (#431). ON DELETE SET NULL writes NULL into the child column,
+    // which a NOT NULL FK column cannot hold, so we refuse it at the call site with a clear
+    // constraint violation instead of letting the database reject the DELETE at runtime.
+    // The annotation is read directly on members from nonstatic_data_members_of (BMI-safe,
+    // #262); optional-ness is a structural query on the member's type.
+    template <typename T>
+    concept ModelFkPoliciesValid = []() consteval {
+        for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+            auto action = meta::fk_on_delete_action_of(m);
+            if (action.has_value() && action.value() == meta::RefAction::SetNull) {
+                const auto type = std::meta::dealias(std::meta::type_of(m));
+                const bool is_optional =
+                        std::meta::has_template_arguments(type) && std::meta::template_of(type) == ^^std::optional;
+                if (!is_optional) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }();
+
     // A field carrying auto_create/auto_update must be a system_clock::time_point (#209).
     // Referenced by a static_assert in bind_field_at_index so a wrong-typed timestamp field
     // fails to compile with a clear message rather than deep inside parameter binding.
@@ -272,8 +310,7 @@ export namespace storm::orm::statements {
         }
         for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
             if (std::meta::identifier_of(m) == std::meta::identifier_of(Member)) {
-                auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(m);
-                return field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk;
+                return meta::is_fk_field(m);
             }
         }
         return false;
@@ -318,11 +355,10 @@ export namespace storm::orm::statements {
         if (!meta::fk_member_points_at(Member, ^^T)) {
             return false;
         }
-        // Member must carry FieldAttr::fk — read from the member re-derived out of owner.
+        // Member must carry an fk<...> annotation — read from the member re-derived out of owner.
         for (auto m : std::meta::nonstatic_data_members_of(owner, std::meta::access_context::unchecked())) {
             if (std::meta::identifier_of(m) == std::meta::identifier_of(Member)) {
-                auto attr = std::meta::annotation_of_type<meta::FieldAttr>(m);
-                return attr.has_value() && attr.value() == meta::FieldAttr::fk;
+                return meta::is_fk_field(m);
             }
         }
         return false;
@@ -348,15 +384,13 @@ export namespace storm::orm::statements {
         return false;
     }();
 
-    // A through model must carry exactly one FieldAttr::fk member of type Side
+    // A through model must carry exactly one fk<...> member of type Side
     // (#203 Phase 2) — that member names the junction FK column (<identifier>_id).
     template <typename Through, typename Side>
     concept ThroughWithFKTo = []() consteval {
         std::size_t count = 0;
         for (auto m : std::meta::nonstatic_data_members_of(^^Through, std::meta::access_context::unchecked())) {
-            auto attr = std::meta::annotation_of_type<meta::FieldAttr>(m);
-            if (attr.has_value() && attr.value() == meta::FieldAttr::fk &&
-                std::meta::dealias(std::meta::type_of(m)) == std::meta::dealias(^^Side)) {
+            if (meta::is_fk_field(m) && std::meta::dealias(std::meta::type_of(m)) == std::meta::dealias(^^Side)) {
                 ++count;
             }
         }
@@ -391,7 +425,7 @@ export namespace storm::orm::statements {
 
     // Shared reflection utilities for all statement types
     template <typename T>
-        requires ModelWithPrimaryKey<T> && ModelStorageAnnotated<T>
+        requires ModelWithPrimaryKey<T> && ModelStorageAnnotated<T> && ModelFkPoliciesValid<T>
     class BaseStatement {
       public:
         // Compile-time accessor for table name (used in SQL generation)
@@ -412,10 +446,9 @@ export namespace storm::orm::statements {
             std::unreachable(); // never reached: ModelWithPrimaryKey<T> guarantees a primary key exists
         }
 
-        // FK field detection utilities
+        // FK field detection utilities — an fk<...> class-template annotation (#431).
         static consteval auto is_fk_field(std::meta::info member) -> bool {
-            auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
-            return field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk;
+            return meta::is_fk_field(member);
         }
 
         // Unique field detection
@@ -449,18 +482,22 @@ export namespace storm::orm::statements {
             return is_auto_update_field(member) || (is_auto_create_field(member) && !is_update);
         }
 
-        // Check if a field needs an index (indexed, unique, or fk — but not primary key)
+        // Check if a field needs an index (indexed, unique, or fk — but not primary key).
+        // FK is now an fk<...> class-template annotation (#431), checked separately.
         static consteval auto needs_index(std::meta::info member) -> bool {
             using enum meta::FieldAttr;
             if (member == primary_key_) {
                 return false;
+            }
+            if (meta::is_fk_field(member)) {
+                return true;
             }
             auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
             if (!field_attr.has_value()) {
                 return false;
             }
             auto val = field_attr.value();
-            return val == indexed || val == unique || val == fk;
+            return val == indexed || val == unique;
         }
 
         // Get database column name for FK field: User sender → "sender_id"

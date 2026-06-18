@@ -54,7 +54,7 @@ struct Message {
     [[= storm::meta::FieldAttr::primary]] int id{};
     std::string content;
     int value{};
-    [[= storm::meta::FieldAttr::fk]] Person sender;
+    [[= storm::meta::fk<>]] Person sender;
 };
 
 // =============================================================================
@@ -108,9 +108,30 @@ struct TimestampedRecord {
 
 struct Task {
     [[= storm::meta::FieldAttr::primary]] int id{};
-    [[= storm::meta::FieldAttr::fk]] Person assignee;
-    [[= storm::meta::FieldAttr::fk]] Person reviewer;
+    [[= storm::meta::fk<>]] Person assignee;
+    [[= storm::meta::fk<>]] Person reviewer;
     std::string description;
+};
+
+// Per-FK ON DELETE policy models (#431). The FK annotation fk<RefAction::...> carries
+// the ON DELETE policy; the schema generator emits the matching "ON DELETE <action>"
+// clause. SET NULL requires a nullable FK (std::optional).
+struct CascadeChild {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::meta::fk<storm::meta::RefAction::Cascade>]] Person owner;
+    std::string label;
+};
+
+struct SetNullChild {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::meta::fk<storm::meta::RefAction::SetNull>]] std::optional<Person> owner;
+    std::string label;
+};
+
+struct RestrictChild {
+    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::meta::fk<storm::meta::RefAction::Restrict>]] Person owner;
+    std::string label;
 };
 
 // =============================================================================
