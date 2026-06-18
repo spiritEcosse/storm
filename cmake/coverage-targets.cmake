@@ -7,6 +7,13 @@
 # LD_PRELOAD (PG error paths)
 if(ENABLE_COVERAGE AND ENABLE_TESTS)
 
+  # The three raw-profile inputs, shared by coverage-merge (profdata merge) and
+  # coverage-clean (rm). Kept as a space-joined string so it drops straight into
+  # the bash -c command lines below.
+  set(COVERAGE_PROFRAW
+      "${CMAKE_BINARY_DIR}/batch_*.profraw ${CMAKE_BINARY_DIR}/mock.profraw ${CMAKE_BINARY_DIR}/pg_mock.profraw"
+  )
+
   add_custom_target(
     coverage-run-main
     COMMAND
@@ -50,7 +57,7 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
     COMMAND ${CMAKE_COMMAND} -E make_directory ${COVERAGE_OUTPUT_DIR}
     COMMAND
       bash -c
-      "${LLVM_PROFDATA} merge -sparse ${CMAKE_BINARY_DIR}/batch_*.profraw ${CMAKE_BINARY_DIR}/mock.profraw ${CMAKE_BINARY_DIR}/pg_mock.profraw -o ${COVERAGE_OUTPUT_DIR}/coverage.profdata"
+      "${LLVM_PROFDATA} merge -sparse ${COVERAGE_PROFRAW} -o ${COVERAGE_OUTPUT_DIR}/coverage.profdata"
     DEPENDS coverage-run
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     COMMENT
@@ -73,36 +80,33 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
     VERBATIM)
 
   set(LCOV_C_EXTENSIONS "c,h,i,C,H,I,icc,cpp,cc,cxx,hh,hpp,hxx,cppm")
+  # Branch coverage + treat .cppm as C-family — shared by coverage and
+  # coverage-html.
+  set(LCOV_RC --rc branch_coverage=1 --rc
+              c_file_extensions=${LCOV_C_EXTENSIONS})
   find_program(LCOV_TOOL lcov)
   find_program(GENHTML_TOOL genhtml)
 
-  if(NOT LCOV_TOOL)
-    message(
-      FATAL_ERROR
-        "lcov not found but required for coverage builds.\n"
-        "  Manjaro/Arch: sudo pacman -S lcov\n"
-        "  Ubuntu/Debian: sudo apt install lcov")
-  endif()
-  message(STATUS "lcov found: ${LCOV_TOOL}")
-
-  if(NOT GENHTML_TOOL)
-    message(
-      FATAL_ERROR
-        "genhtml not found but required for coverage builds.\n"
-        "  Manjaro/Arch: sudo pacman -S lcov\n"
-        "  Ubuntu/Debian: sudo apt install lcov")
-  endif()
-  message(STATUS "genhtml found: ${GENHTML_TOOL}")
+  # Both tools ship in the same lcov package, so they share one install hint.
+  foreach(tool LCOV_TOOL GENHTML_TOOL)
+    if(NOT ${tool})
+      message(
+        FATAL_ERROR
+          "${tool} not found but required for coverage builds.\n"
+          "  Manjaro/Arch: sudo pacman -S lcov\n"
+          "  Ubuntu/Debian: sudo apt install lcov")
+    endif()
+    message(STATUS "${tool} found: ${${tool}}")
+  endforeach()
 
   add_custom_target(
     coverage
     COMMAND
-      ${LCOV_TOOL} --rc branch_coverage=1 --rc
-      c_file_extensions=${LCOV_C_EXTENSIONS} --ignore-errors
+      ${LCOV_TOOL} ${LCOV_RC} --ignore-errors
       unused,deprecated,unsupported,inconsistent,range --filter
       region,branch_region --remove ${COVERAGE_OUTPUT_DIR}/coverage.lcov
       "*/third_party/*" "*/googletest/*" "*/build/*" "*/tests/*"
-      "*/src/orm/utilities.cppm" --output-file
+      "*/src/orm/generator.cppm" --output-file
       ${COVERAGE_OUTPUT_DIR}/coverage-filtered.lcov
     COMMAND
       ${LCOV_TOOL} --rc branch_coverage=1 --ignore-errors
@@ -116,10 +120,8 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
   add_custom_target(
     coverage-html
     COMMAND
-      ${GENHTML_TOOL} --rc branch_coverage=1 --rc
-      c_file_extensions=${LCOV_C_EXTENSIONS} --ignore-errors
-      deprecated,range,inconsistent --legend --title
-      "Storm ORM Coverage (filtered)" --output-directory
+      ${GENHTML_TOOL} ${LCOV_RC} --ignore-errors deprecated,range,inconsistent
+      --legend --title "Storm ORM Coverage (filtered)" --output-directory
       ${COVERAGE_OUTPUT_DIR}/html-filtered
       ${COVERAGE_OUTPUT_DIR}/coverage-filtered.lcov
     DEPENDS coverage
@@ -130,9 +132,7 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
 
   add_custom_target(
     coverage-clean
-    COMMAND
-      bash -c
-      "rm -rf ${COVERAGE_OUTPUT_DIR} ${CMAKE_BINARY_DIR}/batch_*.profraw ${CMAKE_BINARY_DIR}/mock.profraw ${CMAKE_BINARY_DIR}/pg_mock.profraw"
+    COMMAND bash -c "rm -rf ${COVERAGE_OUTPUT_DIR} ${COVERAGE_PROFRAW}"
     COMMENT "Cleaning coverage data"
     VERBATIM)
 

@@ -84,14 +84,14 @@ export namespace storm::orm::utilities {
 
         // Number of decimal digits required to render `value` (digits_of(0) == 1).
         // Used by compile-time SQL size estimators to reserve exact alias width.
-        constexpr auto digits_of(std::size_t value) -> std::size_t {
-            std::size_t digits = 1;
-            while (value > MAX_SINGLE_DIGIT) {
-                value /= 10;
-                ++digits;
-            }
-            return digits;
-        }
+        constexpr auto digits_of(std::size_t value) -> std::size_t { // LCOV_EXCL_LINE — compile-time only
+            std::size_t digits = 1;                                  // LCOV_EXCL_LINE
+            while (value > MAX_SINGLE_DIGIT) {                       // LCOV_EXCL_LINE
+                value /= 10;                                         // LCOV_EXCL_LINE
+                ++digits;                                            // LCOV_EXCL_LINE
+            } // LCOV_EXCL_LINE
+            return digits; // LCOV_EXCL_LINE
+        } // LCOV_EXCL_LINE
     } // namespace numeric
 
     // ============================================================================
@@ -427,7 +427,7 @@ export namespace storm::orm::utilities {
     // ============================================================================
 
     // Compile-time string utility for SQL generation and constexpr parsing
-    template <std::size_t N> struct ConstexprString {
+    template <std::size_t N> struct ConstexprString { // LCOV_EXCL_LINE — compile-time only
         std::array<char, N> data{};
         std::size_t         len = 0;
 

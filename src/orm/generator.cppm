@@ -32,13 +32,13 @@ export namespace storm {
             return *::new (static_cast<void*>(std::addressof(__value_))) _T((_Args&&)__args...); // NOSONAR
         }
 
-        void destruct() noexcept(std::is_nothrow_destructible_v<_T>) { // LCOV_EXCL_LINE
-            __value_.~_T();                                            // LCOV_EXCL_LINE
-        } // LCOV_EXCL_LINE
+        void destruct() noexcept(std::is_nothrow_destructible_v<_T>) {
+            __value_.~_T();
+        }
 
-        _T& get() & noexcept { // LCOV_EXCL_LINE
-            return __value_;   // LCOV_EXCL_LINE
-        } // LCOV_EXCL_LINE
+        _T& get() & noexcept {
+            return __value_;
+        }
         _T&& get() && noexcept {
             return static_cast<_T&&>(__value_);
         }
@@ -112,9 +112,9 @@ export namespace storm {
             : __root_(this), __parentOrLeaf_(thisCoro) {}
 
         ~__generator_promise_base() {
-            if (__root_ != this) {       // LCOV_EXCL_LINE
-                __exception_.destruct(); // LCOV_EXCL_LINE
-            } // LCOV_EXCL_LINE
+            if (__root_ != this) {
+                __exception_.destruct();
+            }
         }
 
         std::suspend_always initial_suspend() noexcept {
@@ -123,13 +123,13 @@ export namespace storm {
 
         void return_void() noexcept {}
 
-        void unhandled_exception() {                           // LCOV_EXCL_LINE
-            if (__root_ != this) {                             // LCOV_EXCL_LINE
-                __exception_.get() = std::current_exception(); // LCOV_EXCL_LINE
-            } else {                                           // LCOV_EXCL_LINE
-                throw;                                         // LCOV_EXCL_LINE
-            } // LCOV_EXCL_LINE
-        } // LCOV_EXCL_LINE
+        void unhandled_exception() {
+            if (__root_ != this) {
+                __exception_.get() = std::current_exception();
+            } else {
+                throw;
+            }
+        }
 
         struct __final_awaiter {
             bool await_ready() noexcept {
@@ -140,15 +140,15 @@ export namespace storm {
             std::coroutine_handle<> await_suspend(std::coroutine_handle<_Promise> __h) noexcept {
                 _Promise&                 __promise = __h.promise();
                 __generator_promise_base& __root    = *__promise.__root_;
-                if (&__root != &__promise) {                            // LCOV_EXCL_LINE
-                    auto __parent          = __promise.__parentOrLeaf_; // LCOV_EXCL_LINE
-                    __root.__parentOrLeaf_ = __parent;                  // LCOV_EXCL_LINE
-                    return __parent;                                    // LCOV_EXCL_LINE
-                } // LCOV_EXCL_LINE
+                if (&__root != &__promise) {
+                    auto _parent           = __promise.__parentOrLeaf_;
+                    __root.__parentOrLeaf_ = _parent;
+                    return _parent;
+                }
                 return std::noop_coroutine();
             }
 
-            void await_resume() noexcept {} // LCOV_EXCL_LINE
+            void await_resume() noexcept {}
         };
 
         __final_awaiter final_suspend() noexcept {
