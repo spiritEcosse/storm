@@ -5,7 +5,7 @@
  * @brief Shared model structs used by both tests and benchmarks.
  *
  * IMPORTANT: Include this file AFTER `import storm;` — the
- * [[= storm::meta::FieldAttr::*]] attributes require the storm module.
+ * [[= storm::FieldAttr::*]] attributes require the storm module.
  */
 
 #include <array>
@@ -24,13 +24,13 @@
 // Shared Person model — covers id/name/age tests, salary/experience aggregates,
 // is_active ordering, optional score/nickname, and avatar BLOB.
 struct Person {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    [[= storm::meta::FieldAttr::unique]] std::string name;
+    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::FieldAttr::unique]] std::string name;
     int age{};
     double salary{};
     bool is_active{};
     int years_experience{};
-    [[= storm::meta::FieldAttr::indexed]] std::string department;
+    [[= storm::FieldAttr::indexed]] std::string department;
     std::optional<int> score;
     std::optional<std::string> nickname;
     std::vector<uint8_t> avatar;
@@ -44,17 +44,17 @@ template <> struct storm::Indexes<Person> {
 
 // Shared simple record — covers batch/transaction/update/reset tests needing {id, name, value}.
 struct SimpleRecord {
-    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::FieldAttr::primary]] int id{};
     std::string name;
     int value{};
 };
 
 // Shared Message model — covers FK join tests. Sender is a Person.
 struct Message {
-    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::FieldAttr::primary]] int id{};
     std::string content;
     int value{};
-    [[= storm::meta::fk<>]] Person sender;
+    [[= storm::fk<>]] Person sender;
 };
 
 // =============================================================================
@@ -66,14 +66,14 @@ enum class Color : int { Red = 0, Green = 1, Blue = 2 };
 
 // Extended types model — covers all supported SQLite column types.
 struct ExtendedTypes {
-    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::FieldAttr::primary]] int id{};
     int64_t big_num{};
     double precise{};
     float approx{};
     unsigned int u_int{};
     long long ll_signed{};
-    [[= storm::meta::FieldAttr::signed_storage]] std::uint64_t big_unsigned{}; // signed int64 storage (#419/#436)
-    [[= storm::meta::FieldAttr::full_unsigned]] std::uint64_t
+    [[= storm::FieldAttr::signed_storage]] std::uint64_t big_unsigned{}; // signed int64 storage (#419/#436)
+    [[= storm::FieldAttr::full_unsigned]] std::uint64_t
         big_unsigned_full{}; // order-preserving full-range storage (#436)
     std::optional<double> opt_double;
     std::optional<int64_t> opt_int64;
@@ -96,10 +96,10 @@ struct ExtendedTypes {
 // Auto-timestamp model — created_at stamped on INSERT only, updated_at on
 // INSERT and UPDATE. Both are std::chrono::system_clock::time_point (#209).
 struct TimestampedRecord {
-    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::FieldAttr::primary]] int id{};
     std::string name;
-    [[= storm::meta::FieldAttr::auto_create]] std::chrono::system_clock::time_point created_at{};
-    [[= storm::meta::FieldAttr::auto_update]] std::chrono::system_clock::time_point updated_at{};
+    [[= storm::FieldAttr::auto_create]] std::chrono::system_clock::time_point created_at{};
+    [[= storm::FieldAttr::auto_update]] std::chrono::system_clock::time_point updated_at{};
 };
 
 // =============================================================================
@@ -107,9 +107,9 @@ struct TimestampedRecord {
 // =============================================================================
 
 struct Task {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    [[= storm::meta::fk<>]] Person assignee;
-    [[= storm::meta::fk<>]] Person reviewer;
+    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::fk<>]] Person assignee;
+    [[= storm::fk<>]] Person reviewer;
     std::string description;
 };
 
@@ -117,20 +117,20 @@ struct Task {
 // the ON DELETE policy; the schema generator emits the matching "ON DELETE <action>"
 // clause. SET NULL requires a nullable FK (std::optional).
 struct CascadeChild {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    [[= storm::meta::fk<storm::meta::RefAction::Cascade>]] Person owner;
+    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::fk<storm::RefAction::Cascade>]] Person owner;
     std::string label;
 };
 
 struct SetNullChild {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    [[= storm::meta::fk<storm::meta::RefAction::SetNull>]] std::optional<Person> owner;
+    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::fk<storm::RefAction::SetNull>]] std::optional<Person> owner;
     std::string label;
 };
 
 struct RestrictChild {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    [[= storm::meta::fk<storm::meta::RefAction::Restrict>]] Person owner;
+    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::fk<storm::RefAction::Restrict>]] Person owner;
     std::string label;
 };
 

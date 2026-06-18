@@ -37,7 +37,7 @@ To opt into the never-reuse guarantee for a specific model, annotate its PK with
 
 ```cpp
 struct Audit {
-    [[= storm::meta::FieldAttr::primary_autoincrement]] int id{};  // id INTEGER PRIMARY KEY AUTOINCREMENT
+    [[= storm::FieldAttr::primary_autoincrement]] int id{};  // id INTEGER PRIMARY KEY AUTOINCREMENT
     // ...
 };
 ```
@@ -46,7 +46,7 @@ struct Audit {
 
 ```cpp
 struct Person {
-    [[=storm::meta::FieldAttr::primary]] int id;
+    [[=storm::FieldAttr::primary]] int id;
     std::string name;
     int age;
 };
@@ -376,7 +376,7 @@ static auto bind_value_by_type(Statement& stmt, int idx, const FieldType& value)
 
 ```cpp
 struct Message {
-    [[=storm::meta::FieldAttr::primary]] int id;
+    [[=storm::FieldAttr::primary]] int id;
     std::string content;
     User sender;  // FK field - entire object
 };

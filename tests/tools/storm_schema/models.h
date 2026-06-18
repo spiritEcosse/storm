@@ -9,35 +9,35 @@
 namespace schema {
 
 struct Person {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    [[= storm::meta::FieldAttr::unique]] std::string name;
+    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::FieldAttr::unique]] std::string name;
     int age{};
     double salary{};
     bool is_active{};
     int years_experience{};
-    [[= storm::meta::FieldAttr::indexed]] std::string department;
+    [[= storm::FieldAttr::indexed]] std::string department;
     std::optional<int> score;
     std::optional<std::string> nickname;
     std::vector<std::uint8_t> avatar;
 };
 
 struct SimpleRecord {
-    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::FieldAttr::primary]] int id{};
     std::string name;
     int value{};
 };
 
 struct Message {
-    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::FieldAttr::primary]] int id{};
     std::string content;
     int value{};
-    [[= storm::meta::fk<>]] Person sender;
+    [[= storm::fk<>]] Person sender;
 };
 
 enum class Color : int { Red = 0, Green = 1, Blue = 2 };
 
 struct ExtendedTypes {
-    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::FieldAttr::primary]] int id{};
     std::int64_t big_num{};
     double precise{};
     float approx{};
@@ -62,9 +62,9 @@ struct ExtendedTypes {
 };
 
 struct Task {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    [[= storm::meta::fk<>]] Person assignee;
-    [[= storm::meta::fk<>]] Person reviewer;
+    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::fk<>]] Person assignee;
+    [[= storm::fk<>]] Person reviewer;
     std::string description;
 };
 

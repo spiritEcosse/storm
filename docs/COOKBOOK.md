@@ -98,10 +98,10 @@ qs.update(people);
 
 ```cpp
 struct Article {
-    [[=storm::meta::FieldAttr::primary]] int id;
+    [[=storm::FieldAttr::primary]] int id;
     std::string title;
-    [[=storm::meta::FieldAttr::auto_create]] std::chrono::system_clock::time_point created_at;
-    [[=storm::meta::FieldAttr::auto_update]] std::chrono::system_clock::time_point updated_at;
+    [[=storm::FieldAttr::auto_create]] std::chrono::system_clock::time_point created_at;
+    [[=storm::FieldAttr::auto_update]] std::chrono::system_clock::time_point updated_at;
 };
 
 QuerySet<Article> qs;

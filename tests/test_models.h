@@ -5,7 +5,7 @@
  * @brief Test-specific helpers + re-export of shared model structs.
  *
  * IMPORTANT: Include this file AFTER `import storm;` in each .cpp that uses it.
- * The [[= storm::meta::FieldAttr::*]] attributes require the storm module to be
+ * The [[= storm::FieldAttr::*]] attributes require the storm module to be
  * imported before these structs are compiled.
  *
  * Usage in test files:

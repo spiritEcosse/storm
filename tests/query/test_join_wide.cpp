@@ -18,16 +18,16 @@ using storm::QuerySet;
 
 // Local model with 9 FK fields to Person — exercises the 8th+ joined FK (t10).
 struct WideJoin {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    [[= storm::meta::fk<>]] Person            fk1;
-    [[= storm::meta::fk<>]] Person            fk2;
-    [[= storm::meta::fk<>]] Person            fk3;
-    [[= storm::meta::fk<>]] Person            fk4;
-    [[= storm::meta::fk<>]] Person            fk5;
-    [[= storm::meta::fk<>]] Person            fk6;
-    [[= storm::meta::fk<>]] Person            fk7;
-    [[= storm::meta::fk<>]] Person            fk8;
-    [[= storm::meta::fk<>]] Person            fk9;
+    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::fk<>]] Person            fk1;
+    [[= storm::fk<>]] Person            fk2;
+    [[= storm::fk<>]] Person            fk3;
+    [[= storm::fk<>]] Person            fk4;
+    [[= storm::fk<>]] Person            fk5;
+    [[= storm::fk<>]] Person            fk6;
+    [[= storm::fk<>]] Person            fk7;
+    [[= storm::fk<>]] Person            fk8;
+    [[= storm::fk<>]] Person            fk9;
 };
 
 template <typename ConnType> class WideJoinTest : public StormTestFixture<Person, ConnType, WideJoin> {};

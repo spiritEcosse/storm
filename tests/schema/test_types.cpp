@@ -1805,7 +1805,7 @@ TEST(PgDialectTypesSchemaTest, DoubleFieldIsDoublePrecision) {
 
 // Test PG-dialect optional types that have no dedicated fields in ExtendedTypes
 struct PgOptionalSpecialTypes {
-    [[= storm::meta::FieldAttr::primary]] int  id{};
+    [[= storm::FieldAttr::primary]] int        id{};
     std::optional<std::chrono::year_month_day> opt_date;
     std::optional<storm::UUID>                 opt_uuid;
     std::optional<bool>                        opt_bool;
@@ -1929,16 +1929,16 @@ TYPED_TEST(Uint64SignedStorageTest, OrderBySortsBySignedInterpretation) {
 // without needing a compile-fail harness.
 namespace {
     struct BareUint64Model {
-        [[= storm::meta::FieldAttr::primary]] int id{};
-        std::uint64_t                             value{}; // bare — no storage annotation
+        [[= storm::FieldAttr::primary]] int id{};
+        std::uint64_t                       value{}; // bare — no storage annotation
     };
     struct SignedStorageModel {
-        [[= storm::meta::FieldAttr::primary]] int                  id{};
-        [[= storm::meta::FieldAttr::signed_storage]] std::uint64_t value{};
+        [[= storm::FieldAttr::primary]] int                  id{};
+        [[= storm::FieldAttr::signed_storage]] std::uint64_t value{};
     };
     struct FullUnsignedModel {
-        [[= storm::meta::FieldAttr::primary]] int                 id{};
-        [[= storm::meta::FieldAttr::full_unsigned]] std::uint64_t value{};
+        [[= storm::FieldAttr::primary]] int                 id{};
+        [[= storm::FieldAttr::full_unsigned]] std::uint64_t value{};
     };
     static_assert(
             !storm::orm::statements::ModelStorageAnnotated<BareUint64Model>,
@@ -1962,12 +1962,12 @@ namespace {
 // compile-fail harness.
 namespace {
     struct SetNullNonNullableFk {
-        [[= storm::meta::FieldAttr::primary]] int                     id{};
-        [[= storm::meta::fk<storm::meta::RefAction::SetNull>]] Person owner; // non-optional → invalid
+        [[= storm::FieldAttr::primary]] int               id{};
+        [[= storm::fk<storm::RefAction::SetNull>]] Person owner; // non-optional → invalid
     };
     struct CascadeNonNullableFk {
-        [[= storm::meta::FieldAttr::primary]] int                     id{};
-        [[= storm::meta::fk<storm::meta::RefAction::Cascade>]] Person owner;
+        [[= storm::FieldAttr::primary]] int               id{};
+        [[= storm::fk<storm::RefAction::Cascade>]] Person owner;
     };
     static_assert(
             !storm::orm::statements::ModelFkPoliciesValid<SetNullNonNullableFk>,

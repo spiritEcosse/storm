@@ -11,38 +11,38 @@ import std;
 
 // ── Local structs (used only in this file) ──────────────────────────────────
 struct NullableFKMessage {
-    [[= storm::meta::FieldAttr::primary]] int     id{};
-    [[= storm::meta::fk<>]] std::optional<Person> sender;
-    [[= storm::meta::fk<>]] Person                receiver;
-    std::string                                   text;
+    [[= storm::FieldAttr::primary]] int     id{};
+    [[= storm::fk<>]] std::optional<Person> sender;
+    [[= storm::fk<>]] Person                receiver;
+    std::string                             text;
 };
 struct Project {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    [[= storm::meta::fk<>]] Person            manager;
-    std::string                               title;
-    double                                    budget{};
+    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::fk<>]] Person            manager;
+    std::string                         title;
+    double                              budget{};
 };
 struct Measurement {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    std::string                               sensor_name;
-    float                                     temperature{};
-    long long                                 timestamp{};
+    [[= storm::FieldAttr::primary]] int id{};
+    std::string                         sensor_name;
+    float                               temperature{};
+    long long                           timestamp{};
 };
 struct Counter {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    std::string                               name;
-    long                                      count{};
+    [[= storm::FieldAttr::primary]] int id{};
+    std::string                         name;
+    long                                count{};
 };
 struct Reading {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    [[= storm::meta::fk<>]] Measurement       measurement;
-    std::string                               reading_type;
-    float                                     value{};
+    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::fk<>]] Measurement       measurement;
+    std::string                         reading_type;
+    float                               value{};
 };
 struct Summary {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    [[= storm::meta::fk<>]] Counter           counter;
-    std::string                               report_type;
+    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::fk<>]] Counter           counter;
+    std::string                         report_type;
 };
 
 using storm::QuerySet;

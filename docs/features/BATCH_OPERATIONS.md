@@ -17,7 +17,7 @@ Key features:
 
 ```cpp
 struct Person {
-    [[=storm::meta::FieldAttr::primary]] int id;
+    [[=storm::FieldAttr::primary]] int id;
     std::string name;
     int age;
 };

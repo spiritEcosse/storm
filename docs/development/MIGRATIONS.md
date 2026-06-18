@@ -38,17 +38,17 @@ STORM_DB_URL="..." cmake --build . --target migrate  -->  live database
 namespace schema {
 
 struct User {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    [[= storm::meta::FieldAttr::unique]] std::string email;
+    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::FieldAttr::unique]] std::string email;
     std::string name;
     std::optional<std::string> bio;
 };
 
 struct Post {
-    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::FieldAttr::primary]] int id{};
     std::string title;
     std::string body;
-    [[= storm::meta::fk<>]] User author;
+    [[= storm::fk<>]] User author;
 };
 
 // Add 1000 more models — all auto-discovered, no registration needed.

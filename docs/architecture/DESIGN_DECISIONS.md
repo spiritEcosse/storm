@@ -5,13 +5,13 @@ This document details the architectural decisions that make Storm ORM achieve ne
 ## 1. C++26 Reflection-Based ORM
 
 Uses compile-time reflection (`std::meta`) to automatically:
-- Find primary key fields marked with `[[=storm::meta::FieldAttr::primary]]`
+- Find primary key fields marked with `[[=storm::FieldAttr::primary]]`
 - Generate SQL statements from struct definitions
 - Bind struct fields to database columns
 
 ```cpp
 struct Person {
-    [[=storm::meta::FieldAttr::primary]] int id;
+    [[=storm::FieldAttr::primary]] int id;
     std::string name;
     int age;
 };

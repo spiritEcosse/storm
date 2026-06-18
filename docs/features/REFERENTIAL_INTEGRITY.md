@@ -26,9 +26,9 @@ model's table (the FK field's C++ type, optional-unwrapped) and primary key `id`
 
 ```cpp
 struct Message {
-    [[= storm::meta::FieldAttr::primary]] int    id{};
+    [[= storm::FieldAttr::primary]] int    id{};
     std::string                                  content;
-    [[= storm::meta::fk<>]] Person               sender;  // → sender_id
+    [[= storm::fk<>]] Person               sender;  // → sender_id
 };
 ```
 
@@ -82,9 +82,9 @@ template argument. `RefAction` is one of `Cascade`, `SetNull`, `Restrict`, `NoAc
 
 ```cpp
 struct Comment {
-    [[= storm::meta::FieldAttr::primary]] int                          id{};
-    [[= storm::meta::fk<storm::meta::RefAction::Cascade>]] Post         post;     // delete post → delete comments
-    [[= storm::meta::fk<storm::meta::RefAction::SetNull>]] std::optional<User> author;  // delete user → author_id = NULL
+    [[= storm::FieldAttr::primary]] int                          id{};
+    [[= storm::fk<storm::RefAction::Cascade>]] Post         post;     // delete post → delete comments
+    [[= storm::fk<storm::RefAction::SetNull>]] std::optional<User> author;  // delete user → author_id = NULL
 };
 ```
 
@@ -105,9 +105,9 @@ it for soft-delete/archival, audit trails of links, or through-data you do not w
 
 ```cpp
 struct Member {
-    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::FieldAttr::primary]] int id{};
     // both Member_id and Club_id sides emit ON DELETE RESTRICT instead of CASCADE
-    [[= storm::meta::many_to_many<storm::meta::RefAction::Restrict>]] std::vector<Club> clubs;
+    [[= storm::many_to_many<storm::RefAction::Restrict>]] std::vector<Club> clubs;
 };
 ```
 

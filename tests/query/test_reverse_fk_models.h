@@ -2,7 +2,7 @@
 #define TESTS_QUERY_TEST_REVERSE_FK_MODELS_H
 
 // Reverse-FK test models (#398). Include AFTER `import storm;` — the
-// [[= storm::meta::reverse_fk<...>]] annotations need the storm module, and
+// [[= storm::reverse_fk<...>]] annotations need the storm module, and
 // model structs stay textual because clang-p2996 loses annotations across
 // BMI boundaries (#262).
 //
@@ -30,46 +30,46 @@ struct RfTask; // forward declaration breaks the Base⟷Owner cycle
 // Base model: owns a reverse_fk container of the tasks pointing at it. The
 // annotation names the OWNER TYPE; the unique FK back at RfPerson is resolved.
 struct RfPerson {
-    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::FieldAttr::primary]] int id{};
     std::string name;
     int age{};
     // Not a column — invisible to CRUD, filled on eager load.
-    [[= storm::meta::reverse_fk<^^RfTask>]] std::vector<RfTask> tasks;
+    [[= storm::reverse_fk<^^RfTask>]] std::vector<RfTask> tasks;
 };
 
 struct RfTask {
-    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::FieldAttr::primary]] int id{};
     std::string title;
-    [[= storm::meta::fk<>]] RfPerson assignee;
+    [[= storm::fk<>]] RfPerson assignee;
 };
 
 // shared_ptr container coverage: RfBoard collects the notes pinned to it.
 struct RfNote;
 
 struct RfBoard {
-    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::FieldAttr::primary]] int id{};
     std::string name;
-    [[= storm::meta::reverse_fk<^^RfNote>]] std::vector<std::shared_ptr<RfNote>> notes;
+    [[= storm::reverse_fk<^^RfNote>]] std::vector<std::shared_ptr<RfNote>> notes;
 };
 
 struct RfNote {
-    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::FieldAttr::primary]] int id{};
     std::string body;
-    [[= storm::meta::fk<>]] RfBoard board;
+    [[= storm::fk<>]] RfBoard board;
 };
 
 // Multi-FK disambiguation (aggregate/selector path — no reverse container, no
 // cycle, so RfReporter is complete before RfBug): two FKs back at RfReporter.
 struct RfReporter {
-    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::FieldAttr::primary]] int id{};
     std::string name;
 };
 
 struct RfBug {
-    [[= storm::meta::FieldAttr::primary]] int id{};
+    [[= storm::FieldAttr::primary]] int id{};
     std::string summary;
-    [[= storm::meta::fk<>]] RfReporter author;
-    [[= storm::meta::fk<>]] RfReporter reviewer;
+    [[= storm::fk<>]] RfReporter author;
+    [[= storm::fk<>]] RfReporter reviewer;
 };
 
 namespace storm::test {
