@@ -104,23 +104,35 @@ No manual registration, no model list, no macros.
 
 ### Column Defaults and `ADD COLUMN` on Populated Tables
 
-A non-nullable `bool` field with a C++ default member initializer
-(`bool is_raw{false};`) emits a SQL `DEFAULT` clause:
+A non-nullable scalar/text field with a C++ default member initializer emits a
+SQL `DEFAULT` clause. Since #413 this covers `bool`, integers, `double`/`float`,
+and string types (not just `bool` — that was the original #344 scope):
 
-| C++ field            | SQLite                          | PostgreSQL                          |
-|----------------------|---------------------------------|-------------------------------------|
-| `bool x{false};`     | `x INTEGER NOT NULL DEFAULT 0`   | `x BOOLEAN NOT NULL DEFAULT FALSE`  |
-| `bool x{true};`      | `x INTEGER NOT NULL DEFAULT 1`   | `x BOOLEAN NOT NULL DEFAULT TRUE`   |
+| C++ field                  | SQLite                                   | PostgreSQL                                       |
+|----------------------------|------------------------------------------|--------------------------------------------------|
+| `bool x{true};`            | `x INTEGER NOT NULL DEFAULT 1`           | `x BOOLEAN NOT NULL DEFAULT TRUE`                |
+| `int priority{1};`         | `priority INTEGER NOT NULL DEFAULT 1`    | `priority BIGINT NOT NULL DEFAULT 1`             |
+| `double rate{0.0};`        | `rate REAL NOT NULL DEFAULT 0.0`         | `rate DOUBLE PRECISION NOT NULL DEFAULT 0.0`     |
+| `std::string status{"new"};` | `status TEXT NOT NULL DEFAULT 'new'`   | `status TEXT NOT NULL DEFAULT 'new'`             |
+
+Text defaults are SQL-escaped (embedded `'` is doubled: `"O'Brien"` → `DEFAULT 'O''Brien'`).
 
 This matters for migrations: `ALTER TABLE ... ADD COLUMN <x> NOT NULL` is
 **rejected by SQLite on a table that already has rows** ("Cannot add a NOT NULL
 column with default value NULL"). Emitting the `DEFAULT` makes the generated
-`ADD COLUMN ... NOT NULL DEFAULT <v>` valid on populated tables.
+`ADD COLUMN ... NOT NULL DEFAULT <v>` valid on populated tables — for every
+covered type, not only `bool`.
 
-Scope is limited to `bool` (the value is recovered at compile time from a
-default-constructed instance of the model). Other non-nullable columns are
-generated without a `DEFAULT`; if you add a NOT NULL column of another type to a
-populated table, give it a server-side default in a hand-edited migration.
+The value is recovered at compile time from a default-constructed instance of the
+model. **Reflection cannot distinguish `int x{};` from `int x = 0;`** — both report
+"has default initializer, value 0" — so a `{}`-value-initialized field gets a
+`DEFAULT` too (e.g. `int age{};` → `DEFAULT 0`). A field with **no** initializer
+at all (`int x;`) gets no `DEFAULT`. Nullable (`std::optional<T>`), date, BLOB, and
+UUID columns are never given a `DEFAULT`; a non-nullable column of one of those
+types needs a server-side default in a hand-edited migration. Models that are not
+literal types (e.g. those with a many-to-many `plf::hive`/`std::vector` member)
+cannot have their scalar defaults read at compile time, so their columns keep the
+no-`DEFAULT` shape.
 
 ### Primary Key DDL — plain `INTEGER PRIMARY KEY` by default (#379, breaking)
 

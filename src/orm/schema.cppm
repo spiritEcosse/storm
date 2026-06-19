@@ -215,29 +215,157 @@ export namespace storm::orm::schema {
             }
         }
 
-        // DEFAULT clause for a non-nullable bool column. Returns "" for everything
-        // else. The C++ default-member-initializer value is recovered by reading the
-        // field off a default-constructed instance of the owning type (compile-time),
-        // since P2996 exposes whether a default initializer exists but not its value.
-        //
-        // Without this, `ALTER TABLE ... ADD COLUMN <bool> NOT NULL` is rejected by
-        // SQLite on a populated table ("Cannot add a NOT NULL column with default
-        // value NULL"). Issue #344. Scope is intentionally limited to bool, the only
-        // type that actually broke; other NOT NULL columns keep their prior shape.
-        template <typename Owner, std::meta::info Member, Dialect D>
-        consteval auto bool_default_clause() -> std::string_view {
-            using FieldType = std::remove_cvref_t<typename[:std::meta::type_of(Member):]>;
-            if constexpr (!std::is_same_v<FieldType, bool> || !std::meta::has_default_member_initializer(Member)) {
-                return {};
+        // Append the decimal representation of a signed integral value (handles
+        // the leading '-'; the magnitude reuses ConstexprString::append_uint).
+        template <typename SqlT> consteval void append_signed(SqlT& col, std::int64_t value) {
+            if (value < 0) {
+                col.append("-");
+                // -(min) overflows in two's complement; widen through unsigned.
+                col.append_uint(static_cast<std::uint64_t>(-(value + 1)) + 1U);
             } else {
-                constexpr Owner def{};
-                constexpr bool  value = def.[:Member:];
-                if constexpr (D == Dialect::PostgreSQL) {
-                    return value ? " DEFAULT TRUE" : " DEFAULT FALSE";
+                col.append_uint(static_cast<std::uint64_t>(value));
+            }
+        }
+
+        // Append a compile-time decimal rendering of a double. The values are
+        // programmer-written literals (e.g. 0.0, 3.14, -2.5), not arbitrary
+        // doubles, so a fixed-precision render with trailing-zero trimming (but
+        // always keeping one fractional digit) is sufficient and round-trips
+        // these literals. std::to_chars is not constexpr for double in this
+        // toolchain, so the digits are extracted by hand.
+        template <typename SqlT> consteval void append_double(SqlT& col, double value) {
+            if (value < 0) {
+                col.append("-");
+                value = -value;
+            }
+            constexpr std::uint64_t scale = 1000000U; // 6 fractional digits
+            const auto              whole = static_cast<std::uint64_t>(value);
+            // Scale the fraction (always >= 0 here, value was made non-negative
+            // above) and round half-up: truncate, then bump when the dropped part
+            // is >= 0.5. Avoids the cast-of-(x+0.5) pattern, which mis-rounds only
+            // for negative inputs — not possible here.
+            const double        frac_scaled = (value - static_cast<double>(whole)) * static_cast<double>(scale);
+            const auto          frac_trunc  = static_cast<std::uint64_t>(frac_scaled);
+            const std::uint64_t scaled_frac =
+                    frac_trunc + ((frac_scaled - static_cast<double>(frac_trunc)) >= 0.5 ? 1U : 0U);
+            // Carry a rounded-up fraction (e.g. 0.9999995) into the whole part.
+            const std::uint64_t carry = scaled_frac / scale;
+            std::uint64_t       frac  = scaled_frac % scale;
+            col.append_uint(whole + carry);
+            col.append(".");
+            // Render exactly 6 fractional digits, then trim trailing zeros while
+            // keeping at least one digit after the point.
+            std::array<char, 6> digits{};
+            for (std::size_t i = 6; i > 0; --i) {
+                digits[i - 1] = static_cast<char>('0' + (frac % 10));
+                frac /= 10;
+            }
+            std::size_t last = 5;
+            while (last > 0 && digits[last] == '0') {
+                --last;
+            }
+            for (std::size_t i = 0; i <= last; ++i) {
+                col.append(std::string_view{&digits[i], 1});
+            }
+        }
+
+        // Append a SQL single-quoted text literal, escaping embedded quotes by
+        // doubling them ("O'Brien" -> 'O''Brien'). Same escaping in both dialects.
+        template <typename SqlT> consteval void append_sql_text(SqlT& col, std::string_view value) {
+            col.append("'");
+            for (char c : value) {
+                if (c == '\'') {
+                    col.append("''");
                 } else {
-                    return value ? " DEFAULT 1" : " DEFAULT 0";
+                    col.append(std::string_view{&c, 1});
                 }
             }
+            col.append("'");
+        }
+
+        // Emit the " DEFAULT <value>" clause for a NOT NULL column that carries a
+        // C++ default-member-initializer, recovering the value from a
+        // default-constructed Owner (P2996 exposes whether a default exists, not
+        // its value). Covers bool/int/int64/double/float/string; other storage
+        // classes (date, blob, uuid, fallback) emit nothing and keep their prior
+        // shape. Generalizes the bool-only #344 clause — see issue #413. Without
+        // this, `ALTER TABLE ... ADD COLUMN <x> NOT NULL` is rejected on a
+        // populated table ("Cannot add a NOT NULL column with default value NULL").
+        // True when Owner can be default-constructed in a constant expression —
+        // the prerequisite for recovering a field's default value. Models with a
+        // non-literal member (e.g. an m2m `plf::hive<...>`/`std::vector<...>`
+        // field) are not literal types; their scalar defaults cannot be read at
+        // compile time, so they keep the no-DEFAULT shape (these are the
+        // relationship-bearing models, not the plain scalar tables that ALTER ADD
+        // COLUMN migrations target).
+        template <typename Owner>
+        constexpr bool owner_constexpr_constructible = requires { typename std::bool_constant<(Owner{}, true)>; };
+
+        // Render the bool DEFAULT literal for the dialect (split out so the
+        // dispatcher below stays at a single branch per storage class).
+        template <Dialect D, typename SqlT> consteval void append_bool_default(SqlT& col, bool value) {
+            if constexpr (D == Dialect::PostgreSQL) {
+                col.append(value ? " DEFAULT TRUE" : " DEFAULT FALSE");
+            } else {
+                col.append(value ? " DEFAULT 1" : " DEFAULT 0");
+            }
+        }
+
+        template <typename Owner, std::meta::info Member, Dialect D, typename SqlT>
+        consteval void append_default_clause(SqlT& col) {
+            using enum StorageClass;
+            using FieldType            = std::remove_cvref_t<typename[:std::meta::type_of(Member):]>;
+            constexpr StorageClass cls = storage_class_of<FieldType>();
+            if constexpr (!std::meta::has_default_member_initializer(Member) || !owner_constexpr_constructible<Owner>) {
+                return;
+            } else {
+                constexpr Owner def{};
+                if constexpr (cls == Bool) {
+                    append_bool_default<D>(col, def.[:Member:]);
+                } else if constexpr (cls == Integer) {
+                    col.append(" DEFAULT ");
+                    append_signed(col, static_cast<std::int64_t>(def.[:Member:]));
+                } else if constexpr (cls == Double || cls == Float) {
+                    col.append(" DEFAULT ");
+                    append_double(col, static_cast<double>(def.[:Member:]));
+                } else if constexpr (cls == Text) {
+                    col.append(" DEFAULT ");
+                    append_sql_text(col, std::string_view{def.[:Member:]});
+                }
+            }
+        }
+
+        // A length-counting sink mirroring the ConstexprString append/append_uint
+        // interface used by append_default_clause. Running the same clause builder
+        // against it yields the exact rendered length, so the column buffer budget
+        // stays in lock-step with the emitted SQL (no hand-maintained constant).
+        struct ClauseSizer {
+            std::size_t    len = 0;
+            consteval void append(const char* str) {
+                while (*str != '\0') {
+                    ++len;
+                    ++str;
+                }
+            }
+            consteval void append(std::string_view str) {
+                len += str.size();
+            }
+            consteval void append_uint(std::uint64_t value) {
+                ++len; // at least one digit
+                while (value > utilities::numeric::MAX_SINGLE_DIGIT) {
+                    value /= 10;
+                    ++len;
+                }
+            }
+        };
+
+        // Rendered length of the " DEFAULT <value>" clause for one member (0 when
+        // the member carries no default initializer or its type is out of scope).
+        template <typename Owner, std::meta::info Member, Dialect D>
+        consteval auto default_clause_len() -> std::size_t {
+            ClauseSizer sizer;
+            append_default_clause<Owner, Member, D>(sizer);
+            return sizer.len;
         }
 
         // Map a C++ field type to its SQL column definition string for the given dialect.
@@ -301,14 +429,26 @@ export namespace storm::orm::schema {
             }(std::make_index_sequence<Base::field_count_>{});
         }
 
+        // Longest " DEFAULT <value>" clause across the model's fields, measured by
+        // rendering each field's clause into the counting sink — keeps the column
+        // budget exact for non-bool defaults (#413), where the clause length is
+        // value-driven (e.g. a long string default), not a fixed 14 chars.
+        template <Dialect D> static consteval auto max_default_clause_len() -> std::size_t {
+            return [&]<std::size_t... Is>(std::index_sequence<Is...> /*unused*/) {
+                std::size_t longest = 0;
+                ((longest = std::max(longest, detail::default_clause_len<T, Base::all_members_[Is], D>())), ...);
+                return longest;
+            }(std::make_index_sequence<Base::field_count_>{});
+        }
+
         template <Dialect D = Dialect::SQLite> static consteval auto col_def_buffer() -> std::size_t {
             using enum Dialect;
             // PG PK: "id BIGINT PRIMARY KEY GENERATED BY DEFAULT AS IDENTITY" = 54
             // SQLite PK: "id INTEGER PRIMARY KEY AUTOINCREMENT" = 36
             constexpr std::size_t pk_size = (D == PostgreSQL) ? 54 : 36;
-            // " " + max type def + " DEFAULT FALSE" (14) + " UNIQUE" (7)
+            // " " + max type def + " DEFAULT <value>" (measured) + " UNIQUE" (7)
             constexpr std::size_t max_type_def   = (D == PostgreSQL) ? 25 : 16;
-            constexpr std::size_t regular_suffix = 1 + max_type_def + 14 + 7;
+            constexpr std::size_t regular_suffix = 1 + max_type_def + max_default_clause_len<D>() + 7;
             // FK suffix: "_id INTEGER NOT NULL" (20) / "_id BIGINT NOT NULL" (19),
             // plus the " REFERENCES <Related>(id)" clause (#412).
             constexpr std::size_t fk_suffix        = 3 + ((D == PostgreSQL) ? 16 : 20) + max_fk_references_len();
@@ -405,7 +545,7 @@ export namespace storm::orm::schema {
                 col.append(std::meta::identifier_of(member));
                 col.append(" ");
                 col.append(detail::sql_col_def<FieldType, D>());
-                col.append(detail::bool_default_clause<T, member, D>());
+                detail::append_default_clause<T, member, D>(col);
                 col.append(" UNIQUE");
             }
             // Regular field
@@ -414,7 +554,7 @@ export namespace storm::orm::schema {
                 col.append(std::meta::identifier_of(member));
                 col.append(" ");
                 col.append(detail::sql_col_def<FieldType, D>());
-                col.append(detail::bool_default_clause<T, member, D>());
+                detail::append_default_clause<T, member, D>(col);
             }
             // Backstop (#361): col_def_buffer<D>() is sized to fit every column,
             // so this can only fire if the suffix budget above drifts. In a
@@ -451,8 +591,8 @@ export namespace storm::orm::schema {
                     if (statements::meta::is_fk_field(Base::all_members_[i])) {
                         size += max_fk_suffix;
                     } else {
-                        // " " + type def + bool DEFAULT clause (" DEFAULT FALSE" = 14) + " UNIQUE" (7)
-                        size += 1 + max_type_def + 14 + 7;
+                        // " " + type def + " DEFAULT <value>" (measured, #413) + " UNIQUE" (7)
+                        size += 1 + max_type_def + max_default_clause_len<D>() + 7;
                     }
                 }
             }
