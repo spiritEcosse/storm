@@ -73,15 +73,16 @@ TEST(BoolDefaultSchema, PgPersonIsActiveHasDefaultFalse) {
 }
 
 // ============================================================================
-// Non-bool NOT NULL columns must NOT gain a DEFAULT (scope guard)
+// Since #413, a non-bool NOT NULL column with a default initializer (including
+// `int age{};` value-init) DOES gain a DEFAULT — reflection cannot distinguish
+// `{}` from `= 0`. This was the bool-only scope guard in #344; the general
+// DEFAULT coverage lives in test_column_default.cpp.
 // ============================================================================
 
-TEST(BoolDefaultSchema, IntColumnHasNoDefault) {
+TEST(BoolDefaultSchema, IntColumnGainsDefault) {
     const std::string& sql     = SchemaStatement<Person>::create_table_sql<Dialect::SQLite>();
-    const std::size_t  age_pos = sql.find("age INTEGER NOT NULL");
-    ASSERT_NE(age_pos, std::string::npos) << sql;
-    EXPECT_EQ(sql.substr(age_pos, 30).find("DEFAULT"), std::string::npos)
-            << "int 'age' column should not gain a DEFAULT: " << sql.substr(age_pos, 30);
+    const std::size_t  age_pos = sql.find("age INTEGER NOT NULL DEFAULT 0");
+    EXPECT_NE(age_pos, std::string::npos) << "int 'age' column should carry DEFAULT 0: " << sql;
 }
 
 // ============================================================================
