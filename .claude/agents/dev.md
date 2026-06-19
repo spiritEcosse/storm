@@ -57,7 +57,7 @@ When adding or modifying modules:
 2. **Prevent circular dependencies**: identify shared dependencies that should be extracted to a base module
 3. **Enforce naming**: module names use underscores (e.g., `storm_db_sqlite`, not `storm.db.sqlite`)
 4. **Minimize coupling**: modules should have minimal import surface area
-5. **Extract shared leaves**: dependency-free shared declarations live in leaf modules (e.g. `storm_orm_field_attr` for `FieldAttr`/`is_primary_attr`, `storm_db_concept`) — never duplicate definitions to break a cycle (#387)
+5. **Extract shared leaves**: dependency-free shared declarations live in leaf modules (e.g. `storm_orm_field_attr` for `FieldAttr`/`is_primary_attr`, `storm_db_concept`) — never duplicate definitions to break a cycle (#387). The m2m/reverse-fk annotation TYPES (`ManyToMany`, `ReverseFk`) and the relation-detection predicates (`is_m2m_field`, `is_reverse_fk_field`, `is_relation_field`) live in the `storm_orm_relation_meta` leaf (#408) so `storm_orm_where` can gate `f<>()` against relation members without importing `storm_orm_statements_base` (which would cycle — base already imports where); base re-exposes them into `storm::orm::statements::meta`, the resolution/junction logic (`reverse_fk_target_of`, `m2m_junction_on_delete_of`, …) stays in base
 
 When documenting module structure, provide ASCII dependency graphs showing import relationships and build order.
 

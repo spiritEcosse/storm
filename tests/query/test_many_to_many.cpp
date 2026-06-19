@@ -32,6 +32,20 @@ static_assert(!storm::orm::statements::FKFieldOf<Student, ^^Student::courses>);
 static_assert(storm::orm::statements::M2MFieldOf<Pupil, ^^Pupil::courses>);
 
 // ============================================================================
+// Compile-time: f<>() rejects m2m relation members (#408)
+// An m2m container is not a persisted column — a WHERE clause on it would
+// reference a non-existent column, so f<>() must fail at the call site.
+// ============================================================================
+
+template <auto M>
+concept FCallableM2M = requires { storm::orm::where::f<M>(); };
+
+static_assert(!FCallableM2M<^^Student::courses>, "m2m member rejected by f<>()");
+static_assert(!FCallableM2M<^^Pupil::courses>, "m2m_through member rejected by f<>()");
+static_assert(FCallableM2M<^^Student::name>, "persisted column still accepted");
+static_assert(FCallableM2M<^^Student::age>, "persisted column still accepted");
+
+// ============================================================================
 // Compile-time: related-type extraction from containers via std::meta
 // ============================================================================
 

@@ -48,6 +48,20 @@ static_assert(stmt::JoinableFields<RfPerson, ^^RfPerson::tasks>);
 static_assert(stmt::JoinableFields<RfPerson, ^^RfTask::assignee>);
 
 // ============================================================================
+// Compile-time: f<>() rejects reverse_fk relation members (#408)
+// A reverse_fk container is not a persisted column — a WHERE clause on it would
+// reference a non-existent column, so f<>() must fail at the call site.
+// ============================================================================
+
+template <auto M>
+concept FCallableRfk = requires { storm::orm::where::f<M>(); };
+
+static_assert(!FCallableRfk<^^RfPerson::tasks>, "reverse_fk member rejected by f<>()");
+static_assert(!FCallableRfk<^^RfBoard::notes>, "reverse_fk member rejected by f<>()");
+static_assert(FCallableRfk<^^RfPerson::name>, "persisted column still accepted");
+static_assert(FCallableRfk<^^RfTask::assignee>, "FK column still accepted");
+
+// ============================================================================
 // Schema: reverse_fk creates NO junction table and is not a column
 // ============================================================================
 

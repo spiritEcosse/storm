@@ -14,6 +14,13 @@ auto results = QuerySet<Person>()
 
 The `f<^^Member>()` function creates a field expression for type-safe comparisons at compile time.
 
+`f<>()` accepts only persisted columns. Passing a relation member — a many-to-many
+container (`[[= storm::many_to_many]]`) or a reverse-FK container
+(`[[= storm::reverse_fk<...>]]`) — is a **compile-time error** (#408): those are not
+columns, so a WHERE clause on one would reference a non-existent column. The constraint
+fails at the call site instead of producing an opaque "no such column" at prepare time.
+Filter on a relation's own columns by joining to it (`join<^^T::field>()`) first.
+
 ## Comparison Operators
 
 All 6 comparison operators are supported.
