@@ -310,6 +310,35 @@ QuerySet<Person>().erase_all().execute();   // DELETE FROM Person (explicit full
 > **See also:** conditional bulk **UPDATE** (`where(cond).update<Members...>(proto)`)
 > shipped in #403 — see [Conditional UPDATE](#conditional-update-403) above.
 
+## SQL Inspection — `to_sql()` backend behavior (#411)
+
+Every statement builder exposes `.to_sql()`, which returns the SQL with the bound
+parameter values inlined. It is a **debug / inspection aid only** — execution always
+binds `?` parameters and never uses this string. Because it is produced by a different
+mechanism per backend, the rendered text is **not byte-identical across SQLite and
+PostgreSQL**:
+
+- **SQLite** uses the engine-native `sqlite3_expanded_sql()`.
+- **PostgreSQL** hand-rolls `?`-placeholder substitution, storing every bound value as
+  text and wrapping it in single quotes.
+
+| Operand | SQLite | PostgreSQL | Same? |
+|---|---|---|---|
+| int / int64 | `30` (bare) | `'30'` (quoted) | value yes, quoting no |
+| bool | `1` / `0` (bare) | `'1'` / `'0'` (quoted) | value yes, quoting no |
+| double | engine float→text (bare) | `'%.17g'` (quoted) | value yes, formatting/quoting no |
+| NULL (empty `std::optional`) | `NULL` | `NULL` | ✅ identical |
+| embedded quote `O'Brien` | `'O''Brien'` | `'O''Brien'` | ✅ identical |
+| literal `?` inside text | preserved | preserved | ✅ identical |
+| BLOB (`std::vector<uint8_t>`) | `x'4849'` hex literal | raw bytes inside `'…'` | ❌ different encoding |
+
+**Takeaways.** NULL handling, single-quote escaping, and literal `?` inside string
+literals are identical across backends. Scalar operands carry the same value but PG
+quotes them. BLOBs differ most: SQLite renders a hex literal, PG renders the raw bytes
+inside a quoted string. Treat `to_sql()` output as a per-backend debugging view, not a
+portable SQL artifact. This behavior is pinned by the cross-backend tests in
+`tests/schema/test_sql_inspection.cpp` (see #411).
+
 ## Error Handling
 
 All operations return `std::expected<T, Error>`:
