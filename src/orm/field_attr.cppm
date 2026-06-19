@@ -72,6 +72,31 @@ export namespace storm::meta {
         return attr == primary || attr == primary_autoincrement;
     }
 
+    // Per-attribute field predicates (#421): the single source of truth for the
+    // `annotation_of_type<FieldAttr>(member) == FieldAttr::X` idiom, so the same
+    // test cannot drift between statement modules. FK detection lives in is_fk_field
+    // below (an fk<...> class-template annotation, not a FieldAttr enumerator).
+    consteval auto is_unique(std::meta::info member) -> bool {
+        auto attr = std::meta::annotation_of_type<FieldAttr>(member);
+        return attr.has_value() && attr.value() == FieldAttr::unique;
+    }
+
+    consteval auto is_indexed(std::meta::info member) -> bool {
+        auto attr = std::meta::annotation_of_type<FieldAttr>(member);
+        return attr.has_value() && attr.value() == FieldAttr::indexed;
+    }
+
+    // auto_create stamps now() on INSERT only; auto_update on both INSERT and UPDATE (#209).
+    consteval auto is_auto_create(std::meta::info member) -> bool {
+        auto attr = std::meta::annotation_of_type<FieldAttr>(member);
+        return attr.has_value() && attr.value() == FieldAttr::auto_create;
+    }
+
+    consteval auto is_auto_update(std::meta::info member) -> bool {
+        auto attr = std::meta::annotation_of_type<FieldAttr>(member);
+        return attr.has_value() && attr.value() == FieldAttr::auto_update;
+    }
+
     // A 64-bit unsigned source type — the set that needs an explicit storage
     // annotation (#436). Signed-64 and all smaller types are unaffected.
     template <typename T>

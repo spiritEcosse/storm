@@ -32,6 +32,13 @@ export namespace storm::orm::statements {
         using storm::meta::ref_action_sql; // NOLINT(misc-unused-using-decls) — used by storm_orm_schema
         using storm::meta::RefAction;
 
+        // Per-attribute predicates (#421) re-exposed from the leaf so statement modules
+        // keep the meta:: qualifier (mirrors FieldAttr).
+        using storm::meta::is_auto_create;
+        using storm::meta::is_auto_update;
+        using storm::meta::is_indexed;
+        using storm::meta::is_unique;
+
         // Many-to-many annotation (#203, #431). Phase 1 (auto-generated junction table):
         //   [[= storm::meta::many_to_many<>]] std::vector<Course> courses;
         //   [[= storm::meta::many_to_many<RefAction::Restrict>]] std::vector<Course> courses;
@@ -451,28 +458,22 @@ export namespace storm::orm::statements {
             return meta::is_fk_field(member);
         }
 
-        // Unique field detection
+        // Per-attribute predicates forward to the storm_orm_field_attr leaf (#421),
+        // the single source of truth for the FieldAttr-annotation test.
         static consteval auto is_unique_field(std::meta::info member) -> bool {
-            auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
-            return field_attr.has_value() && field_attr.value() == meta::FieldAttr::unique;
+            return meta::is_unique(member);
         }
 
-        // Indexed field detection (explicit [[= FieldAttr::indexed]])
         static consteval auto is_indexed_field(std::meta::info member) -> bool {
-            auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
-            return field_attr.has_value() && field_attr.value() == meta::FieldAttr::indexed;
+            return meta::is_indexed(member);
         }
 
-        // Auto-timestamp detection (#209): auto_create stamps now() on INSERT only;
-        // auto_update stamps now() on both INSERT and UPDATE.
         static consteval auto is_auto_create_field(std::meta::info member) -> bool {
-            auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
-            return field_attr.has_value() && field_attr.value() == meta::FieldAttr::auto_create;
+            return meta::is_auto_create(member);
         }
 
         static consteval auto is_auto_update_field(std::meta::info member) -> bool {
-            auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
-            return field_attr.has_value() && field_attr.value() == meta::FieldAttr::auto_update;
+            return meta::is_auto_update(member);
         }
 
         // True when `member` should be stamped with now() on this operation: auto_update
