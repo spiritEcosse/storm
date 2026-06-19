@@ -80,12 +80,12 @@ export namespace storm::orm::statements {
             }
         }
 
-        // True when `member` carries the auto_update timestamp annotation (#209). Mirrors
-        // BaseStatement::is_auto_update_field, inlined here because that member is protected
-        // and UpdateGrammar does not inherit from BaseStatement.
+        // True when `member` carries the auto_update timestamp annotation (#209).
+        // Forwards to the storm_orm_field_attr leaf (#421) — the single source of
+        // truth — since BaseStatement::is_auto_update_field is protected and
+        // UpdateGrammar does not inherit from BaseStatement.
         static consteval auto is_auto_update_field(std::meta::info member) -> bool {
-            auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
-            return field_attr.has_value() && field_attr.value() == meta::FieldAttr::auto_update;
+            return meta::is_auto_update(member);
         }
 
         // Is `member` an auto_update field NOT already present in the explicit pack?
