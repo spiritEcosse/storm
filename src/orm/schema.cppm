@@ -313,21 +313,22 @@ export namespace storm::orm::schema {
 
         template <typename Owner, std::meta::info Member, Dialect D, typename SqlT>
         consteval void append_default_clause(SqlT& col) {
+            using enum StorageClass;
             using FieldType            = std::remove_cvref_t<typename[:std::meta::type_of(Member):]>;
             constexpr StorageClass cls = storage_class_of<FieldType>();
             if constexpr (!std::meta::has_default_member_initializer(Member) || !owner_constexpr_constructible<Owner>) {
                 return;
             } else {
                 constexpr Owner def{};
-                if constexpr (cls == StorageClass::Bool) {
+                if constexpr (cls == Bool) {
                     append_bool_default<D>(col, def.[:Member:]);
-                } else if constexpr (cls == StorageClass::Integer) {
+                } else if constexpr (cls == Integer) {
                     col.append(" DEFAULT ");
                     append_signed(col, static_cast<std::int64_t>(def.[:Member:]));
-                } else if constexpr (cls == StorageClass::Double || cls == StorageClass::Float) {
+                } else if constexpr (cls == Double || cls == Float) {
                     col.append(" DEFAULT ");
                     append_double(col, static_cast<double>(def.[:Member:]));
-                } else if constexpr (cls == StorageClass::Text) {
+                } else if constexpr (cls == Text) {
                     col.append(" DEFAULT ");
                     append_sql_text(col, std::string_view{def.[:Member:]});
                 }
