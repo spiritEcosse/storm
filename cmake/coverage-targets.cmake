@@ -64,6 +64,18 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
       "Merging coverage data from batched main tests, mock tests, and PG mock tests"
     VERBATIM)
 
+  # Single source of truth for excluded path fragments. These are filtered out
+  # at the llvm-cov export stage (coverage-lcov) — it scans the storm_tests and
+  # the two mock binaries, so vendored/build paths and the mock shared objects
+  # show up there and must be dropped. By the time the lcov stage runs, the
+  # exported tracefile already contains src/ paths only, so it needs no path
+  # globs (the previous "*/third_party/*" etc. were dead — lcov reported them as
+  # unused). The one src/ file that still needs removing is the vendored
+  # generator, handled separately below.
+  set(COVERAGE_EXCLUDE_PATHS third_party googletest build mock_sqlite
+                             mock_libpq)
+  list(JOIN COVERAGE_EXCLUDE_PATHS "|" COVERAGE_EXCLUDE_REGEX)
+
   add_custom_target(
     coverage-lcov
     COMMAND
@@ -71,8 +83,8 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
       -object=$<TARGET_FILE:storm_orm_mock_tests>
       -object=$<TARGET_FILE:storm_orm_pg_mock_tests>
       -instr-profile=${COVERAGE_OUTPUT_DIR}/coverage.profdata -format=lcov
-      -ignore-filename-regex="third_party|googletest|build|mock_sqlite|mock_libpq"
-      ${CMAKE_SOURCE_DIR}/src > ${COVERAGE_OUTPUT_DIR}/coverage.lcov
+      -ignore-filename-regex="${COVERAGE_EXCLUDE_REGEX}" ${CMAKE_SOURCE_DIR}/src
+      > ${COVERAGE_OUTPUT_DIR}/coverage.lcov
     DEPENDS coverage-merge
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT
@@ -105,7 +117,6 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
       ${LCOV_TOOL} ${LCOV_RC} --ignore-errors
       unused,deprecated,unsupported,inconsistent,range --filter
       region,branch_region --remove ${COVERAGE_OUTPUT_DIR}/coverage.lcov
-      "*/third_party/*" "*/googletest/*" "*/build/*" "*/tests/*"
       "*/src/orm/generator.cppm" --output-file
       ${COVERAGE_OUTPUT_DIR}/coverage-filtered.lcov
     COMMAND
