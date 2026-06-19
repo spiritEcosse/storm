@@ -105,6 +105,10 @@ class MockPqConfig {
     static auto get_last_exec_query() -> std::string;
     static auto get_deallocate_call_count() -> int;
 
+    // Returns the most recent (already-translated) SQL passed to PQprepare(),
+    // so tests can assert how translate_placeholders rewrote `?` → $N (#418).
+    static auto get_last_prepare_query() -> std::string;
+
   private:
     static MockPqConfig instance_;
 };

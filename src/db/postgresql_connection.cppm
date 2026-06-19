@@ -186,29 +186,113 @@ export namespace storm::db::postgresql {
             cache_.map.reserve(STMT_CACHE_RESERVE);
         }
 
-        // Translate ? placeholders to $1, $2, ... for PostgreSQL
+        // A `?` opening one of these literal/comment regions is copied verbatim
+        // until the region's terminator, so any `?` inside is never rewritten to
+        // a $N placeholder. Each skipper starts at the opener and returns the
+        // index just past the terminator. See translate_placeholders (#418).
+
+        // Single- or double-quoted string starting at sql[pos] (a ' or "). Inside
+        // a single-quoted string a backslash escapes the next char (covers the
+        // E'...' escape-string form, e.g. E'it\'s'); double-quoted identifiers do
+        // not. Copies through the closing quote.
+        static auto skip_quoted(std::string_view sql, std::size_t pos, std::string& out) -> std::size_t {
+            const char quote = sql[pos];
+            out += sql[pos++];
+            while (pos < sql.size()) {
+                const char ch = sql[pos];
+                out += ch;
+                ++pos;
+                if (quote == '\'' && ch == '\\' && pos < sql.size()) {
+                    out += sql[pos++]; // escaped char — never a terminator
+                } else if (ch == quote) {
+                    break;
+                }
+            }
+            return pos;
+        }
+
+        // Dollar-quoted body starting at sql[pos] (a '$'). Reads the tag up to the
+        // next '$' ($$ or $name$), then copies through the matching closing tag.
+        // If no closing '$' forms a valid tag, treats '$' as an ordinary char.
+        static auto skip_dollar_quote(std::string_view sql, std::size_t pos, std::string& out) -> std::size_t {
+            const std::size_t tag_close = sql.find('$', pos + 1);
+            if (tag_close == std::string_view::npos) {
+                out += sql[pos];
+                return pos + 1;
+            }
+            const std::string_view tag = sql.substr(pos, tag_close - pos + 1); // includes both $
+            const std::size_t      end = sql.find(tag, tag_close + 1);
+            if (end == std::string_view::npos) {
+                out += sql[pos];
+                return pos + 1; // unterminated — treat opener as a plain char
+            }
+            out += sql.substr(pos, end - pos + tag.size());
+            return end + tag.size();
+        }
+
+        // Line comment (-- ...) starting at sql[pos]. Copies through end of line.
+        static auto skip_line_comment(std::string_view sql, std::size_t pos, std::string& out) -> std::size_t {
+            const std::size_t newline = sql.find('\n', pos);
+            const std::size_t end     = (newline == std::string_view::npos) ? sql.size() : newline + 1;
+            out += sql.substr(pos, end - pos);
+            return end;
+        }
+
+        // Block comment (/* ... */) starting at sql[pos]. PostgreSQL block
+        // comments nest, so track depth across nested /* and */.
+        static auto skip_block_comment(std::string_view sql, std::size_t pos, std::string& out) -> std::size_t {
+            int depth = 0;
+            while (pos < sql.size()) {
+                if (sql.substr(pos, 2) == "/*") {
+                    ++depth;
+                    out += "/*";
+                    pos += 2;
+                } else if (sql.substr(pos, 2) == "*/") {
+                    --depth;
+                    out += "*/";
+                    pos += 2;
+                    if (depth == 0) {
+                        break;
+                    }
+                } else {
+                    out += sql[pos++];
+                }
+            }
+            return pos;
+        }
+
+        // Translate ? placeholders to $1, $2, ... for PostgreSQL.
+        //
+        // Supported input contract (#418): general SQL. `?` is rewritten to a $N
+        // placeholder only when it is NOT inside a single-/double-quoted string,
+        // an E'...' escape string, a $tag$ dollar-quoted body, or a -- / /* */
+        // comment — those regions are copied verbatim by the skip_* helpers
+        // above. Storm itself only emits plain `?` SQL today; the richer handling
+        // is here for future raw-SQL / UDF (#89) / FTS (#208) paths.
         [[nodiscard]] static auto translate_placeholders(std::string_view sql) -> std::string {
             std::string result;
             result.reserve(sql.size() + 16); // Extra space for $N expansions
-            int param_index = 0;
+            int         param_index = 0;
+            std::size_t pos         = 0;
 
-            bool in_single_quote = false;
-            bool in_double_quote = false;
-
-            for (const char ch : sql) {
-                // Track quoted strings to avoid translating ? inside them
-                if (ch == '\'' && !in_double_quote) {
-                    in_single_quote = !in_single_quote;
-                    result += ch;
-                } else if (ch == '"' && !in_single_quote) {
-                    in_double_quote = !in_double_quote;
-                    result += ch;
-                } else if (ch == '?' && !in_single_quote && !in_double_quote) {
+            while (pos < sql.size()) {
+                const char ch = sql[pos];
+                if (ch == '\'' || ch == '"') {
+                    pos = skip_quoted(sql, pos, result);
+                } else if (ch == '$') {
+                    pos = skip_dollar_quote(sql, pos, result);
+                } else if (sql.substr(pos, 2) == "--") {
+                    pos = skip_line_comment(sql, pos, result);
+                } else if (sql.substr(pos, 2) == "/*") {
+                    pos = skip_block_comment(sql, pos, result);
+                } else if (ch == '?') {
                     ++param_index;
                     result += '$';
                     result += std::to_string(param_index);
+                    ++pos;
                 } else {
                     result += ch;
+                    ++pos;
                 }
             }
 

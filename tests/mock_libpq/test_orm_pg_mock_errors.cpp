@@ -662,6 +662,71 @@ namespace {
         ASSERT_TRUE(result.has_value());
     }
 
+    // ------------------------------------------------------------------------
+    // #418: translate_placeholders must NOT rewrite `?` inside dollar-quoted
+    // bodies, E'...' escape strings, or SQL comments. Assert the exact
+    // translated SQL captured by the mock PQprepare.
+    // ------------------------------------------------------------------------
+
+    TEST_F(PgQuoteHandlingTest, RealPlaceholdersStillTranslated) {
+        auto conn_result = PgConnection::open("host=localhost");
+        ASSERT_TRUE(conn_result.has_value());
+
+        auto result = conn_result->prepare("SELECT * FROM t WHERE a = ? AND b = ?");
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(MockPqConfig::get_last_prepare_query(), "SELECT * FROM t WHERE a = $1 AND b = $2");
+    }
+
+    TEST_F(PgQuoteHandlingTest, AnonymousDollarQuoteNotTranslated) {
+        auto conn_result = PgConnection::open("host=localhost");
+        ASSERT_TRUE(conn_result.has_value());
+
+        // ? inside $$ ... $$ must survive; the real ? after it becomes $1.
+        auto result = conn_result->prepare("SELECT $$ a ? b $$, ?");
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(MockPqConfig::get_last_prepare_query(), "SELECT $$ a ? b $$, $1");
+    }
+
+    TEST_F(PgQuoteHandlingTest, TaggedDollarQuoteNotTranslated) {
+        auto conn_result = PgConnection::open("host=localhost");
+        ASSERT_TRUE(conn_result.has_value());
+
+        // A nested $$ inside a $tag$ body must NOT close the tag early.
+        auto result = conn_result->prepare("SELECT $tag$ a ? $$ ? b $tag$, ?");
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(MockPqConfig::get_last_prepare_query(), "SELECT $tag$ a ? $$ ? b $tag$, $1");
+    }
+
+    TEST_F(PgQuoteHandlingTest, EscapeStringQuestionMarkNotTranslated) {
+        auto conn_result = PgConnection::open("host=localhost");
+        ASSERT_TRUE(conn_result.has_value());
+
+        // E'it\'s ?' — the backslash-escaped quote must not close the string,
+        // so the ? stays literal; the trailing ? becomes $1.
+        auto result = conn_result->prepare("SELECT E'it\\'s ?', ?");
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(MockPqConfig::get_last_prepare_query(), "SELECT E'it\\'s ?', $1");
+    }
+
+    TEST_F(PgQuoteHandlingTest, LineCommentQuestionMarkNotTranslated) {
+        auto conn_result = PgConnection::open("host=localhost");
+        ASSERT_TRUE(conn_result.has_value());
+
+        auto result = conn_result->prepare("SELECT ? -- pick ? one\n, ?");
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(MockPqConfig::get_last_prepare_query(), "SELECT $1 -- pick ? one\n, $2");
+    }
+
+    TEST_F(PgQuoteHandlingTest, BlockCommentQuestionMarkNotTranslated) {
+        auto conn_result = PgConnection::open("host=localhost");
+        ASSERT_TRUE(conn_result.has_value());
+
+        // Nested block comment: the inner */ must not end the outer comment.
+        auto result = conn_result->prepare("SELECT ? /* a ? /* b ? */ c ? */, ?");
+        ASSERT_TRUE(result.has_value());
+        EXPECT_EQ(MockPqConfig::get_last_prepare_query(), "SELECT $1 /* a ? /* b ? */ c ? */, $2");
+    }
+
     // ============================================================================
     // Connection open success test (covers normal path)
     // ============================================================================
