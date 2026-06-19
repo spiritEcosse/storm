@@ -35,15 +35,9 @@ export namespace storm::orm::statements {
                     if (!first) {
                         result.append(", ");
                     }
-                    // Check if this is a FK field
-                    if (meta::is_fk_field(member)) {
-                        // FK field: use field_name_id
-                        result.append(std::meta::identifier_of(member));
-                        result.append("_id=?");
-                    } else {
-                        result.append(std::meta::identifier_of(member));
-                        result.append("=?");
-                    }
+                    // "<col>[_id]=?" — column-name writer (#422) emits the FK "_id" suffix.
+                    meta::append_column_name(result, member);
+                    result.append("=?");
                     first = false;
                 }
             }
@@ -72,12 +66,8 @@ export namespace storm::orm::statements {
 
         // Append "<name>=?" (or "<name>_id=?" for FK fields) for one member.
         template <typename Buf> static consteval auto append_one_assignment(Buf& buf, std::meta::info member) -> void {
-            buf.append(std::meta::identifier_of(member));
-            if (meta::is_fk_field(member)) {
-                buf.append("_id=?");
-            } else {
-                buf.append("=?");
-            }
+            meta::append_column_name(buf, member); // #422 — emits the FK "_id" suffix
+            buf.append("=?");
         }
 
         // True when `member` carries the auto_update timestamp annotation (#209).

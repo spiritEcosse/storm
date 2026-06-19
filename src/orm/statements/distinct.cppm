@@ -64,10 +64,7 @@ export namespace storm::orm::statements {
 
         // Calculate field size at compile-time
         template <std::size_t I> static consteval auto get_field_size() -> std::size_t {
-            std::size_t size = std::meta::identifier_of(member_infos_[I]).size();
-            if constexpr (meta::is_fk_field(member_infos_[I])) {
-                size += 3; // "_id"
-            }
+            std::size_t size = meta::column_name_size(member_infos_[I]);
             if constexpr (I > 0) {
                 size += 2; // ", "
             }
@@ -82,10 +79,7 @@ export namespace storm::orm::statements {
 
         // Append column name for field I (with FK _id suffix if needed)
         template <std::size_t I, std::size_t N> static consteval void append_column_name(ConstexprString<N>& result) {
-            result.append(std::meta::identifier_of(member_infos_[I]));
-            if constexpr (meta::is_fk_field(member_infos_[I])) {
-                result.append("_id");
-            }
+            meta::append_column_name(result, member_infos_[I]);
         }
 
         // Build a "<prefix>col1, <prefix>col2, ..." field list at compile time.
