@@ -470,4 +470,118 @@ TYPED_TEST(SqlInspectionTest, RemoveEmptySpanToSql) {
     EXPECT_TRUE(result.value().empty()) << "Empty span should return empty SQL";
 }
 
+// ============================================================================
+// Cross-backend to_sql() parity (#411)
+//
+// to_sql() is a debug/inspection aid only — execution always binds ? params.
+// SQLite produces it via the engine-native sqlite3_expanded_sql(); PostgreSQL
+// hand-rolls ?-placeholder substitution into the stored original SQL.
+//
+// These tests pin the current behavior:
+//   * "Parity" tests assert the same rendered token on BOTH backends (one
+//     expectation string, same for each TypeParam instantiation).
+//   * "ByBackend" tests pin the KNOWN divergences (BLOB encoding, double
+//     formatting) per backend via if constexpr.
+// ============================================================================
+
+// int operand DIVERGES in quoting: SQLite renders a bare integer; PostgreSQL
+// stores every bound param as text and wraps it in quotes. The numeric value is
+// the same; only the quoting differs. Pin each backend's output.
+TYPED_TEST(SqlInspectionTest, ToSqlIntByBackend) {
+    QuerySet<Person, TypeParam> qs;
+    auto                        result = qs.where(f<^^Person::age>() == 30).select().to_sql();
+    ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
+
+    const std::string& sql = result.value();
+    if constexpr (std::is_same_v<TypeParam, storm::db::postgresql::Connection>) {
+        EXPECT_TRUE(contains(sql, "= '30'")) << "PG renders int operands quoted: " << sql;
+    } else {
+        EXPECT_TRUE(contains(sql, "= 30")) << "SQLite renders int operands bare: " << sql;
+        EXPECT_FALSE(contains(sql, "'30'")) << "SQLite int operand must not be quoted: " << sql;
+    }
+}
+
+// bool operand DIVERGES the same way: SQLite renders bare 1; PG renders '1'.
+TYPED_TEST(SqlInspectionTest, ToSqlBoolByBackend) {
+    QuerySet<Person, TypeParam> qs;
+    const bool                  active = true; // bound value (avoid bare literal in the predicate)
+    auto                        result = qs.where(f<^^Person::is_active>() == active).select().to_sql();
+    ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
+
+    const std::string& sql = result.value();
+    if constexpr (std::is_same_v<TypeParam, storm::db::postgresql::Connection>) {
+        EXPECT_TRUE(contains(sql, "= '1'")) << "PG renders bool true as quoted '1': " << sql;
+    } else {
+        EXPECT_TRUE(contains(sql, "= 1")) << "SQLite renders bool true as bare 1: " << sql;
+    }
+}
+
+// NULL (empty std::optional) renders as the keyword NULL on both backends.
+TYPED_TEST(SqlInspectionTest, ToSqlNullParity) {
+    QuerySet<Person, TypeParam> qs;
+    Person                      p{.id = 0, .name = "NullScore", .age = 40};
+    p.score = std::nullopt; // explicit: score is empty
+
+    auto result = qs.insert(p).to_sql();
+    ASSERT_TRUE(result.has_value()) << "insert().to_sql() failed: " << result.error().message();
+
+    const std::string& sql = result.value();
+    EXPECT_TRUE(contains(sql, "NULL")) << "empty optional should render as NULL on both backends: " << sql;
+}
+
+// Embedded single quote is escaped by doubling on both backends ('O''Brien').
+TYPED_TEST(SqlInspectionTest, ToSqlEmbeddedQuoteParity) {
+    QuerySet<Person, TypeParam> qs;
+    auto                        result = qs.where(f<^^Person::name>() == "O'Brien").select().to_sql();
+    ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
+
+    const std::string& sql = result.value();
+    EXPECT_TRUE(contains(sql, "'O''Brien'")) << "embedded quote should be doubled on both backends: " << sql;
+}
+
+// A literal ? inside a quoted string is NOT treated as a placeholder (the core
+// escaping check from #411). Both backends preserve it verbatim.
+TYPED_TEST(SqlInspectionTest, ToSqlLiteralQuestionMarkParity) {
+    QuerySet<Person, TypeParam> qs;
+    auto                        result = qs.where(f<^^Person::name>() == "a?b").select().to_sql();
+    ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
+
+    const std::string& sql = result.value();
+    EXPECT_TRUE(contains(sql, "'a?b'")) << "literal ? inside a string must be preserved, not substituted: " << sql;
+}
+
+// BLOB encoding DIVERGES: SQLite emits an x'..' hex literal; PostgreSQL emits the
+// raw bytes inside a quoted string. Pin each backend's actual output.
+TYPED_TEST(SqlInspectionTest, ToSqlBlobDivergesByBackend) {
+    QuerySet<Person, TypeParam> qs;
+    Person                      p{.id = 0, .name = "Blobby", .age = 33};
+    p.avatar = {0x48, 0x49}; // "HI"
+
+    auto result = qs.insert(p).to_sql();
+    ASSERT_TRUE(result.has_value()) << "insert().to_sql() failed: " << result.error().message();
+
+    const std::string& sql = result.value();
+    if constexpr (std::is_same_v<TypeParam, storm::db::postgresql::Connection>) {
+        // PG: raw bytes 0x48 0x49 = "HI" inside a quoted string literal.
+        EXPECT_TRUE(contains(sql, "'HI'")) << "PG should render BLOB as raw quoted bytes: " << sql;
+    } else {
+        // SQLite: native x'4849' hex literal.
+        EXPECT_TRUE(contains(sql, "x'4849'") || contains(sql, "X'4849'"))
+                << "SQLite should render BLOB as an x'..' hex literal: " << sql;
+    }
+}
+
+// double formatting DIVERGES: SQLite uses the engine's float->text; PostgreSQL
+// uses %.17g. Pin that the value is present in each backend's rendering.
+TYPED_TEST(SqlInspectionTest, ToSqlDoubleByBackend) {
+    QuerySet<Person, TypeParam> qs;
+    auto                        result = qs.where(f<^^Person::salary>() == 1234.5).select().to_sql();
+    ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
+
+    const std::string& sql = result.value();
+    // Both backends render the significant digits "1234.5"; exact trailing
+    // formatting may differ, which is the documented divergence.
+    EXPECT_TRUE(contains(sql, "1234.5")) << "double value should appear in the rendered SQL: " << sql;
+}
+
 // NOLINTEND(misc-const-correctness,misc-use-anonymous-namespace)

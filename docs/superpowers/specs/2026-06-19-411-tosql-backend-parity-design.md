@@ -22,18 +22,26 @@ A divergence in quoting/escaping would go unnoticed.
 
 Read from the two `expanded_sql()` implementations and the PG bind methods:
 
+**Note (corrected against a live PG run):** the initial code-read predicted int/bool
+would agree. Running the tests against PostgreSQL proved otherwise — PG's hand-rolled
+`expanded_sql` stores *every* bound param as text and wraps it in single quotes, so
+numeric and bool operands come out quoted (`'30'`, `'1'`) while SQLite emits them bare
+(`30`, `1`). Same value, different quoting. The table below reflects the verified
+behavior.
+
 | Operand | SQLite (`sqlite3_expanded_sql`) | PostgreSQL (hand-rolled) | Verdict |
 |---|---|---|---|
-| int / int64 / bool | `30`, `1`/`0` | `30`, `1`/`0` (bool stored as int) | **agree** |
+| int / int64 | `30` (bare) | `'30'` (quoted) | **diverge** (quoting) |
+| bool | `1` / `0` (bare) | `'1'` / `'0'` (quoted) | **diverge** (quoting) |
 | NULL (empty optional) | `NULL` | `NULL` (`param_ptrs_[i] == nullptr`) | **agree** |
 | embedded quote `O'Brien` | `'O''Brien'` | `'O''Brien'` (`'`→`''`) | **agree** |
 | literal `?` inside text | preserved (engine) | preserved (PG scanner tracks `in_single_quote`) | **agree** |
-| double | engine float→text | `%.17g` (`bind_double`) | **diverge** (formatting) |
+| double | engine float→text (bare) | `'%.17g'` quoted (`bind_double`) | **diverge** (quoting + formatting) |
 | BLOB | `x'48656C6C6F'` hex literal | raw bytes inside `'...'` (only `'` escaped) | **diverge** (encoding) |
 
-Exact whole-string cross-backend parity is **infeasible** (BLOB hex vs raw bytes;
-double formatting). The DoD explicitly permits documenting divergence where exact
-parity is not achievable.
+Exact whole-string cross-backend parity is **infeasible** (PG quotes all scalar
+operands; BLOB hex vs raw bytes; double formatting). The DoD explicitly permits
+documenting divergence where exact parity is not achievable.
 
 ## Decision (approved)
 
@@ -63,10 +71,9 @@ Each test inserts a row, then calls `qs.where(...).select().to_sql()` (or
 
 New `TYPED_TEST`s:
 
-1. **`ToSqlIntParity`** — `where(age == 30)` → SQL contains exactly `30`, no quotes
-   around it. Same expectation both backends.
-2. **`ToSqlBoolParity`** — `where(is_active == true)` → contains `1` (bool→int both
-   backends). Same expectation.
+1. **`ToSqlIntByBackend`** — `where(age == 30)` → SQLite contains bare `= 30`
+   (unquoted); PG contains `= '30'` (quoted). Pins the quoting divergence.
+2. **`ToSqlBoolByBackend`** — `where(is_active == true)` → SQLite `= 1`; PG `= '1'`.
 3. **`ToSqlNullParity`** — insert a row with empty `score`, then
    `insert(p).to_sql()` → contains `NULL` for the score column. Same expectation.
 4. **`ToSqlEmbeddedQuoteParity`** — `where(name == "O'Brien")` → contains
@@ -83,11 +90,10 @@ New `TYPED_TEST`s:
 Operand coverage required by DoD — literal `?` (#5), embedded quotes (#4), NULL (#3),
 BLOB (#6), numeric int/double (#1, #7), bool (#2). ✅
 
-**TDD note:** new tests run first to confirm they exercise real behavior. Since this
-pins *current* behavior (no source change), tests are expected to pass on first run;
-to prove they test real behavior, each assertion's expectation is derived from the
-code, and a deliberately-wrong expectation is sanity-checked locally to confirm it
-fails before settling on the correct one.
+**TDD note:** the int/bool tests were initially written as cross-backend *parity*
+assertions (predicted from the code-read). Running them against a live PostgreSQL
+server **failed** — PG quotes scalar operands — which proved the tests exercise real
+behavior and corrected the design. They were re-pinned per backend.
 
 ## Documentation plan
 
