@@ -12,6 +12,7 @@ import std;
 
 import storm_db_concept;
 import storm_orm_field_attr;
+import storm_orm_relation_meta;
 import storm_orm_utilities;
 import storm_orm_statements_extract;
 import storm_orm_statements_field_names;
@@ -39,37 +40,21 @@ export namespace storm::orm::statements {
         using storm::meta::is_indexed;
         using storm::meta::is_unique;
 
-        // Many-to-many annotation (#203, #431). Phase 1 (auto-generated junction table):
-        //   [[= storm::meta::many_to_many<>]] std::vector<Course> courses;
-        //   [[= storm::meta::many_to_many<RefAction::Restrict>]] std::vector<Course> courses;
-        // Phase 2 (explicit junction model):
-        //   [[= storm::meta::many_to_many_through<Enrollment>]] std::vector<Course> courses;
-        // A class-template annotation carries the optional through-model type AND the
-        // junction ON DELETE policy (#431, both junction sides). Through type stays at
-        // template arg [0] so is_m2m_auto / m2m_through_t are unchanged; the RefAction is
-        // arg [1], defaulting to CASCADE (an orphaned junction row is meaningless).
-        template <typename Through = void, RefAction JunctionOnDelete = RefAction::Cascade> struct ManyToMany {
-            using through_type                            = Through;
-            static constexpr RefAction junction_on_delete = JunctionOnDelete;
-        };
-        template <RefAction JunctionOnDelete = RefAction::Cascade>
-        inline constexpr ManyToMany<void, JunctionOnDelete>              many_to_many{};
-        template <typename Through> inline constexpr ManyToMany<Through> many_to_many_through{};
-
-        // Reflection of the ManyToMany<...> annotation TYPE carried by `member`, if any.
-        consteval auto m2m_annotation_type_of(std::meta::info member) -> std::optional<std::meta::info> {
-            for (const auto annotation : std::meta::annotations_of(member)) {
-                const auto type = std::meta::type_of(annotation);
-                if (std::meta::has_template_arguments(type) && std::meta::template_of(type) == ^^ManyToMany) {
-                    return type;
-                }
-            }
-            return std::nullopt;
-        }
-
-        consteval auto is_m2m_field(std::meta::info member) -> bool {
-            return m2m_annotation_type_of(member).has_value();
-        }
+        // Many-to-many (#203, #431) and reverse-FK (#398) annotation TYPES and their
+        // "is this a relation member, not a persisted column?" detection predicates live
+        // in the storm_orm_relation_meta leaf module (#408) so storm_orm_where can gate
+        // f<>() without importing this module. Re-exposed here so statement modules keep
+        // the meta:: qualifier (mirrors how FK detection is re-exposed from field_attr).
+        using storm::meta::is_m2m_field;
+        using storm::meta::is_relation_field; // NOLINT(misc-unused-using-decls) — #408 chokepoint
+        using storm::meta::is_reverse_fk_field;
+        using storm::meta::m2m_annotation_type_of;
+        using storm::meta::many_to_many;         // NOLINT(misc-unused-using-decls) — model-declaration spelling
+        using storm::meta::many_to_many_through; // NOLINT(misc-unused-using-decls) — model-declaration spelling
+        using storm::meta::ManyToMany;           // NOLINT(misc-unused-using-decls) — re-exported for storm.cppm
+        using storm::meta::reverse_fk;           // NOLINT(misc-unused-using-decls) — model-declaration spelling
+        using storm::meta::reverse_fk_annotation_type_of;
+        using storm::meta::ReverseFk; // NOLINT(misc-unused-using-decls) — re-exported for storm.cppm
 
         // Foreign-key annotation (#431) lives in the storm_orm_field_attr leaf module so
         // every statement module can detect FK fields without importing this one. Re-exposed
@@ -82,38 +67,6 @@ export namespace storm::orm::statements {
         using storm::meta::fk_annotation_type_of; // NOLINT(misc-unused-using-decls)
         using storm::meta::fk_on_delete_action_of;
         using storm::meta::is_fk_field;
-
-        // Reverse-FK annotation (#398): on a container member of the base model, it
-        // declares the eager-load destination for "all <Base>, each with the <Owner>s
-        // that point at them". The template argument is EITHER:
-        //   - the owning model type — [[= reverse_fk<^^Task>]] vector<Task> tasks;
-        //     (resolved to that model's unique FK back at the base), OR
-        //   - a specific FK field — [[= reverse_fk<^^Task::assignee>]] vector<Task> tasks;
-        //     (names the exact FK; the disambiguator when the owner has several FKs to
-        //     the base, e.g. assignee vs reviewer).
-        // The type form works when the owner is only forward-declared at the annotation
-        // site (the cyclic Base⟷Owner case); the field form needs the owner complete.
-        // Like ManyToMany, it is a class-template annotation (FieldAttr is an enum, so a
-        // templated enumerator is impossible).
-        template <std::meta::info Target> struct ReverseFk {
-            static constexpr std::meta::info target = Target;
-        };
-        template <std::meta::info Target> inline constexpr ReverseFk<Target> reverse_fk{};
-
-        // Reflection of the ReverseFk<...> annotation TYPE carried by `member`, if any.
-        consteval auto reverse_fk_annotation_type_of(std::meta::info member) -> std::optional<std::meta::info> {
-            for (const auto annotation : std::meta::annotations_of(member)) {
-                const auto type = std::meta::type_of(annotation);
-                if (std::meta::has_template_arguments(type) && std::meta::template_of(type) == ^^ReverseFk) {
-                    return type;
-                }
-            }
-            return std::nullopt;
-        }
-
-        consteval auto is_reverse_fk_field(std::meta::info member) -> bool {
-            return reverse_fk_annotation_type_of(member).has_value();
-        }
 
         // The raw template argument of a reverse_fk member's annotation — either an
         // owner type (^^Task) or an FK field (^^Task::assignee). The join machinery
@@ -177,13 +130,6 @@ export namespace storm::orm::statements {
                 std::unreachable(); // ReverseFKFieldOf guarantees a unique FK exists
             }
             return target; // already an FK field
-        }
-
-        // Combined relation-field predicate (#398): m2m container OR reverse_fk container.
-        // The single chokepoint for "not a persisted column" — schema/CRUD invisibility
-        // for both relation kinds falls out of every persisted-field array filtering here.
-        consteval auto is_relation_field(std::meta::info member) -> bool {
-            return is_m2m_field(member) || is_reverse_fk_field(member);
         }
 
         // True for m2m members WITHOUT a through model (auto-generated junction table).
