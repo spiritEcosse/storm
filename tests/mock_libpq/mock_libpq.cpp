@@ -74,6 +74,9 @@ namespace {
         std::string last_exec_query;
         int         deallocate_calls = 0;
 
+        // Prepare query tracking (translated SQL passed to PQprepare) — #418
+        std::string last_prepare_query;
+
         auto reset() -> void {
             connectdb_null     = false;
             conn_status        = CONNECTION_OK;
@@ -101,6 +104,8 @@ namespace {
 
             last_exec_query  = "";
             deallocate_calls = 0;
+
+            last_prepare_query = "";
         }
     };
 
@@ -224,6 +229,10 @@ namespace storm::test {
         return g_mock_config.last_exec_query;
     }
 
+    auto MockPqConfig::get_last_prepare_query() -> std::string {
+        return g_mock_config.last_prepare_query;
+    }
+
     auto MockPqConfig::get_deallocate_call_count() -> int {
         return g_mock_config.deallocate_calls;
     }
@@ -277,10 +286,12 @@ auto PQprepare(const PGconn* conn, const char* stmtName, const char* query, int 
         -> PGresult* {
     (void)conn;
     (void)stmtName;
-    (void)query;
     (void)nParams;
     (void)paramTypes;
     g_mock_config.prepare_calls++;
+    if (query != nullptr) {
+        g_mock_config.last_prepare_query = query;
+    }
 
     // Check for fail-on-call-N
     if (g_mock_config.prepare_fail_on_call == g_mock_config.prepare_calls) {
