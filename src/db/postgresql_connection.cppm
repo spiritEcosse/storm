@@ -238,8 +238,9 @@ export namespace storm::db::postgresql {
             return end;
         }
 
-        // Block comment (/* ... */) starting at sql[pos]. PostgreSQL block
-        // comments nest, so track depth across nested /* and */.
+        // C-style block comment starting at sql[pos] (the slash-star opener).
+        // PostgreSQL block comments nest, so track depth across nested openers
+        // and closers and only stop when depth returns to zero.
         static auto skip_block_comment(std::string_view sql, std::size_t pos, std::string& out) -> std::size_t {
             int depth = 0;
             while (pos < sql.size()) {
@@ -265,10 +266,11 @@ export namespace storm::db::postgresql {
         //
         // Supported input contract (#418): general SQL. `?` is rewritten to a $N
         // placeholder only when it is NOT inside a single-/double-quoted string,
-        // an E'...' escape string, a $tag$ dollar-quoted body, or a -- / /* */
-        // comment — those regions are copied verbatim by the skip_* helpers
-        // above. Storm itself only emits plain `?` SQL today; the richer handling
-        // is here for future raw-SQL / UDF (#89) / FTS (#208) paths.
+        // an E'...' escape string, a $tag$ dollar-quoted body, or a SQL comment
+        // (line comments and C-style block comments) — those regions are copied
+        // verbatim by the skip_* helpers above. Storm itself only emits plain `?`
+        // SQL today; the richer handling is here for future raw-SQL / UDF (#89) /
+        // FTS (#208) paths.
         [[nodiscard]] static auto translate_placeholders(std::string_view sql) -> std::string {
             std::string result;
             result.reserve(sql.size() + 16); // Extra space for $N expansions
