@@ -206,10 +206,7 @@ export namespace storm::orm::statements {
         for (std::size_t i = 0; i < RelatedBase::field_count_; ++i) {
             result.append(", ");
             result.append(sep_prefix);
-            result.append(std::meta::identifier_of(RelatedBase::all_members_[i]));
-            if (meta::is_fk_field(RelatedBase::all_members_[i])) {
-                result.append("_id");
-            }
+            meta::append_column_name(result, RelatedBase::all_members_[i]); // #422 — emits FK "_id"
         }
     }
 
@@ -770,10 +767,7 @@ export namespace storm::orm::statements {
                     result.append(", ");
                 }
                 result.append("t1.");
-                result.append(std::meta::identifier_of(Base::all_members_[i]));
-                if (Base::is_fk_field(Base::all_members_[i])) {
-                    result.append("_id");
-                }
+                meta::append_column_name(result, Base::all_members_[i]); // #422 — emits FK "_id"
                 first = false;
             }
             return result;
@@ -1010,10 +1004,10 @@ export namespace storm::orm::statements {
         static_assert(!std::same_as<Owner, T>, "reverse_fk must point from a different model (#398)");
 
         // FK column on the owning table: "<fk identifier>_id" (e.g. "assignee_id").
+        // FkField is always an FK, so append_column_name (#422) emits the "_id".
         static constexpr auto fk_col_arr_ = []() consteval {
             ConstexprString<std::meta::identifier_of(FkField).size() + 4> name;
-            name.append(std::meta::identifier_of(FkField));
-            name.append("_id");
+            meta::append_column_name(name, FkField);
             return name;
         }();
         static constexpr std::string_view fk_col_v_ = fk_col_arr_.view();
@@ -1061,10 +1055,7 @@ export namespace storm::orm::statements {
                     sql.append(", ");
                 }
                 sql.append("t1.");
-                sql.append(std::meta::identifier_of(Base::all_members_[i]));
-                if (Base::is_fk_field(Base::all_members_[i])) {
-                    sql.append("_id");
-                }
+                meta::append_column_name(sql, Base::all_members_[i]); // #422 — emits FK "_id"
                 first = false;
             }
             sql.append(" FROM ");

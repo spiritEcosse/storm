@@ -601,12 +601,7 @@ export namespace storm::orm::schema {
                 if (i > 0) {
                     sql.append(", ");
                 }
-                if (Base::is_fk_field(IdxType::fields[i])) {
-                    sql.append(std::meta::identifier_of(IdxType::fields[i]));
-                    sql.append("_id");
-                } else {
-                    sql.append(std::meta::identifier_of(IdxType::fields[i]));
-                }
+                storm::meta::append_column_name(sql, IdxType::fields[i]); // #422 — emits FK "_id"
             }
             sql.append(")");
             return sql;

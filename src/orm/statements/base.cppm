@@ -74,8 +74,11 @@ export namespace storm::orm::statements {
         // Foreign-key annotation (#431) lives in the storm_orm_field_attr leaf module so
         // every statement module can detect FK fields without importing this one. Re-exposed
         // here so statement modules keep using the meta:: qualifier (mirrors FieldAttr).
-        using storm::meta::fk;                    // NOLINT(misc-unused-using-decls)
-        using storm::meta::Fk;                    // NOLINT(misc-unused-using-decls)
+        using storm::meta::
+                append_column_name; // NOLINT(misc-unused-using-decls) — #422 canonical <identifier>[_id] writer
+        using storm::meta::column_name_size; // NOLINT(misc-unused-using-decls) — #422 its byte-exact size companion
+        using storm::meta::fk;               // NOLINT(misc-unused-using-decls)
+        using storm::meta::Fk;               // NOLINT(misc-unused-using-decls)
         using storm::meta::fk_annotation_type_of; // NOLINT(misc-unused-using-decls)
         using storm::meta::fk_on_delete_action_of;
         using storm::meta::is_fk_field;

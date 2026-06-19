@@ -19,15 +19,11 @@ export namespace storm::orm::statements {
 
     using storm::orm::utilities::ConstexprString;
 
-    namespace meta {
-        using storm::meta::FieldAttr;
-        using storm::meta::is_fk_field;
-    } // namespace meta
-
     template <typename Base> struct FieldNameGrammar {
         // Shared iterator over data members, honouring SkipPrimaryKey, invoking
-        // `body(i, is_fk, name)` per emitted field. The size-calculator and the
-        // list-builder used to spell out this loop independently.
+        // `body(i, needs_comma)` per emitted field. The size-calculator and the
+        // list-builder used to spell out this loop independently. The FK "_id" suffix
+        // is derived inside storm::meta::append_column_name/column_name_size (#422).
         template <bool SkipPrimaryKey, typename Body> static consteval auto for_each_field_name(Body body) -> void {
             bool first = true;
             for (std::size_t i = 0; i < Base::field_count_; ++i) {
@@ -36,8 +32,7 @@ export namespace storm::orm::statements {
                         continue;
                     }
                 }
-                bool const is_fk = meta::is_fk_field(Base::all_members_[i]);
-                body(i, is_fk, !first);
+                body(i, !first);
                 first = false;
             }
         }
@@ -46,14 +41,11 @@ export namespace storm::orm::statements {
         // Template parameter controls whether to skip primary key (for INSERT vs SELECT)
         template <bool SkipPrimaryKey> static consteval auto calculate_field_names_size_impl() -> std::size_t {
             std::size_t size = 0;
-            for_each_field_name<SkipPrimaryKey>([&](std::size_t i, bool is_fk, bool needs_comma) {
+            for_each_field_name<SkipPrimaryKey>([&](std::size_t i, bool needs_comma) {
                 if (needs_comma) {
                     size += 2; // ", "
                 }
-                size += std::meta::identifier_of(Base::all_members_[i]).size();
-                if (is_fk) {
-                    size += 3; // "_id"
-                }
+                size += storm::meta::column_name_size(Base::all_members_[i]);
             });
             return size;
         }
@@ -73,14 +65,11 @@ export namespace storm::orm::statements {
         template <bool SkipPrimaryKey> static consteval auto build_field_names_list_impl() {
             constexpr std::size_t size = calculate_field_names_size_impl<SkipPrimaryKey>() + 10;
             ConstexprString<size> result;
-            for_each_field_name<SkipPrimaryKey>([&](std::size_t i, bool is_fk, bool needs_comma) {
+            for_each_field_name<SkipPrimaryKey>([&](std::size_t i, bool needs_comma) {
                 if (needs_comma) {
                     result.append(", ");
                 }
-                result.append(std::meta::identifier_of(Base::all_members_[i]));
-                if (is_fk) {
-                    result.append("_id");
-                }
+                storm::meta::append_column_name(result, Base::all_members_[i]);
             });
             return result;
         }

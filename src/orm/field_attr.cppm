@@ -162,6 +162,29 @@ export namespace storm::meta {
         return fk_annotation_type_of(member).has_value();
     }
 
+    // Canonical column-name writer (#422): a member's SQL column is its identifier, plus
+    // the "_id" suffix when the member is an FK (`User sender` → `sender_id`). This logic
+    // was open-coded in every SQL builder (field_names, distinct, update, join, schema)
+    // alongside a matching size-calculator that had to stay byte-exact. Route both through
+    // this pair so the append and the size can never drift.
+    //
+    // `buf` is any buffer with `.append(std::string_view)` — the compile-time
+    // ConstexprString and a runtime std::string both qualify. consteval (like every
+    // builder that calls it) so it is constant-evaluated, never emitted as runtime code.
+    consteval void append_column_name(auto& buf, std::meta::info member) {
+        buf.append(std::meta::identifier_of(member));
+        if (is_fk_field(member)) {
+            buf.append("_id");
+        }
+    }
+
+    // Byte size append_column_name() will emit for `member`: the identifier length, plus
+    // 3 for "_id" when the member is an FK. The exact companion to append_column_name —
+    // every size-calculator that pairs with it must use this so the buffer fits precisely.
+    consteval auto column_name_size(std::meta::info member) -> std::size_t {
+        return std::meta::identifier_of(member).size() + (is_fk_field(member) ? 3 : 0);
+    }
+
     // The ON DELETE RefAction of an fk<...> FK, or std::nullopt when the field is not an FK
     // or carries the default RESTRICT (caller emits no clause then, keeping the
     // plain-REFERENCES DDL byte-identical).
