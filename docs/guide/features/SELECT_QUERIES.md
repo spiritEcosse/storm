@@ -23,7 +23,7 @@ struct Person {
     int age;
 };
 
-storm::orm::QuerySet<Person> queryset(conn);
+storm::QuerySet<Person> queryset(conn);
 
 // Returns all rows from the table
 auto result = queryset.select().execute();

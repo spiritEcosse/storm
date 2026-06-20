@@ -28,7 +28,7 @@ struct Message {
     User sender;  // FK field
 };
 
-storm::orm::QuerySet<Message> message_qs(conn);
+storm::QuerySet<Message> message_qs(conn);
 
 // Populates sender field fully for each message
 auto result = message_qs.join<^^Message::sender>().select().execute();

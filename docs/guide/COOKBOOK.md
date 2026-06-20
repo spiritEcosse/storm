@@ -7,6 +7,7 @@ Quick-reference patterns for common Storm ORM operations.
 ```cpp
 import storm;
 using namespace storm;
+using namespace storm::orm::where;  // brings f<>() into scope for WHERE filters
 
 // Define a model — reflection maps fields to columns automatically
 struct Person {

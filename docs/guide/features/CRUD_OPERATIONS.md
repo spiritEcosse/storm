@@ -51,7 +51,7 @@ struct Person {
     int age;
 };
 
-storm::orm::QuerySet<Person> queryset(conn);
+storm::QuerySet<Person> queryset(conn);
 
 // Insert returns the generated ID
 auto result = queryset.insert(Person{0, "Alice", 25}).execute();

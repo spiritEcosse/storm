@@ -2,6 +2,15 @@
 
 Build WHERE filters using field expressions and operators.
 
+The `f<>()` field-expression helper lives in `storm::orm::where`, so bring it into
+scope alongside `storm`:
+
+```cpp
+import storm;
+using namespace storm;
+using namespace storm::orm::where;  // f<>()
+```
+
 ## Basic Syntax
 
 WHERE expressions use field access via reflection with compile-time operators.
@@ -9,7 +18,7 @@ WHERE expressions use field access via reflection with compile-time operators.
 ```cpp
 auto results = QuerySet<Person>()
     .where(f<^^Person::age>() > 30)
-    .select();
+    .select().execute();
 ```
 
 The `f<^^Member>()` function creates a field expression for type-safe comparisons at compile time.

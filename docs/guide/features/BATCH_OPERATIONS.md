@@ -22,7 +22,7 @@ struct Person {
     int age;
 };
 
-storm::orm::QuerySet<Person> queryset(conn);
+storm::QuerySet<Person> queryset(conn);
 
 std::vector<Person> people = {
     {0, "Alice", 25},
