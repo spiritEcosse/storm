@@ -126,12 +126,12 @@ prepare_and_transact(conn, true,
 
 ```cpp
 // ✅ FAST: Flat code (93-94% efficiency)
-if (!cached_stmt_) { cached_stmt_ = conn_->prepare_cached(sql); }
+auto* stmt = *conn_->prepare_cached(sql);  // Connection cache: one prepare, reused by SQL text
 conn_->execute("BEGIN TRANSACTION");
 for (const auto& obj : objects) {
-    cached_stmt_->reset();
+    stmt->reset();
     bind(...);
-    cached_stmt_->execute();
+    stmt->execute();
 }
 conn_->execute("COMMIT");
 ```
@@ -192,52 +192,3 @@ while (sqlite3_step(raw_stmt) == SQLITE_ROW) {
 |---------|------------|
 | Without raw pointer cache | 90.6% |
 | With raw pointer cache | 96% |
-
-## Expression Address Caching
-
-**For repeated queries with same WHERE expression, track expression address to skip SQL string building.**
-
-### Implementation Pattern
-
-```cpp
-// Inside statement class
-const void* cached_expr_addr_ = nullptr;
-Statement* cached_stmt_ = nullptr;
-
-auto execute(const WhereExpr& expr) {
-    const void* expr_addr = static_cast<const void*>(expr.get());
-
-    // Cache hit: same expression object, skip SQL building
-    if (expr_addr == cached_expr_addr_ && cached_stmt_) {
-        cached_stmt_->reset();
-        bind_params(cached_stmt_, expr);
-        return execute_loop(cached_stmt_);
-    }
-
-    // Cache miss: build SQL, prepare statement
-    std::string sql = build_sql(expr);
-    cached_stmt_ = conn_->prepare_cached(sql);
-    cached_expr_addr_ = expr_addr;
-    bind_params(cached_stmt_, expr);
-    return execute_loop(cached_stmt_);
-}
-```
-
-### Critical: Prevent ABA Problem
-
-**Always invalidate cache on reset() to prevent stale pointer matches:**
-
-```cpp
-void invalidate_cache() {
-    cached_expr_addr_ = nullptr;
-    // Note: don't clear cached_stmt_ - it's still valid in connection cache
-}
-
-// In QuerySet::reset()
-void reset() {
-    where_expr_.reset();
-    select_stmt_->invalidate_cache();  // CRITICAL: prevent stale pointer match
-}
-```
-
-**ABA Problem**: New expression allocated at same address as freed expression → stale cache hit → wrong SQL used
