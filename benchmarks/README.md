@@ -104,7 +104,7 @@ Matched Storm rows show **efficiency as `NN.N% of raw`** (green ≥95%, red belo
 
 To extend the subset, add a benchmark to `benchmarks/anchors_raw.cpp` mirroring the target Storm benchmark's **exact** name via `->Name(...)->Arg(N)->ArgName("N")` and `state.SetComplexityN(state.range(0))`, so the `(test_name, dataset_size)` key matches the Storm row. The raw `CREATE TABLE` must also mirror Storm's generated schema — notably plain `id INTEGER PRIMARY KEY` (since #379 Storm emits plain `INTEGER PRIMARY KEY` by default; AUTOINCREMENT is opt-in via `FieldAttr::primary_autoincrement` and costs ~358 ns/insert of `sqlite_sequence` work — using AUTOINCREMENT in the raw anchor would make the INSERT comparison unfair). For SELECT-family anchors, also mirror the **full model column set** and **materialize results into a `plf::hive`** of a struct matching the model — Storm's `select()` always builds the complete entity, so a raw anchor that selects fewer columns or skips the container materialization is not a fair comparison (#68). See `benchmarks/scripts/compare_against_raw.sh` for the orchestration driver.
 
-See [docs/development/BENCHMARK_DASHBOARD.md](../docs/development/BENCHMARK_DASHBOARD.md) for full setup, schema, baseline selectors, backup/restore, and troubleshooting.
+See [docs/internals/performance/BENCHMARK_DASHBOARD.md](../docs/internals/performance/BENCHMARK_DASHBOARD.md) for full setup, schema, baseline selectors, backup/restore, and troubleshooting.
 
 ## 📉 Regression detection
 
@@ -1994,8 +1994,8 @@ struct Person {
 ## 📚 Related Documentation
 
 - **Main benchmark guide:** [README.md](README.md)
-- **Performance guidelines:** [../docs/development/performance-guidelines.md](../docs/development/performance-guidelines.md)
-- **Storm ORM architecture:** [../docs/architecture/](../docs/architecture/)
+- **Performance guidelines:** [../docs/internals/performance/PERFORMANCE.md](../docs/internals/performance/PERFORMANCE.md)
+- **Storm ORM architecture:** [../docs/internals/architecture/](../docs/internals/architecture/)
 
 ---
 

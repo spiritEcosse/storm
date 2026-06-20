@@ -139,7 +139,7 @@ cmake/
 ├── tests.cmake           # GoogleTest via CPM + add_subdirectory(tests)
 ├── bench.cmake           # add_subdirectory(benchmarks)
 ├── sanitizers.cmake      # USE_SANITIZER option + cmake-scripts integration
-├── format.cmake          # clang-format/cmake-format targets (see docs/development/FORMATTING.md)
+├── format.cmake          # clang-format/cmake-format targets (see docs/internals/building/FORMATTING.md)
 └── tools.cmake           # ENABLE_TOOLS option + add_subdirectory(tools) (storm-schema CLI)
 ```
 
@@ -246,7 +246,7 @@ cmake --build --preset ninja-debug-coverage --target coverage-html
 # Open build/debug/coverage/html-filtered/index.html
 ```
 
-See [docs/development/CODE_COVERAGE.md](docs/development/CODE_COVERAGE.md) for details.
+See [docs/internals/testing/CODE_COVERAGE.md](docs/internals/testing/CODE_COVERAGE.md) for details.
 
 ### Prerequisites
 - Custom Clang with C++26 reflection (`../clang-p2996/`)
@@ -268,7 +268,7 @@ src/
     └── statements/             # INSERT, SELECT, UPDATE, DELETE, DISTINCT, JOIN
 ```
 
-See [docs/architecture/](docs/architecture/) for design decisions.
+See [docs/internals/architecture/](docs/internals/architecture/) for design decisions.
 
 ### Key Design Decisions
 1. C++26 reflection for automatic field mapping
@@ -291,7 +291,7 @@ See [docs/architecture/](docs/architecture/) for design decisions.
 | Template methods for modules | ~1-3% | Cross-module hot paths |
 
 > Statement preparation is cached once, at the Connection level (`prepare_cached`,
-> see [STATEMENT_CACHING.md](docs/architecture/STATEMENT_CACHING.md)). The former
+> see [STATEMENT_CACHING.md](docs/internals/architecture/STATEMENT_CACHING.md)). The former
 > per-QuerySet (L1) and per-Statement (L2) pointer caches were removed in #214
 > after benchmarks showed no measurable benefit — do not reintroduce them.
 
@@ -307,7 +307,7 @@ while (sqlite3_step(raw) == SQLITE_ROW) { ... }
 - **Same SCHEMA** — the raw anchor's `CREATE TABLE` must mirror what Storm's schema generator emits (e.g. `id INTEGER PRIMARY KEY AUTOINCREMENT`, NOT plain `INTEGER PRIMARY KEY`). AUTOINCREMENT alone adds ~358 ns/insert of `sqlite_sequence` bookkeeping inside `sqlite3_step`; a mismatch silently halved the INSERT `% of raw`.
 - Use latency (ms/query) for different result sizes
 
-See [docs/development/PERFORMANCE_GUIDELINES.md](docs/development/PERFORMANCE_GUIDELINES.md).
+See [docs/internals/performance/PERFORMANCE.md](docs/internals/performance/PERFORMANCE.md).
 
 ## Supported Field Types
 
@@ -326,7 +326,7 @@ arg: `fk<RefAction::Cascade>` / `fk<RefAction::SetNull>` / `fk<RefAction::Restri
 enforced at compile time by `ModelFkPoliciesValid<T>`. NOT a FieldAttr enumerator (enum
 members can't be templated); FK detection runs through `meta::is_fk_field`. `ON UPDATE` is
 not emitted (identity PKs never change). See
-[docs/features/REFERENTIAL_INTEGRITY.md](docs/features/REFERENTIAL_INTEGRITY.md).
+[docs/guide/features/REFERENTIAL_INTEGRITY.md](docs/guide/features/REFERENTIAL_INTEGRITY.md).
 
 **Many-to-many (#203)**: `[[= storm::many_to_many<>]]` (auto junction `<Owner>_<Related>`,
 one junction table per field) or `[[= storm::many_to_many_through<Model>]]` on a container
@@ -334,7 +334,7 @@ member (`std::vector<T>`, `plf::hive<T>`, `vector<shared_ptr<T>>`). Not a column
 CRUD; eager-loaded via `join<^^T::field>()`, several relations per call via
 `join<^^T::a, ^^T::b>()` (#392). The auto-junction `ON DELETE` defaults to CASCADE on both
 sides, overridable via `many_to_many<RefAction::...>` (#431). See
-[docs/features/JOIN_OPERATIONS.md](docs/features/JOIN_OPERATIONS.md).
+[docs/guide/features/JOIN_OPERATIONS.md](docs/guide/features/JOIN_OPERATIONS.md).
 
 **Reverse-FK (#398)**: `[[= storm::reverse_fk<^^Owner>]]` on a container member declares the
 eager-load destination for "all `<Base>`, each with the `<Owner>`s that point at them". The argument
@@ -343,7 +343,7 @@ a member splice in the annotation, so the owner must have exactly one FK to the 
 `select()` runs the m2m two-query load (Q2 hits the owner table directly, no junction). Aggregate/filter
 chains also accept a cross-model FK selector `join<^^Owner::fk>()`, which disambiguates multiple owner
 FKs (e.g. `^^Bug::author` vs `^^Bug::reviewer`). See
-[docs/features/JOIN_OPERATIONS.md](docs/features/JOIN_OPERATIONS.md).
+[docs/guide/features/JOIN_OPERATIONS.md](docs/guide/features/JOIN_OPERATIONS.md).
 
 **Auto-timestamps (#209)**: `[[= FieldAttr::auto_create]]` / `[[= FieldAttr::auto_update]]` on a
 `std::chrono::system_clock::time_point` field auto-stamp `now()` — `auto_create` on INSERT only,
@@ -360,12 +360,12 @@ same `bind_int64`/`extract_int64` hot path, zero perf change) for values ≤ INT
 the `full_unsigned` bind/extract branches and the concept gate are compile-time-dispatched, so unrelated
 types and signed-64/smaller integers are unaffected. Signed-64 types stay correct as `BIGINT`/`INTEGER`.
 
-See [docs/reference/FIELD_TYPES.md](docs/reference/FIELD_TYPES.md).
+See [docs/guide/reference/FIELD_TYPES.md](docs/guide/reference/FIELD_TYPES.md).
 
 ## Known Compiler Issues
 
 - **Module cache corruption**: Run build twice
-- **`import std;` not header units**: the tree uses a single `import std;` (issue #326), NOT per-header `import <header>;`. Reflection code still needs textual `#include <meta>` (`import std;` doesn't export `std::meta::`), placed BEFORE the imports in non-module TUs. See [COMPILER_ISSUES.md §9](docs/development/COMPILER_ISSUES.md) Findings A–D.
+- **`import std;` not header units**: the tree uses a single `import std;` (issue #326), NOT per-header `import <header>;`. Reflection code still needs textual `#include <meta>` (`import std;` doesn't export `std::meta::`), placed BEFORE the imports in non-module TUs. See [COMPILER_ISSUES.md §9](docs/internals/compiler/COMPILER_ISSUES.md) Findings A–D.
 - **std::mutex in modules**: works via `import std;` (validated under TSAN). Per-thread connections are still the recommended concurrency model for QuerySet/Connection.
 - **std::function errors**: Use abstract base classes
 - **C headers / macros**: `<cassert>` (the `assert` macro) and POSIX headers (`<csignal>`, `<sys/*.h>`) must stay textual `#include` — `import std;` cannot deliver macros or POSIX extensions
@@ -389,7 +389,7 @@ See [docs/reference/FIELD_TYPES.md](docs/reference/FIELD_TYPES.md).
   class BaseStatement { ... };  // constraint violation = clear error
   ```
 
-See [docs/development/COMPILER_ISSUES.md](docs/development/COMPILER_ISSUES.md).
+See [docs/internals/compiler/COMPILER_ISSUES.md](docs/internals/compiler/COMPILER_ISSUES.md).
 
 ## Thread Safety
 
@@ -412,7 +412,7 @@ zero query-hot-path cost). `PoolConfig` propagates both to every pooled
 connection via `detail::make_conn_config<ConnType>()` (an `if constexpr (requires
 { cfg.busy_timeout_ms; })` guard keeps it compilable for PG, whose `Config` is
 just `StatementCacheConfig`). WAL is silently ignored on `:memory:`/temp DBs. See
-[docs/features/CONNECTION_TUNING.md](docs/features/CONNECTION_TUNING.md).
+[docs/guide/features/CONNECTION_TUNING.md](docs/guide/features/CONNECTION_TUNING.md).
 
 ## QuerySet API
 
@@ -465,7 +465,7 @@ message_qs.left_join<^^Message::sender, ^^Message::receiver>().select();
 // IN (base subquery), stitched by one pk→entity hash map, all in one transaction.
 // WHERE/ORDER BY/LIMIT apply to BASE entities. Cost per extra relation is
 // additive (no cartesian product). 33-46% faster than the old 1-query 3-table
-// join at fan-out >= 10. See docs/features/JOIN_OPERATIONS.md#execution-strategy-391.
+// join at fan-out >= 10. See docs/guide/features/JOIN_OPERATIONS.md#execution-strategy-391.
 student_qs.join<^^Student::courses>().select();      // students with courses aggregated
 student_qs.left_join<^^Student::courses>().select(); // + students with no courses
 member_qs.join<^^Member::courses, ^^Member::clubs>().select(); // several m2m in one call (#392);
@@ -526,7 +526,7 @@ ctest --preset ninja-debug-sqlite
 ./build/debug/tests/storm_tests --gtest_filter="SelectTest.*"
 ```
 
-See [docs/development/TESTING.md](docs/development/TESTING.md) for PostgreSQL test isolation details.
+See [docs/internals/testing/TESTING.md](docs/internals/testing/TESTING.md) for PostgreSQL test isolation details.
 
 ### Thorough Testing Checklist
 
@@ -572,10 +572,11 @@ Every new feature or modification MUST include thorough tests covering these cat
 
 ## Documentation
 
-- [docs/architecture/](docs/architecture/) - Design decisions, module system
-- [docs/development/](docs/development/) - Getting started, common tasks, performance
-- [docs/benchmarks/](docs/benchmarks/) - Performance results
-- [docs/reference/](docs/reference/) - Field types, compiler issues
-- [docs/development/MIGRATIONS.md](docs/development/MIGRATIONS.md) - Atlas schema migrations
+- [docs/internals/architecture/](docs/internals/architecture/) - Design decisions, module system
+- [docs/internals/building/](docs/internals/building/) - Getting started, common tasks
+- [docs/internals/performance/](docs/internals/performance/) - Performance results
+- [docs/guide/reference/](docs/guide/reference/) - Field types
+- [docs/internals/compiler/](docs/internals/compiler/) - Compiler issues
+- [docs/guide/reference/MIGRATIONS.md](docs/guide/reference/MIGRATIONS.md) - Atlas schema migrations
 - [benchmarks/README.md](benchmarks/README.md) - Benchmark system guide
 - [.claude/agents/rule-standards.md](.claude/agents/rule-standards.md) - C++ Core Guidelines (RAII, type safety, Rule of Zero/Five, concepts)
