@@ -363,29 +363,30 @@ void use_fibonacci() {
 
 ### Build Configuration
 ```bash
-# Development build with tests and sanitizers
-cmake --preset=ninja-debug -DENABLE_TESTS=ON -DUSE_SANITIZER="address;leak" && cmake --build --preset=ninja-debug
+# Development build (Debug; tests + coverage on by default)
+cmake --preset ninja-debug && cmake --build --preset ninja-debug
 
 # Run tests with detailed output
-cmake --preset=ninja-debug -DENABLE_TESTS=ON -DUSE_SANITIZER="address;leak" && cmake --build --preset=ninja-debug && (cd build/debug && ctest -j 32 --output-on-failure -V; cd ../../)
+ctest --preset ninja-debug --output-on-failure
 
-# Release build for production
-cmake --preset=ninja-release -DENABLE_TESTS=OFF && cmake --build --preset=ninja-release
+# Release build (CI / benchmarking)
+cmake --preset ninja-release && cmake --build --preset ninja-release
 
-# Build with comprehensive sanitizers and tools
-cmake --preset=ninja-debug -DENABLE_TESTS=ON -DUSE_SANITIZER="address;leak;undefined" && cmake --build --preset=ninja-debug
+# Production artifact (library only, no tests/bench/coverage)
+cmake --preset ninja-prod && cmake --build --preset ninja-prod
 
-# Build with thread sanitizer (separate build due to incompatibility)
-cmake --preset=ninja-debug -DENABLE_TESTS=ON -DUSE_SANITIZER="thread" && cmake --build --preset=ninja-debug
+# Address + undefined-behavior sanitizers
+cmake --preset ninja-asan-ubsan && cmake --build --preset ninja-asan-ubsan
 
-# Build with memory sanitizer
-cmake --preset=ninja-debug -DENABLE_TESTS=ON -DUSE_SANITIZER="memory" && cmake --build --preset=ninja-debug
+# Thread sanitizer (separate build — TSAN is incompatible with ASAN)
+cmake --preset ninja-tsan && cmake --build --preset ninja-tsan
 
-# Profile-guided optimization build
-cmake --preset=ninja-pgo -DENABLE_PGO=ON && cmake --build --preset=ninja-pgo
+# Memory sanitizer
+cmake --preset ninja-msan && cmake --build --preset ninja-msan
 
-# Build with code coverage
-cmake --preset=ninja-coverage -DENABLE_COVERAGE=ON && cmake --build --preset=ninja-coverage && (cd build/coverage && ctest && lcov --capture --directory . --output-file coverage.info && genhtml coverage.info --output-directory coverage_html; cd ../../)
+# Code coverage (console summary; ninja-debug-coverage drives the coverage target)
+cmake --preset ninja-debug && cmake --build --preset ninja-debug
+cmake --build --preset ninja-debug-coverage --target coverage
 ```
 
 ### Code Quality Tools
