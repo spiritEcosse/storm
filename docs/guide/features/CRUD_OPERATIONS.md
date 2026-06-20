@@ -46,9 +46,12 @@ struct Audit {
 
 ```cpp
 struct Person {
-    [[=storm::FieldAttr::primary]] int id;
+    [[= storm::FieldAttr::primary]] int id;
     std::string name;
     int age;
+    double salary;
+    bool is_active;
+    std::string department;
 };
 
 storm::QuerySet<Person> queryset(conn);
