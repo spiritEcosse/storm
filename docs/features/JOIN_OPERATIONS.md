@@ -414,30 +414,18 @@ template <class T> class QuerySet {
     }
 
     auto select() {
-        if (join_stmt_) {
-            return get_select_statement().execute_optimized(join_stmt_.get());
-        }
-        return get_select_statement().execute_optimized();
+        // Builds SELECT t1.*, t2.* FROM table t1 + join_stmt_->to_sql() when a
+        // JOIN is attached, plain SELECT otherwise.
     }
 };
 ```
 
 ### SelectStatement Integration
 
-SelectStatement handles JOIN queries with separate statement caching:
-
-```cpp
-template <typename JoinStmt = void>
-auto execute_optimized(JoinStmt* join_stmt = nullptr) {
-    if constexpr (!std::is_void_v<JoinStmt>) {
-        // Build SQL: SELECT t1.*, t2.* FROM table t1 + join_stmt->to_sql()
-        // Extract rows: join_stmt->extract_row(stmt, obj)
-        // Use separate statement cache for JOIN queries
-    } else {
-        // Simple SELECT without JOIN
-    }
-}
-```
+There is no per-Statement or per-QuerySet JOIN cache. SELECT (with or without a
+JOIN) goes through the single Connection-level prepared-statement cache, keyed
+by SQL text; the L1/L2 layers were removed in #214. See
+[STATEMENT_CACHING.md](../architecture/STATEMENT_CACHING.md).
 
 ## Performance Analysis
 

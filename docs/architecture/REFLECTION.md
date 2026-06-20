@@ -18,7 +18,7 @@ struct Person {
 
 **Supported attributes**:
 - `primary` - Marks primary key field
-- More attributes coming (unique, index, foreign_key, etc.)
+- Foreign keys (`fk<>`), many-to-many, and auto-timestamps are now supported; more attributes (unique, index) are planned
 
 ### Compile-Time Field Discovery
 
