@@ -219,8 +219,8 @@ auto combined = qs1.where(f<^^Person::age>() > 30)
 auto all = qs1.where(...).union_all(qs2.where(...)).select();
 
 // INTERSECT / EXCEPT
-auto common = qs1.where(...).intersect(qs2.where(...)).select();
-auto diff   = qs1.where(...).except_with(qs2.where(...)).select();
+auto common = qs1.where(...).intersect_(qs2.where(...)).select();
+auto diff   = qs1.where(...).except_(qs2.where(...)).select();
 ```
 
 ## Thread Safety
