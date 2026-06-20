@@ -31,8 +31,9 @@ Documentation auto-deploys to GitHub Pages on push to `develop` when `docs/` or 
    - INSERT: `std::expected<int64_t, Error>` or `std::expected<std::vector<int64_t>, Error>`
    - DELETE/UPDATE: `std::expected<void, Error>`
    - SELECT: `std::expected<std::vector<T>, Error>`
-4. Consider statement caching pattern:
-   - Add `cached_stmt_` member, implement `execute_single_optimized()`
+4. Statement reuse is automatic: call `conn_->prepare_cached(sql)` per execution —
+   the Connection-level cache (keyed by SQL text) returns the prepared statement
+   on a cache hit; no per-Statement cached member is needed
    - Add `std::unique_ptr<YourStatement>` in QuerySet with lazy initialization
 5. Implement compile-time SQL generation using ConstexprString
 6. Add method to `QuerySet` class that delegates to statement

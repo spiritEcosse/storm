@@ -189,7 +189,7 @@ class JoinStatement : public IJoinStatement {
 - ✅ Abstract base class for type erasure
 - ✅ Compile-time SQL generation with fold expressions
 - ✅ Zero runtime overhead with `if constexpr` dispatch
-- ✅ Separate statement caching for JOIN vs simple SELECT
+- ✅ JOIN and simple SELECT share the single Connection-level statement cache (distinct SQL text → distinct cache entries)
 
 **Usage:**
 ```cpp

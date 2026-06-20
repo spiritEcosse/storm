@@ -148,17 +148,21 @@ thread_local BulkSQLCache bulk_sql_cache;
 
 ### 3. Statement-Level Caching Pattern
 
-Unified caching across UPDATE/DELETE/SELECT:
+Unified caching across UPDATE/DELETE/SELECT via the single Connection-level
+prepared-statement cache, keyed by SQL text. There is no per-QuerySet or
+per-Statement cache — those L1/L2 layers were removed in #214. Every
+statement class follows the same per-call pattern:
 
 ```cpp
 template <typename T> class XStatement {
-    Statement* cached_stmt_ = nullptr;
-
-    auto execute_optimized(const T& obj) {
-        if (!cached_stmt_) {
-            cached_stmt_ = *conn_.prepare_cached(get_sql());
+    auto execute_optimized(const T& obj) -> std::expected<void, Error> {
+        auto stmt_result = conn_->prepare_cached(get_sql());
+        if (!stmt_result) {
+            return std::unexpected(stmt_result.error());
         }
-        // Execute with cached statement
+        auto* stmt_ptr = *stmt_result;
+        stmt_ptr->reset();
+        // Bind and execute with stmt_ptr
     }
 };
 ```

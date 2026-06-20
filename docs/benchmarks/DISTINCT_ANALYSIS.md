@@ -157,8 +157,9 @@ Multiple QuerySet instances can safely share the same cached `DistinctQuerySet` 
 
 **What gets shared:**
 - `static thread_local DistinctQuerySet` object (per thread + field combination)
-- `cached_where_stmt_` pointer (points to same prepared statement)
-- `cached_where_sql_` string (same SQL template)
+- The prepared statement returned by the Connection-level `prepare_cached(sql)`
+  cache (same SQL text → same cache entry; there is no per-Statement
+  `cached_where_stmt_` member)
 
 **What does NOT get shared:**
 - `where_expr_` object (each QuerySet instance has its own)

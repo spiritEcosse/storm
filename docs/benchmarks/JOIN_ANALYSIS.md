@@ -37,7 +37,7 @@ See [Design Decisions](../architecture/DESIGN_DECISIONS.md#11-join-architecture-
 - Abstract base class (`IJoinStatement`) for type erasure
 - Variadic template for single and multi-FK support
 - Compile-time SQL generation with fold expressions
-- Separate statement caching for JOIN vs simple SELECT
+- JOIN and simple SELECT share the single Connection-level statement cache (distinct SQL text → distinct cache entries)
 
 ## Optimization Attempt: Template-Based Compile-Time JOIN
 

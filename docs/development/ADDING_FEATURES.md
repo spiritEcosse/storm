@@ -57,22 +57,24 @@ public:
 } // namespace storm::orm
 ```
 
-### 2. Consider Statement Caching
+### 2. Statement Reuse via the Connection-Level Cache
 
-If the operation will be repeated, add caching:
+Storm uses a single Connection-level prepared-statement cache (`prepare_cached`),
+keyed by SQL text. There is no per-QuerySet or per-Statement cache — those L1/L2
+layers were removed in #214. Each call simply asks the connection for the
+statement:
 
 ```cpp
 template <typename T>
 class YourOperationStatement : private BaseStatement<T> {
-    Statement* cached_stmt_ = nullptr;
-
-    auto execute_single_optimized(const T& obj) {
-        if (!cached_stmt_) {
-            cached_stmt_ = *conn_.prepare_cached(sql_string);
+    auto execute_single_optimized(const T& obj) -> std::expected<void, Error> {
+        auto stmt_result = conn_->prepare_cached(sql_string);
+        if (!stmt_result) {
+            return std::unexpected(stmt_result.error());
         }
-
-        // Bind and execute
-        cached_stmt_->reset();
+        auto* stmt_ptr = *stmt_result;
+        stmt_ptr->reset();
+        // Bind and execute using stmt_ptr
     }
 };
 ```
