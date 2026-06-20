@@ -159,7 +159,7 @@ The dashboard captures these rows alongside regular measurement rows. When a bas
 ```
   Complexity:
     Storm/WHERE/where_int_gt    N → N     coef 1.21 → 1.23  +1.6%  ✓
-    Storm/JOIN/join_messages    N → N²                            ✗ SHAPE
+    Storm/SELECT_JOIN/select_join    N → N²                       ✗ SHAPE
     Storm/ORDER/order_salary    NlgN → NlgN  coef 2.10 → 2.95  +40%  ⚠ DRIFT
 ```
 

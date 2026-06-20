@@ -23,7 +23,7 @@
 
 ### Performance Benchmarks
 
-**Location**: `benchmarks/bench_*.cpp`
+**Location**: `benchmarks/tests/benchmark_tests.yaml` (YAML-declared; fixtures in `benchmarks/query_benchmark.cppm` / `benchmarks/crud_benchmark.cppm`)
 
 **Coverage**:
 - CRUD operations (INSERT, SELECT, UPDATE, DELETE)

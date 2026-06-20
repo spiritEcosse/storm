@@ -122,8 +122,8 @@ The current function-pointer based implementation strikes a good balance between
 
 ```bash
 # Google Benchmark CLI (dataset sizes are configured in benchmarks/tests/benchmark_tests.yaml)
-./build/release/benchmarks/storm_bench --benchmark_filter='Storm/JOIN/.*'
-./build/release/benchmarks/storm_bench --benchmark_filter='Storm/JOIN/.*' --benchmark_repetitions=10
+./build/release/benchmarks/storm_bench --benchmark_filter='Storm/.*JOIN.*'
+./build/release/benchmarks/storm_bench --benchmark_filter='Storm/.*JOIN.*' --benchmark_repetitions=10
 ```
 
 See [benchmarks/README.md](https://github.com/spiritEcosse/storm/blob/develop/benchmarks/README.md) for comprehensive guide.

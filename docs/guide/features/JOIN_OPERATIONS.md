@@ -556,10 +556,10 @@ cmake --preset ninja-release -DENABLE_BENCH=ON
 cmake --build --preset ninja-release
 
 # Run all JOIN benchmarks (dataset sizes are configured in benchmarks/tests/benchmark_tests.yaml)
-./build/release/benchmarks/storm_bench --benchmark_filter='Storm/JOIN/.*'
+./build/release/benchmarks/storm_bench --benchmark_filter='Storm/.*JOIN.*'
 
 # Repeated runs for stats (median/mean/stddev)
-./build/release/benchmarks/storm_bench --benchmark_filter='Storm/JOIN/.*' --benchmark_repetitions=10
+./build/release/benchmarks/storm_bench --benchmark_filter='Storm/.*JOIN.*' --benchmark_repetitions=10
 ```
 
 See `benchmarks/query_benchmark.cppm` and `benchmarks/tests/benchmark_tests.yaml` for the JOIN benchmark definition.

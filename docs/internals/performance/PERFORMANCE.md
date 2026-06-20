@@ -71,7 +71,7 @@ Storm ORM follows **DRY (Don't Repeat Yourself)** and **KISS (Keep It Simple, St
 
 # 3. Build and run performance tests (Google Benchmark CLI)
 cmake --preset ninja-release && cmake --build --preset ninja-release
-./build/release/benchmarks/storm_bench --benchmark_filter='Storm/LIMIT/.*' \
+./build/release/benchmarks/storm_bench --benchmark_filter='Storm/.*LIMIT.*' \
     --benchmark_repetitions=10 --benchmark_report_aggregates_only=true
 
 # 4. Compare with raw SQLite via the separate anchors binary (release-time only)
@@ -332,7 +332,7 @@ cmake --preset ninja-release -DENABLE_BENCH=ON
 cmake --build --preset ninja-release
 
 ./build/release/benchmarks/storm_bench                                       # All microbenchmarks
-./build/release/benchmarks/storm_bench --benchmark_filter='Storm/JOIN/.*'    # JOIN performance
+./build/release/benchmarks/storm_bench --benchmark_filter='Storm/.*JOIN.*'    # JOIN performance
 ./build/release/benchmarks/storm_anchors                                     # Raw SQLite baseline (full comparison)
 ```
 
@@ -386,7 +386,7 @@ Add an entry to `benchmarks/tests/benchmark_tests.yaml` describing the test
 ```bash
 cmake --preset ninja-release -DENABLE_BENCH=ON
 cmake --build --preset ninja-release
-./build/release/benchmarks/storm_bench --benchmark_filter='Storm/LIMIT/.*'
+./build/release/benchmarks/storm_bench --benchmark_filter='Storm/.*LIMIT.*'
 ```
 
 #### 4. Calculate Efficiency

@@ -47,11 +47,11 @@ There is NO flat `tests/test_crud.cpp` / `tests/test_*.cpp` / `tests/test_<featu
 
 ### A. Benchmark binary/command lines → `storm_bench` / `storm_anchors` + Google Benchmark flags
 - `internals/compiler/COMPILER_ATTRIBUTES.md:228,234` — `bench_where --benchmark_min_time=2s` → `storm_bench --benchmark_filter='Storm/WHERE/.*' --benchmark_min_time=2s` (min_time IS a real Google Benchmark flag; keep it).
-- `internals/performance/PERFORMANCE.md:349` `bench_storm` → `storm_bench`; `:416` `bench_limit --size=... --iterations=...` → `storm_bench --benchmark_filter='Storm/LIMIT/.*'`.
+- `internals/performance/PERFORMANCE.md:349` `bench_storm` → `storm_bench`; `:416` `bench_limit --size=... --iterations=...` → `storm_bench --benchmark_filter='Storm/.*LIMIT.*'` (no bare `LIMIT` category — it's a compound suffix on SELECT_LIMIT/SELECT_LIMIT_OFFSET/etc.).
 - `internals/performance/DISTINCT_ANALYSIS.md:146` `bench_storm` → `storm_bench --benchmark_filter='Storm/DISTINCT/.*'`.
-- `internals/performance/JOIN_ANALYSIS.md:129-133` `bench_join --help/--size/--storm-join-1/...` → `storm_bench --benchmark_filter='Storm/JOIN/.*'` (drop the non-existent custom flags; show `--benchmark_filter` variants).
+- `internals/performance/JOIN_ANALYSIS.md:129-133` `bench_join --help/--size/--storm-join-1/...` → `storm_bench --benchmark_filter='Storm/.*JOIN.*'` (drop the non-existent custom flags; show `--benchmark_filter` variants; no bare `JOIN` category — it's a compound suffix on SELECT_JOIN/SELECT_LEFT_JOIN/etc., so the regex needs `.*JOIN.*`).
 - `guide/features/BATCH_OPERATIONS.md:407,410,413` `bench_storm`/`bench_sqlite_orm`/`bench_sqlite` → `storm_bench` / `storm_anchors` (sqlite_orm anchor is part of anchors); `:416` `bench_storm.cpp` → point at `benchmarks/crud_benchmark.cppm` + `benchmark_tests.yaml`.
-- `guide/features/JOIN_OPERATIONS.md:563-570` `bench_join ...` → `storm_bench --benchmark_filter='Storm/JOIN/.*'`; `:573` `bench_join.cpp` → `benchmarks/query_benchmark.cppm` + YAML.
+- `guide/features/JOIN_OPERATIONS.md:563-570` `bench_join ...` → `storm_bench --benchmark_filter='Storm/.*JOIN.*'`; `:573` `bench_join.cpp` → `benchmarks/query_benchmark.cppm` + YAML.
 - `guide/features/SELECT_QUERIES.md:359,360` `bench_storm`/`bench_sqlite` → `storm_bench`/`storm_anchors`; `:363` `bench_storm.cpp` → `benchmarks/query_benchmark.cppm` + YAML.
 
 ### B. "Add a benchmark" workflow (the dead common.py / bench_<feature>.cpp model) → YAML model
@@ -67,6 +67,7 @@ There is NO flat `tests/test_crud.cpp` / `tests/test_*.cpp` / `tests/test_<featu
 - `guide/features/JOIN_OPERATIONS.md:543` `tests/test_fk_fields.cpp` → `tests/schema/test_fk_fields.cpp`.
 - `guide/features/BATCH_OPERATIONS.md:421,422` `tests/test_crud.cpp`/`tests/test_fk_fields.cpp` → `tests/crud/test_crud.cpp` / `tests/schema/test_fk_fields.cpp`.
 - `internals/testing/TESTING.md:14` `Location: tests/test_*.cpp` → `tests/<category>/test_*.cpp` (subdirs: crud, query, schema, db, errors, …); `:19` `tests/test_fk_fields.cpp` → `tests/schema/test_fk_fields.cpp`; `:119` `Create test file: tests/test_<feature>.cpp` → `tests/<category>/test_<feature>.cpp`.
+- **MISSED in original sweep**: `internals/testing/TESTING.md:26` `**Location**: benchmarks/bench_*.cpp` (dead glob, no such files) → `benchmarks/tests/benchmark_tests.yaml` (YAML-declared; fixtures in `benchmarks/query_benchmark.cppm` / `benchmarks/crud_benchmark.cppm`).
 - `internals/building/COMMON_TASKS.md:40` `tests/test_*.cpp` → `tests/<category>/test_*.cpp`.
 - `internals/building/ADDING_FEATURES.md:8` `tests/test_<feature>.cpp` → `tests/<category>/test_<feature>.cpp`; `internals/performance/PERFORMANCE.md:107` same.
 
