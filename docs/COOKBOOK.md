@@ -10,7 +10,7 @@ using namespace storm;
 
 // Define a model — reflection maps fields to columns automatically
 struct Person {
-    [[storm::primary_key, storm::auto_increment]] int id;
+    [[= storm::FieldAttr::primary]] int id{};
     std::string name;
     int age;
     double salary;
@@ -196,13 +196,13 @@ auto pairs = qs.values<^^Person::name, ^^Person::age>().execute();
 
 ```cpp
 struct Message {
-    [[storm::primary_key, storm::auto_increment]] int id;
+    [[= storm::FieldAttr::primary]] int id{};
     std::string content;
-    [[storm::foreign_key<^^Person::id>]] int sender;
+    [[= storm::fk<>]] Person sender;
 };
 
 QuerySet<Message> msg_qs;
-auto results = msg_qs.join<Message>().where(...).select();
+auto results = msg_qs.join<^^Message::sender>().where(...).select();
 ```
 
 ## Set Operations
@@ -212,7 +212,7 @@ QuerySet<Person> qs1, qs2;
 
 // UNION (deduplicated)
 auto combined = qs1.where(f<^^Person::age>() > 30)
-    .union_with(qs2.where(f<^^Person::is_active>() == true))
+    .union_(qs2.where(f<^^Person::is_active>() == true))
     .select();
 
 // UNION ALL (keeps duplicates)
