@@ -109,25 +109,13 @@ for (int i = 0; i < 100; ++i) {
 
 **Cache hit performance**: Near-identical to raw SQLite
 
-### Separate Caching for JOIN
+### SELECT and JOIN share the Connection cache
 
-SELECT with JOIN uses a separate statement cache:
-
-```cpp
-template <typename JoinStmt = void>
-auto execute_optimized(JoinStmt* join_stmt = nullptr) {
-    if constexpr (!std::is_void_v<JoinStmt>) {
-        // Use separate cached_join_stmt_ for JOIN queries
-        if (!cached_join_stmt_) {
-            // Build JOIN SQL and cache
-        }
-    } else {
-        // Use cached_stmt_ for simple SELECT
-    }
-}
-```
-
-**Benefit**: Simple SELECT and JOIN SELECT don't interfere with each other's caches
+Simple SELECT and JOIN SELECT both use the single Connection-level statement
+cache. Each is keyed by its own SQL text, so a JOIN query and a plain SELECT
+naturally resolve to distinct cache entries without any per-query-type cache —
+the `cached_join_stmt_` / `cached_stmt_` members that once held separate handles
+were removed in #214.
 
 ## Row Extraction Optimizations
 
