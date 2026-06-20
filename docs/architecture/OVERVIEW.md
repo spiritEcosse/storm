@@ -14,7 +14,7 @@ Uses `std::meta` for automatic struct-to-table mapping without macros.
 - Zero runtime reflection overhead
 
 ### 2. [Statement Caching](STATEMENT_CACHING.md)
-3-level caching architecture achieving near-raw SQLite performance.
+A single Connection-level statement cache achieving near-raw SQLite performance.
 
 **Cache levels**:
 - QuerySet → Statement instance
@@ -219,6 +219,6 @@ concept DatabaseStatement = requires(T stmt) {
 ## See Also
 
 - [C++26 Reflection](REFLECTION.md) - How reflection enables ORM
-- [Statement Caching](STATEMENT_CACHING.md) - 3-level caching details
+- [Statement Caching](STATEMENT_CACHING.md) - Single Connection-level cache details
 - [SQL Generation](SQL_GENERATION.md) - Compile-time SQL generation
 - [Module System](MODULE_SYSTEM.md) - Module structure and dependencies

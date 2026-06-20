@@ -449,7 +449,7 @@ for (auto& person : queryset.stream()) {
 
 ✅ **74% of raw SQLite** - Excellent ORM performance
 ✅ **1.51x faster than sqlite_orm** - Best-in-class ORM performance
-✅ **3-level caching** - Optimal statement reuse
+✅ **Connection-level statement cache** - Statement reuse
 ✅ **resize() pre-allocation** - 1.7x faster than reserve()
 ✅ **Optimized strings** - 2.2x faster with known size
 ✅ **Compile-time dispatch** - Zero runtime overhead

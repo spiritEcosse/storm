@@ -25,7 +25,7 @@ Welcome to Storm ORM - a modern C++26 ORM library using compile-time reflection 
 - **[Overview](architecture/OVERVIEW.md)** - High-level architecture overview
 - **[Design Decisions](architecture/DESIGN_DECISIONS.md)** - Key architectural decisions and rationale
 - **[C++26 Reflection](architecture/REFLECTION.md)** - How Storm uses std::meta for ORM mapping
-- **[Statement Caching](architecture/STATEMENT_CACHING.md)** - 3-level caching achieving near-raw SQLite performance
+- **[Statement Caching](architecture/STATEMENT_CACHING.md)** - Single Connection-level statement cache achieving near-raw SQLite performance
 - **[SQL Generation](architecture/SQL_GENERATION.md)** - Compile-time SQL generation with ConstexprString
 - **[Module System](architecture/MODULE_SYSTEM.md)** - C++26 module structure, dependencies, and cross-module inlining
 - **[Compile-Time vs Runtime](architecture/COMPILE_TIME_VS_RUNTIME.md)** - WHERE expression design tradeoffs and performance analysis
