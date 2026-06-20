@@ -84,18 +84,12 @@ class YourOperationStatement : private BaseStatement<T> {
 ```cpp
 // src/orm/queryset.cppm
 template <class T> class QuerySet {
-    mutable std::unique_ptr<YourOperationStatement<T, ConnType>> your_op_stmt_;
-
-    auto get_your_op_statement() const {
-        if (!your_op_stmt_) {
-            your_op_stmt_ = std::make_unique<YourOperationStatement<T, ConnType>>(conn_);
-        }
-        return *your_op_stmt_;
-    }
-
 public:
     auto your_operation(const T& obj) {
-        return get_your_op_statement().execute_single_optimized(obj);
+        // Statement is a cheap per-call object; the Connection-level
+        // prepare_cached cache (keyed by SQL text) holds the compiled
+        // statement, so there is no per-QuerySet cached member.
+        return YourOperationStatement<T, ConnType>{conn_}.execute_single_optimized(obj);
     }
 };
 ```
