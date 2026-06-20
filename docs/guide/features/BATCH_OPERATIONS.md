@@ -404,16 +404,13 @@ cmake --preset ninja-release -DENABLE_BENCH=ON
 cmake --build --preset ninja-release
 
 # Storm ORM batch operations
-./build/release/benchmarks/bench_storm
-
-# Compare with sqlite_orm
-./build/release/benchmarks/bench_sqlite_orm
+./build/release/benchmarks/storm_bench
 
 # Raw SQLite baseline
-./build/release/benchmarks/bench_sqlite
+./build/release/benchmarks/storm_anchors
 ```
 
-See `benchmarks/bench_storm.cpp` for batch benchmark implementation.
+See `benchmarks/crud_benchmark.cppm` and `benchmarks/tests/benchmark_tests.yaml` for the batch benchmark definition.
 
 ## Testing
 

@@ -346,7 +346,7 @@ python3 bench.py --compare               # Full comparison
 # Manual benchmark execution
 cmake --preset ninja-release -DENABLE_BENCH=ON
 cmake --build --preset ninja-release
-./build/release/benchmarks/bench_storm
+./build/release/benchmarks/storm_bench
 ```
 
 ### Performance Requirements
@@ -413,7 +413,7 @@ void benchmark_raw_limit(size_t row_count) {
 ```bash
 cmake --preset ninja-release -DENABLE_BENCH=ON
 cmake --build --preset ninja-release
-./build/release/benchmarks/bench_limit --size=10000 --iterations=100
+./build/release/benchmarks/storm_bench --benchmark_filter='Storm/LIMIT/.*'
 ```
 
 #### 4. Calculate Efficiency

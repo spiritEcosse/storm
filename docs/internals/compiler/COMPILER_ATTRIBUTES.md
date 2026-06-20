@@ -225,13 +225,13 @@ std::expected<std::vector<T>, Error> select();
 # 1. Baseline measurement (before changes)
 cmake --preset ninja-release
 cmake --build --preset ninja-release
-./build/release/benchmarks/bench_where --benchmark_min_time=2s > baseline.txt
+./build/release/benchmarks/storm_bench --benchmark_filter='Storm/WHERE/.*' --benchmark_min_time=2s > baseline.txt
 
 # 2. Make attribute changes
 
 # 3. Rebuild and measure
 cmake --build --preset ninja-release
-./build/release/benchmarks/bench_where --benchmark_min_time=2s > after.txt
+./build/release/benchmarks/storm_bench --benchmark_filter='Storm/WHERE/.*' --benchmark_min_time=2s > after.txt
 
 # 4. Compare results
 # If ANY regression (even 1-2%), revert immediately!

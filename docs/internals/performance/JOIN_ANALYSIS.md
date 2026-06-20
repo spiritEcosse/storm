@@ -125,12 +125,9 @@ The current function-pointer based implementation strikes a good balance between
 python3 bench.py --joins                 # Default: 1000 messages
 python3 bench.py --joins --messages=10000  # Custom size
 
-# C++ benchmarks with flags
-./build/release/benchmarks/bench_join --help
-./build/release/benchmarks/bench_join --size=10000 --iterations=100
-./build/release/benchmarks/bench_join --storm-join-1 --size=10000
-./build/release/benchmarks/bench_join --storm-join-multi --size=10000
-./build/release/benchmarks/bench_join --storm-join-1 --raw-join-1 --size=10000
+# C++ benchmarks (Google Benchmark)
+./build/release/benchmarks/storm_bench --benchmark_filter='Storm/JOIN/.*'
+./build/release/benchmarks/storm_bench --benchmark_filter='Storm/JOIN/.*' --benchmark_repetitions=10
 ```
 
 See [benchmarks/README.md](https://github.com/spiritEcosse/storm/blob/develop/benchmarks/README.md) for comprehensive guide.

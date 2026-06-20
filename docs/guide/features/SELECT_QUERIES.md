@@ -356,11 +356,11 @@ python3 bench.py --all
 # Direct C++ benchmark
 cmake --preset ninja-release -DENABLE_BENCH=ON
 cmake --build --preset ninja-release
-./build/release/benchmarks/bench_storm
-./build/release/benchmarks/bench_sqlite  # Raw SQLite baseline
+./build/release/benchmarks/storm_bench --benchmark_filter='Storm/SELECT/.*'
+./build/release/benchmarks/storm_anchors  # Raw SQLite baseline
 ```
 
-See `benchmarks/bench_storm.cpp` for SELECT benchmark implementation.
+See `benchmarks/query_benchmark.cppm` and `benchmarks/tests/benchmark_tests.yaml` for the SELECT benchmark definition.
 
 ## Future Optimizations
 

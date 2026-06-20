@@ -560,17 +560,13 @@ cmake --preset ninja-release -DENABLE_BENCH=ON
 cmake --build --preset ninja-release
 
 # Run all JOIN benchmarks
-./build/release/benchmarks/bench_join
+./build/release/benchmarks/storm_bench --benchmark_filter='Storm/JOIN/.*'
 
-# Run specific JOIN type
-./build/release/benchmarks/bench_join --storm-join-1 --size=10000
-./build/release/benchmarks/bench_join --storm-join-multi --size=10000
-
-# Compare with raw SQLite
-./build/release/benchmarks/bench_join --storm-join-1 --raw-join-1 --size=10000
+# Repeated runs for stats (median/mean/stddev)
+./build/release/benchmarks/storm_bench --benchmark_filter='Storm/JOIN/.*' --benchmark_repetitions=10
 ```
 
-See `benchmarks/bench_join.cpp` for benchmark implementation.
+See `benchmarks/query_benchmark.cppm` and `benchmarks/tests/benchmark_tests.yaml` for the JOIN benchmark definition.
 
 ## Key Benefits
 

@@ -143,7 +143,7 @@ python3 bench.py --all  # Includes DISTINCT tests
 # Manual C++ benchmarks
 cmake --preset ninja-release -DENABLE_BENCH=ON
 cmake --build --preset ninja-release
-./build/release/benchmarks/bench_storm  # Includes DISTINCT operations
+./build/release/benchmarks/storm_bench --benchmark_filter='Storm/DISTINCT/.*'  # DISTINCT operations
 ```
 
 ## Caching Safety
