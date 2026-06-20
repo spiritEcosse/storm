@@ -84,7 +84,7 @@ repeated identical SELECTs reuse a compiled statement instead of re-parsing and
 re-planning it. There is no per-QuerySet or per-Statement cache — those layers
 (L1/L2) were removed in #214 after benchmarks showed no measurable benefit.
 
-See [Statement Caching](../architecture/STATEMENT_CACHING.md) for the full
+See [Statement Caching](../../internals/architecture/STATEMENT_CACHING.md) for the full
 design and the #214 measurements.
 
 ### Benefits of the Connection-level cache
@@ -93,7 +93,7 @@ design and the #214 measurements.
 - **Shared across all QuerySets** — the cache lives on the Connection, so every QuerySet on that connection benefits automatically.
 - **Automatic statement pooling** — statements are pooled and reused without any caller bookkeeping.
 
-For measured performance, see [Statement Caching](../architecture/STATEMENT_CACHING.md) and the project benchmarks.
+For measured performance, see [Statement Caching](../../internals/architecture/STATEMENT_CACHING.md) and the project benchmarks.
 
 ### Repeated SELECT Example
 
@@ -418,5 +418,5 @@ for (auto& person : queryset.stream()) {
 
 - [WHERE Clauses](WHERE_CLAUSES.md) - Filter SELECT results
 - [JOIN Operations](JOIN_OPERATIONS.md) - SELECT with JOINs
-- [Statement Caching](../architecture/STATEMENT_CACHING.md) - Caching architecture details
-- [SQL Generation](../architecture/SQL_GENERATION.md) - Compile-time SQL generation
+- [Statement Caching](../../internals/architecture/STATEMENT_CACHING.md) - Caching architecture details
+- [SQL Generation](../../internals/architecture/SQL_GENERATION.md) - Compile-time SQL generation

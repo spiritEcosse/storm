@@ -46,6 +46,6 @@ cmake --build --preset ninja-release
 ## Next steps
 
 - Common workflows: [COMMON_TASKS.md](COMMON_TASKS.md)
-- Running tests: [TESTING.md](TESTING.md)
-- Coverage: [CODE_COVERAGE.md](CODE_COVERAGE.md)
+- Running tests: [TESTING.md](../testing/TESTING.md)
+- Coverage: [CODE_COVERAGE.md](../testing/CODE_COVERAGE.md)
 - Adding features: [ADDING_FEATURES.md](ADDING_FEATURES.md)

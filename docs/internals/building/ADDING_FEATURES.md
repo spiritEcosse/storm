@@ -243,6 +243,6 @@ auto execute() -> std::expected<void, Error> {
 
 ## See Also
 
-- [Performance Testing](PERFORMANCE_TESTING.md) - Benchmarking guidelines
-- [Compiler Issues](COMPILER_ISSUES.md) - Known workarounds
+- [Performance Testing](../performance/PERFORMANCE.md#testing--benchmarking) - Benchmarking guidelines
+- [Compiler Issues](../compiler/COMPILER_ISSUES.md) - Known workarounds
 - [Architecture Overview](../architecture/OVERVIEW.md) - System architecture

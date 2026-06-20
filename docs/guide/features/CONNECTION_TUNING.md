@@ -88,5 +88,5 @@ wait.
   it stays in WAL across reopens until explicitly changed; re-requesting WAL is
   idempotent.
 
-See also [Statement Caching](../architecture/STATEMENT_CACHING.md) for the
+See also [Statement Caching](../../internals/architecture/STATEMENT_CACHING.md) for the
 `statement_cache_capacity` knob that shares the same `Config`.

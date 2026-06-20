@@ -119,7 +119,7 @@ similar to how PR #263 cleaned the post-#262 baseline.
 
 Don't. Use `STORM_TIDY_FULL=1` to widen the scope, or fix the warning, or
 adjust `.clang-tidy`. `--no-verify` is forbidden by repo convention
-(see [CLAUDE.md](../../CLAUDE.md) Critical Safety Rules).
+(see [CLAUDE.md](https://github.com/spiritEcosse/storm/blob/develop/CLAUDE.md) Critical Safety Rules).
 
 ## Related
 

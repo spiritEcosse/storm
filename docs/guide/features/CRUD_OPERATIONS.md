@@ -220,7 +220,7 @@ cache (`prepare_cached`): identical UPDATEs reuse a compiled statement keyed by
 SQL text. There is no per-Statement handle cache — that layer was removed in
 #214.
 
-See [Statement Caching](../architecture/STATEMENT_CACHING.md) for details.
+See [Statement Caching](../../internals/architecture/STATEMENT_CACHING.md) for details.
 
 ## DELETE Operations
 
@@ -494,5 +494,5 @@ See `tests/test_crud.cpp` for comprehensive test coverage.
 
 - [SELECT Queries](SELECT_QUERIES.md) - Read operations with caching
 - [Batch Operations](BATCH_OPERATIONS.md) - Detailed batch operation strategies
-- [Statement Caching](../architecture/STATEMENT_CACHING.md) - Caching architecture details
-- [SQL Generation](../architecture/SQL_GENERATION.md) - Compile-time SQL generation
+- [Statement Caching](../../internals/architecture/STATEMENT_CACHING.md) - Caching architecture details
+- [SQL Generation](../../internals/architecture/SQL_GENERATION.md) - Compile-time SQL generation

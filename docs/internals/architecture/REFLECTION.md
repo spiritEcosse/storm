@@ -101,5 +101,5 @@ obj.[:member:] = extracted_value;
 ## See Also
 
 - [SQL Generation](SQL_GENERATION.md) - How reflection enables SQL generation
-- [WHERE Clauses](../features/WHERE_CLAUSES.md) - Reflection-based filtering
+- [WHERE Clauses](../../guide/features/WHERE_CLAUSES.md) - Reflection-based filtering
 - [Module System](MODULE_SYSTEM.md) - How reflection works with modules

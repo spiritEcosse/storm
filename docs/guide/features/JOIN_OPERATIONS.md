@@ -425,7 +425,7 @@ template <class T> class QuerySet {
 There is no per-Statement or per-QuerySet JOIN cache. SELECT (with or without a
 JOIN) goes through the single Connection-level prepared-statement cache, keyed
 by SQL text; the L1/L2 layers were removed in #214. See
-[STATEMENT_CACHING.md](../architecture/STATEMENT_CACHING.md).
+[STATEMENT_CACHING.md](../../internals/architecture/STATEMENT_CACHING.md).
 
 ## Performance Analysis
 
@@ -586,5 +586,5 @@ See `benchmarks/bench_join.cpp` for benchmark implementation.
 
 - [WHERE Clauses](WHERE_CLAUSES.md) - Combine JOINs with filtering
 - [SELECT Queries](SELECT_QUERIES.md) - Statement caching details
-- [Statement Caching](../architecture/STATEMENT_CACHING.md) - Caching architecture
-- [SQL Generation](../architecture/SQL_GENERATION.md) - Compile-time SQL generation
+- [Statement Caching](../../internals/architecture/STATEMENT_CACHING.md) - Caching architecture
+- [SQL Generation](../../internals/architecture/SQL_GENERATION.md) - Compile-time SQL generation

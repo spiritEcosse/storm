@@ -217,7 +217,7 @@ issue #271). `statement_cache_` on each `Connection` is guarded by a
 ## Why only one cache level (#214)
 
 Issue #214 ran a controlled investigation
-([results](../superpowers/results/2026-05-30-cache-investigation-results.md))
+([results](../../superpowers/results/2026-05-30-cache-investigation-results.md))
 across four cache configurations (all-3, no-L2, no-L1, L3-only) on multi-row
 queries, bulk writes, and single-row tight loops.
 
@@ -257,7 +257,7 @@ The collapse was validated on the standard gates:
 
 ## See Also
 
-- [SELECT Queries](../features/SELECT_QUERIES.md) - How SELECT uses caching
-- [CRUD Operations](../features/CRUD_OPERATIONS.md) - UPDATE/DELETE caching
+- [SELECT Queries](../../guide/features/SELECT_QUERIES.md) - How SELECT uses caching
+- [CRUD Operations](../../guide/features/CRUD_OPERATIONS.md) - UPDATE/DELETE caching
 - [SQL Generation](SQL_GENERATION.md) - What gets cached
-- [#214 cache investigation results](../superpowers/results/2026-05-30-cache-investigation-results.md)
+- [#214 cache investigation results](../../superpowers/results/2026-05-30-cache-investigation-results.md)

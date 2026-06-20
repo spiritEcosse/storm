@@ -278,4 +278,4 @@ registry module (`storm_benchmark_registry::resolve_fk_field`).
 ## See Also
 
 - [Module System](../architecture/MODULE_SYSTEM.md) - How modules are organized
-- [Adding Features](ADDING_FEATURES.md) - Development workflow
+- [Adding Features](../building/ADDING_FEATURES.md) - Development workflow

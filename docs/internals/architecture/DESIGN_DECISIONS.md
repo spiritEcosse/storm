@@ -200,7 +200,7 @@ auto result = message_qs.join<^^Message::sender>().select();
 auto result = message_qs.join<^^Message::sender, ^^Message::receiver>().select();
 ```
 
-See [JOIN Performance Analysis](../benchmarks/JOIN_ANALYSIS.md) for detailed performance data.
+See [JOIN Performance Analysis](../performance/JOIN_ANALYSIS.md) for detailed performance data.
 
 ## 12. DISTINCT Query Support (Single & Multi-Field)
 
@@ -221,7 +221,7 @@ class DistinctStatement : private BaseStatement<T> {
 };
 ```
 
-See [DISTINCT Analysis](../benchmarks/DISTINCT_ANALYSIS.md) for detailed implementation and performance data.
+See [DISTINCT Analysis](../performance/DISTINCT_ANALYSIS.md) for detailed implementation and performance data.
 
 ## Implementation Notes
 

@@ -119,7 +119,7 @@ qs.update(saved).execute();
 
 `auto_create` stamps on INSERT only; `auto_update` stamps on INSERT and UPDATE. Both
 fields must be `std::chrono::system_clock::time_point`. See
-[reference/FIELD_TYPES.md](reference/FIELD_TYPES.md#automatic-timestamps-auto_create--auto_update).
+[reference/FIELD_TYPES.md](reference/FIELD_TYPES.md).
 
 ## DELETE
 
