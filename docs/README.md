@@ -9,54 +9,72 @@ Welcome to Storm ORM - a modern C++26 ORM library using compile-time reflection 
 - **[Main Project Guide (CLAUDE.md)](https://github.com/spiritEcosse/storm/blob/develop/CLAUDE.md)** - Quick start and common tasks
 - **[Benchmarks](https://github.com/spiritEcosse/storm/blob/develop/benchmarks/README.md)** - Performance results and benchmark system
 
-## Features
+## Guide
 
-### Core Operations
-- **[CRUD Operations](features/CRUD_OPERATIONS.md)** - INSERT, UPDATE, DELETE with auto-generated IDs
-- **[SELECT Queries](features/SELECT_QUERIES.md)** - Optimized row extraction and statement caching
-- **[WHERE Clauses](features/WHERE_CLAUSES.md)** - Type-safe filtering with pure C++26 reflection
-- **[JOIN Operations](features/JOIN_OPERATIONS.md)** - Single and multi-FK JOINs with type erasure
-- **[Referential Integrity](features/REFERENTIAL_INTEGRITY.md)** - Always-on FK constraints, junction FOREIGN KEYs, SQLite PRAGMA
-- **[Batch Operations](features/BATCH_OPERATIONS.md)** - Bulk INSERT/UPDATE/DELETE with smart thresholds
-- **[Connection Tuning](features/CONNECTION_TUNING.md)** - SQLite busy_timeout default, optional WAL, pooled concurrency
+Documentation for users of Storm ORM — patterns, features, and field/migration reference.
 
-## Architecture
+### Cookbook
 
-- **[Overview](architecture/OVERVIEW.md)** - High-level architecture overview
-- **[Design Decisions](architecture/DESIGN_DECISIONS.md)** - Key architectural decisions and rationale
-- **[C++26 Reflection](architecture/REFLECTION.md)** - How Storm uses std::meta for ORM mapping
-- **[Statement Caching](architecture/STATEMENT_CACHING.md)** - Single Connection-level statement cache achieving near-raw SQLite performance
-- **[SQL Generation](architecture/SQL_GENERATION.md)** - Compile-time SQL generation with ConstexprString
-- **[Module System](architecture/MODULE_SYSTEM.md)** - C++26 module structure, dependencies, and cross-module inlining
-- **[Compile-Time vs Runtime](architecture/COMPILE_TIME_VS_RUNTIME.md)** - WHERE expression design tradeoffs and performance analysis
+- **[Cookbook](guide/COOKBOOK.md)** - Quick-reference patterns for common Storm ORM operations
 
-## Benchmarks
+### Features
 
-- **[Benchmark System](https://github.com/spiritEcosse/storm/blob/develop/benchmarks/README.md)** - Compile-time benchmark system with size profiles and category filtering
-- **[JOIN Analysis](benchmarks/JOIN_ANALYSIS.md)** - JOIN performance deep dive
-- **[DISTINCT Analysis](benchmarks/DISTINCT_ANALYSIS.md)** - DISTINCT performance analysis
+- **[CRUD Operations](guide/features/CRUD_OPERATIONS.md)** - INSERT, UPDATE, DELETE with auto-generated IDs
+- **[SELECT Queries](guide/features/SELECT_QUERIES.md)** - Optimized row extraction and statement caching
+- **[WHERE Clauses](guide/features/WHERE_CLAUSES.md)** - Type-safe filtering with pure C++26 reflection
+- **[JOIN Operations](guide/features/JOIN_OPERATIONS.md)** - Single and multi-FK JOINs with type erasure
+- **[Batch Operations](guide/features/BATCH_OPERATIONS.md)** - Bulk INSERT/UPDATE/DELETE with smart thresholds
+- **[Referential Integrity](guide/features/REFERENTIAL_INTEGRITY.md)** - Always-on FK constraints, junction FOREIGN KEYs, SQLite PRAGMA
+- **[Connection Tuning](guide/features/CONNECTION_TUNING.md)** - SQLite busy_timeout default, optional WAL, pooled concurrency
 
-## Reference
+### Reference
 
-- **[Field Types](reference/FIELD_TYPES.md)** - Supported C++ to SQLite type mappings
+- **[Field Types](guide/reference/FIELD_TYPES.md)** - Supported C++ to SQLite/PostgreSQL type mappings
+- **[Migrations](guide/reference/MIGRATIONS.md)** - Atlas-based schema migrations with auto-discovered models
 
-## Development
+## Internals
 
-- **[Getting Started](development/GETTING_STARTED.md)** - First-time setup, build via Docker (recommended) or from source
-- **[Common Tasks](development/COMMON_TASKS.md)** - Adding operations, common development workflows
-- **[Testing](development/TESTING.md)** - Test framework, PostgreSQL test isolation, running tests
-- **[Code Coverage](development/CODE_COVERAGE.md)** - How to generate and analyze test coverage
-- **[Adding Features](development/ADDING_FEATURES.md)** - How to add new database operations
-- **[C++26 Coding Standards](development/CPP26_CODING_STANDARDS.md)** - Modern C++ best practices and patterns
-- **[Performance Guidelines](development/PERFORMANCE_GUIDELINES.md)** - Performance rules and best practices
-- **[Performance Tips](development/PERFORMANCE_TIPS.md)** - Transaction wrapping, batch inserts, optimization techniques
-- **[Performance Testing](development/PERFORMANCE_TESTING.md)** - Benchmarking guidelines and workflow
-- **[Compiler Attributes](development/COMPILER_ATTRIBUTES.md)** - Guide for using hot, flatten, and always_inline attributes
-- **[Compiler Issues](development/COMPILER_ISSUES.md)** - Known workarounds for clang-p2996
-- **[Formatting](development/FORMATTING.md)** - clang-format and cmake-format targets, pre-commit integration, and `.clang-format` settings
-- **[Pre-Commit](development/PRE_COMMIT.md)** - clang-tidy modes (`--diff` / `--full` / `--all`), weekly sweep, parse-failure handling
-- **[Sanitizers](development/SANITIZERS.md)** - ASAN+UBSAN and TSAN presets, what each sanitizer catches, MSAN status
-- **[Benchmark Dashboard](development/BENCHMARK_DASHBOARD.md)** - Real-time TUI for storm_bench: setup, schema, backup/restore, troubleshooting
+Documentation for Storm ORM contributors — architecture, build/test workflow, and performance/compiler internals.
+
+### Architecture
+
+- **[Overview](internals/architecture/OVERVIEW.md)** - High-level architecture overview
+- **[Design Decisions](internals/architecture/DESIGN_DECISIONS.md)** - Key architectural decisions and rationale
+- **[C++26 Reflection](internals/architecture/REFLECTION.md)** - How Storm uses std::meta for ORM mapping
+- **[SQL Generation](internals/architecture/SQL_GENERATION.md)** - Compile-time SQL generation with ConstexprString
+- **[Module System](internals/architecture/MODULE_SYSTEM.md)** - Database-agnostic module design with zero-cost cross-module inlining
+- **[Statement Caching](internals/architecture/STATEMENT_CACHING.md)** - Single Connection-level statement cache achieving near-raw SQLite performance
+- **[Compile-Time vs Runtime](internals/architecture/COMPILE_TIME_VS_RUNTIME.md)** - WHERE expression design tradeoffs and performance analysis
+
+### Building
+
+- **[Getting Started](internals/building/GETTING_STARTED.md)** - First-time setup, build via Docker (recommended) or from source
+- **[Common Tasks](internals/building/COMMON_TASKS.md)** - Adding operations, common development workflows
+- **[Adding Features](internals/building/ADDING_FEATURES.md)** - How to add new database operations
+- **[Pre-Commit](internals/building/PRE_COMMIT.md)** - clang-tidy modes (`--diff` / `--full` / `--all`), weekly sweep, parse-failure handling
+- **[Formatting](internals/building/FORMATTING.md)** - clang-format and cmake-format targets, pre-commit integration, and `.clang-format` settings
+
+### Testing
+
+- **[Testing](internals/testing/TESTING.md)** - Test framework, PostgreSQL test isolation, running tests
+- **[Code Coverage](internals/testing/CODE_COVERAGE.md)** - How to generate and analyze test coverage
+- **[Sanitizers](internals/testing/SANITIZERS.md)** - ASAN+UBSAN and TSAN presets, what each sanitizer catches, MSAN status
+- **[Fuzzing](internals/testing/FUZZING.md)** - libFuzzer stress testing of the runtime SQL binding and execution layer
+- **[MSAN libc++ Fix](internals/testing/MSAN_LIBC_FIX.md)** - In-progress fix for the MSAN + import std; + GTest false positive
+
+### Performance
+
+- **[Performance](internals/performance/PERFORMANCE.md)** - Performance guidelines, hot-path tips, and benchmarking/testing workflow
+- **[Benchmark Dashboard](internals/performance/BENCHMARK_DASHBOARD.md)** - Real-time TUI for storm_bench: setup, schema, backup/restore, troubleshooting
+- **[JOIN Analysis](internals/performance/JOIN_ANALYSIS.md)** - JOIN performance deep dive
+- **[DISTINCT Analysis](internals/performance/DISTINCT_ANALYSIS.md)** - DISTINCT performance analysis
+
+### Compiler
+
+- **[Compiler Issues](internals/compiler/COMPILER_ISSUES.md)** - Known workarounds for clang-p2996
+- **[Compiler Attributes](internals/compiler/COMPILER_ATTRIBUTES.md)** - Guide for using hot, flatten, and always_inline attributes
+- **[C++26 Coding Standards](internals/compiler/CPP26_CODING_STANDARDS.md)** - Modern C++ best practices and patterns
+- **[Code Quality](internals/compiler/CODE_QUALITY.md)** - Lint hook thresholds and `.lint-skip` exemption policy
 
 ## Open Issues
 
