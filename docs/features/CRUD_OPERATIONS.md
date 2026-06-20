@@ -215,21 +215,12 @@ The primary key cannot be a SET target (compile-time rejected).
 
 ### Statement Caching
 
-UpdateStatement uses the 3-level caching pattern:
+UpdateStatement reuses prepared statements through the single Connection-level
+cache (`prepare_cached`): identical UPDATEs reuse a compiled statement keyed by
+SQL text. There is no per-Statement handle cache — that layer was removed in
+#214.
 
-```cpp
-template <typename T> class UpdateStatement {
-    Statement* cached_stmt_ = nullptr;
-
-    auto execute_single_optimized(const T& obj) {
-        if (!cached_stmt_) {
-            cached_stmt_ = *conn_.prepare_cached(get_sql());
-        }
-        // Bind fields and execute
-        cached_stmt_->reset();
-    }
-};
-```
+See [Statement Caching](../architecture/STATEMENT_CACHING.md) for details.
 
 ## DELETE Operations
 
