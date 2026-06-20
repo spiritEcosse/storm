@@ -579,7 +579,7 @@ See `benchmarks/bench_join.cpp` for benchmark implementation.
 ✅ **Abstract base class** - Clean type erasure pattern
 ✅ **Compile-time SQL generation** - Zero runtime overhead
 ✅ **Zero runtime overhead** - Uses `if constexpr` dispatch
-✅ **Separate statement caching** - JOIN vs simple SELECT
+✅ **Single Connection-level cache** - JOIN and simple SELECT share one cache (#214)
 ✅ **77% average efficiency** - Respectable ORM performance
 
 ## See Also
