@@ -18,26 +18,17 @@ When deciding which implementation approach is "good", **performance testing is 
 - **Target**: ≥95% of raw SQLite performance for acceptable implementations
 - Document results in docs with operation details and efficiency metrics
 
-#### 2. Use `common.py` for Test Infrastructure
+#### 2. Add a Benchmark via YAML
 
-- When adding new features, create dedicated performance tests
-- Use `benchmarks/common.py` utilities for consistent test setup and data generation
-- If test infrastructure doesn't exist, create it following existing patterns (see `bench_join.cpp`)
-- Example structure:
-  ```cpp
-  // benchmarks/bench_limit.cpp
-  #include "common.h"
-  // Benchmark Storm ORM LIMIT vs Raw SQLite LIMIT
-  ```
+- Storm benchmarks are declared as YAML entries in `benchmarks/tests/benchmark_tests.yaml`;
+  `benchmarks/register.cpp` walks `BENCHMARK_TESTS` and registers each one as a Google
+  Benchmark automatically — there is no per-feature `.cpp` benchmark file to write.
+- The reusable fixtures live in `benchmarks/query_benchmark.cppm` and
+  `benchmarks/crud_benchmark.cppm`; a YAML entry routes a test to the right fixture.
+- Run a category with `./build/release/benchmarks/storm_bench --benchmark_filter='Storm/<CATEGORY>/.*'`
+  and compare against the raw baseline binary `./build/release/benchmarks/storm_anchors`.
 
-#### 3. Separate Performance Test Files
-
-- Each major feature should have its own benchmark file for detailed analysis
-- Structure: `benchmarks/bench_<feature>.cpp` (e.g., `bench_limit.cpp`, `bench_where.cpp`)
-- Compare Storm ORM implementation against equivalent raw SQL
-- Use command-line flags for flexible testing (see `bench_join.cpp --help` as example)
-
-#### 4. Raw SQL Comparison is Required
+#### 3. Raw SQL Comparison is Required
 
 - Every benchmark must include raw SQLite baseline for efficiency calculation
 - Report efficiency percentage: `(Storm_ORM_performance / Raw_SQLite_performance) * 100`
@@ -105,7 +96,7 @@ When adding new features, update documentation with:
 
 - [ ] Implement feature in `src/orm/statements/`
 - [ ] Add comprehensive tests in `tests/test_<feature>.cpp`
-- [ ] Create performance benchmark in `benchmarks/bench_<feature>.cpp`
+- [ ] Add a benchmark YAML entry in `benchmarks/tests/benchmark_tests.yaml`
 - [ ] Run benchmark and measure efficiency vs raw SQLite
 - [ ] If efficiency <95%, optimize or document reasons
 - [ ] Update `benchmarks/README.md` with performance tables
@@ -116,7 +107,7 @@ When adding new features, update documentation with:
 
 - All PRs with ORM changes must include benchmark results
 - CI should fail if performance drops >5% without justification
-- Use `python3 bench.py --compare` before committing to catch regressions
+- Run `./build/release/benchmarks/storm_bench` and `./build/release/benchmarks/storm_anchors` and compare efficiency before committing to catch regressions
 
 ### Profiling Tips
 
@@ -337,23 +328,19 @@ Performance testing is **mandatory** for all new Storm ORM features. Target: ≥
 ### Quick Start
 
 ```bash
-# Recommended: Python benchmark suite with auto-rebuild
-python3 bench.py --all                   # All microbenchmarks
-python3 bench.py --joins                 # JOIN performance
-python3 bench.py --joins --messages=10000  # Custom dataset size
-python3 bench.py --compare               # Full comparison
-
-# Manual benchmark execution
 cmake --preset ninja-release -DENABLE_BENCH=ON
 cmake --build --preset ninja-release
-./build/release/benchmarks/storm_bench
+
+./build/release/benchmarks/storm_bench                                       # All microbenchmarks
+./build/release/benchmarks/storm_bench --benchmark_filter='Storm/JOIN/.*'    # JOIN performance
+./build/release/benchmarks/storm_anchors                                     # Raw SQLite baseline (full comparison)
 ```
 
 ### Performance Requirements
 
 Every new feature requires:
 
-1. **Benchmark file**: `benchmarks/bench_<feature>.cpp`
+1. **Benchmark**: a YAML entry in `benchmarks/tests/benchmark_tests.yaml`
 2. **Raw SQLite comparison**: Calculate efficiency percentage
 3. **Documentation**: Add results to relevant docs
 4. **Commit message**: Include performance metrics
@@ -388,25 +375,11 @@ Storm follows DRY/KISS principles **unless** they cost >10% performance:
 src/orm/statements/select.cppm
 ```
 
-#### 2. Create Benchmark
+#### 2. Add a Benchmark YAML Entry
 
-```bash
-touch benchmarks/bench_limit.cpp
-```
-
-Use `benchmarks/common.py` for test infrastructure:
-
-```cpp
-#include "common.h"
-
-void benchmark_storm_limit(size_t row_count) {
-    // Storm ORM implementation
-}
-
-void benchmark_raw_limit(size_t row_count) {
-    // Raw SQLite baseline
-}
-```
+Add an entry to `benchmarks/tests/benchmark_tests.yaml` describing the test
+(category, fixture, dataset size). `benchmarks/register.cpp` walks
+`BENCHMARK_TESTS` and registers it automatically — no `.cpp` file to write.
 
 #### 3. Run Benchmark
 
@@ -583,7 +556,7 @@ void raw_benchmark(int batch_size) { ... }  // Same decision logic
 
 - **CI integration**: Run benchmarks on every PR
 - **Threshold checks**: Fail if performance drops >5%
-- **Before commit**: `python3 bench.py --compare`
+- **Before commit**: run `./build/release/benchmarks/storm_bench` and `./build/release/benchmarks/storm_anchors` and compare efficiency
 
 ### See Also
 

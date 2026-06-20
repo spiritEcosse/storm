@@ -552,14 +552,10 @@ Comprehensive JOIN tests in `tests/test_fk_fields.cpp`:
 Run JOIN performance benchmarks:
 
 ```bash
-# Python benchmark suite (recommended)
-python3 bench.py --joins --messages=10000
-
-# Direct C++ benchmark
 cmake --preset ninja-release -DENABLE_BENCH=ON
 cmake --build --preset ninja-release
 
-# Run all JOIN benchmarks
+# Run all JOIN benchmarks (dataset sizes are configured in benchmarks/tests/benchmark_tests.yaml)
 ./build/release/benchmarks/storm_bench --benchmark_filter='Storm/JOIN/.*'
 
 # Repeated runs for stats (median/mean/stddev)

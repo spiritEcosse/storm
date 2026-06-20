@@ -6,7 +6,7 @@ Guide for adding new database operations or features to Storm ORM.
 
 - [ ] Implement feature in `src/orm/statements/`
 - [ ] Add comprehensive tests in `tests/test_<feature>.cpp`
-- [ ] Create performance benchmark in `benchmarks/bench_<feature>.cpp`
+- [ ] Add a benchmark YAML entry in `benchmarks/tests/benchmark_tests.yaml`
 - [ ] Run benchmark and measure efficiency vs raw SQLite
 - [ ] If efficiency <95%, optimize or document reasons
 - [ ] Update relevant documentation
@@ -123,36 +123,20 @@ TEST(YourFeatureTest, BatchOperation) {
 }
 ```
 
-### 6. Create Benchmark
+### 6. Add a Benchmark
 
-```cpp
-// benchmarks/bench_your_feature.cpp
-#include "common.h"
-
-void benchmark_storm() {
-    QuerySet<Person> qs(conn);
-    for (int i = 0; i < iterations; ++i) {
-        qs.your_operation(obj);
-    }
-}
-
-void benchmark_raw_sqlite() {
-    // Raw SQLite baseline
-}
-
-int main() {
-    measure("Storm ORM", benchmark_storm);
-    measure("Raw SQLite", benchmark_raw_sqlite);
-    calculate_efficiency();
-}
-```
+Storm benchmarks are declared as YAML entries in `benchmarks/tests/benchmark_tests.yaml`;
+`benchmarks/register.cpp` walks `BENCHMARK_TESTS` and registers each one as a Google
+Benchmark automatically — there is no per-feature `.cpp` benchmark file to write. Add an
+entry describing the category, fixture (`benchmarks/query_benchmark.cppm` or
+`benchmarks/crud_benchmark.cppm`), and dataset size for `your_operation`.
 
 ### 7. Run Performance Tests
 
 ```bash
 cmake --preset ninja-release -DENABLE_BENCH=ON
 cmake --build --preset ninja-release
-./build/release/benchmarks/bench_your_feature --size=10000
+./build/release/benchmarks/storm_bench --benchmark_filter='Storm/YourFeature/.*'
 ```
 
 ### 8. Update Documentation

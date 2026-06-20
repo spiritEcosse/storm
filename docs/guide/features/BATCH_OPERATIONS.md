@@ -396,10 +396,7 @@ outer guard owns the single commit/rollback.
 Run batch operation benchmarks:
 
 ```bash
-# Python benchmark suite (recommended)
-python3 bench.py --all
-
-# Direct C++ benchmark
+# Build the release benchmarks
 cmake --preset ninja-release -DENABLE_BENCH=ON
 cmake --build --preset ninja-release
 

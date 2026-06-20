@@ -350,10 +350,6 @@ Comprehensive SELECT tests in `tests/test_select.cpp`:
 Run SELECT performance benchmarks:
 
 ```bash
-# Python benchmark suite (recommended)
-python3 bench.py --all
-
-# Direct C++ benchmark
 cmake --preset ninja-release -DENABLE_BENCH=ON
 cmake --build --preset ninja-release
 ./build/release/benchmarks/storm_bench --benchmark_filter='Storm/SELECT/.*'

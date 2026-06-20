@@ -121,11 +121,7 @@ The current function-pointer based implementation strikes a good balance between
 ## Running JOIN Benchmarks
 
 ```bash
-# Python-based (recommended)
-python3 bench.py --joins                 # Default: 1000 messages
-python3 bench.py --joins --messages=10000  # Custom size
-
-# C++ benchmarks (Google Benchmark)
+# Google Benchmark CLI (dataset sizes are configured in benchmarks/tests/benchmark_tests.yaml)
 ./build/release/benchmarks/storm_bench --benchmark_filter='Storm/JOIN/.*'
 ./build/release/benchmarks/storm_bench --benchmark_filter='Storm/JOIN/.*' --benchmark_repetitions=10
 ```

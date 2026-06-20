@@ -137,10 +137,6 @@ auto ids = qs.distinct().execute();
 ## Running DISTINCT Benchmarks
 
 ```bash
-# Python-based benchmarks
-python3 bench.py --all  # Includes DISTINCT tests
-
-# Manual C++ benchmarks
 cmake --preset ninja-release -DENABLE_BENCH=ON
 cmake --build --preset ninja-release
 ./build/release/benchmarks/storm_bench --benchmark_filter='Storm/DISTINCT/.*'  # DISTINCT operations
