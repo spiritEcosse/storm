@@ -336,7 +336,7 @@ auto result = queryset.select();  // Loads all rows into memory
 
 ## Testing
 
-Comprehensive SELECT tests in `tests/test_select.cpp`:
+Comprehensive SELECT tests in `tests/crud/test_select.cpp`:
 - Empty table scenarios
 - Single row results
 - Multiple rows results

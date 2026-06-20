@@ -11,12 +11,12 @@
 
 ### Unit Tests
 
-**Location**: `tests/test_*.cpp`
+**Location**: `tests/<category>/test_*.cpp` (category subdirs: crud, query, schema, db, errors, tools, …)
 
 **Coverage**:
 - **ID Validation**: Tests verify returned auto-generated IDs
 - **SELECT Testing**: Empty table, single/multiple rows, field types, large datasets, statement caching, integration tests
-- **JOIN Testing**: Single FK and multi-FK JOINs with full object population verification (`tests/test_fk_fields.cpp`)
+- **JOIN Testing**: Single FK and multi-FK JOINs with full object population verification (`tests/schema/test_fk_fields.cpp`)
 - **FK Field Testing**: INSERT/UPDATE/DELETE with FK fields, batch operations with FKs
 - **WHERE Clause Testing**: Various conditions, operators, LIKE patterns, IN, BETWEEN
 - **DISTINCT Testing**: Single and multi-field operations with type safety validation
@@ -116,7 +116,7 @@ TEST(YourTestSuite, YourTestCase) {
 
 ## Writing New Tests
 
-1. **Create test file**: `tests/test_<feature>.cpp`
+1. **Create test file**: `tests/<category>/test_<feature>.cpp`
 2. **Include dependencies**:
    ```cpp
    #include <gtest/gtest.h>

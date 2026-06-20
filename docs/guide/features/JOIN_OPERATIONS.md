@@ -540,7 +540,7 @@ See [WHERE Clauses](WHERE_CLAUSES.md) for more details.
 
 ## Testing
 
-Comprehensive JOIN tests in `tests/test_fk_fields.cpp`:
+Comprehensive JOIN tests in `tests/schema/test_fk_fields.cpp`:
 - Single FK JOINs
 - Multi-FK JOINs
 - Full object population verification

@@ -95,7 +95,7 @@ When adding new features, update documentation with:
 ### Feature Implementation Checklist
 
 - [ ] Implement feature in `src/orm/statements/`
-- [ ] Add comprehensive tests in `tests/test_<feature>.cpp`
+- [ ] Add comprehensive tests in `tests/<category>/test_<feature>.cpp`
 - [ ] Add a benchmark YAML entry in `benchmarks/tests/benchmark_tests.yaml`
 - [ ] Run benchmark and measure efficiency vs raw SQLite
 - [ ] If efficiency <95%, optimize or document reasons

@@ -412,8 +412,8 @@ See `benchmarks/crud_benchmark.cppm` and `benchmarks/tests/benchmark_tests.yaml`
 ## Testing
 
 Comprehensive batch operation tests:
-- `tests/test_crud.cpp` - Basic batch operations
-- `tests/test_fk_fields.cpp` - Batch with FK fields
+- `tests/crud/test_crud.cpp` - Basic batch operations
+- `tests/schema/test_fk_fields.cpp` - Batch with FK fields
 - Various batch sizes (1, 10, 50, 100, 1000)
 - Error handling and rollback
 - ID validation for batch INSERT

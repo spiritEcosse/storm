@@ -488,7 +488,7 @@ All CRUD operations are thoroughly tested:
 - ID validation
 - FK field handling
 
-See `tests/test_crud.cpp` for comprehensive test coverage.
+See `tests/crud/test_crud.cpp` for comprehensive test coverage.
 
 ## See Also
 

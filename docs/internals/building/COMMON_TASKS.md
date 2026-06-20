@@ -37,7 +37,7 @@ Documentation auto-deploys to GitHub Pages on push to `develop` when `docs/` or 
    - Add `std::unique_ptr<YourStatement>` in QuerySet with lazy initialization
 5. Implement compile-time SQL generation using ConstexprString
 6. Add method to `QuerySet` class that delegates to statement
-7. Add comprehensive tests in `tests/test_*.cpp`
+7. Add comprehensive tests in `tests/<category>/test_*.cpp`
 8. Consider optimizations: `if constexpr` type dispatch, pre-allocation, inline functions with compiler hints
 
 ## Working with Bulk Operations

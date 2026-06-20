@@ -91,7 +91,7 @@ auto ids = qs.distinct().execute();
 
 ## Testing
 
-**Location**: `tests/test_distinct.cpp`
+**Location**: `tests/query/test_distinct.cpp`
 
 **Coverage**: 29 comprehensive unit tests covering:
 - Single-field and multi-field DISTINCT operations (17 tests)

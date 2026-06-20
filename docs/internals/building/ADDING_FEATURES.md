@@ -5,7 +5,7 @@ Guide for adding new database operations or features to Storm ORM.
 ## Feature Implementation Checklist
 
 - [ ] Implement feature in `src/orm/statements/`
-- [ ] Add comprehensive tests in `tests/test_<feature>.cpp`
+- [ ] Add comprehensive tests in `tests/<category>/test_<feature>.cpp`
 - [ ] Add a benchmark YAML entry in `benchmarks/tests/benchmark_tests.yaml`
 - [ ] Run benchmark and measure efficiency vs raw SQLite
 - [ ] If efficiency <95%, optimize or document reasons
@@ -103,7 +103,7 @@ public:
 ### 5. Add Tests
 
 ```cpp
-// tests/test_your_feature.cpp
+// tests/<category>/test_your_feature.cpp
 #include <gtest/gtest.h>
 
 TEST(YourFeatureTest, BasicOperation) {
