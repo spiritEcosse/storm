@@ -87,21 +87,13 @@ re-planning it. There is no per-QuerySet or per-Statement cache — those layers
 See [Statement Caching](../architecture/STATEMENT_CACHING.md) for the full
 design and the #214 measurements.
 
-### Benefits of 3-Level Caching
+### Benefits of the Connection-level cache
 
-1. **Level 1** (QuerySet → Statement)
-   - Avoids recreating Statement objects
-   - Preserves optimization state
+- **Avoids SQL re-parsing** — a repeated SELECT reuses the already-compiled prepared statement keyed by SQL text, instead of re-parsing and re-planning it.
+- **Shared across all QuerySets** — the cache lives on the Connection, so every QuerySet on that connection benefits automatically.
+- **Automatic statement pooling** — statements are pooled and reused without any caller bookkeeping.
 
-2. **Level 2** (Statement → PreparedStatement)
-   - Avoids SQL parsing
-   - Reuses compiled SQL
-
-3. **Level 3** (Connection cache)
-   - Shared across all QuerySets
-   - Automatic statement pooling
-
-**Performance impact**: Achieves 74% of raw SQLite (13.07M rows/sec)
+For measured performance, see [Statement Caching](../architecture/STATEMENT_CACHING.md) and the project benchmarks.
 
 ### Repeated SELECT Example
 
