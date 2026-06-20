@@ -335,7 +335,7 @@ portable SQL artifact. This behavior is pinned by the cross-backend tests in
 All operations return `std::expected<T, Error>`:
 
 ```cpp
-auto result = queryset.insert(person);
+auto result = queryset.insert(person).execute();
 if (result) {
     // Success
     int64_t id = result.value();
@@ -402,7 +402,7 @@ struct Message {
 };
 
 Message msg{0, "Hello", User{1, "Alice", 10}};
-auto result = message_qs.insert(msg);
+auto result = message_qs.insert(msg).execute();
 ```
 
 **Behavior**:
@@ -415,7 +415,7 @@ auto result = message_qs.insert(msg);
 ```cpp
 msg.content = "Updated content";
 msg.sender.id = 2;  // Change FK reference
-auto result = message_qs.update(msg);
+auto result = message_qs.update(msg).execute();
 ```
 
 **SQL Generated**:

@@ -139,7 +139,7 @@ When inserting objects in a loop without explicit transaction, each insert auto-
 ```cpp
 // SLOW: ~1.0M ops/sec - each insert triggers auto-commit
 for (auto& obj : objects) {
-    qs.insert(obj);
+    qs.insert(obj).execute();
 }
 ```
 
@@ -149,7 +149,7 @@ for (auto& obj : objects) {
 
 ```cpp
 // FAST: ~1.9M ops/sec - handles transaction internally
-qs.insert(objects);
+qs.insert(objects).execute();
 ```
 
 **Option 2: Manual transaction wrapping**
@@ -159,7 +159,7 @@ qs.insert(objects);
 auto conn = QuerySet<Person>::get_default_connection();
 auto txn  = storm::begin(conn);          // RAII guard (#415)
 for (auto& obj : objects) {
-    qs.insert(obj);
+    qs.insert(obj).execute();
 }
 (void)txn->commit();                       // single COMMIT; auto-ROLLBACK on early exit
 ```

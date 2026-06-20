@@ -87,7 +87,7 @@ TEST(YourTestSuite, YourTestCase) {
 
     // Execute: Perform operation
     QuerySet<YourModel> qs(conn);
-    auto result = qs.insert(...);
+    auto result = qs.insert(...).execute();
 
     // Verify: Check results
     ASSERT_TRUE(result.has_value());

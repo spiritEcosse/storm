@@ -184,7 +184,7 @@ UpdateStatement caches the prepared statement:
 
 ```cpp
 // First update - creates and caches statement
-queryset.update(person1);
+queryset.update(person1).execute();
 
 // Batch update - reuses cached statement
 queryset.update(std::span<const Person>(people));  // Fast!

@@ -46,7 +46,7 @@ Documentation auto-deploys to GitHub Pages on push to `develop` when `docs/` or 
 
 ```cpp
 // Single insert - returns ID
-auto result = queryset.insert(Person{0, "Dave", 40});
+auto result = queryset.insert(Person{0, "Dave", 40}).execute();
 int64_t id = result.value();
 
 // Batch insert - returns all IDs
@@ -60,7 +60,7 @@ const auto& ids = result.value();
 ```cpp
 // Single update
 Person person{1, "Alice", 26};
-queryset.update(person);
+queryset.update(person).execute();
 
 // Batch update/delete
 queryset.update(std::span<const Person>(people));
