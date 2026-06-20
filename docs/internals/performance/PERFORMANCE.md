@@ -86,7 +86,7 @@ cmake --preset ninja-release && cmake --build --preset ninja-release
 # 4. Compare with raw SQLite via the separate anchors binary (release-time only)
 ./build/release/benchmarks/storm_anchors
 
-# 5. Document in docs/benchmarks/results.md
+# 5. Document in benchmarks/README.md
 # Add to performance results table with efficiency percentage
 
 # 6. Commit with performance metrics
@@ -108,7 +108,7 @@ When adding new features, update documentation with:
 - [ ] Create performance benchmark in `benchmarks/bench_<feature>.cpp`
 - [ ] Run benchmark and measure efficiency vs raw SQLite
 - [ ] If efficiency <95%, optimize or document reasons
-- [ ] Update `docs/benchmarks/results.md` with performance tables
+- [ ] Update `benchmarks/README.md` with performance tables
 - [ ] Document any DRY/KISS tradeoffs made for performance
 - [ ] Commit with performance metrics in message
 
