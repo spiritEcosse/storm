@@ -76,37 +76,16 @@ See [JOIN Operations](JOIN_OPERATIONS.md) for detailed JOIN syntax.
 
 ## Statement-Level Caching
 
-SelectStatement uses a 3-level caching architecture for optimal performance:
-
 ### Caching Architecture
 
-```cpp
-// Level 1: QuerySet caches Statement instance
-template <class T> class QuerySet {
-    mutable std::unique_ptr<SelectStatement<T, ConnType>> select_stmt_;
+SelectStatement reuses prepared statements through a single Connection-level
+cache. The Connection keeps a pool of prepared statements keyed by SQL text, so
+repeated identical SELECTs reuse a compiled statement instead of re-parsing and
+re-planning it. There is no per-QuerySet or per-Statement cache — those layers
+(L1/L2) were removed in #214 after benchmarks showed no measurable benefit.
 
-    auto get_select_statement() const -> SelectStatement<T, ConnType>& {
-        if (!select_stmt_) {
-            select_stmt_ = std::make_unique<SelectStatement<T, ConnType>>(conn_);
-        }
-        return *select_stmt_;
-    }
-};
-
-// Level 2: Statement caches prepared statement
-template <typename T> class SelectStatement {
-    Statement* cached_stmt_ = nullptr;
-
-    auto execute_optimized() {
-        if (!cached_stmt_) {
-            // Level 3: Connection-level caching
-            cached_stmt_ = *conn_.prepare_cached(get_sql());
-        }
-        // Execute and extract rows
-        cached_stmt_->reset();
-    }
-};
-```
+See [Statement Caching](../architecture/STATEMENT_CACHING.md) for the full
+design and the #214 measurements.
 
 ### Benefits of 3-Level Caching
 
