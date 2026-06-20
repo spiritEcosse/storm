@@ -28,23 +28,23 @@ QuerySet<Person> qs;
 ```cpp
 // Single insert (id auto-generated)
 Person p{.name = "Alice", .age = 30, .salary = 75000.0, .is_active = true};
-qs.insert(p);
+qs.insert(p).execute();
 
 // Batch insert
 plf::hive<Person> people;
 people.insert({.name = "Bob", .age = 25, .salary = 60000.0, .is_active = true});
 people.insert({.name = "Carol", .age = 35, .salary = 80000.0, .is_active = false});
-qs.insert(people);
+qs.insert(people).execute();
 ```
 
 ## SELECT
 
 ```cpp
 // Select all
-auto all = qs.select();
+auto all = qs.select().execute();
 
 // With WHERE
-auto seniors = qs.where(f<^^Person::age>() > 30).select();
+auto seniors = qs.where(f<^^Person::age>() > 30).select().execute();
 
 // With ORDER BY + LIMIT + OFFSET
 auto page = qs
@@ -52,32 +52,33 @@ auto page = qs
     .order_by<^^Person::name>()
     .limit(10)
     .offset(20)
-    .select();
+    .select()
+    .execute();
 ```
 
 ## WHERE Clauses
 
 ```cpp
 // Comparison operators
-qs.where(f<^^Person::age>() == 30).select();
-qs.where(f<^^Person::age>() != 30).select();
-qs.where(f<^^Person::age>() > 30).select();
-qs.where(f<^^Person::age>() >= 30).select();
-qs.where(f<^^Person::age>() < 30).select();
-qs.where(f<^^Person::age>() <= 30).select();
+qs.where(f<^^Person::age>() == 30).select().execute();
+qs.where(f<^^Person::age>() != 30).select().execute();
+qs.where(f<^^Person::age>() > 30).select().execute();
+qs.where(f<^^Person::age>() >= 30).select().execute();
+qs.where(f<^^Person::age>() < 30).select().execute();
+qs.where(f<^^Person::age>() <= 30).select().execute();
 
 // LIKE
-qs.where(f<^^Person::name>().like("A%")).select();
+qs.where(f<^^Person::name>().like("A%")).select().execute();
 
 // IN
-qs.where(f<^^Person::age>().in(25, 30, 35)).select();
+qs.where(f<^^Person::age>().in(25, 30, 35)).select().execute();
 
 // BETWEEN
-qs.where(f<^^Person::age>().between(25, 35)).select();
+qs.where(f<^^Person::age>().between(25, 35)).select().execute();
 
 // AND / OR
-qs.where(f<^^Person::age>() > 30 && f<^^Person::is_active>() == true).select();
-qs.where(f<^^Person::age>() < 25 || f<^^Person::age>() > 40).select();
+qs.where(f<^^Person::age>() > 30 && f<^^Person::is_active>() == true).select().execute();
+qs.where(f<^^Person::age>() < 25 || f<^^Person::age>() > 40).select().execute();
 ```
 
 ## UPDATE
@@ -86,12 +87,12 @@ qs.where(f<^^Person::age>() < 25 || f<^^Person::age>() > 40).select();
 // Single update
 Person p = /* ... fetched from select ... */;
 p.salary = 85000.0;
-qs.update(p);
+qs.update(p).execute();
 
 // Batch update
-auto people = qs.select();
+auto people = qs.select().execute();
 for (auto& p : people) { p.salary *= 1.1; }
-qs.update(people);
+qs.update(people).execute();
 ```
 
 ## Automatic Timestamps
@@ -125,7 +126,7 @@ fields must be `std::chrono::system_clock::time_point`. See
 
 ```cpp
 // Single erase
-qs.erase(p);
+qs.erase(p).execute();
 
 // Conditional bulk erase — one DELETE ... WHERE statement (#198)
 qs.where(f<^^Person::is_active>() == false).erase().execute();
@@ -202,7 +203,7 @@ struct Message {
 };
 
 QuerySet<Message> msg_qs;
-auto results = msg_qs.join<^^Message::sender>().where(...).select();
+auto results = msg_qs.join<^^Message::sender>().where(...).select().execute();
 ```
 
 ## Set Operations
@@ -213,14 +214,15 @@ QuerySet<Person> qs1, qs2;
 // UNION (deduplicated)
 auto combined = qs1.where(f<^^Person::age>() > 30)
     .union_(qs2.where(f<^^Person::is_active>() == true))
-    .select();
+    .select()
+    .execute();
 
 // UNION ALL (keeps duplicates)
-auto all = qs1.where(...).union_all(qs2.where(...)).select();
+auto all = qs1.where(...).union_all(qs2.where(...)).select().execute();
 
 // INTERSECT / EXCEPT
-auto common = qs1.where(...).intersect_(qs2.where(...)).select();
-auto diff   = qs1.where(...).except_(qs2.where(...)).select();
+auto common = qs1.where(...).intersect_(qs2.where(...)).select().execute();
+auto diff   = qs1.where(...).except_(qs2.where(...)).select().execute();
 ```
 
 ## Thread Safety
@@ -230,7 +232,7 @@ auto diff   = qs1.where(...).except_(qs2.where(...)).select();
 void worker() {
     QuerySet<Person>::set_default_connection(":memory:");
     QuerySet<Person> qs;
-    qs.where(f<^^Person::age>() > 30).select();
+    qs.where(f<^^Person::age>() > 30).select().execute();
 }
 
 std::jthread t1(worker), t2(worker);

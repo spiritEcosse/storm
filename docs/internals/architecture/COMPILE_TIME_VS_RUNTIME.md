@@ -28,7 +28,7 @@ class QuerySet<T> {
 
 // Usage - QuerySet type never changes
 QuerySet<Person> qs;
-auto result = qs.where(f<^^Person::age>() > 30).select();
+auto result = qs.where(f<^^Person::age>() > 30).select().execute();
 ```
 
 ### Characteristics
@@ -121,7 +121,7 @@ auto qs2 = qs1.where(f<^^Person::name>() == "Alice");
 //                    AndExpr<ComparisonExpr<Person::age, Greater, int>,
 //                            ComparisonExpr<Person::name, Equal, std::string>>>
 
-auto result = qs2.select();
+auto result = qs2.select().execute();
 ```
 
 #### 4. Implementation Complexity

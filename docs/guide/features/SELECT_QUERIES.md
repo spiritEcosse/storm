@@ -26,7 +26,7 @@ struct Person {
 storm::orm::QuerySet<Person> queryset(conn);
 
 // Returns all rows from the table
-auto result = queryset.select();
+auto result = queryset.select().execute();
 if (result) {
     for (const auto& person : result.value()) {
         std::cout << person.id << ": " << person.name
@@ -48,11 +48,11 @@ SELECT id, name, age FROM Person
 using namespace storm::orm::where;
 
 // Filter results
-auto result = queryset.where(f<^^Person::age>() > 25).select();
+auto result = queryset.where(f<^^Person::age>() > 25).select().execute();
 
 // Complex conditions
 auto result = queryset.where(f<^^Person::age>() > 25 and
-                              f<^^Person::age>() < 50).select();
+                              f<^^Person::age>() < 50).select().execute();
 ```
 
 See [WHERE Clauses](WHERE_CLAUSES.md) for detailed WHERE syntax.
@@ -61,15 +61,16 @@ See [WHERE Clauses](WHERE_CLAUSES.md) for detailed WHERE syntax.
 
 ```cpp
 // Single FK JOIN
-auto result = message_qs.join<^^Message::sender>().select();
+auto result = message_qs.join<^^Message::sender>().select().execute();
 
 // Multi-FK JOIN
-auto result = message_qs.join<^^Message::sender, ^^Message::receiver>().select();
+auto result = message_qs.join<^^Message::sender, ^^Message::receiver>().select().execute();
 
 // JOIN with WHERE
 auto result = message_qs.join<^^Message::sender>()
                         .where(f<^^User::level>() > 5)
-                        .select();
+                        .select()
+                        .execute();
 ```
 
 See [JOIN Operations](JOIN_OPERATIONS.md) for detailed JOIN syntax.

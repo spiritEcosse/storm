@@ -31,7 +31,7 @@ struct Message {
 storm::orm::QuerySet<Message> message_qs(conn);
 
 // Populates sender field fully for each message
-auto result = message_qs.join<^^Message::sender>().select();
+auto result = message_qs.join<^^Message::sender>().select().execute();
 if (result) {
     for (const auto& msg : result.value()) {
         std::cout << msg.content << " from " << msg.sender.username << std::endl;
@@ -59,7 +59,7 @@ struct Message {
 };
 
 // Populates both sender and receiver fields
-auto result = message_qs.join<^^Message::sender, ^^Message::receiver>().select();
+auto result = message_qs.join<^^Message::sender, ^^Message::receiver>().select().execute();
 if (result) {
     for (const auto& msg : result.value()) {
         std::cout << msg.sender.username << " → "
@@ -93,7 +93,7 @@ messages pointing at them") is tracked as a reverse-relation feature in #398.
 Only returns rows where FK relationship exists:
 
 ```cpp
-auto result = message_qs.join<^^Message::sender>().select();
+auto result = message_qs.join<^^Message::sender>().select().execute();
 ```
 
 **Use when**: You only want messages with valid senders
@@ -103,7 +103,7 @@ auto result = message_qs.join<^^Message::sender>().select();
 Returns all base table rows, FK fields may be NULL:
 
 ```cpp
-auto result = message_qs.left_join<^^Message::sender>().select();
+auto result = message_qs.left_join<^^Message::sender>().select().execute();
 ```
 
 **Use when**: You want all messages, even those without senders

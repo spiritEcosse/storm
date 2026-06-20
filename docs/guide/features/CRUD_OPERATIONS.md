@@ -54,7 +54,7 @@ struct Person {
 storm::orm::QuerySet<Person> queryset(conn);
 
 // Insert returns the generated ID
-auto result = queryset.insert(Person{0, "Alice", 25});
+auto result = queryset.insert(Person{0, "Alice", 25}).execute();
 if (result) {
     int64_t id = result.value();
     std::cout << "Inserted person with ID: " << id << std::endl;
@@ -119,7 +119,7 @@ Updates all non-primary-key fields:
 
 ```cpp
 Person person{1, "Alice", 26};  // ID = 1, new age
-auto result = queryset.update(person);
+auto result = queryset.update(person).execute();
 if (!result) {
     std::cerr << "Update failed: " << result.error().message << std::endl;
 }
@@ -228,7 +228,7 @@ See [Statement Caching](../../internals/architecture/STATEMENT_CACHING.md) for d
 
 ```cpp
 Person person{1, "Alice", 25};  // Only ID matters
-auto result = queryset.erase(person);
+auto result = queryset.erase(person).execute();
 ```
 
 **SQL Generated**:

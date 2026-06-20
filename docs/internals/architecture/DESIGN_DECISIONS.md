@@ -194,10 +194,10 @@ class JoinStatement : public IJoinStatement {
 **Usage:**
 ```cpp
 // Single FK - populates sender fully
-auto result = message_qs.join<^^Message::sender>().select();
+auto result = message_qs.join<^^Message::sender>().select().execute();
 
 // Multi FK - populates both sender and receiver
-auto result = message_qs.join<^^Message::sender, ^^Message::receiver>().select();
+auto result = message_qs.join<^^Message::sender, ^^Message::receiver>().select().execute();
 ```
 
 See [JOIN Performance Analysis](../performance/JOIN_ANALYSIS.md) for detailed performance data.

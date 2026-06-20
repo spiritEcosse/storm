@@ -421,7 +421,7 @@ git add . && git commit -m "feat: add LIMIT support (85% of raw SQLite)"
 void benchmark_storm_select() {
     QuerySet<Person> qs(conn);
     for (int i = 0; i < iterations; ++i) {
-        auto result = qs.select();
+        auto result = qs.select().execute();
     }
 }
 
@@ -442,7 +442,7 @@ void benchmark_raw_select() {
 void benchmark_storm_where() {
     QuerySet<Person> qs(conn);
     for (int i = 0; i < iterations; ++i) {
-        auto result = qs.where(f<^^Person::age>() > 25).select();
+        auto result = qs.where(f<^^Person::age>() > 25).select().execute();
     }
 }
 ```
