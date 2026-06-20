@@ -348,7 +348,7 @@ Before committing code with these attributes:
 
 - **GCC Documentation**: https://gcc.gnu.org/onlinedocs/gcc/Common-Function-Attributes.html
 - **Clang Documentation**: https://clang.llvm.org/docs/AttributeReference.html
-- **Performance Testing**: See [docs/internals/performance/PERFORMANCE.md](../performance/PERFORMANCE.md#testing--benchmarking)
+- **Performance Testing**: See [docs/internals/performance/PERFORMANCE.md](../performance/PERFORMANCE.md#testing-benchmarking)
 - **Compiler Issues**: See [docs/internals/compiler/COMPILER_ISSUES.md](COMPILER_ISSUES.md)
 
 ## Summary

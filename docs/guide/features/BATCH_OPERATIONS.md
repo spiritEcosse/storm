@@ -453,4 +453,4 @@ Batch operations are thread-safe at the SQLite level (SQLITE_OPEN_FULLMUTEX), bu
 - [CRUD Operations](CRUD_OPERATIONS.md) - Single operation details
 - [Statement Caching](../../internals/architecture/STATEMENT_CACHING.md) - Caching architecture
 - [SQL Generation](../../internals/architecture/SQL_GENERATION.md) - Compile-time SQL generation
-- [Performance Testing](../../internals/performance/PERFORMANCE.md#testing--benchmarking) - Benchmarking guidelines
+- [Performance Testing](../../internals/performance/PERFORMANCE.md#testing-benchmarking) - Benchmarking guidelines
