@@ -3,38 +3,42 @@ module;
 #include <sqlite3.h>
 
 export module storm_db_sqlite;
+
+import std;
 import storm_db_concept;
-import <expected>;
-import <string_view>;
-import <string>;
-import <memory>;
-import <unordered_map>;
-import <unordered_set>;
-import <vector>;
-import <cstdint>;
 
 export namespace storm::db::sqlite {
 
+    // Cache size constants
+    namespace cache {
+        constexpr std::size_t STMT_CACHE_RESERVE = 32; // Initial statement cache capacity
+    } // namespace cache
+
+    // Issue #410: SQLite journal mode. Re-exported from the backend-neutral
+    // definition in storm_db_concept so callers can spell storm::db::sqlite::WAL.
+    using storm::db::JournalMode;
+
+    // Issue #410: SQLite connection tuning. SQLite-specific (PostgreSQL keeps the
+    // shared StatementCacheConfig). The statement_cache_capacity field name is kept
+    // identical to StatementCacheConfig so existing designated-init call sites
+    // (Connection::open(":memory:", {.statement_cache_capacity = N})) keep compiling.
+    struct Config {
+        std::size_t statement_cache_capacity = 512;                  // Issue #273: 0 = unbounded
+        int         busy_timeout_ms          = 5000;                 // Issue #410: 0 = no wait (legacy)
+        JournalMode journal_mode             = JournalMode::Default; // Issue #410: WAL opt-in
+    };
+
     // Custom deleter for sqlite3
     struct SqliteDeleter {
-        void operator()(sqlite3* db) const noexcept {
-            if (db)
+        auto operator()(sqlite3* db) const noexcept -> void {
+            if (db != nullptr) {
                 sqlite3_close_v2(db);
+            }
         }
     };
 
-    // Error type for database operations
-    struct Error {
-        int         code_;
-        std::string message_;
-
-        [[nodiscard]] constexpr int code() const noexcept {
-            return code_;
-        }
-        [[nodiscard]] constexpr std::string_view message() const noexcept {
-            return message_;
-        }
-    };
+    // Error type — shared across backends, defined in storm_db_concept (issue #316).
+    using Error = storm::db::Error;
 
     // Forward declaration
     class Connection;
@@ -46,98 +50,130 @@ export namespace storm::db::sqlite {
       public:
         using Error = sqlite::Error;
 
-        explicit Statement(sqlite3_stmt* stmt) : stmt_(stmt, sqlite3_finalize) {}
+        // OPTIMIZATION: Cache raw pointer to eliminate unique_ptr::get() overhead in hot loops
+        explicit Statement(sqlite3_stmt* stmt) : stmt_(stmt, sqlite3_finalize), raw_(stmt) {}
 
-        // Move semantics
-        Statement(Statement&&)            = default;
-        Statement& operator=(Statement&&) = default;
+        // Destructor - unique_ptr handles cleanup via sqlite3_finalize
+        ~Statement() = default;
+
+        // Move semantics — explicit so the moved-from source nulls its cached
+        // raw_. A defaulted move copies raw_ while stmt_ goes null, leaving the
+        // source aliasing the statement now owned by the destination (issue
+        // #354). Keep the cached raw_ for hot-loop performance (CLAUDE.md).
+        Statement(Statement&& other) noexcept : stmt_(std::move(other.stmt_)), raw_(other.raw_) {
+            other.raw_ = nullptr;
+        }
+
+        auto operator=(Statement&& other) noexcept -> Statement& {
+            if (this != &other) {
+                stmt_      = std::move(other.stmt_);
+                raw_       = other.raw_;
+                other.raw_ = nullptr;
+            }
+            return *this;
+        }
 
         // Delete copy operations
-        Statement(const Statement&)            = delete;
-        Statement& operator=(const Statement&) = delete;
+        Statement(const Statement&)                    = delete;
+        auto operator=(const Statement&) -> Statement& = delete;
 
         // DatabaseStatement concept implementation
-        [[nodiscard]] auto bind_int(int index, int value) noexcept -> std::expected<void, Error> {
-            int rc = sqlite3_bind_int(stmt_.get(), index, value);
-            if (rc != SQLITE_OK) {
+        // All methods use template pattern for cross-module inlining
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto bind_int(int index, int value) noexcept
+                -> std::expected<void, Error> {
+            const int rc = sqlite3_bind_int(raw_, index, value);
+            if (rc != SQLITE_OK) [[unlikely]] {
                 return std::unexpected(Error{rc, "Failed to bind integer parameter"});
             }
             return {};
         }
 
-        [[nodiscard]] auto bind_text(int index, std::string_view value) noexcept -> std::expected<void, Error> {
-            int rc = sqlite3_bind_text(
-                    stmt_.get(), index, value.data(), static_cast<int>(value.size()), SQLITE_TRANSIENT
-            );
-            if (rc != SQLITE_OK) {
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto bind_text(int index, std::string_view value) noexcept
+                -> std::expected<void, Error> {
+            const int rc =
+                    sqlite3_bind_text(raw_, index, value.data(), static_cast<int>(value.size()), SQLITE_TRANSIENT);
+            if (rc != SQLITE_OK) [[unlikely]] {
                 return std::unexpected(Error{rc, "Failed to bind text parameter"});
             }
             return {};
         }
 
-        [[nodiscard]] auto bind_int64(int index, int64_t value) noexcept -> std::expected<void, Error> {
-            int rc = sqlite3_bind_int64(stmt_.get(), index, value);
-            if (rc != SQLITE_OK) {
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto bind_int64(int index, std::int64_t value) noexcept
+                -> std::expected<void, Error> {
+            const int rc = sqlite3_bind_int64(raw_, index, value);
+            if (rc != SQLITE_OK) [[unlikely]] {
                 return std::unexpected(Error{rc, "Failed to bind int64 parameter"});
             }
             return {};
         }
 
-        [[nodiscard]] auto bind_double(int index, double value) noexcept -> std::expected<void, Error> {
-            int rc = sqlite3_bind_double(stmt_.get(), index, value);
-            if (rc != SQLITE_OK) {
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto bind_double(int index, double value) noexcept
+                -> std::expected<void, Error> {
+            const int rc = sqlite3_bind_double(raw_, index, value);
+            if (rc != SQLITE_OK) [[unlikely]] {
                 return std::unexpected(Error{rc, "Failed to bind double parameter"});
             }
             return {};
         }
 
-        [[nodiscard]] auto bind_null(int index) noexcept -> std::expected<void, Error> {
-            int rc = sqlite3_bind_null(stmt_.get(), index);
-            if (rc != SQLITE_OK) {
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto bind_null(int index) noexcept -> std::expected<void, Error> {
+            const int rc = sqlite3_bind_null(raw_, index);
+            if (rc != SQLITE_OK) [[unlikely]] {
                 return std::unexpected(Error{rc, "Failed to bind null parameter"});
             }
             return {};
         }
 
-        [[nodiscard]] auto bind_blob(int index, const void* data, size_t size) noexcept -> std::expected<void, Error> {
-            int rc = sqlite3_bind_blob(stmt_.get(), index, data, static_cast<int>(size), SQLITE_TRANSIENT);
-            if (rc != SQLITE_OK) {
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto
+        bind_blob(int index, const void* data, std::size_t size) noexcept // NOSONAR(cpp:S5008) - SQLite BLOB API
+                -> std::expected<void, Error> {
+            const int rc = sqlite3_bind_blob(raw_, index, data, static_cast<int>(size), SQLITE_TRANSIENT);
+            if (rc != SQLITE_OK) [[unlikely]] {
                 return std::unexpected(Error{rc, "Failed to bind blob parameter"});
             }
             return {};
         }
 
-        [[nodiscard]] auto execute() noexcept -> std::expected<void, Error> {
-            int rc = sqlite3_step(stmt_.get());
-            if (rc != SQLITE_DONE) {
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto execute() noexcept -> std::expected<void, Error> {
+            const int rc = sqlite3_step(raw_);
+            if (rc != SQLITE_DONE) [[unlikely]] {
                 return std::unexpected(Error{rc, "Failed to execute statement"});
             }
             return {};
         }
 
-        [[nodiscard]] auto step() noexcept -> std::expected<bool, Error> {
-            int rc = sqlite3_step(stmt_.get());
-            if (rc == SQLITE_ROW) {
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto step() noexcept -> std::expected<bool, Error> {
+            const int rc = sqlite3_step(raw_);
+            if (rc == SQLITE_ROW) [[likely]] {
                 return true; // Row available
-            } else if (rc == SQLITE_DONE) {
-                return false; // No more rows
-            } else {
-                return std::unexpected(Error{rc, "Failed to step statement"});
             }
+            if (rc == SQLITE_DONE) {
+                return false; // No more rows
+            }
+            return std::unexpected(Error{rc, "Failed to step statement"});
         }
 
-        auto reset() noexcept -> void {
-            sqlite3_reset(stmt_.get());
-            sqlite3_clear_bindings(stmt_.get());
+        template <typename = void> __attribute__((always_inline)) auto reset() noexcept -> void {
+            sqlite3_reset(raw_);
         }
 
-        auto finalize() noexcept -> void {
+        template <typename = void> __attribute__((always_inline)) auto finalize() noexcept -> void {
             stmt_.reset(); // Calls sqlite3_finalize via deleter
         }
 
         // Access raw handle for advanced operations
-        [[nodiscard]] sqlite3_stmt* handle() const noexcept {
-            return stmt_.get();
+        // Returns cached raw pointer for zero overhead
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto handle() const noexcept -> sqlite3_stmt* {
+            return raw_;
         }
 
         // === High-Performance Abstraction Layer ===
@@ -145,67 +181,88 @@ export namespace storm::db::sqlite {
         // zero-cost abstraction through aggressive inlining
 
         // Step with raw return value (no std::expected overhead in hot loop)
-        [[nodiscard]] __attribute__((always_inline)) inline auto step_raw() noexcept -> int {
-            return sqlite3_step(stmt_.get());
+        // OPTIMIZATION: Template forces body visibility across modules, enabling inlining
+        // Uses cached raw pointer to eliminate unique_ptr::get() overhead
+        template <typename = void> [[nodiscard]] __attribute__((always_inline)) auto step_raw() noexcept -> int {
+            return sqlite3_step(raw_);
         }
 
-        // Column extraction methods - fully inlined for zero overhead
-        [[nodiscard]] __attribute__((always_inline)) inline auto extract_int(int col_index) const noexcept -> int {
-            return sqlite3_column_int(stmt_.get(), col_index);
+        // Column extraction methods - TEMPLATES for cross-module inlining
+        // Use cached raw pointer for zero overhead
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto extract_int(int col_index) const noexcept -> int {
+            return sqlite3_column_int(raw_, col_index);
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto extract_int64(int col_index) const noexcept
-                -> int64_t {
-            return sqlite3_column_int64(stmt_.get(), col_index);
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto extract_int64(int col_index) const noexcept -> std::int64_t {
+            return sqlite3_column_int64(raw_, col_index);
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto extract_double(int col_index) const noexcept
-                -> double {
-            return sqlite3_column_double(stmt_.get(), col_index);
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto extract_double(int col_index) const noexcept -> double {
+            return sqlite3_column_double(raw_, col_index);
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto extract_text_ptr(int col_index) const noexcept -> const
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto extract_text_ptr(int col_index) const noexcept -> const
                 unsigned char* {
-            return sqlite3_column_text(stmt_.get(), col_index);
+            return sqlite3_column_text(raw_, col_index);
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto extract_text_view(int col_index) const noexcept
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto extract_bytes(int col_index) const noexcept -> int {
+            return sqlite3_column_bytes(raw_, col_index);
+        }
+
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto extract_text_view(int col_index) const noexcept
                 -> std::string_view {
-            const unsigned char* text = sqlite3_column_text(stmt_.get(), col_index);
-            if (text) {
-                int len = sqlite3_column_bytes(stmt_.get(), col_index);
-                return std::string_view(reinterpret_cast<const char*>(text), len);
+            const unsigned char* text = sqlite3_column_text(raw_, col_index);
+            if (text != nullptr) {
+                const auto len = static_cast<std::size_t>(sqlite3_column_bytes(raw_, col_index));
+                return {reinterpret_cast<const char*>(text), len};
             }
             return {};
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto extract_bool(int col_index) const noexcept -> bool {
-            return sqlite3_column_int(stmt_.get(), col_index) != 0;
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto extract_bool(int col_index) const noexcept -> bool {
+            return sqlite3_column_int(raw_, col_index) != 0;
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto extract_float(int col_index) const noexcept -> float {
-            return static_cast<float>(sqlite3_column_double(stmt_.get(), col_index));
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto extract_float(int col_index) const noexcept -> float {
+            return static_cast<float>(sqlite3_column_double(raw_, col_index));
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto extract_blob(int col_index) const noexcept
-                -> std::pair<const void*, int> {
-            const void* blob = sqlite3_column_blob(stmt_.get(), col_index);
-            int         size = sqlite3_column_bytes(stmt_.get(), col_index);
-            return {blob, size};
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto extract_blob_ptr(int col_index) const noexcept -> const
+                void* { // NOSONAR(cpp:S5008) - SQLite BLOB API
+            return sqlite3_column_blob(raw_, col_index);
         }
 
-        [[nodiscard]] __attribute__((always_inline)) inline auto extract_column_type(int col_index) const noexcept
-                -> int {
-            return sqlite3_column_type(stmt_.get(), col_index);
-        }
-
-        [[nodiscard]] __attribute__((always_inline)) inline auto is_null(int col_index) const noexcept -> bool {
-            return sqlite3_column_type(stmt_.get(), col_index) == SQLITE_NULL;
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto is_null(int col_index) const noexcept -> bool {
+            return sqlite3_column_type(raw_, col_index) == SQLITE_NULL;
         }
 
         // Error message extraction
-        [[nodiscard]] inline auto get_error_message() const noexcept -> const char* {
-            return sqlite3_errmsg(sqlite3_db_handle(stmt_.get()));
+        template <typename = void>
+        [[nodiscard]] __attribute__((always_inline)) auto get_error_message() const noexcept -> const char* {
+            return sqlite3_errmsg(sqlite3_db_handle(raw_));
+        }
+
+        // Returns SQL string with all bound parameters inlined (for debugging / SQL inspection)
+        // Uses sqlite3_expanded_sql() which substitutes ? placeholders with actual bound values
+        template <typename = void> [[nodiscard]] auto expanded_sql() const -> std::string {
+            char* expanded = sqlite3_expanded_sql(raw_);
+            if (expanded == nullptr) {
+                return {};
+            }
+            std::string result(expanded);
+            sqlite3_free(expanded);
+            return result;
         }
 
         // Constants for return codes (make them constexpr for compile-time checks)
@@ -213,144 +270,143 @@ export namespace storm::db::sqlite {
         static constexpr int NO_MORE_ROWS  = SQLITE_DONE;
 
       private:
-        StmtPtr stmt_;
-    };
-
-    // Transparent hash for string_view lookups without allocation
-    struct string_hash {
-        using is_transparent = void;
-        using hash_type      = std::hash<std::string_view>;
-
-        [[nodiscard]] size_t operator()(std::string_view str) const noexcept {
-            return hash_type{}(str);
-        }
-
-        [[nodiscard]] size_t operator()(const std::string& str) const noexcept {
-            return hash_type{}(str);
-        }
-    };
-
-    struct string_equal {
-        using is_transparent = void;
-
-        [[nodiscard]] bool operator()(std::string_view lhs, std::string_view rhs) const noexcept {
-            return lhs == rhs;
-        }
+        StmtPtr       stmt_;
+        sqlite3_stmt* raw_; // Cached raw pointer for hot-path performance
     };
 
     class Connection {
-        using SqlitePtr      = std::unique_ptr<sqlite3, SqliteDeleter>;
-        using StatementCache = std::unordered_map<std::string, Statement, string_hash, string_equal>;
+        using SqlitePtr = std::unique_ptr<sqlite3, SqliteDeleter>;
 
       public:
         using Error     = sqlite::Error;
         using Statement = sqlite::Statement;
 
+        // Dialect traits (version-gated via CMake — see cmake/db.cmake)
+        static constexpr bool supports_limit_all = false;
+        static constexpr bool supports_returning = true; // SQLite 3.35+ required
+#ifdef STORM_SQLITE_STRICT_TABLES
+        static constexpr bool supports_strict_tables = true; // SQLite 3.37+
+#else
+        static constexpr bool supports_strict_tables = false;
+#endif
+
+        // Issue #410: per-Connection tuning (cache capacity + busy_timeout + WAL).
+        using Config = sqlite::Config;
+
         // Factory method with error handling and thread-safe flags
-        [[nodiscard]] static auto open(std::string_view db_path) noexcept -> std::expected<Connection, Error> {
-            sqlite3* raw_db = nullptr;
+        [[nodiscard]] static auto open(std::string_view db_path, Config config = {})
+                -> std::expected<Connection, Error> {
+            sqlite3*          raw_db = nullptr;
+            const std::string db_path_str(db_path); // Ensure null-termination
             // Add SQLITE_OPEN_FULLMUTEX for serialized mode (thread-safe)
-            int rc = sqlite3_open_v2(
-                    db_path.data(),
+            const int rc = sqlite3_open_v2(
+                    db_path_str.c_str(),
                     &raw_db,
                     SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_URI | SQLITE_OPEN_FULLMUTEX,
                     nullptr
             );
 
             if (rc != SQLITE_OK) {
-                auto error = Error{rc, sqlite3_errmsg(raw_db)};
-                if (raw_db)
+                const auto error = Error{rc, sqlite3_errmsg(raw_db)};
+                if (raw_db != nullptr) {
                     sqlite3_close_v2(raw_db);
+                }
                 return std::unexpected(error);
             }
 
-            return Connection{SqlitePtr{raw_db}};
+            // Issue #410: apply connection tuning (busy_timeout, journal mode) and #412:
+            // referential-integrity PRAGMA before handing the handle out.
+            if (auto tuned = apply_tuning(raw_db, config); !tuned.has_value()) {
+                sqlite3_close_v2(raw_db);
+                return std::unexpected(tuned.error());
+            }
+
+            return Connection{SqlitePtr{raw_db}, config};
         }
 
-        // Move semantics (smart pointer handles cleanup)
-        Connection(Connection&&)            = default;
-        Connection& operator=(Connection&&) = default;
+        // Destructor - unique_ptr handles cleanup via SqliteDeleter
+        ~Connection() = default;
+
+        // Move semantics (smart pointer handles cleanup). cache_mutex_ is a
+        // MovableSharedMutex (Issue #271) so these can stay defaulted: a moved
+        // Connection gets a fresh, unlocked mutex.
+        Connection(Connection&&)                    = default;
+        auto operator=(Connection&&) -> Connection& = default;
 
         // Delete copy operations
-        Connection(const Connection&)            = delete;
-        Connection& operator=(const Connection&) = delete;
+        Connection(const Connection&)                    = delete;
+        auto operator=(const Connection&) -> Connection& = delete;
 
         // DatabaseConnection concept implementation
-        [[nodiscard]] constexpr bool is_open() const noexcept {
+        [[nodiscard]] constexpr auto is_open() const noexcept -> bool {
             return static_cast<bool>(db);
         }
 
-        [[nodiscard]] auto prepare(std::string_view sql) noexcept -> std::expected<Statement, Error> {
+        [[nodiscard]] auto prepare(std::string_view sql) -> std::expected<Statement, Error> {
+            if (!is_open()) {
+                return std::unexpected(Error{SQLITE_MISUSE, "Connection not open"});
+            }
+            return prepare_raw(sql);
+        }
+
+        // Prepare statement with caching - reuses statements for identical SQL.
+        // Hot path (cache hit) + insert lock discipline live in storm_db_concept's
+        // cache_* helpers (Issue #271, shared with the PostgreSQL backend); only the
+        // backend-specific prepare_raw() call differs. On a miss the lock is dropped
+        // before prepare_raw() so the expensive syscall runs uncontended.
+        [[nodiscard]] auto prepare_cached(std::string_view sql) -> std::expected<Statement*, Error> {
             if (!is_open()) {
                 return std::unexpected(Error{SQLITE_MISUSE, "Connection not open"});
             }
 
-            sqlite3_stmt* stmt = nullptr;
-            int           rc   = sqlite3_prepare_v2(db.get(), sql.data(), -1, &stmt, nullptr);
-
-            if (rc != SQLITE_OK) {
-                return std::unexpected(Error{rc, sqlite3_errmsg(db.get())});
+            if (auto* hit = storm::db::cache_find_hit(cache_, sql)) [[likely]] {
+                return hit;
             }
 
-            return Statement{stmt};
+            auto prepared = prepare_raw(sql);
+            if (!prepared.has_value()) {
+                return std::unexpected(prepared.error());
+            }
+            return storm::db::cache_try_insert(cache_, sql, std::make_unique<Statement>(std::move(*prepared)));
         }
 
-        // Prepare statement with caching - reuses statements for identical SQL
-        // OPTIMIZATION: Uses heterogeneous lookup to avoid string allocation on cache hit
-        [[nodiscard]] auto prepare_cached(std::string_view sql) noexcept -> std::expected<Statement*, Error> {
-            if (!is_open()) {
-                return std::unexpected(Error{SQLITE_MISUSE, "Connection not open"});
-            }
-
-            // OPTIMIZATION: Lookup using string_view directly (no allocation!)
-            // The transparent hash/equal functors enable this
-            auto it = statement_cache_.find(sql);
-            if (it != statement_cache_.end()) [[likely]] {
-                // Cache hit - reset cached statement for reuse
-                it->second.reset();
-                return &it->second;
-            }
-
-            // Cache miss - create new statement and cache it
-            sqlite3_stmt* stmt = nullptr;
-            int           rc   = sqlite3_prepare_v2(db.get(), sql.data(), -1, &stmt, nullptr);
-
-            if (rc != SQLITE_OK) {
-                return std::unexpected(Error{rc, sqlite3_errmsg(db.get())});
-            }
-
-            // Only allocate string for storage in cache (on miss)
-            auto [inserted_it, success] = statement_cache_.emplace(std::string(sql), Statement{stmt});
-            if (!success) {
-                return std::unexpected(Error{SQLITE_INTERNAL, "Failed to cache statement"});
-            }
-
-            return &inserted_it->second;
+        // Clear the entire statement cache (useful for memory management or after
+        // major schema changes). Callers must not retain `Statement*` obtained from
+        // a prior prepare_cached() across this call — the entries are destroyed.
+        auto clear_statement_cache() noexcept -> void {
+            storm::db::cache_clear_all(cache_); // Issue #271
         }
 
-        // Clear statement cache (useful for memory management)
-        void clear_statement_cache() noexcept {
-            statement_cache_.clear();
+        // Issue #215: drop cached entries whose SQL references the given table.
+        // Used after targeted DDL (ALTER TABLE persons …) when other tables'
+        // cached statements should be preserved. Matching is word-boundary aware
+        // so clearing "persons" does NOT touch "person_addresses".
+        auto clear_statement_cache(std::string_view table) -> void {
+            storm::db::cache_clear_table(cache_, table); // Issue #271
         }
 
         // Get cache statistics
-        [[nodiscard]] size_t cached_statement_count() const noexcept {
-            return statement_cache_.size();
+        [[nodiscard]] auto cached_statement_count() const noexcept -> std::size_t {
+            return storm::db::cache_count(cache_); // Issue #271
+        }
+
+        // Issue #273: snapshot of hit/miss/eviction counters + current size.
+        [[nodiscard]] auto cache_stats() const noexcept -> storm::db::CacheStats {
+            return storm::db::cache_stats(cache_);
         }
 
         // Pre-populate statement cache with common operations
-        void prepare_common_statements() noexcept {
+        auto prepare_common_statements() -> void {
             // Common patterns that benefit from pre-compilation
-            static const std::vector<std::string> common_patterns = {"BEGIN TRANSACTION", "COMMIT", "ROLLBACK"};
+            static const std::array<std::string_view, 3> common_patterns = {"BEGIN TRANSACTION", "COMMIT", "ROLLBACK"};
 
             for (const auto& sql : common_patterns) {
-                // Pre-populate cache (ignore errors for optional optimization)
-                (void)prepare_cached(sql);
+                std::ignore = prepare_cached(sql);
             }
         }
 
         // Execute SQL with error handling (optimized to use cached statements for common operations)
-        [[nodiscard]] auto execute(std::string_view sql) noexcept -> std::expected<void, Error> {
+        [[nodiscard]] auto execute(std::string_view sql) -> std::expected<void, Error> {
             if (!is_open()) {
                 return std::unexpected(Error{SQLITE_MISUSE, "Connection not open"});
             }
@@ -368,11 +424,13 @@ export namespace storm::db::sqlite {
             }
 
             // Regular execution for non-cached operations
-            char* errmsg = nullptr;
-            int   rc     = sqlite3_exec(db.get(), sql.data(), nullptr, nullptr, &errmsg);
+            // sqlite3_exec requires null-terminated string
+            const std::string sql_str(sql);
+            char*             errmsg = nullptr;
+            const int         rc     = sqlite3_exec(db.get(), sql_str.c_str(), nullptr, nullptr, &errmsg);
 
             if (rc != SQLITE_OK) {
-                Error error{rc, errmsg ? errmsg : "Unknown error"};
+                const Error error{rc, errmsg != nullptr ? errmsg : "Unknown error"};
                 sqlite3_free(errmsg);
                 return std::unexpected(error);
             }
@@ -380,21 +438,84 @@ export namespace storm::db::sqlite {
             return {};
         }
 
-        // Access raw SQLite handle for advanced operations
-        [[nodiscard]] sqlite3* get() const noexcept {
+        [[nodiscard]] auto get() const noexcept -> sqlite3* {
             return db.get();
         }
 
-        // Get the row ID of the most recent successful INSERT
-        [[nodiscard]] int64_t last_insert_rowid() const noexcept {
-            return sqlite3_last_insert_rowid(db.get());
+        // Transaction-nesting state (#415). The public transaction guard calls
+        // enter_transaction() after a successful BEGIN and leave_transaction()
+        // after COMMIT/ROLLBACK; batch ops query in_transaction() and skip their
+        // own inner BEGIN/COMMIT when an outer scope is already active (fixes #9).
+        [[nodiscard]] constexpr auto in_transaction() const noexcept -> bool {
+            return txn_depth_ > 0;
+        }
+        constexpr auto enter_transaction() noexcept -> void {
+            ++txn_depth_;
+        }
+        constexpr auto leave_transaction() noexcept -> void {
+            if (txn_depth_ > 0) {
+                --txn_depth_;
+            }
         }
 
       private:
-        explicit Connection(SqlitePtr db_ptr) : db(std::move(db_ptr)) {}
+        explicit Connection(SqlitePtr db_ptr, Config config) : db(std::move(db_ptr)) {
+            cache_.capacity = config.statement_cache_capacity; // Issue #273
+            // Reserve to keep early inserts on the same rehash bucket. Pointer
+            // stability across rehash is guaranteed by the unique_ptr in CacheEntry
+            // (Issue #215).
+            cache_.map.reserve(cache::STMT_CACHE_RESERVE);
+        }
 
-        SqlitePtr      db;
-        StatementCache statement_cache_;
+        // Issue #410: apply connection tuning (busy_timeout, journal_mode) to a
+        // freshly opened raw handle. busy_timeout uses the dedicated C API;
+        // journal_mode goes through a PRAGMA. WAL is silently ignored by SQLite on
+        // :memory:/temp databases, so a non-WAL result there is not an error.
+        [[nodiscard]] static auto apply_tuning(sqlite3* raw_db, const Config& config) -> std::expected<void, Error> {
+            if (config.busy_timeout_ms > 0) {
+                const int rc = sqlite3_busy_timeout(raw_db, config.busy_timeout_ms);
+                if (rc != SQLITE_OK) {
+                    return std::unexpected(Error{rc, sqlite3_errmsg(raw_db)});
+                }
+            }
+
+            if (config.journal_mode == JournalMode::WAL) {
+                const int rc = sqlite3_exec(raw_db, "PRAGMA journal_mode=WAL", nullptr, nullptr, nullptr);
+                if (rc != SQLITE_OK) {
+                    return std::unexpected(Error{rc, sqlite3_errmsg(raw_db)});
+                }
+            }
+
+            // Enforce referential integrity (#412). SQLite parses FK syntax always but
+            // ignores it unless this PRAGMA is set, per connection — the docs recommend
+            // applications turn it on. PG enforces FKs natively, so no equivalent there.
+            if (const int rc = sqlite3_exec(raw_db, "PRAGMA foreign_keys = ON", nullptr, nullptr, nullptr);
+                rc != SQLITE_OK) {
+                return std::unexpected(Error{rc, sqlite3_errmsg(raw_db)});
+            }
+
+            return {};
+        }
+
+        // Single source of truth for sqlite3_prepare_v2 + error wrapping.
+        [[nodiscard]] auto prepare_raw(std::string_view sql) -> std::expected<Statement, Error> {
+            sqlite3_stmt* stmt = nullptr;
+            const int     rc   = sqlite3_prepare_v2(db.get(), sql.data(), static_cast<int>(sql.size()), &stmt, nullptr);
+            if (rc != SQLITE_OK) {
+                return std::unexpected(Error{rc, sqlite3_errmsg(db.get())});
+            }
+            return Statement{stmt};
+        }
+
+        SqlitePtr db;
+        // Issue #271/#273: the L3 cache, its shared_mutex, stat counters, and
+        // capacity in one movable bundle. shared_lock on the hit path, unique_lock
+        // for insert/clear/evict. mutable so const accessors (cached_statement_count,
+        // cache_stats) can take a shared_lock.
+        mutable storm::db::StatementCacheState<Statement> cache_;
+
+        // Transaction-nesting depth (#415). 0 = autocommit; >0 = inside a guard.
+        int txn_depth_ = 0;
     };
 
     // Verify concepts are satisfied

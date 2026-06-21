@@ -1,0 +1,987 @@
+# Storm ORM Benchmark Test Definitions
+# This YAML file is converted to JSON at build time for compile-time parsing
+#
+# Size Profiles (defined in sizes.hpp):
+#   batch_standard:     1, 10, 100, 500, 1000, 5000, 10000, 50000, 100000
+#   batch_insert_edge:  248, 249, 250 (SQLite chunk boundary)
+#   batch_update_edge:  198, 199, 200 (UPDATE chunk boundary)
+#   dataset_standard:   100, 1000, 10000, 100000
+#   dataset_small:      10000, 50000
+
+tests:
+  # ============================================================================
+  # WHERE Operations (fixed size, no profile)
+  # ============================================================================
+  - name: where_int_comparison_gt
+    category: WHERE
+    description: "WHERE with integer > comparison (age > 30)"
+    model: Person
+    operation: where
+    iterations: 1000
+    dataset_size: 10000
+    where:
+        field: age
+        op: ">"
+        value: 30
+
+  - name: where_bool_equality
+    category: WHERE
+    description: WHERE with boolean equality (is_active == true)
+    model: Person
+    operation: where
+    iterations: 1000
+    dataset_size: 10000
+    where:
+        field: is_active
+        op: ==
+        value: true
+
+  - name: where_double_comparison
+    category: WHERE
+    description: "WHERE with double >= comparison (salary >= 50000.0)"
+    model: Person
+    operation: where
+    iterations: 1000
+    dataset_size: 10000
+    where:
+        field: salary
+        op: ">="
+        value: 50000.0
+
+  - name: where_int_less_than
+    category: WHERE
+    description: WHERE with integer < comparison (age < 25)
+    model: Person
+    operation: where
+    iterations: 1000
+    dataset_size: 10000
+    where:
+        field: age
+        op: <
+        value: 25
+
+  # ============================================================================
+  # INSERT Operations (with size profiles)
+  # ============================================================================
+  - name: insert
+    category: INSERT
+    description: INSERT operations with various batch sizes
+    model: BenchPerson
+    operation: insert
+    size_profile: batch_standard
+
+  - name: insert_no_return
+    category: INSERT
+    description: INSERT without RETURNING clause (no ID retrieval)
+    model: BenchPerson
+    operation: insert_no_return
+    size_profile: batch_standard
+
+  - name: insert_edge
+    category: INSERT_EDGE
+    description: INSERT at SQLite chunk boundary (999/4 fields = 249)
+    model: BenchPerson
+    operation: insert
+    size_profile: batch_insert_edge
+
+  # ============================================================================
+  # UPDATE Operations (with size profiles)
+  # ============================================================================
+  - name: update_pk
+    category: UPDATE_PK
+    description: UPDATE by primary key with various batch sizes
+    model: Person
+    operation: update_pk
+    size_profile: batch_standard
+
+  - name: update_pk_edge
+    category: UPDATE_PK_EDGE
+    description: UPDATE at SQLite chunk boundary (999/5 fields = 199)
+    model: Person
+    operation: update_pk
+    size_profile: batch_update_edge
+
+  # ============================================================================
+  # DELETE Operations (with size profiles)
+  # ============================================================================
+  - name: delete_pk
+    category: DELETE_PK
+    description: DELETE by primary key with various batch sizes
+    model: Person
+    operation: delete_pk
+    size_profile: batch_standard
+
+  # ============================================================================
+  # SELECT Operations (with size profiles)
+  # ============================================================================
+  - name: select
+    category: SELECT
+    description: Simple SELECT all rows
+    model: Person
+    operation: select
+    size_profile: dataset_standard
+
+  # ============================================================================
+  # JOIN Operations (with size profiles)
+  # ============================================================================
+  - name: select_join
+    category: SELECT_JOIN
+    description: SELECT with INNER JOIN on FK field
+    model: FKMessage
+    operation: select_join
+    size_profile: dataset_standard
+    join:
+        type: inner
+        related: User
+        fk: sender
+
+  - name: select_where_join
+    category: SELECT_WHERE_JOIN
+    description: "SELECT with WHERE + JOIN (User.age > 30)"
+    model: FKMessage
+    operation: select_where_join
+    size_profile: dataset_standard
+    join:
+        type: inner
+        related: User
+        fk: sender
+    where:
+        field: age
+        op: ">"
+        value: 30
+
+  - name: select_left_join
+    category: SELECT_LEFT_JOIN
+    description: SELECT with LEFT JOIN on FK field
+    model: FKMessage
+    operation: select_left_join
+    size_profile: dataset_standard
+    join:
+        type: left
+        related: User
+        fk: sender
+
+  - name: select_left_join_where
+    category: SELECT_LEFT_JOIN_WHERE
+    description: "SELECT with LEFT JOIN + WHERE (User.age > 30)"
+    model: FKMessage
+    operation: select_left_join_where
+    size_profile: dataset_standard
+    join:
+        type: left
+        related: User
+        fk: sender
+    where:
+        field: age
+        op: ">"
+        value: 30
+
+  - name: select_multi_fk_join
+    category: SELECT_MULTI_FK_JOIN
+    description: SELECT with multiple FK JOINs (sender + receiver)
+    model: FKMessage
+    operation: select_multi_fk_join
+    size_profile: dataset_standard
+    join:
+        type: inner
+        related: User
+        fks: [sender, receiver]
+
+  # ============================================================================
+  # AGGREGATE Operations (with size profiles)
+  # ============================================================================
+  - name: aggregate_count
+    category: AGGREGATE
+    description: "COUNT(*) aggregate"
+    model: Person
+    operation: aggregate_count
+    size_profile: dataset_small
+    aggregate:
+        func: count
+
+  - name: aggregate_count_field
+    category: AGGREGATE
+    description: COUNT(age) aggregate
+    model: Person
+    operation: aggregate_count_field
+    size_profile: dataset_small
+    aggregate:
+        func: count
+        field: age
+
+  - name: aggregate_count_distinct
+    category: AGGREGATE
+    description: COUNT(DISTINCT age) aggregate
+    model: Person
+    operation: aggregate_count_distinct
+    size_profile: dataset_small
+    aggregate:
+        func: count_distinct
+        field: age
+
+  - name: aggregate_sum
+    category: AGGREGATE
+    description: SUM(age) aggregate
+    model: Person
+    operation: aggregate_sum
+    size_profile: dataset_small
+    aggregate:
+        func: sum
+        field: age
+
+  - name: aggregate_avg
+    category: AGGREGATE
+    description: AVG(salary) aggregate
+    model: Person
+    operation: aggregate_avg
+    size_profile: dataset_small
+    aggregate:
+        func: avg
+        field: salary
+
+  - name: aggregate_min
+    category: AGGREGATE
+    description: MIN(age) aggregate
+    model: Person
+    operation: aggregate_min
+    size_profile: dataset_small
+    aggregate:
+        func: min
+        field: age
+
+  - name: aggregate_max
+    category: AGGREGATE
+    description: MAX(salary) aggregate
+    model: Person
+    operation: aggregate_max
+    size_profile: dataset_small
+    aggregate:
+        func: max
+        field: salary
+
+  # ============================================================================
+  # DISTINCT Operations (with size profiles)
+  # ============================================================================
+  - name: distinct_simple
+    category: DISTINCT
+    description: SELECT DISTINCT age
+    model: Person
+    operation: distinct
+    size_profile: dataset_standard
+    distinct:
+        fields: [age]
+
+  - name: distinct_where
+    category: DISTINCT_WHERE
+    description: "SELECT DISTINCT age WHERE salary >= 50000.0"
+    model: Person
+    operation: distinct_where
+    size_profile: dataset_standard
+    where:
+        field: salary
+        op: ">="
+        value: 50000.0
+    distinct:
+        fields: [age]
+
+  - name: distinct_join
+    category: DISTINCT_JOIN
+    description: SELECT DISTINCT text with INNER JOIN
+    model: FKMessage
+    operation: distinct_join
+    size_profile: dataset_standard
+    join:
+        type: inner
+        related: User
+        fk: sender
+    distinct:
+        fields: [text]
+
+  - name: distinct_where_join
+    category: DISTINCT_WHERE_JOIN
+    description: "SELECT DISTINCT text WHERE age > 30 with JOIN"
+    model: FKMessage
+    operation: distinct_where_join
+    size_profile: dataset_standard
+    join:
+        type: inner
+        related: User
+        fk: sender
+    where:
+        field: age
+        op: ">"
+        value: 30
+    distinct:
+        fields: [text]
+
+  # ============================================================================
+  # LIMIT/OFFSET Operations (fixed size)
+  # ============================================================================
+  - name: select_limit_10
+    category: SELECT_LIMIT
+    description: SELECT with LIMIT 10 (from 10000 rows)
+    model: Person
+    operation: select_limit
+    iterations: 10000
+    dataset_size: 10000
+    limit:
+        value: 10
+
+  - name: select_limit_100
+    category: SELECT_LIMIT
+    description: SELECT with LIMIT 100 (from 10000 rows)
+    model: Person
+    operation: select_limit
+    iterations: 2000
+    dataset_size: 10000
+    limit:
+        value: 100
+
+  - name: select_limit_1000
+    category: SELECT_LIMIT
+    description: SELECT with LIMIT 1000 (from 10000 rows)
+    model: Person
+    operation: select_limit
+    iterations: 200
+    dataset_size: 10000
+    limit:
+        value: 1000
+
+  - name: select_offset_100
+    category: SELECT_OFFSET
+    description: "SELECT with OFFSET 100 (from 1000 rows, returns 900)"
+    model: Person
+    operation: select_offset
+    iterations: 1000
+    dataset_size: 1000
+    limit:
+        offset: 100
+
+  - name: select_limit_offset_page1
+    category: SELECT_LIMIT_OFFSET
+    description: "Pagination: LIMIT 100 OFFSET 0 (page 1)"
+    model: Person
+    operation: select_limit_offset
+    iterations: 2000
+    dataset_size: 10000
+    limit:
+        value: 100
+        offset: 0
+
+  - name: select_limit_offset_deep
+    category: SELECT_LIMIT_OFFSET
+    description: "Deep pagination: LIMIT 100 OFFSET 9000"
+    model: Person
+    operation: select_limit_offset
+    iterations: 2000
+    dataset_size: 10000
+    limit:
+        value: 100
+        offset: 9000
+
+  - name: select_where_limit_100
+    category: SELECT_WHERE_LIMIT
+    description: "SELECT WHERE age > 30 LIMIT 100"
+    model: Person
+    operation: select_where_limit
+    iterations: 2000
+    dataset_size: 10000
+    where:
+        field: age
+        op: ">"
+        value: 30
+    limit:
+        value: 100
+
+  - name: select_join_limit_100
+    category: SELECT_JOIN_LIMIT
+    description: SELECT with JOIN and LIMIT 100
+    model: FKMessage
+    operation: select_join_limit
+    iterations: 2000
+    dataset_size: 10000
+    join:
+        type: inner
+        related: User
+        fk: sender
+    limit:
+        value: 100
+
+  - name: select_join_limit_offset_page1
+    category: SELECT_JOIN_LIMIT_OFFSET
+    description: "JOIN pagination: LIMIT 100 OFFSET 0"
+    model: FKMessage
+    operation: select_join_limit_offset
+    iterations: 2000
+    dataset_size: 10000
+    join:
+        type: inner
+        related: User
+        fk: sender
+    limit:
+        value: 100
+        offset: 0
+
+  # ============================================================================
+  # ORDER BY Operations (fixed size)
+  # ============================================================================
+  - name: order_by_single_asc
+    category: ORDER_BY
+    description: SELECT ORDER BY age ASC (10000 rows)
+    model: Person
+    operation: order_by_asc
+    iterations: 1000
+    dataset_size: 10000
+    order_by:
+        - field: age
+          direction: ASC
+
+  - name: order_by_single_desc
+    category: ORDER_BY
+    description: SELECT ORDER BY salary DESC (10000 rows)
+    model: Person
+    operation: order_by_desc
+    iterations: 1000
+    dataset_size: 10000
+    order_by:
+        - field: salary
+          direction: DESC
+
+  - name: order_by_with_where
+    category: ORDER_BY_WHERE
+    description: "SELECT WHERE age > 30 ORDER BY salary DESC"
+    model: Person
+    operation: order_by_where
+    iterations: 1000
+    dataset_size: 10000
+    where:
+        field: age
+        op: ">"
+        value: 30
+    order_by:
+        - field: salary
+          direction: DESC
+
+  - name: order_by_with_limit_10
+    category: ORDER_BY_LIMIT
+    description: "Top-N: SELECT ORDER BY salary DESC LIMIT 10"
+    model: Person
+    operation: order_by_limit
+    iterations: 5000
+    dataset_size: 10000
+    order_by:
+        - field: salary
+          direction: DESC
+    limit:
+        value: 10
+
+  # ============================================================================
+  # ORDER BY + COLLATE Operations
+  # ============================================================================
+  - name: order_by_collate_nocase_asc
+    category: ORDER_BY_COLLATE
+    description: SELECT ORDER BY name COLLATE NOCASE ASC (10000 rows)
+    model: Person
+    operation: order_by_collate
+    iterations: 1000
+    dataset_size: 10000
+    order_by:
+        - field: name
+          direction: ASC
+          collate: NOCASE
+
+  - name: order_by_collate_nocase_desc
+    category: ORDER_BY_COLLATE
+    description: SELECT ORDER BY name COLLATE NOCASE DESC (10000 rows)
+    model: Person
+    operation: order_by_collate
+    iterations: 1000
+    dataset_size: 10000
+    order_by:
+        - field: name
+          direction: DESC
+          collate: NOCASE
+
+  - name: order_by_collate_binary
+    category: ORDER_BY_COLLATE
+    description: SELECT ORDER BY name COLLATE BINARY ASC (10000 rows)
+    model: Person
+    operation: order_by_collate
+    iterations: 1000
+    dataset_size: 10000
+    order_by:
+        - field: name
+          direction: ASC
+          collate: BINARY
+
+  - name: order_by_collate_where
+    category: ORDER_BY_COLLATE_WHERE
+    description: "SELECT WHERE age > 30 ORDER BY name COLLATE NOCASE DESC"
+    model: Person
+    operation: order_by_collate_where
+    iterations: 1000
+    dataset_size: 10000
+    where:
+        field: age
+        op: ">"
+        value: 30
+    order_by:
+        - field: name
+          direction: DESC
+          collate: NOCASE
+
+  # ============================================================================
+  # GROUP BY Operations (fixed size)
+  # ============================================================================
+  - name: group_by_single_age
+    category: GROUP_BY
+    description: SELECT GROUP BY age (10000 rows)
+    model: Person
+    operation: group_by
+    iterations: 1000
+    dataset_size: 10000
+    group_by:
+        fields: [age]
+    aggregate:
+        func: count
+
+  - name: group_by_single_is_active
+    category: GROUP_BY
+    description: SELECT GROUP BY is_active (10000 rows)
+    model: Person
+    operation: group_by
+    iterations: 1000
+    dataset_size: 10000
+    group_by:
+        fields: [is_active]
+    aggregate:
+        func: count
+
+  - name: group_by_with_where_gt
+    category: GROUP_BY_WHERE
+    description: "SELECT GROUP BY age WHERE salary > 50000"
+    model: Person
+    operation: group_by_where
+    iterations: 1000
+    dataset_size: 10000
+    where:
+        field: salary
+        op: ">"
+        value: 50000
+    group_by:
+        fields: [age]
+    aggregate:
+        func: count
+
+  - name: group_by_multi_2
+    category: GROUP_BY_MULTI
+    description: "SELECT GROUP BY age, is_active (10000 rows)"
+    model: Person
+    operation: group_by_multi_2
+    iterations: 500
+    dataset_size: 10000
+    group_by:
+        fields: [age, is_active]
+    aggregate:
+        func: count
+
+  - name: group_by_with_count
+    category: GROUP_BY_COUNT
+    description: "SELECT age, COUNT(*) GROUP BY age"
+    model: Person
+    operation: group_by_with_count
+    iterations: 1000
+    dataset_size: 10000
+    group_by:
+        fields: [age]
+    aggregate:
+        func: count
+
+  - name: group_by_with_sum
+    category: GROUP_BY_SUM
+    description: "SELECT age, SUM(salary) GROUP BY age"
+    model: Person
+    operation: group_by_with_sum
+    iterations: 1000
+    dataset_size: 10000
+    group_by:
+        fields: [age]
+    aggregate:
+        func: sum
+        field: salary
+
+  - name: group_by_with_avg
+    category: GROUP_BY_AVG
+    description: "SELECT age, AVG(salary) GROUP BY age"
+    model: Person
+    operation: group_by_with_avg
+    iterations: 1000
+    dataset_size: 10000
+    group_by:
+        fields: [age]
+    aggregate:
+        func: avg
+        field: salary
+
+  - name: group_by_with_min
+    category: GROUP_BY_MIN
+    description: "SELECT age, MIN(salary) GROUP BY age"
+    model: Person
+    operation: group_by_with_min
+    iterations: 1000
+    dataset_size: 10000
+    group_by:
+        fields: [age]
+    aggregate:
+        func: min
+        field: salary
+
+  - name: group_by_with_max
+    category: GROUP_BY_MAX
+    description: "SELECT age, MAX(salary) GROUP BY age"
+    model: Person
+    operation: group_by_with_max
+    iterations: 1000
+    dataset_size: 10000
+    group_by:
+        fields: [age]
+    aggregate:
+        func: max
+        field: salary
+
+  # ============================================================================
+  # GROUP BY + HAVING (fixed size)
+  # ============================================================================
+  - name: group_by_having_count
+    category: GROUP_BY_HAVING
+    description: "SELECT age, COUNT(*) GROUP BY age HAVING age > 30"
+    model: Person
+    operation: group_by_having_count
+    iterations: 1000
+    dataset_size: 10000
+    group_by:
+        fields: [age]
+        having:
+          field: age
+          op: ">"
+          value: 30
+    aggregate:
+        func: count
+
+  - name: group_by_having_sum
+    category: GROUP_BY_HAVING
+    description: "SELECT age, SUM(salary) GROUP BY age HAVING age > 30"
+    model: Person
+    operation: group_by_having_sum
+    iterations: 1000
+    dataset_size: 10000
+    group_by:
+        fields: [age]
+        having:
+          field: age
+          op: ">"
+          value: 30
+    aggregate:
+        func: sum
+        field: salary
+
+  # ============================================================================
+  # Advanced WHERE Operations (fixed size)
+  # ============================================================================
+  - name: where_like_prefix
+    category: WHERE_LIKE
+    description: "WHERE name LIKE 'Person1%'"
+    model: Person
+    operation: where_like
+    iterations: 1000
+    dataset_size: 10000
+    where:
+        field: name
+        op: LIKE
+        value: "Person1%"
+
+  - name: where_like_contains
+    category: WHERE_LIKE
+    description: "WHERE name LIKE '%son%'"
+    model: Person
+    operation: where_like
+    iterations: 1000
+    dataset_size: 10000
+    where:
+        field: name
+        op: LIKE
+        value: "%son%"
+
+  - name: where_between_int
+    category: WHERE_BETWEEN
+    description: WHERE age BETWEEN 25 AND 45
+    model: Person
+    operation: where_between
+    iterations: 1000
+    dataset_size: 10000
+    where:
+        field: age
+        op: BETWEEN
+        value: [25, 45]
+
+  - name: where_in_small
+    category: WHERE_IN
+    description: "WHERE age IN (25, 30, 35)"
+    model: Person
+    operation: where_in
+    iterations: 1000
+    dataset_size: 10000
+    where:
+        field: age
+        op: IN
+        value: [25, 30, 35]
+
+  - name: where_and_simple
+    category: WHERE_AND
+    description: "WHERE age > 30 AND salary > 50000"
+    model: Person
+    operation: where_and
+    iterations: 1000
+    dataset_size: 10000
+    where:
+        conditions:
+            - field: age
+              op: ">"
+              value: 30
+            - field: salary
+              op: ">"
+              value: 50000
+        combine: and
+
+  - name: where_or_simple
+    category: WHERE_OR
+    description: "WHERE age < 25 OR age > 60"
+    model: Person
+    operation: where_or
+    iterations: 1000
+    dataset_size: 10000
+    where:
+        conditions:
+            - field: age
+              op: "<"
+              value: 25
+            - field: age
+              op: ">"
+              value: 60
+        combine: or
+
+  # ============================================================================
+  # IS NULL / IS NOT NULL (fixed size)
+  # ============================================================================
+  - name: where_is_null
+    category: WHERE_IS_NULL
+    description: WHERE score IS NULL
+    model: Person
+    operation: where_is_null
+    iterations: 1000
+    dataset_size: 10000
+    where:
+        field: score
+        op: IS NULL
+
+  - name: where_is_not_null
+    category: WHERE_IS_NULL
+    description: WHERE score IS NOT NULL
+    model: Person
+    operation: where_is_not_null
+    iterations: 1000
+    dataset_size: 10000
+    where:
+        field: score
+        op: IS NOT NULL
+
+  # ============================================================================
+  # Multi-Field DISTINCT (fixed size)
+  # ============================================================================
+  - name: distinct_multi_field_2
+    category: DISTINCT_MULTI
+    description: "SELECT DISTINCT name, age (10000 rows)"
+    model: Person
+    operation: distinct_multi_2
+    iterations: 1000
+    dataset_size: 10000
+    distinct:
+        fields: [name, age]
+
+  - name: distinct_multi_field_3
+    category: DISTINCT_MULTI
+    description: "SELECT DISTINCT name, age, is_active (10000 rows)"
+    model: Person
+    operation: distinct_multi_3
+    iterations: 1000
+    dataset_size: 10000
+    distinct:
+        fields: [name, age, is_active]
+
+  - name: distinct_order_by_asc
+    category: DISTINCT_ORDER
+    description: SELECT DISTINCT age ORDER BY age ASC
+    model: Person
+    operation: distinct_order_by_asc
+    iterations: 1000
+    dataset_size: 10000
+    order_by:
+        - field: age
+          direction: ASC
+    distinct:
+        fields: [age]
+
+  - name: distinct_order_by_desc
+    category: DISTINCT_ORDER
+    description: SELECT DISTINCT age ORDER BY age DESC
+    model: Person
+    operation: distinct_order_by_desc
+    iterations: 1000
+    dataset_size: 10000
+    order_by:
+        - field: age
+          direction: DESC
+    distinct:
+        fields: [age]
+
+  # ============================================================================
+  # Multi-Field ORDER BY (fixed size)
+  # ============================================================================
+  - name: order_by_multi_2_asc
+    category: ORDER_BY_MULTI
+    description: "SELECT ORDER BY age ASC, salary ASC (10000 rows)"
+    model: Person
+    operation: order_by_multi_2_asc
+    iterations: 1000
+    dataset_size: 10000
+    order_by:
+        - field: age
+          direction: ASC
+        - field: salary
+          direction: ASC
+
+  - name: order_by_multi_2_desc
+    category: ORDER_BY_MULTI
+    description: "SELECT ORDER BY age DESC, salary DESC (10000 rows)"
+    model: Person
+    operation: order_by_multi_2_desc
+    iterations: 1000
+    dataset_size: 10000
+    order_by:
+        - field: age
+          direction: DESC
+        - field: salary
+          direction: DESC
+
+  - name: order_by_multi_2_mixed
+    category: ORDER_BY_MULTI
+    description: "SELECT ORDER BY age ASC, salary DESC (10000 rows)"
+    model: Person
+    operation: order_by_multi_2_mixed
+    iterations: 1000
+    dataset_size: 10000
+    order_by:
+        - field: age
+          direction: ASC
+        - field: salary
+          direction: DESC
+
+  # ============================================================================
+  # FIRST Operations (retrieve first matching row with LIMIT 1)
+  # ============================================================================
+  - name: first
+    category: FIRST
+    description: FIRST (retrieves first row with LIMIT 1)
+    model: Person
+    operation: first
+    size_profile: dataset_standard
+
+  - name: first_where
+    category: FIRST_WHERE
+    description: "FIRST WHERE age > 30"
+    model: Person
+    operation: first_where
+    iterations: 10000
+    dataset_size: 10000
+    where:
+        field: age
+        op: ">"
+        value: 30
+
+  # ============================================================================
+  # GET Operations (retrieve exactly one row, error on 0 or >1)
+  # ============================================================================
+  - name: get_where_eq
+    category: GET
+    description: GET WHERE id == N (single row by PK)
+    model: Person
+    operation: get_where
+    iterations: 10000
+    dataset_size: 10000
+    where:
+        field: id
+        op: ==
+        value: 1
+
+  # ============================================================================
+  # SET OPERATIONS (UNION, UNION ALL, EXCEPT, INTERSECT)
+  # ============================================================================
+  - name: setop_union
+    category: SETOP
+    description: UNION with WHERE on both sides
+    model: Person
+    operation: setop
+    size_profile: dataset_standard
+    setop:
+      type: union
+
+  - name: setop_union_all
+    category: SETOP
+    description: UNION ALL with WHERE on both sides
+    model: Person
+    operation: setop
+    size_profile: dataset_standard
+    setop:
+      type: union_all
+
+  - name: setop_except
+    category: SETOP
+    description: EXCEPT with WHERE on both sides
+    model: Person
+    operation: setop
+    size_profile: dataset_standard
+    setop:
+      type: except
+
+  - name: setop_intersect
+    category: SETOP
+    description: INTERSECT with WHERE on both sides
+    model: Person
+    operation: setop
+    size_profile: dataset_standard
+    setop:
+      type: intersect
+
+  - name: setop_union_order_by
+    category: SETOP_ORDER
+    description: UNION + ORDER BY age ASC
+    model: Person
+    operation: setop
+    size_profile: dataset_standard
+    setop:
+      type: union
+    order_by:
+      - field: age
+        direction: ASC
+
+  - name: setop_union_limit
+    category: SETOP_LIMIT
+    description: UNION + LIMIT 100
+    model: Person
+    operation: setop
+    size_profile: dataset_standard
+    setop:
+      type: union
+    limit:
+        value: 100
+

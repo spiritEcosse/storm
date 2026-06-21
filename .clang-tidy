@@ -1,0 +1,174 @@
+---
+# Clang-Tidy configuration for Storm ORM
+# Comprehensive checks for C++26 ORM project
+#
+# Categories enabled (full): clang-analyzer, bugprone, cert, concurrency,
+#   cppcoreguidelines, misc, performance, portability, readability
+# Categories enabled (curated subset only): modernize, google (see notes below)
+# Excluded categories: android, fuchsia, llvm, llvmlibc, abseil, boost, darwin,
+#   mpi, objc, openmp, zircon, altera, linuxkernel, hicpp (platform/library-specific
+#   or pure aliases of already-enabled checks).
+#
+# Exclusion policy:
+# - Keep checks that catch real bugs
+# - Exclude stylistic checks that are subjective or would require massive refactoring
+# - Exclude checks that crash on C++26 modules (bugprone-argument-comment)
+# - Exclude false positives in tests: see tests/.clang-tidy (bugprone-unchecked-optional-access)
+#
+# C++26 False Positive Exclusions:
+# - cppcoreguidelines-pro-type-member-init: too many false positives in test files
+# - cppcoreguidelines-init-variables: fires on `constexpr size_t x = ...` + `Array<x>` on next line;
+#   constexpr variables are always initialized — this is a false positive in consteval functions.
+# - misc-const-correctness: fires on variables modified inside fold expressions; the modification IS
+#   visible but clang-tidy cannot see through the fold expansion.
+# - cppcoreguidelines-rvalue-reference-param-not-moved: fires even when std::move IS used in a
+#   function argument (e.g. `make_shared<T>(std::move(param))`) — clang-tidy doesn't see through it.
+# - cppcoreguidelines-avoid-non-const-global-variables: fires on consteval lambdas inside concept
+#   definitions; concepts are not variables.
+# - cppcoreguidelines-pro-type-vararg: std::snprintf is the only portable way to format doubles
+#   with %.17g precision; std::format alternative is not available in noexcept hot paths.
+#
+# GTest / Test-file Exclusions: moved to tests/.clang-tidy (issue #314).
+# - google-explicit-constructor: Expr and UUID implicit conversions are intentional public API
+#   (src/orm/where.cppm, src/orm/utilities.cppm). Disabled globally — not just test files.
+#
+# ORM-specific Exclusions (issue #262 — added after clang-p2996 rebuild surfaced 48 pre-existing warnings):
+# - cppcoreguidelines-avoid-const-or-ref-data-members: Storm's INSERT/UPDATE/ERASE/SELECT statement
+#   classes return short-lived dispatcher functors (struct SingleQuery { Stmt& stmt; const T& obj; ...})
+#   that intentionally hold references. The non-assignability the check warns about is the desired
+#   property; the factory methods use [[clang::lifetimebound]] for dangling protection. Re-enabling the
+#   check would force a refactor of insert/update/erase/select dispatcher proxies (~13 sites).
+# - cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers: chronically noisy on legitimate
+#   buffer sizes (32, 64), base-10 parsing constants, and ConstexprString capacity tuning.
+# - bugprone-easily-swappable-parameters: noisy on (limit, offset) / (left, right) parameter pairs
+#   where adjacency is the natural API.
+# - bugprone-branch-clone: re-enabled 2026-05-22; FK dialect dispatch in schema.cppm refactored to
+#   constexpr ternary to eliminate the clone.
+# - performance-enum-size: re-enabled 2026-05-25 (issue #313); enums in src/ given explicit small
+#   underlying types (std::uint8_t) since none exceed 256 enumerators.
+#
+# Category additions (issue #364):
+#
+# clang-analyzer-* (path-sensitive analysis — catches resource leak / use-after-free
+#   on error paths the sanitizers never execute, null deref on a specific branch,
+#   uninitialized reads the syntactic checks miss):
+#   - Enabled wholesale. The full-tree sweep found 0 warnings in src/ and 8 in
+#     test/bench code (all idiomatic: gbench `for (auto _ : state)` dead-store on
+#     the iteration token, intentional moved-from assertions, a bounded mock copy);
+#     each fixed at the site (NOLINT or memcpy).
+#   - Runtime: measured ~0 added cost. The analyzer runs during the same single-TU
+#     parse/AST that the already-enabled syntactic categories pay for (24 src TUs:
+#     145s with vs 145s without; analyzer-only is 14s). So it rides the normal
+#     --full / --all sweep and pre-commit --diff — NO special CI-only gating needed.
+#
+# modernize-* (curated allow-list, NOT wholesale — several modernize checks fight
+#   Storm's C++26/consteval style or duplicate SonarCloud rules):
+#   Enabled: use-nullptr, use-override, use-equals-default, use-equals-delete,
+#     make-unique, make-shared, use-emplace, loop-convert.
+#   Excluded with cause (omitted from the allow-list above):
+#   - modernize-use-trailing-return-type: cosmetic; would churn every signature.
+#   - modernize-use-auto: fights Storm's explicit-type-in-consteval style.
+#   - modernize-avoid-c-arrays: consteval code uses C arrays deliberately
+#     (cf. NOSONAR S6188 — std::span is unreliable in consteval).
+#   Also implicitly excluded (the rest of modernize-*, e.g. use-ranges S6197,
+#     use-std-contains-after-find S7034, use-using, concat-nested-namespaces) —
+#     either duplicate SonarCloud rules already in CLAUDE.md or out of scope here.
+#
+# portability-* (enabled wholesale): low-noise insurance for the planned
+#   PostgreSQL/MySQL backends. The only finding was portability-avoid-pragma-once
+#   (4 test/bench headers) — those 4 were converted to include guards so the
+#   category enables clean.
+#
+# google-* (NOT monolithic — enable header-hygiene checks, keep the one conflict off):
+#   Enabled: build-using-namespace, build-namespaces, global-names-in-headers,
+#     readability-casting. The 58 build-using-namespace findings (all in .cpp
+#     test/bench TUs, none in headers) were converted to explicit
+#     using-declarations / namespace aliases.
+#   Excluded with cause:
+#   - google-explicit-constructor: Expr/UUID implicit conversions are intentional
+#     public API (kept off globally; see the GTest block below).
+#   - google-runtime-int, google-readability-{braces-around-statements,function-size,
+#     namespace-comments,todo}, google-objc-*: noisy, cosmetic, aliases of already-
+#     enabled readability-* checks, or N/A. Not added (allow-list above excludes them).
+#
+# hicpp-*: NOT added — pure aliases of cppcoreguidelines/bugprone checks already
+#   enabled; only adds duplicate diagnostics.
+
+Checks: >
+  -*,
+  clang-analyzer-*,
+  bugprone-*,
+  -bugprone-argument-comment,
+  -bugprone-easily-swappable-parameters,
+  cert-*,
+  -cert-err33-c,
+  -cert-err58-cpp,
+  concurrency-*,
+  cppcoreguidelines-*,
+  -cppcoreguidelines-avoid-const-or-ref-data-members,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-avoid-non-const-global-variables,
+  -cppcoreguidelines-init-variables,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-type-member-init,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  -cppcoreguidelines-pro-type-vararg,
+  -cppcoreguidelines-rvalue-reference-param-not-moved,
+  misc-*,
+  -misc-const-correctness,
+  -misc-include-cleaner,
+  modernize-use-nullptr,
+  modernize-use-override,
+  modernize-use-equals-default,
+  modernize-use-equals-delete,
+  modernize-make-unique,
+  modernize-make-shared,
+  modernize-use-emplace,
+  modernize-loop-convert,
+  performance-*,
+  portability-*,
+  readability-*,
+  -readability-magic-numbers,
+  google-build-using-namespace,
+  google-build-namespaces,
+  google-global-names-in-headers,
+  google-readability-casting,
+  -google-explicit-constructor
+
+# Header filter - apply to project headers, exclude third_party
+HeaderFilterRegex: '^(?!.*third_party).*'
+
+# Format style for fix suggestions
+FormatStyle: file
+
+# Treat warnings as errors (optional, can be disabled)
+WarningsAsErrors: ''
+
+# Check-specific options
+CheckOptions:
+  # Allow pure data types (struct-like classes with all public members)
+  - key: misc-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic
+    value: true
+  - key: cppcoreguidelines-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic
+    value: true
+  # Identifier length exceptions for domain-standard abbreviations
+  # rc=return code, db=database, it=iterator, op=operator, id=identifier
+  # pk=primary key, qs=QuerySet, l/r=left/right, c=char, m=match
+  # jw=join_wrapper, we=where_expr, lv=limit_value, ov=offset_value, ob=order_by — used as
+  # parameters of SelectStatement::query()/query_first()/query_get() (issue #262).
+  # ch=char, hi/lo=hex nibble halves (postgresql.cppm hex_digit + blob extract).
+  # p=parameter/pointer, pg=PostgreSQL flag, sv=string_view, s=string,
+  # tp=time_point, dp=day_point, h=hours, v=value (utilities/aggregate/pool helpers).
+  # _=Google Benchmark loop variable (for (auto _ : state)), ec=error_code, sa=sigaction,
+  # fd=file descriptor (POSIX APIs), ns=nanoseconds, ce=console event, lc=line count,
+  # ev=event (terminal input).
+  - key: readability-identifier-length.IgnoredVariableNames
+    value: '^(_|rc|db|it|op|id|pk|qs|l|r|c|m|i|j|k|n|t|s[0-9]+|ch|hi|lo|s|v|h|dp|tp|p|pg|ec|sa|fd|ns|ce|lc|ev|sp|bm|p1|p2|r1|r2|r3|tv|qc|ye|mn|mx|q[0-9]+|tc|cp|cs|cm|cm|qt)$'
+  - key: readability-identifier-length.IgnoredParameterNames
+    value: '^(rc|db|it|op|id|pk|qs|l|r|c|m|i|j|k|n|jw|we|lv|ov|ob|ch|p|pg|sv|s|tp|dp|v|h|fd|ec|sa|ns|ce|lc|ev|fn|to|jn|w|o|g|d|a|t)$'
+  - key: readability-identifier-length.IgnoredLoopCounterNames
+    value: '^[ijkn]$'
+  - key: readability-identifier-length.MinimumLoopCounterNameLength
+    value: '1'

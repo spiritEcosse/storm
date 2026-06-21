@@ -1,12 +1,51 @@
 build/**
+bw-output/
+.cache/
 .idea
 *.log
 Testing
 *.pyc
 __pycache__
+tests/test_cases/*.json
+.zed
 
 # Benchmark executables
 benchmarks/bench_sqlite
 benchmarks/bench_sqlite_orm
 benchmarks/bench_storm
 benchmarks/bench_storm_optimized
+
+# Local reference dir for parked .cppm experiments (issue #221 work)
+benchmarks/.bak/
+
+# Auto-generated from benchmarks/tests/benchmark_tests.yaml during build
+benchmarks/tests/benchmark_tests.json
+
+# Per-run benchmark output (compare_against_baseline.sh writes this; regenerated each run).
+current.json
+*.profraw
+default.profraw
+
+# MkDocs build output
+site/
+
+# SonarCloud scanner working directory
+.scannerwork/
+
+# libFuzzer corpus / crash artifacts (created by fuzz harness runs)
+# These are raw binary files with unprintable names; managed per-session by the user
+crash-*
+timeout-*
+leak-*
+oom-*
+slow-unit-*
+corpus/
+crashes/
+
+# Local-only env files (never committed)
+.env
+.env.*
+!.env.example
+
+# Lock files from local tooling (e.g. .claude/scheduled_tasks.lock)
+*.lock

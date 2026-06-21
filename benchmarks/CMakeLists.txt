@@ -2,107 +2,147 @@ project(storm_benchmarks LANGUAGES CXX)
 
 message(STATUS "Configuring benchmarks")
 
-# CPM is already included in main CMakeLists.txt, just use it
+# ============================================================================
+# YAML to JSON conversion for benchmark tests
+# ============================================================================
+# benchmark_tests.yaml is the human-friendly source of truth
+# benchmark_tests.json is auto-generated for C++ #embed parsing
+set(YAML_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/tests/benchmark_tests.yaml")
+set(JSON_OUTPUT "${CMAKE_CURRENT_SOURCE_DIR}/tests/benchmark_tests.json")
+set(CONVERTER_SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/scripts/yaml_to_json.py")
 
-CPMAddPackage(
-    NAME SqliteOrm
-    GITHUB_REPOSITORY fnc12/sqlite_orm
-    GIT_TAG v1.9.1
-    OPTIONS "BUILD_TESTING OFF"
-)
+find_package(
+  Python3
+  COMPONENTS Interpreter
+  REQUIRED)
 
-# Build sqlite_orm wrapper as a separate C++20 library
-add_library(sqlite_orm_wrapper STATIC
-    "${CMAKE_CURRENT_SOURCE_DIR}/sqlite_orm_wrapper.cpp"
-)
+add_custom_command(
+  OUTPUT "${JSON_OUTPUT}"
+  COMMAND ${Python3_EXECUTABLE} "${CONVERTER_SCRIPT}" "${YAML_SOURCE}"
+          "${JSON_OUTPUT}"
+  DEPENDS "${YAML_SOURCE}" "${CONVERTER_SCRIPT}"
+  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  COMMENT "Converting benchmark_tests.yaml to JSON..."
+  VERBATIM)
 
-set_target_properties(sqlite_orm_wrapper PROPERTIES
-    CXX_STANDARD 20
-    CXX_STANDARD_REQUIRED ON
-)
+add_custom_target(generate_benchmark_json DEPENDS "${JSON_OUTPUT}")
 
-# Add sqlite_orm include directory
-if(SqliteOrm_SOURCE_DIR)
-    target_include_directories(sqlite_orm_wrapper PRIVATE
-        "${SqliteOrm_SOURCE_DIR}/include"
-    )
-else()
-    # Fallback to expected location
-    target_include_directories(sqlite_orm_wrapper PRIVATE
-        "${CMAKE_BINARY_DIR}/_deps/sqliteorm-src/include"
-    )
-endif()
+# ============================================================================
+# storm_bench — Google Benchmark entry point (Issue #235)
+# ============================================================================
+# Phase 1 keeps the benchmark-local .cppm module FILE_SET intact so the
+# parser/registry/sizes/base/raw/schema modules continue to build (Phase 2+ will
+# consume them from new fixtures). main.cpp itself imports nothing yet.
+file(GLOB STORM_BENCH_MODULE_UNITS CONFIGURE_DEPENDS
+     "${CMAKE_CURRENT_SOURCE_DIR}/*.cppm")
 
-link_sqlite(sqlite_orm_wrapper)
+add_executable(
+  storm_bench
+  "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/register.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/dashboard/reporter.cpp")
+target_sources(storm_bench PRIVATE FILE_SET cxx_modules TYPE CXX_MODULES FILES
+                                   ${STORM_BENCH_MODULE_UNITS})
+# import std; migration (issue #326): the bench .cppm module units do `import
+# std;` directly, so this target must consume the std named module too.
+set_target_properties(storm_bench PROPERTIES CXX_MODULE_STD ON)
+# Bypass benchmark::benchmark's INTERFACE_* properties (we link the static
+# archive directly) so the bench-only flags stay confined to main.cpp via
+# per-source properties below.
+#
+# Why the split — main.cpp owns <benchmark/benchmark.h>, register.cpp owns
+# `import storm_*`. Putting both in one TU diverges its PCM-cache hash from
+# libstorm's and produces two _Builtin_stddef.pcm copies under the cache,
+# tripping a "module defined in both" fatal at any `import storm` site
+# (project_pcm_hash_divergence). The split keeps main.cpp out of the import
+# graph entirely (it sees only the run-loop trampoline vector via
+# bench_register.h, a POD-only header) and register.cpp without the bench
+# include path so its hash matches libstorm's.
+target_link_libraries(storm_bench PRIVATE storm pthread
+                                          $<TARGET_FILE:benchmark::benchmark>)
+add_dependencies(storm_bench benchmark::benchmark)
+link_sqlite(storm_bench)
+link_postgresql(storm_bench)
+apply_clang_flags(storm_bench)
+# Treat warnings as errors on Storm-owned benchmark code (issue #317). The
+# Google Benchmark headers reach only main.cpp/reporter.cpp and arrive via
+# -isystem (see _benchmark_includes below), so their warnings are not promoted.
+target_compile_options(storm_bench PRIVATE -Werror)
+target_include_directories(
+  storm_bench PRIVATE "${CMAKE_SOURCE_DIR}/src"
+                      "${CMAKE_SOURCE_DIR}/third_party")
 
-# Use system clang and stdlib for sqlite_orm wrapper to avoid conflicts
-set_target_properties(sqlite_orm_wrapper PROPERTIES
-    CXX_COMPILER /usr/bin/clang++
-)
+get_target_property(_benchmark_includes benchmark::benchmark
+                    INTERFACE_INCLUDE_DIRECTORIES)
+set_property(
+  SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp"
+         "${CMAKE_CURRENT_SOURCE_DIR}/dashboard/reporter.cpp"
+  APPEND
+  PROPERTY INCLUDE_DIRECTORIES "${_benchmark_includes}")
+set_property(
+  SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/main.cpp"
+         "${CMAKE_CURRENT_SOURCE_DIR}/dashboard/reporter.cpp"
+  APPEND
+  PROPERTY COMPILE_DEFINITIONS "BENCHMARK_STATIC_DEFINE")
 
-target_compile_options(sqlite_orm_wrapper PRIVATE
-    -fno-modules
-    -stdlib=libstdc++
-)
-target_link_options(sqlite_orm_wrapper PRIVATE -stdlib=libstdc++)
+add_dependencies(storm_bench generate_benchmark_json)
 
-# Helper function for C++20 benchmarks with system clang
-function(add_system_clang_benchmark target_name source_file)
-    add_executable(${target_name} "${CMAKE_CURRENT_SOURCE_DIR}/${source_file}")
-    link_sqlite(${target_name})
-    set_target_properties(${target_name} PROPERTIES
-        CXX_STANDARD 20
-        CXX_STANDARD_REQUIRED ON
-        CXX_COMPILER /usr/bin/clang++
-        LINK_OPTIONS "-stdlib=libstdc++"
-    )
-    target_compile_options(${target_name} PRIVATE
-        -fno-modules
-        -stdlib=libstdc++
-    )
-    target_link_libraries(${target_name} PRIVATE pthread)
-endfunction()
+message(STATUS "Benchmark executable: storm_bench")
 
-# Helper function for Storm ORM benchmarks with custom clang
-function(add_storm_benchmark target_name source_file)
-    add_executable(${target_name} "${CMAKE_CURRENT_SOURCE_DIR}/${source_file}")
-    target_link_libraries(${target_name} PRIVATE
-        storm
-        pthread
-    )
-    link_sqlite(${target_name})
-    apply_clang_flags(${target_name})
-    target_include_directories(${target_name} PRIVATE
-        "${CMAKE_SOURCE_DIR}/src"
-        "${CMAKE_CURRENT_SOURCE_DIR}/common"  # Common benchmark utilities
-    )
-endfunction()
+# ============================================================================
+# storm_anchors — raw SQLite spot-check binary (Issue #235 — Phase 4)
+# ============================================================================
+# Sparse, intentional raw-SQLite anchors used at release time to re-verify the
+# "96–108% of raw SQLite" efficiency claim. Lives in its own binary so anchor
+# results are never confused with per-Storm-benchmark runs and so its stream
+# stays out of `storm_bench` output.
+#
+# Anchors do NOT import storm and do NOT depend on any benchmark .cppm module.
+# Single TU = anchors_raw.cpp, owns BENCHMARK_MAIN itself.
+#
+# Kept as a plain .cpp (not .cppm) — converting to a module unit segfaults
+# clang-p2996 inside ASTWriter::GenerateNameLookupTable when serializing the BMI
+# for the BENCHMARK(...) macro's static-init globals. When STORM_BENCH_SOCKET is
+# set, anchors_raw.cpp streams its raw subset over the dashboard wire via the
+# shared streaming reporter (Issue #74). Both TUs are plain .cpp and never
+# import storm, so linking reporter.cpp here is safe from PCM-hash divergence.
+add_executable(
+  storm_anchors "${CMAKE_CURRENT_SOURCE_DIR}/anchors_raw.cpp"
+                "${CMAKE_CURRENT_SOURCE_DIR}/dashboard/reporter.cpp")
+target_link_libraries(storm_anchors PRIVATE pthread
+                                            $<TARGET_FILE:benchmark::benchmark>)
+add_dependencies(storm_anchors benchmark::benchmark)
+link_sqlite(storm_anchors)
+apply_clang_flags(storm_anchors)
+# Treat warnings as errors on Storm-owned benchmark code (issue #317).
+target_compile_options(storm_anchors PRIVATE -Werror)
+# anchors_raw.cpp does #include "dashboard/reporter.h" (path relative to
+# benchmarks/), so the benchmarks/ dir must be on its include path. third_party
+# carries plf_hive (anchors_raw.cpp materializes SELECT rows into a plf::hive to
+# mirror Storm's result container — fairness rule, #68).
+target_include_directories(
+  storm_anchors PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}"
+                        "${CMAKE_SOURCE_DIR}/third_party")
 
-# Build separate benchmark executables to avoid module conflicts
+# anchors_raw.cpp needs the benchmark include dirs + BENCHMARK_STATIC_DEFINE.
+# dashboard/reporter.cpp's source-scoped properties are already set by the
+# storm_bench block above (source-file properties are directory-scoped and apply
+# to every target using that file), so it is not repeated here.
+set_property(
+  SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/anchors_raw.cpp"
+  APPEND
+  PROPERTY INCLUDE_DIRECTORIES "${_benchmark_includes}")
+set_property(
+  SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/anchors_raw.cpp"
+  APPEND
+  PROPERTY COMPILE_DEFINITIONS "BENCHMARK_STATIC_DEFINE")
 
-# SQLite-only benchmark (C++20, system clang, libstdc++)
-add_system_clang_benchmark(bench_sqlite "bench_sqlite.cpp")
+message(STATUS "Benchmark executable: storm_anchors")
 
-# sqlite_orm benchmark (C++20, system clang, libstdc++)
-add_system_clang_benchmark(bench_sqlite_orm "bench_sqlite_orm.cpp")
-target_link_libraries(bench_sqlite_orm PRIVATE sqlite_orm_wrapper)
-target_include_directories(bench_sqlite_orm PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}"  # For sqlite_orm_wrapper.h
-)
-
-# Storm ORM benchmarks (C++26, custom clang, libc++)
-add_storm_benchmark(bench_storm "bench_storm.cpp")
-add_storm_benchmark(sql_generation_microbench "sql_generation_microbench.cpp")
-add_storm_benchmark(join_performance_microbench "join_performance_microbench.cpp")
-add_storm_benchmark(bench_join "bench_join.cpp")
-# Missing benchmark files - commented out
-add_storm_benchmark(bench_where "bench_where.cpp")
-add_storm_benchmark(bench_distinct "bench_distinct.cpp")
-add_storm_benchmark(bench_distinct_scaling "bench_distinct_scaling.cpp")
-add_storm_benchmark(bench_select_comparison "bench_select_comparison.cpp")
-add_storm_benchmark(bench_aggregate "bench_aggregate.cpp")
-
-# SELECT performance analysis (C++20, system clang, libstdc++)
-add_system_clang_benchmark(bench_select_analysis "bench_select_analysis.cpp")
-
-message(STATUS "Benchmark executables: bench_sqlite, bench_sqlite_orm, bench_storm, sql_generation_microbench, join_performance_microbench, bench_join, bench_where, bench_select_analysis")
+# ============================================================================
+# storm_bench_dashboard — Issue #247
+# ============================================================================
+# Phase 1 skeleton lives in its own subdirectory so the dashboard's reflection
+# schema (bench_dashboard namespace) and Atlas migration targets stay isolated
+# from the gbench-side files in benchmarks/.
+add_subdirectory(dashboard)

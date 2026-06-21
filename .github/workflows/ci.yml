@@ -1,0 +1,144 @@
+name: CI
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [develop]
+
+jobs:
+  test:
+    name: "${{ matrix.preset }} / PG ${{ matrix.postgres }}"
+    # ninja-msan is skipped in CI: under import std; (issue #326) GTest's static
+    # TEST() macro registration move-constructs std::string through the
+    # MSAN-instrumented std module, and MSAN reports the SSO buffer as
+    # uninitialized — aborting the binary before any test body runs. This is a
+    # false positive in clang-p2996's MSAN + import std; combination, so the
+    # preset produces no signal. Re-add the matrix entry once a fixed
+    # clang-p2996 build lands (track at #326).
+    runs-on: ubuntu-24.04
+    container:
+      # Pinned to a specific digest so develop is unaffected by storm-ci image
+      # rebuilds. Bump this when publishing a new image (see docker-ci-image.yml).
+      image: ghcr.io/spiritecosse/storm-ci@sha256:3a5a0f5db4011de96c0f178d8a6c75ae8af10f55d7e526e10c30076ddfbf8678
+
+    services:
+      postgres:
+        image: "postgres:${{ matrix.postgres }}"
+        env:
+          POSTGRES_DB: storm_db
+          POSTGRES_USER: storm_db
+          POSTGRES_PASSWORD: storm_db
+        options: >-
+          --health-cmd "pg_isready -U storm_db"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Core presets — latest PG
+          - preset: ninja-debug
+            build_dir: debug
+            postgres: 17
+          - preset: ninja-asan-ubsan
+            build_dir: asan-ubsan
+            postgres: 17
+          - preset: ninja-tsan
+            build_dir: tsan
+            postgres: 17
+
+          # PG compat — same build, different PG service
+          - preset: ninja-debug
+            build_dir: debug
+            postgres: 14
+          - preset: ninja-debug
+            build_dir: debug
+            postgres: 15
+          - preset: ninja-debug
+            build_dir: debug
+            postgres: 16
+
+          # Release build — catches bench-only release bugs.
+          # Disabled: clang-p2996 clang-scan-deps SIGSEGVs at
+          # libcxx/__atomic/atomic_ref.h:28 under -O3 -std=c++26 -fmodules.
+          # Crash is in the compiler's dependency-scanner, not Storm code.
+          # Storm issue #262 tracks re-enabling once a fixed clang-p2996
+          # build replaces the binaries shipped in storm-clang.
+          # - preset: ninja-release
+          #   build_dir: release
+          #   postgres: 17
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Link clang-p2996 next to source dir
+        run: ln -sfn /opt/clang-p2996 "$(dirname "$GITHUB_WORKSPACE")/clang-p2996"
+
+      - name: Create libc++ modules symlink for import std;
+        # import std; (issue #326): CMake's CXX_MODULE_STD support looks for
+        # std.cppm / std.compat.cppm at build/share/libc++/v1/ (declared in
+        # libc++.modules.json) but clang-p2996 places them under
+        # build/modules/c++/v1/. cmake/libcxx.cmake creates this symlink at
+        # configure time when LIBCXX_ROOT is writable, but the clang-p2996
+        # dir is read-only in CI — create it here before cmake --preset runs.
+        # IMPORTANT: use the same path the previous step symlinked
+        # ($(dirname GITHUB_WORKSPACE)/clang-p2996), not /opt/clang-p2996,
+        # because that is what LIBCXX_ROOT resolves to during configure.
+        run: |
+          clang_root="$(dirname "$GITHUB_WORKSPACE")/clang-p2996"
+          share_dir="$clang_root/build/share/libc++"
+          link="$share_dir/v1"
+          target="$clang_root/build/modules/c++/v1"
+          echo "clang_root=$clang_root"
+          echo "target=$target  exists=$([ -d "$target" ] && echo yes || echo no)"
+          echo "link=$link  exists=$([ -e "$link" ] && echo yes || echo no)"
+          if [ -d "$target" ] && [ ! -e "$link" ]; then
+            mkdir -p "$share_dir"
+            ln -sfn "$target" "$link"
+            echo "Created symlink: $link -> $target"
+          else
+            echo "Symlink already exists or target missing — skipping"
+            ls -la "$link" 2>/dev/null || true
+          fi
+
+      - name: Cache CPM packages
+        uses: actions/cache@v4
+        with:
+          path: .cache/CPM
+          key: cpm-${{ matrix.preset }}-${{ hashFiles('cmake/cpm.cmake', 'cmake/tests.cmake', 'cmake/bench.cmake') }}
+          restore-keys: |
+            cpm-${{ matrix.preset }}-
+            cpm-
+
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+
+      - name: Build
+        run: ./scripts/build-with-retry.sh ${{ matrix.preset }}
+
+      - name: Test
+        env:
+          STORM_PG_CONNSTR: "host=postgres port=5432 dbname=storm_db user=storm_db password=storm_db"
+        run: ctest --test-dir build/${{ matrix.build_dir }} --output-on-failure --no-tests=error
+
+      - name: Atlas integration test
+        if: matrix.preset == 'ninja-debug' && matrix.postgres == 17
+        run: |
+          curl -sSf https://atlasgo.sh | sh
+          ./scripts/test-atlas-migration.sh
+
+      # Full-tree clang-tidy sweep — tracked by issue #262.
+      # Enable once the pre-existing drift across src/ and tests/ is cleaned up.
+      # The clang-p2996 rebuild on 2026-05-11 first surfaced 48 warnings in
+      # src/orm/statements/*.cppm + src/db/postgresql.cppm, which are addressed
+      # in this PR — but other source files almost certainly carry similar
+      # accumulated violations that were masked by the same `.cppm` parse-failure
+      # auto-skip in scripts/run_clang_tidy.sh. Enabling --all in CI now would
+      # fail every PR. Uncomment after issue #262's cleanup pass lands.
+      # - name: clang-tidy full sweep
+      #   if: matrix.preset == 'ninja-release' && matrix.postgres == 17
+      #   run: ./scripts/run_clang_tidy.sh --all

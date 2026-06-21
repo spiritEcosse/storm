@@ -2,35 +2,98 @@
   "version": 4,
   "configurePresets": [
     {
-      "name": "ninja-debug",
-      "displayName": "Ninja Debug",
-      "description": "Use Ninja generator with Debug build type",
+      "name": "base",
+      "hidden": true,
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/debug",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "CMAKE_CXX_STANDARD": "26",
         "CMAKE_C_COMPILER": "${sourceDir}/../clang-p2996/build/bin/clang",
         "CMAKE_CXX_COMPILER": "${sourceDir}/../clang-p2996/build/bin/clang++",
         "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS": "${sourceDir}/../clang-p2996/build/bin/clang-scan-deps",
-        "LIBCXX_ROOT": "${sourceDir}/../clang-p2996"
+        "LIBCXX_ROOT": "${sourceDir}/../clang-p2996",
+        "CPM_SOURCE_CACHE": "${sourceDir}/.cache/CPM"
+      }
+    },
+    {
+      "name": "ninja-debug",
+      "displayName": "Ninja Debug",
+      "description": "Debug build with tests and coverage",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build/debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ENABLE_TESTS": "ON",
+        "ENABLE_COVERAGE": "ON",
+        "ENABLE_TOOLS": "ON"
       }
     },
     {
       "name": "ninja-release",
-      "displayName": "Ninja Release",
-      "description": "Use Ninja generator with Release build type",
-      "generator": "Ninja",
+      "displayName": "Ninja Release (dev)",
+      "description": "Release build with tests and benchmarks — for development and CI",
+      "inherits": "base",
       "binaryDir": "${sourceDir}/build/release",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
-        "CMAKE_CXX_STANDARD": "26",
-        "CMAKE_C_COMPILER": "${sourceDir}/../clang-p2996/build/bin/clang",
-        "CMAKE_CXX_COMPILER": "${sourceDir}/../clang-p2996/build/bin/clang++",
-        "CMAKE_CXX_COMPILER_CLANG_SCAN_DEPS": "${sourceDir}/../clang-p2996/build/bin/clang-scan-deps",
-        "LIBCXX_ROOT": "${sourceDir}/../clang-p2996"
+        "ENABLE_TESTS": "ON",
+        "ENABLE_BENCH": "ON",
+        "ENABLE_TOOLS": "ON"
+      }
+    },
+    {
+      "name": "ninja-prod",
+      "displayName": "Ninja Production",
+      "description": "Optimised Release build — no tests, no benchmarks, no coverage",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build/prod",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "ninja-asan-ubsan",
+      "displayName": "Ninja ASAN+UBSAN",
+      "description": "Debug build with AddressSanitizer + UndefinedBehaviorSanitizer — memory safety and undefined behavior",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build/asan-ubsan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ENABLE_TESTS": "ON",
+        "USE_SANITIZER": "address,undefined"
+      }
+    },
+    {
+      "name": "ninja-tsan",
+      "displayName": "Ninja TSAN",
+      "description": "Debug build with ThreadSanitizer — detects data races in thread_local patterns",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build/tsan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ENABLE_TESTS": "ON",
+        "USE_SANITIZER": "thread"
+      }
+    },
+    {
+      "name": "ninja-msan",
+      "displayName": "Ninja MSAN",
+      "description": "Debug build with MemorySanitizer — detects reads from uninitialized memory",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build/msan",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ENABLE_TESTS": "ON",
+        "USE_SANITIZER": "memorywithorigins"
+      }
+    },
+    {
+      "name": "ninja-fuzz",
+      "displayName": "Ninja Fuzzing",
+      "description": "Release build with libFuzzer + ASAN harnesses — fuzz the runtime SQL binding layer",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/build/fuzz",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ENABLE_FUZZING": "ON"
       }
     }
   ],
@@ -40,8 +103,131 @@
       "configurePreset": "ninja-debug"
     },
     {
+      "name": "ninja-debug-coverage",
+      "inherits": "ninja-debug",
+      "environment": {
+        "STORM_PG_CONNSTR": null
+      }
+    },
+    {
       "name": "ninja-release",
       "configurePreset": "ninja-release"
+    },
+    {
+      "name": "ninja-prod",
+      "configurePreset": "ninja-prod"
+    },
+    {
+      "name": "ninja-asan-ubsan",
+      "configurePreset": "ninja-asan-ubsan"
+    },
+    {
+      "name": "ninja-tsan",
+      "configurePreset": "ninja-tsan"
+    },
+    {
+      "name": "ninja-msan",
+      "configurePreset": "ninja-msan"
+    },
+    {
+      "name": "ninja-fuzz",
+      "configurePreset": "ninja-fuzz"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "ninja-debug",
+      "configurePreset": "ninja-debug",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "jobs": 50
+      },
+      "environment": {
+        "STORM_PG_CONNSTR": "host=/var/run/postgresql dbname=storm_db user=storm_db"
+      }
+    },
+    {
+      "name": "ninja-debug-sqlite",
+      "inherits": "ninja-debug",
+      "execution": {
+        "jobs": 0
+      },
+      "environment": {
+        "STORM_PG_CONNSTR": null
+      }
+    },
+    {
+      "name": "ninja-release",
+      "configurePreset": "ninja-release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "ninja-asan-ubsan",
+      "configurePreset": "ninja-asan-ubsan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "jobs": 1
+      },
+      "environment": {
+        "STORM_PG_CONNSTR": "host=/var/run/postgresql dbname=storm_db user=storm_db",
+        "ASAN_OPTIONS": "detect_leaks=1:abort_on_error=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:abort_on_error=1"
+      }
+    },
+    {
+      "name": "ninja-asan-ubsan-sqlite",
+      "inherits": "ninja-asan-ubsan",
+      "environment": {
+        "STORM_PG_CONNSTR": null
+      }
+    },
+    {
+      "name": "ninja-tsan",
+      "configurePreset": "ninja-tsan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "jobs": 1
+      },
+      "environment": {
+        "STORM_PG_CONNSTR": "host=/var/run/postgresql dbname=storm_db user=storm_db",
+        "TSAN_OPTIONS": "abort_on_error=1"
+      }
+    },
+    {
+      "name": "ninja-tsan-sqlite",
+      "inherits": "ninja-tsan",
+      "environment": {
+        "STORM_PG_CONNSTR": null
+      }
+    },
+    {
+      "name": "ninja-msan",
+      "configurePreset": "ninja-msan",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "jobs": 1
+      },
+      "environment": {
+        "STORM_PG_CONNSTR": "host=/var/run/postgresql dbname=storm_db user=storm_db",
+        "MSAN_OPTIONS": "abort_on_error=1:print_stats=1"
+      }
+    },
+    {
+      "name": "ninja-msan-sqlite",
+      "inherits": "ninja-msan",
+      "environment": {
+        "STORM_PG_CONNSTR": null
+      }
     }
   ]
 }

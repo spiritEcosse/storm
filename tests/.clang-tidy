@@ -1,0 +1,31 @@
+# Clang-Tidy configuration for tests
+# Inherits root config and adds GTest-specific relaxations (issue #314).
+#
+# GTest / Test-file Exclusions:
+# - misc-use-internal-linkage: GTest fixtures cannot be placed in anonymous namespaces.
+# - modernize-use-trailing-return-type: TEST_F macros are incompatible with trailing returns.
+# - readability-named-parameter: GTest test body parameters are intentionally unnamed.
+# - readability-convert-member-functions-to-static: GTest fixture methods cannot be static.
+# - readability-function-cognitive-complexity: large test bodies are intentional coverage.
+# - readability-redundant-member-init: explicit {} init on std::string/optional is intentional style.
+# - cppcoreguidelines-avoid-magic-numbers, readability-magic-numbers: test data uses literals.
+# - bugprone-unchecked-optional-access: ASSERT_TRUE guards optional access but clang-tidy
+#   cannot see through GTest macros — false positives on valid checked access patterns.
+#
+# GTest-only google-* checks NOT enabled (issue #364):
+# - google-readability-avoid-underscore-in-googletest-name: Storm deliberately uses
+#   `_` to group related test names (IsNull_MethodSyntax, IsNull_NulloptSyntax, ...);
+#   enabling would force renaming dozens of tests for no correctness gain.
+# - google-upgrade-googletest-case: one-time migration check; the suite already uses
+#   the current TYPED_TEST_SUITE / *_SUITE_P spelling, so it has nothing to flag.
+InheritParentConfig: true
+Checks: >
+  -bugprone-unchecked-optional-access,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -readability-magic-numbers,
+  -misc-use-internal-linkage,
+  -modernize-use-trailing-return-type,
+  -readability-named-parameter,
+  -readability-convert-member-functions-to-static,
+  -readability-function-cognitive-complexity,
+  -readability-redundant-member-init

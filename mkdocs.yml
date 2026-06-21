@@ -1,0 +1,90 @@
+site_name: Storm ORM
+site_description: C++26 ORM with compile-time reflection for SQLite
+site_url: https://spiritecosse.github.io/storm/
+repo_url: https://github.com/spiritEcosse/storm
+repo_name: spiritEcosse/storm
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - toc:
+      permalink: true
+  - tables
+
+nav:
+  - Home: README.md
+  - Guide:
+      - Cookbook: guide/COOKBOOK.md
+      - Features:
+          - CRUD Operations: guide/features/CRUD_OPERATIONS.md
+          - SELECT Queries: guide/features/SELECT_QUERIES.md
+          - WHERE Clauses: guide/features/WHERE_CLAUSES.md
+          - JOIN Operations: guide/features/JOIN_OPERATIONS.md
+          - Batch Operations: guide/features/BATCH_OPERATIONS.md
+          - Referential Integrity: guide/features/REFERENTIAL_INTEGRITY.md
+          - Connection Tuning: guide/features/CONNECTION_TUNING.md
+      - Reference:
+          - Field Types: guide/reference/FIELD_TYPES.md
+          - Migrations: guide/reference/MIGRATIONS.md
+  - Internals:
+      - Architecture:
+          - Overview: internals/architecture/OVERVIEW.md
+          - Design Decisions: internals/architecture/DESIGN_DECISIONS.md
+          - Reflection: internals/architecture/REFLECTION.md
+          - SQL Generation: internals/architecture/SQL_GENERATION.md
+          - Module System: internals/architecture/MODULE_SYSTEM.md
+          - Statement Caching: internals/architecture/STATEMENT_CACHING.md
+          - Compile-Time vs Runtime: internals/architecture/COMPILE_TIME_VS_RUNTIME.md
+      - Building:
+          - Getting Started: internals/building/GETTING_STARTED.md
+          - Common Tasks: internals/building/COMMON_TASKS.md
+          - Adding Features: internals/building/ADDING_FEATURES.md
+          - Pre-Commit: internals/building/PRE_COMMIT.md
+          - Formatting: internals/building/FORMATTING.md
+      - Testing:
+          - Testing: internals/testing/TESTING.md
+          - Code Coverage: internals/testing/CODE_COVERAGE.md
+          - Sanitizers: internals/testing/SANITIZERS.md
+          - Fuzzing: internals/testing/FUZZING.md
+          - MSAN libc Fix: internals/testing/MSAN_LIBC_FIX.md
+      - Performance:
+          - Performance: internals/performance/PERFORMANCE.md
+          - Benchmark Dashboard: internals/performance/BENCHMARK_DASHBOARD.md
+          - JOIN Analysis: internals/performance/JOIN_ANALYSIS.md
+          - DISTINCT Analysis: internals/performance/DISTINCT_ANALYSIS.md
+      - Compiler:
+          - Compiler Issues: internals/compiler/COMPILER_ISSUES.md
+          - Compiler Attributes: internals/compiler/COMPILER_ATTRIBUTES.md
+          - C++26 Coding Standards: internals/compiler/CPP26_CODING_STANDARDS.md
+          - Code Quality: internals/compiler/CODE_QUALITY.md
+  - Archive:
+      - SELECT Optimization Report: archive/SELECT_OPTIMIZATION_REPORT.md
+      - SELECT Performance Analysis: archive/SELECT_PERFORMANCE_ANALYSIS.md
+      - UPDATE Optimization Report: archive/UPDATE_OPTIMIZATION_REPORT.md

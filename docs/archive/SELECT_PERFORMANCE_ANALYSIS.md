@@ -100,7 +100,7 @@ Added `__attribute__((hot))`, `__attribute__((flatten))`, and `__attribute__((al
 
 ### 4. Statement Caching (Already Implemented)
 
-RemoveStatement-style statement caching eliminates repeated `prepare()` calls:
+EraseStatement-style statement caching eliminates repeated `prepare()` calls:
 ```cpp
 mutable Statement* cached_select_stmt_ = nullptr;
 ```
@@ -177,7 +177,7 @@ Based on micro-benchmarks:
 - [x] **resize() pre-allocation** - Implemented and validated
 - [x] **String construction optimization** - Using direct constructor
 - [x] **Compiler hints** - Added hot/flatten/always_inline attributes
-- [x] **Statement caching** - Already implemented (RemoveStatement pattern)
+- [x] **Statement caching** - Already implemented (EraseStatement pattern)
 
 ### Future Optimizations (High Impact, High Complexity)
 

@@ -1,47 +1,53 @@
 module;
 
-#include <sqlite3.h>
-#include <meta>
+// `duplicate` removed in #277 Phase 3 (build_field_list_with_prefix consteval helper shared by JOIN/non-JOIN field-list
+// builders).
 
-export module storm_orm_statements_distinct;
+#include <meta>
+#include <plf_hive/plf_hive.h>
+
+export module storm_orm_statements_projection;
+
+import std;
 
 import storm_db_concept;
 import storm_orm_statements_base;
+import storm_orm_statements_extract;
 import storm_orm_statements_join;
+import storm_orm_statements_orderby;
 import storm_orm_utilities;
 import storm_orm_where;
-
-import <expected>;
-import <string>;
-import <vector>;
-import <tuple>;
-import <array>;
-import <meta>;
-import <optional>;
-import <memory>;
 
 export namespace storm::orm::statements {
 
     // Import utilities for compile-time SQL generation
     using storm::orm::utilities::ConstexprString;
 
-    // DistinctStatement - executes SELECT DISTINCT on specified field(s) and returns tuple data
+    // ProjectionMode controls whether DISTINCT keyword is included in SQL
+    enum class ProjectionMode : std::uint8_t { Values, Distinct };
+
+    // ProjectionStatement - executes SELECT or SELECT DISTINCT on specified field(s) and returns tuple data
     // Supports 1+ fields with compile-time type safety
-    // Always generates DISTINCT queries (for aggregates, use separate AggregateStatement)
+    // Mode controls whether DISTINCT keyword is applied
+    //
+    // Architecture: Persistent instance with proxy pattern (matches SelectStatement)
+    // - Cached via static thread_local in QuerySet::distinct()/values()
+    // - query() returns lightweight Query proxy holding references
+    // - Instance-level caching eliminates per-call TLS access and object construction
     //
     // API: Use ^^ operator to pass reflected field information directly
-    // Example: qs.distinct<^^Person::name>().select()
-    //          qs.distinct<^^Person::name, ^^Person::age>().select()
-    template <typename T, storm::db::DatabaseConnection ConnType, std::meta::info... FieldInfos>
+    // Example: qs.distinct<^^Person::name>().execute()
+    //          qs.values<^^Person::name, ^^Person::age>().execute()
+    template <typename T, storm::db::DatabaseConnection ConnType, ProjectionMode Mode, std::meta::info... FieldInfos>
         requires(sizeof...(FieldInfos) > 0)
-    class DistinctStatement : private BaseStatement<T> {
+    class ProjectionStatement : private BaseStatement<T> {
         using Base = BaseStatement<T>;
 
       public:
         using Error     = typename ConnType::Error;
         using Statement = typename ConnType::Statement;
 
-        static constexpr size_t NumFields = sizeof...(FieldInfos);
+        static constexpr std::size_t NumFields = sizeof...(FieldInfos);
 
       private:
         // Field information is already std::meta::info - no conversion needed!
@@ -49,19 +55,16 @@ export namespace storm::orm::statements {
         static constexpr auto member_infos_ = std::array{FieldInfos...};
 
         // Deduce field types from member_info array
-        template <size_t... Is> static consteval auto get_field_types_helper(std::index_sequence<Is...>) {
+        template <std::size_t... Is>
+        static consteval auto get_field_types_helper(std::index_sequence<Is...> /*unused*/) {
             return std::tuple<std::remove_cvref_t<decltype(std::declval<T>().[:member_infos_[Is]:])>...>{};
         }
 
         using FieldTypesTuple = decltype(get_field_types_helper(std::make_index_sequence<NumFields>{}));
 
         // Calculate field size at compile-time
-        template <size_t I> static consteval size_t get_field_size() {
-            size_t         size       = std::meta::identifier_of(member_infos_[I]).size();
-            constexpr auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member_infos_[I]);
-            if constexpr (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
-                size += 3; // "_id"
-            }
+        template <std::size_t I> static consteval auto get_field_size() -> std::size_t {
+            std::size_t size = meta::column_name_size(member_infos_[I]);
             if constexpr (I > 0) {
                 size += 2; // ", "
             }
@@ -69,49 +72,83 @@ export namespace storm::orm::statements {
         }
 
         // Calculate total size of all fields
-        template <size_t... Is> static consteval size_t calculate_field_list_size(std::index_sequence<Is...>) {
+        template <std::size_t... Is>
+        static consteval auto calculate_field_list_size(std::index_sequence<Is...> /*unused*/) -> std::size_t {
             return (get_field_size<Is>() + ...);
         }
 
-        // Compile-time field list generation (returns ConstexprString)
-        template <size_t... Is> static consteval auto build_field_list_constexpr(std::index_sequence<Is...>) {
-            constexpr size_t total_size = calculate_field_list_size(std::make_index_sequence<NumFields>{});
+        // Append column name for field I (with FK _id suffix if needed)
+        template <std::size_t I, std::size_t N> static consteval void append_column_name(ConstexprString<N>& result) {
+            meta::append_column_name(result, member_infos_[I]);
+        }
+
+        // Build a "<prefix>col1, <prefix>col2, ..." field list at compile time.
+        // The non-JOIN list uses no prefix; the JOIN list uses "t1.". The two
+        // builders used to spell the loop out independently.
+        template <std::size_t Extra, std::size_t... Is>
+        static consteval auto
+        build_field_list_with_prefix(std::string_view prefix, std::index_sequence<Is...> /*unused*/) {
+            constexpr std::size_t total_size = calculate_field_list_size(std::make_index_sequence<NumFields>{}) + Extra;
             ConstexprString<total_size + 10> result;
-            auto                             append_field = [&result]<size_t I>() {
+            auto                             append_field = [&result, prefix]<std::size_t I>() {
                 if constexpr (I > 0) {
                     result.append(", ");
                 }
-                // Check if this field is a FK - if so, use column name (field_name_id)
-                constexpr auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member_infos_[I]);
-                if constexpr (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
-                    result.append(std::meta::identifier_of(member_infos_[I]));
-                    result.append("_id");
-                } else {
-                    result.append(std::meta::identifier_of(member_infos_[I]));
+                if (!prefix.empty()) {
+                    result.append(prefix);
                 }
+                append_column_name<I>(result);
             };
             (append_field.template operator()<Is>(), ...);
             return result;
         }
 
+        // Compile-time field list generation (no alias prefix)
+        template <std::size_t... Is> static consteval auto build_field_list_constexpr(std::index_sequence<Is...> seq) {
+            return build_field_list_with_prefix<0, Is...>("", seq);
+        }
+
+        // Pre-computed field list for use in non-JOIN path
+        static constexpr auto field_list_constexpr_ = build_field_list_constexpr(std::make_index_sequence<NumFields>{});
+
+        // Compile-time field list with "t1." table alias prefix for JOIN queries
+        template <std::size_t... Is>
+        static consteval auto build_join_field_list_constexpr(std::index_sequence<Is...> seq) {
+            return build_field_list_with_prefix<NumFields * 3, Is...>("t1.", seq);
+        }
+
+        static constexpr auto join_field_list_constexpr_ =
+                build_join_field_list_constexpr(std::make_index_sequence<NumFields>{});
+
         // Calculate SQL size at compile-time
-        static consteval size_t calculate_select_sql_size() {
+        static consteval auto calculate_select_sql_size() -> std::size_t {
+            using utilities::sql_len::FROM;
+            using utilities::sql_len::SELECT;
+            using utilities::sql_len::SELECT_DISTINCT;
             constexpr auto field_list = build_field_list_constexpr(std::make_index_sequence<NumFields>{});
-            size_t         size       = 0;
-            size += 16; // "SELECT DISTINCT " (max length, DISTINCT is optional)
+            std::size_t    size       = 0;
+            if constexpr (Mode == ProjectionMode::Distinct) {
+                size += SELECT_DISTINCT; // "SELECT DISTINCT "
+            } else {
+                size += SELECT; // "SELECT "
+            }
             size += field_list.len;
-            size += 6; // " FROM "
+            size += FROM; // " FROM "
             size += Base::table_name_.size();
             size += 1; // null terminator
             return size;
         }
 
-        // Build SELECT DISTINCT at compile-time
-        static consteval auto build_distinct_sql_array() {
-            constexpr size_t          sql_size = calculate_select_sql_size() + 50; // Safety buffer
+        // Build SELECT or SELECT DISTINCT at compile-time
+        static consteval auto build_projection_sql_array() {
+            constexpr std::size_t     sql_size = calculate_select_sql_size() + utilities::sql_len::LARGE_BUFFER;
             ConstexprString<sql_size> result;
 
-            result.append("SELECT DISTINCT ");
+            if constexpr (Mode == ProjectionMode::Distinct) {
+                result.append("SELECT DISTINCT ");
+            } else {
+                result.append("SELECT ");
+            }
             constexpr auto field_list = build_field_list_constexpr(std::make_index_sequence<NumFields>{});
             result.append(field_list);
             result.append(" FROM ");
@@ -120,254 +157,137 @@ export namespace storm::orm::statements {
             return result;
         }
 
-        // Pre-computed SQL generated at compile-time (always DISTINCT)
-        static constexpr auto distinct_sql_array = build_distinct_sql_array();
+        // Pre-computed SQL generated at compile-time
+        static constexpr auto           projection_sql_array_  = build_projection_sql_array();
+        static inline const std::string projection_sql_string_ = std::string(projection_sql_array_);
+        static inline const std::string field_list_string_{
+                field_list_constexpr_.data.data(), field_list_constexpr_.len
+        };
+        static inline const std::string join_field_list_string_{
+                join_field_list_constexpr_.data.data(), join_field_list_constexpr_.len
+        };
 
       public:
-        // Result type: vector of single field OR vector of tuple
+        // Result type: hive of single field OR hive of tuple
         using ResultType = std::conditional_t<
                 NumFields == 1,
-                std::vector<std::tuple_element_t<0, FieldTypesTuple>>,
-                std::vector<FieldTypesTuple>>;
+                plf::hive<std::tuple_element_t<0, FieldTypesTuple>>,
+                plf::hive<FieldTypesTuple>>;
 
-        explicit DistinctStatement(
-                ConnType*                                  conn,
-                const orm::where::ExpressionVariantPtr&    where_expr = nullptr,
-                const std::optional<JoinStatementWrapper>& join_stmt  = std::nullopt
+        explicit ProjectionStatement(
+                std::shared_ptr<ConnType>                  conn,
+                orm::where::ExpressionVariantPtr           where_expr       = nullptr,
+                const std::optional<JoinStatementWrapper>& join_stmt        = std::nullopt,
+                const std::optional<int>&                  limit            = std::nullopt,
+                const std::optional<int>&                  offset           = std::nullopt,
+                const std::optional<OrderByWrapper>&       order_by_wrapper = std::nullopt
         )
-            : conn_(conn), where_expr_(where_expr), join_stmt_(join_stmt) {}
+            : conn_(std::move(conn))
+            , where_expr_(std::move(where_expr))
+            , join_stmt_(join_stmt)
+            , limit_(limit)
+            , offset_(offset)
+            , order_by_wrapper_(order_by_wrapper) {}
 
-        // Update state for reuse (called by DistinctQuerySet)
-        void update_state(
-                ConnType*                                  conn,
-                const orm::where::ExpressionVariantPtr&    where_expr,
-                const std::optional<JoinStatementWrapper>& join_stmt
-        ) {
-            conn_       = conn;
-            where_expr_ = where_expr;
-            join_stmt_  = join_stmt;
-            // No cache invalidation needed - connection's prepare_cached() handles caching
+        // Return the SQL that would be executed (for testing/debugging)
+        [[nodiscard]] auto sql() -> std::string {
+            return build_sql();
         }
 
-        // Alias for execute() - provides familiar QuerySet-like API
-        [[nodiscard]] auto select() -> std::expected<ResultType, Error> {
-            return execute();
-        }
+        // Execute SELECT or SELECT DISTINCT query on the specified field(s)
+        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute() -> std::expected<ResultType, Error> {
+            auto sql = build_sql();
 
-        // Execute SELECT DISTINCT query on the specified field(s)
-        [[nodiscard]] auto execute() -> std::expected<ResultType, Error> {
-            // Route to appropriate execution path based on WHERE/JOIN state
-            if (join_stmt_.has_value() && where_expr_) {
-                return execute_where_join_impl();
-            } else if (join_stmt_.has_value()) {
-                return execute_join_impl();
-            } else if (where_expr_) {
-                return execute_where_impl();
-            } else {
-                return execute_simple_distinct();
+            auto stmt_result = conn_->prepare_cached(sql);
+            if (!stmt_result) [[unlikely]] {
+                return std::unexpected(stmt_result.error());
             }
+
+            // Bind WHERE params if needed
+            if (where_expr_) {
+                auto bind_result = Base::template bind_where_params<Statement, Error>(*stmt_result, where_expr_);
+                if (!bind_result) [[unlikely]] {
+                    return std::unexpected(bind_result.error());
+                }
+            }
+
+            return execute_query_loop(*stmt_result);
         }
 
       private:
-        // Helper: Inject DISTINCT keyword into JOIN SQL (after SELECT)
-        [[nodiscard]] static auto inject_distinct_keyword(const std::string& sql) -> std::expected<std::string, Error> {
-            size_t select_pos = sql.find("SELECT ");
-            if (select_pos == std::string::npos) [[unlikely]] {
-                // This should NEVER happen with correct compile-time JOIN SQL generation
-                // But if it does, fail loudly rather than silently producing incorrect SQL
-                return std::unexpected(Error{
-                        -1,
-                        "INTERNAL BUG: JOIN SQL missing SELECT clause. "
-                        "This indicates a compile-time SQL generation error. SQL: " +
-                                sql
-                });
-            }
-
-            std::string result;
-            result.reserve(sql.size() + 10); // "DISTINCT " = 9 chars + null terminator
-            result = sql.substr(0, select_pos + 7);
-            result += "DISTINCT ";
-            result += sql.substr(select_pos + 7);
-            return result;
-        }
-
-        // Helper: Bind WHERE expression parameters to statement
-        [[nodiscard]] __attribute__((always_inline)) __attribute__((hot)) static inline auto
-        bind_where_params(Statement* stmt_ptr, const orm::where::ExpressionVariantPtr& where_expr)
-                -> std::expected<void, Error> {
-            int  param_index = 1;
-            auto bind_result = orm::where::bind_params_direct(*where_expr, stmt_ptr, param_index);
-            if (!bind_result) [[unlikely]] {
-                stmt_ptr->reset();
-                return std::unexpected(bind_result.error());
-            }
-            return {};
-        }
-
-        // Simple DISTINCT execution (no WHERE, no JOIN)
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_simple_distinct()
-                -> std::expected<ResultType, Error> {
-            // Use compile-time generated SQL (always includes DISTINCT)
-            static const std::string sql{distinct_sql_array.data.data(), distinct_sql_array.len};
-
-            // Connection's prepare_cached() provides efficient internal caching
-            auto prepare_result = conn_->prepare_cached(sql);
-            if (!prepare_result) [[unlikely]] {
-                return std::unexpected(prepare_result.error());
-            }
-
-            return execute_query_loop(*prepare_result);
-        }
-
-        // DISTINCT with WHERE clause (no JOIN)
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_where_impl()
-                -> std::expected<ResultType, Error> {
-            // Build WHERE SQL (compile-time base + runtime WHERE clause)
-            static const std::string base_sql{distinct_sql_array.data.data(), distinct_sql_array.len};
-
-            // Build WHERE SQL - connection's prepare_cached() handles caching efficiently
+        // Build the complete SQL string for this projection query
+        [[nodiscard]] auto build_sql() -> std::string {
             std::string sql;
-            sql.reserve(base_sql.size() + 50);
-            sql = base_sql;
-            sql += " WHERE ";
-            sql += orm::where::to_sql(*where_expr_);
-
-            auto prepare_result = conn_->prepare_cached(sql);
-            if (!prepare_result) [[unlikely]] {
-                return std::unexpected(prepare_result.error());
+            if (join_stmt_.has_value()) {
+                const std::string& join_sql = join_stmt_->get_complete_sql();
+                sql.reserve(join_sql.size() + utilities::sql_len::LARGE_BUFFER);
+                // Replace the JOIN's full field list with only our projected field(s).
+                // Uses t1-qualified names (join_field_list_string_) to avoid column ambiguity.
+                auto from_pos = join_sql.find(" FROM ");
+                if constexpr (Mode == ProjectionMode::Distinct) { // LCOV_EXCL_START — if constexpr: only one branch is
+                                                                  // instantiated per Mode
+                    sql = "SELECT DISTINCT ";
+                } else {
+                    sql = "SELECT ";
+                } // LCOV_EXCL_STOP
+                sql += join_field_list_string_;
+                sql.append(join_sql, from_pos, std::string::npos);
+            } else {
+                sql = projection_sql_string_;
             }
-
-            // Bind WHERE parameters (required for each execution)
-            auto bind_result = bind_where_params(*prepare_result, where_expr_);
-            if (!bind_result) [[unlikely]] {
-                return std::unexpected(bind_result.error());
+            if (where_expr_) {
+                sql += " WHERE ";
+                sql += orm::where::to_sql(*where_expr_);
             }
-
-            return execute_query_loop(*prepare_result);
+            Base::template append_order_by<ConnType>(sql, order_by_wrapper_);
+            Base::template append_limit_offset<ConnType>(sql, limit_, offset_);
+            return sql;
         }
 
-        // DISTINCT with JOIN (no WHERE)
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_join_impl()
-                -> std::expected<ResultType, Error> {
-            const std::string& base_sql = join_stmt_->get_complete_sql();
-
-            // Inject DISTINCT into SELECT clause
-            auto distinct_join_sql_result = inject_distinct_keyword(base_sql);
-            if (!distinct_join_sql_result) [[unlikely]] {
-                return std::unexpected(distinct_join_sql_result.error());
-            }
-
-            // Connection's prepare_cached() provides efficient internal caching
-            auto prepare_result = conn_->prepare_cached(distinct_join_sql_result.value());
-            if (!prepare_result) [[unlikely]] {
-                return std::unexpected(prepare_result.error());
-            }
-
-            return execute_query_loop(*prepare_result);
-        }
-
-        // DISTINCT with WHERE and JOIN
-        [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_where_join_impl()
-                -> std::expected<ResultType, Error> {
-            // Build WHERE+JOIN SQL - connection's prepare_cached() handles caching efficiently
-            const std::string& base_sql = join_stmt_->get_complete_sql();
-
-            // Inject DISTINCT into SELECT clause
-            auto distinct_join_sql_result = inject_distinct_keyword(base_sql);
-            if (!distinct_join_sql_result) [[unlikely]] {
-                return std::unexpected(distinct_join_sql_result.error());
-            }
-
-            // Add WHERE clause
-            std::string sql = std::move(distinct_join_sql_result.value());
-            sql.reserve(sql.size() + 50);
-            sql += " WHERE ";
-            sql += orm::where::to_sql(*where_expr_);
-
-            auto prepare_result = conn_->prepare_cached(sql);
-            if (!prepare_result) [[unlikely]] {
-                return std::unexpected(prepare_result.error());
-            }
-
-            // Bind WHERE parameters (required for each execution)
-            auto bind_result = bind_where_params(*prepare_result, where_expr_);
-            if (!bind_result) [[unlikely]] {
-                return std::unexpected(bind_result.error());
-            }
-
-            return execute_query_loop(*prepare_result);
-        }
-
-        // Unified query execution loop for all DISTINCT query types
+        // Extract results from prepared statement
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_query_loop(Statement* stmt)
                 -> std::expected<ResultType, Error> {
-            // OPTIMIZATION: Hybrid allocation strategy based on field complexity
-            // - Single field: resize() is 1.7x faster (cheap default construction)
-            // - Multi-field: reserve() + emplace_back() avoids pre-allocating tuples with heap members
             ResultType results;
-            int        step_result = Statement::NO_MORE_ROWS;
-
-            if constexpr (NumFields == 1) {
-                // Single field: use resize() optimization (pre-construct for direct assignment)
-                results.resize(1000);
-
-                size_t row_count = 0;
-                using FieldType  = std::tuple_element_t<0, FieldTypesTuple>;
-
-                // Fetch rows into pre-constructed elements
-                while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE && row_count < results.size()) {
-                    results[row_count] = Base::template extract_column_value<FieldType>(*stmt, 0);
-                    row_count++;
-                }
-
-                // Handle overflow
-                while (step_result == Statement::ROW_AVAILABLE) {
-                    if (row_count >= results.size()) {
-                        results.resize(results.size() * 2);
-                    }
-                    results[row_count] = Base::template extract_column_value<FieldType>(*stmt, 0);
-                    row_count++;
-                    step_result = stmt->step_raw();
-                }
-
-                results.resize(row_count);
-            } else {
-                // Multi-field: use reserve() + emplace_back() to avoid pre-constructing tuples
-                // DISTINCT typically returns fewer rows (avg ~100), tuples have heap overhead
-                results.reserve(100);
-
-                // Fetch rows with in-place construction
-                while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE) {
-                    emplace_tuple_from_columns(results, stmt, std::make_index_sequence<NumFields>{});
+            int        rc = 0;
+            while ((rc = stmt->step_raw()) == Statement::ROW_AVAILABLE) {
+                if constexpr (NumFields == 1) {
+                    using FieldType = std::tuple_element_t<0, FieldTypesTuple>;
+                    results.insert(ColumnExtractor::template extract_column_value<FieldType>(stmt, 0));
+                } else {
+                    [&]<std::size_t... Is>(std::index_sequence<Is...>) {
+                        results.insert(
+                                std::make_tuple(
+                                        ColumnExtractor::template extract_column_value<
+                                                std::tuple_element_t<Is, FieldTypesTuple>>(stmt, Is)...
+                                )
+                        );
+                    }(std::make_index_sequence<NumFields>{});
                 }
             }
-
-            // Check for errors
-            if (step_result != Statement::NO_MORE_ROWS) {
-                stmt->reset();
-                return std::unexpected(Error{step_result, stmt->get_error_message()});
-            }
-
             stmt->reset();
+            if (rc != Statement::NO_MORE_ROWS) [[unlikely]] {
+                return std::unexpected(Error{rc, stmt->get_error_message()});
+            }
             return results;
         }
 
-      private:
-        // OPTIMIZATION: Emplace tuple by extracting columns in-place (for reserve() strategy)
-        // Constructs tuple directly in vector without intermediate temporaries
-        // Template parameter R delays evaluation until method is called (avoids void& when NumFields == 0)
-        template <size_t... Is, typename R = ResultType>
-        void emplace_tuple_from_columns(R& results, Statement* stmt, std::index_sequence<Is...>)
-            requires(NumFields > 0)
-        {
-            results.emplace_back(
-                    Base::template extract_column_value<std::tuple_element_t<Is, FieldTypesTuple>>(*stmt, Is)...
-            );
-        }
+        // =====================================================================
+        // MEMBERS
+        // =====================================================================
 
-        ConnType*                           conn_;
+        std::shared_ptr<ConnType>           conn_;
         orm::where::ExpressionVariantPtr    where_expr_;
         std::optional<JoinStatementWrapper> join_stmt_;
+        std::optional<int>                  limit_;
+        std::optional<int>                  offset_;
+        std::optional<OrderByWrapper>       order_by_wrapper_;
     };
+
+    // Type aliases for backward compatibility and convenience
+    template <typename T, typename ConnType, std::meta::info... FieldInfos>
+    using DistinctStatement = ProjectionStatement<T, ConnType, ProjectionMode::Distinct, FieldInfos...>;
+
+    template <typename T, typename ConnType, std::meta::info... FieldInfos>
+    using ValuesStatement = ProjectionStatement<T, ConnType, ProjectionMode::Values, FieldInfos...>;
 
 } // namespace storm::orm::statements

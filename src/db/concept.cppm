@@ -1,12 +1,39 @@
 module;
 
 export module storm_db_concept;
-import <expected>;
-import <string_view>;
-import <concepts>;
-import <cstddef>;
+
+import std;
 
 export namespace storm::db {
+
+    // Error type for database operations.
+    // Non-allocating: stores the message inline so construction is noexcept and Error can
+    // be returned from noexcept catch blocks without risking bad_alloc (issue #316).
+    struct Error {
+        static constexpr std::size_t kMaxMessageLen = 255;
+
+        int                                  code_{0};
+        std::array<char, kMaxMessageLen + 1> message_buf_{};
+        std::size_t                          message_len_{0};
+
+        Error() noexcept = default;
+
+        Error(int code, std::string_view msg) noexcept : code_{code} {
+            const std::size_t n = msg.size() < kMaxMessageLen ? msg.size() : kMaxMessageLen;
+            if (n > 0) {
+                std::memcpy(message_buf_.data(), msg.data(), n);
+            }
+            message_buf_[n] = '\0';
+            message_len_    = n;
+        }
+
+        [[nodiscard]] constexpr auto code() const noexcept -> int {
+            return code_;
+        }
+        [[nodiscard]] constexpr auto message() const noexcept -> std::string_view {
+            return std::string_view{message_buf_.data(), message_len_};
+        }
+    };
 
     // Forward declarations for concept requirements
     template <typename T> struct ConnectionTraits;
@@ -30,15 +57,42 @@ export namespace storm::db {
         { conn.execute(sql) } -> std::same_as<std::expected<void, typename T::Error>>;
     };
 
+    // Issue #273: per-Connection statement-cache configuration, shared by every
+    // backend's open(). capacity 0 = unbounded (preserves pre-#273 behavior).
+    struct StatementCacheConfig {
+        std::size_t statement_cache_capacity = 512;
+    };
+
+    // Issue #410: SQLite journal mode. Lives here (backend-neutral) so the generic
+    // PoolConfig can carry it without depending on the SQLite backend module.
+    // Default leaves the engine default (rollback journal); WAL opts into
+    // write-ahead logging. Honoured only by the SQLite backend; PG ignores it.
+    enum class JournalMode : std::uint8_t { Default, WAL };
+
+    // Snapshot of per-Connection cache statistics (Issue #273). Counters are
+    // lifetime totals (not reset by clear_statement_cache); current_size is the
+    // live entry count. Declared before CachedDatabaseConnection, which requires
+    // cache_stats() to return it.
+    struct CacheStats {
+        std::uint64_t hits         = 0;
+        std::uint64_t misses       = 0;
+        std::uint64_t evictions    = 0;
+        std::size_t   current_size = 0;
+    };
+
     // Extended database connection concept with caching support
     template <typename T>
     concept CachedDatabaseConnection = DatabaseConnection<T> && requires(T& conn, std::string_view sql) {
         // Cached statement preparation
         { conn.prepare_cached(sql) } -> std::same_as<std::expected<typename T::Statement*, typename T::Error>>;
 
-        // Cache management
+        // Cache management — clear-all and per-table (Issue #215)
         { conn.clear_statement_cache() } -> std::same_as<void>;
-        { conn.cached_statement_count() } -> std::same_as<size_t>;
+        { conn.clear_statement_cache(sql) } -> std::same_as<void>;
+        { conn.cached_statement_count() } -> std::same_as<std::size_t>;
+
+        // Cache statistics snapshot (Issue #273)
+        { conn.cache_stats() } -> std::same_as<CacheStats>;
     };
 
     // Database statement concept
@@ -76,5 +130,244 @@ export namespace storm::db {
     template <DatabaseStatement T> struct StatementTraits<T> {
         using Error = typename T::Error;
     };
+
+    // Transparent hash + equal for heterogeneous string_view lookup in caches.
+    // Shared by every backend's StatementCache (sqlite.cppm, postgresql.cppm).
+    struct string_hash {
+        using is_transparent = void;
+        using hash_type      = std::hash<std::string_view>;
+
+        [[nodiscard]] auto operator()(std::string_view str) const noexcept -> std::size_t {
+            return hash_type{}(str);
+        }
+        [[nodiscard]] auto operator()(const std::string& str) const noexcept -> std::size_t {
+            return hash_type{}(str);
+        }
+    };
+
+    struct string_equal {
+        using is_transparent = void;
+
+        [[nodiscard]] auto operator()(std::string_view lhs, std::string_view rhs) const noexcept -> bool {
+            return lhs == rhs;
+        }
+    };
+
+    // Issue #271: std::shared_mutex is neither movable nor copyable. Wrapping it
+    // lets a Connection holding one keep its defaulted move operations: moving a
+    // Connection just leaves each object with its own freshly-constructed mutex
+    // (a Connection is only moved during construction, before any thread shares
+    // it, so the source mutex is never contended at move time). The lock methods
+    // delegate to the wrapped mutex.
+    class MovableSharedMutex {
+      public:
+        MovableSharedMutex()  = default;
+        ~MovableSharedMutex() = default;
+
+        // Move = no-op: a moved-into Connection starts with a fresh, unlocked mutex.
+        MovableSharedMutex(MovableSharedMutex&& /*other*/) noexcept {}
+        auto operator=(MovableSharedMutex&& /*other*/) noexcept -> MovableSharedMutex& {
+            return *this;
+        }
+
+        MovableSharedMutex(const MovableSharedMutex&)                    = delete;
+        auto operator=(const MovableSharedMutex&) -> MovableSharedMutex& = delete;
+
+        auto lock() -> void {
+            mutex_.lock();
+        }
+        auto unlock() -> void {
+            mutex_.unlock();
+        }
+        auto lock_shared() -> void {
+            mutex_.lock_shared();
+        }
+        auto unlock_shared() -> void {
+            mutex_.unlock_shared();
+        }
+
+      private:
+        std::shared_mutex mutex_;
+    };
+
+    // Issue #273: CLOCK/second-chance LRU eviction + statistics on the single L3
+    // statement cache. Each entry carries a reference bit set on a cache hit;
+    // eviction sweeps the entries, clearing set bits (second chance) and evicting
+    // the first unreferenced one. The hit path only flips an atomic bit under the
+    // shared_lock — no structural mutation, so the #271 parallel-read hot path is
+    // preserved.
+    template <typename Stmt> struct CacheEntry {
+        std::unique_ptr<Stmt> stmt;
+        std::atomic<bool>     referenced{false}; // CLOCK second-chance bit
+    };
+
+    // Bundles the L3 cache map, its mutex, the stat counters, and the capacity.
+    // Each Connection embeds one; both backends share the cache_* helpers that
+    // operate on it. std::atomic is non-movable, so the move ops are explicit:
+    // the map moves, the atomics reset to zero, capacity is copied — equivalent
+    // to MovableSharedMutex's "fresh on move" contract (a Connection is only moved
+    // during construction, before any thread shares it). Issue #273.
+    template <typename Stmt> struct StatementCacheState {
+        std::unordered_map<std::string, CacheEntry<Stmt>, string_hash, string_equal> map;
+        mutable MovableSharedMutex                                                   mutex;
+        std::atomic<std::uint64_t>                                                   hits{0};
+        std::atomic<std::uint64_t>                                                   misses{0};
+        std::atomic<std::uint64_t>                                                   evictions{0};
+        std::size_t                                                                  capacity = 0; // 0 = unbounded
+
+        StatementCacheState()  = default;
+        ~StatementCacheState() = default;
+
+        StatementCacheState(StatementCacheState&& other) noexcept
+            : map(std::move(other.map)), mutex(std::move(other.mutex)), capacity(other.capacity) {}
+        auto operator=(StatementCacheState&& other) noexcept -> StatementCacheState& {
+            if (this != &other) {
+                map      = std::move(other.map);
+                mutex    = std::move(other.mutex);
+                capacity = other.capacity;
+                hits.store(0, std::memory_order_relaxed);
+                misses.store(0, std::memory_order_relaxed);
+                evictions.store(0, std::memory_order_relaxed);
+            }
+            return *this;
+        }
+        StatementCacheState(const StatementCacheState&)                    = delete;
+        auto operator=(const StatementCacheState&) -> StatementCacheState& = delete;
+    };
+
+    // Identifier-character predicate (SQL word boundary): same set as `\w` in regex
+    // ([A-Za-z0-9_]). Used by per-table cache invalidation to avoid clearing
+    // "persons" entries when invalidating "person".
+    [[nodiscard]] constexpr auto is_sql_ident_char(char c) noexcept -> bool {
+        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_';
+    }
+
+    [[nodiscard]] inline auto is_word_boundary_match(std::string_view sql, std::size_t pos, std::size_t len) noexcept
+            -> bool {
+        const bool left_ok  = pos == 0 || !is_sql_ident_char(sql[pos - 1]);
+        const bool right_ok = pos + len == sql.size() || !is_sql_ident_char(sql[pos + len]);
+        return left_ok && right_ok;
+    }
+
+    // Word-boundary table-name match in a SQL string. Identifier characters on
+    // either side of the match disqualify it, so clearing "persons" does not
+    // touch "person_addresses" or "persons_archive". Issue #215.
+    [[nodiscard]] inline auto sql_references_table(std::string_view sql, std::string_view table) noexcept -> bool {
+        if (table.empty() || sql.size() < table.size()) {
+            return false;
+        }
+        for (std::size_t pos = 0; (pos = sql.find(table, pos)) != std::string_view::npos; pos += table.size()) {
+            if (is_word_boundary_match(sql, pos, table.size())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Issue #271/#273: shared L3-cache helpers. Both backends call cache_find_hit()
+    // then cache_try_insert() around their own prepare step; the lock discipline,
+    // CLOCK eviction, and statistics are identical across backends and live here.
+
+    // Hot path: shared_lock find + reset. On a hit, sets the entry's CLOCK ref bit
+    // and bumps `hits`; on a miss, bumps `misses`. Returns the cached Statement* on
+    // a hit, nullptr on a miss (caller then prepares + inserts).
+    //
+    // LIFETIME INVARIANT (issue #357, finding A): the returned Stmt* outlives the
+    // shared_lock released on return. Concurrent access to the cache from multiple
+    // threads IS supported and tested — the shared_mutex serialises map structure
+    // (#271; see StatementCacheThreadingTest, which pounds one Connection from 8
+    // threads under TSAN). The actual contract is narrower than single-owner: the
+    // returned Stmt* is valid only WITHIN the iteration that fetched it. A caller
+    // must NOT retain it across a concurrent clear_statement_cache() / eviction,
+    // which destroys the entry's unique_ptr<Stmt> and dangles the pointer. (The
+    // per-thread-connection model trivially satisfies this; the bound is the
+    // dereference window, not the number of threads.)
+    template <typename Stmt>
+    [[nodiscard]] auto cache_find_hit(StatementCacheState<Stmt>& state, std::string_view sql) -> Stmt* {
+        std::shared_lock read_lock(state.mutex);
+        auto             it = state.map.find(sql);
+        if (it != state.map.end()) [[likely]] {
+            it->second.referenced.store(true, std::memory_order_relaxed);
+            state.hits.fetch_add(1, std::memory_order_relaxed);
+            it->second.stmt->reset();
+            return it->second.stmt.get();
+        }
+        state.misses.fetch_add(1, std::memory_order_relaxed);
+        return nullptr;
+    }
+
+    // CLOCK/second-chance eviction. Caller holds the unique_lock. Sweeps entries:
+    // an entry whose ref bit is set gets it cleared (second chance) and is skipped;
+    // the first entry with a clear bit is evicted. If a full pass clears every bit
+    // without finding a victim, the next entry is evicted to guarantee progress.
+    // Bumps `evictions`. Bounded to ~2 passes over a map of size <= capacity.
+    template <typename Stmt> auto cache_evict_one(StatementCacheState<Stmt>& state) -> void {
+        for (auto it = state.map.begin(); it != state.map.end(); ++it) {
+            if (it->second.referenced.load(std::memory_order_relaxed)) {
+                it->second.referenced.store(false, std::memory_order_relaxed);
+                continue;
+            }
+            state.map.erase(it);
+            state.evictions.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+        // Every bit was set; all are now cleared. Evict the first entry.
+        if (!state.map.empty()) {
+            state.map.erase(state.map.begin());
+            state.evictions.fetch_add(1, std::memory_order_relaxed);
+        }
+    }
+
+    // Insert a freshly-prepared statement under a unique_lock. Evicts first if the
+    // cache is at capacity (capacity 0 = unbounded). try_emplace keeps any entry a
+    // racing thread inserted while we prepared (the lock was dropped during
+    // prepare); the passed-in statement is then dropped by the caller. Returns the
+    // live Statement* for the key.
+    template <typename Stmt>
+    [[nodiscard]] auto
+    cache_try_insert(StatementCacheState<Stmt>& state, std::string_view sql, std::unique_ptr<Stmt> stmt) -> Stmt* {
+        std::unique_lock write_lock(state.mutex);
+        if (state.capacity != 0 && state.map.size() >= state.capacity && !state.map.contains(sql)) {
+            cache_evict_one(state);
+        }
+        auto [it, inserted] = state.map.try_emplace(std::string(sql));
+        if (inserted) {
+            it->second.stmt = std::move(stmt);
+        }
+        return it->second.stmt.get();
+    }
+
+    // Drop every cached entry (unique_lock). Counters are lifetime totals and are
+    // NOT reset here.
+    template <typename Stmt> auto cache_clear_all(StatementCacheState<Stmt>& state) noexcept -> void {
+        std::unique_lock write_lock(state.mutex);
+        state.map.clear();
+    }
+
+    // Drop cached entries whose SQL references `table`, word-boundary aware
+    // (unique_lock). Issue #215.
+    template <typename Stmt> auto cache_clear_table(StatementCacheState<Stmt>& state, std::string_view table) -> void {
+        std::unique_lock write_lock(state.mutex);
+        std::erase_if(state.map, [table](const auto& entry) { return sql_references_table(entry.first, table); });
+    }
+
+    // Entry count (shared_lock).
+    template <typename Stmt>
+    [[nodiscard]] auto cache_count(const StatementCacheState<Stmt>& state) noexcept -> std::size_t {
+        std::shared_lock read_lock(state.mutex);
+        return state.map.size();
+    }
+
+    // Stats snapshot (shared_lock). Relaxed loads — the snapshot is advisory.
+    template <typename Stmt>
+    [[nodiscard]] auto cache_stats(const StatementCacheState<Stmt>& state) noexcept -> CacheStats {
+        std::shared_lock read_lock(state.mutex);
+        return CacheStats{
+                state.hits.load(std::memory_order_relaxed),
+                state.misses.load(std::memory_order_relaxed),
+                state.evictions.load(std::memory_order_relaxed),
+                state.map.size(),
+        };
+    }
 
 } // namespace storm::db

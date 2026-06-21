@@ -1,0 +1,6 @@
+# Clang-Tidy configuration for benchmarks
+# Inherits from root but disables magic numbers check (benchmark parameters are expected)
+InheritParentConfig: true
+Checks: >
+  -cppcoreguidelines-avoid-magic-numbers,
+  -readability-magic-numbers

@@ -1,207 +1,569 @@
 module;
 
-#include <sqlite3.h>
+// Single cohesive class template; thresholds intentionally relaxed (see #264 finding).
+// `duplicate` removed in #277 Phase 3 (bind_bulk_objects_impl + bind_expr_or_reset helpers; the
+// for_each_field_name dedup now lives in storm_orm_statements_field_names, #434).
+
 #include <meta>
 
 export module storm_orm_statements_base;
 
-import storm_db_concept;
-import storm_orm_utilities;
+import std;
 
-import <expected>;
-import <string>;
-import <string_view>;
-import <concepts>;
-import <format>;
-import <meta>;
-import <array>;
-import <utility>;
-import <optional>;
-import <vector>;
-import <cstdint>;
+import storm_db_concept;
+import storm_orm_field_attr;
+import storm_orm_relation_meta;
+import storm_orm_utilities;
+import storm_orm_statements_extract;
+import storm_orm_statements_field_names;
+import storm_orm_statements_orderby;
+import storm_orm_where;
 
 export namespace storm::orm::statements {
 
     // Import utilities for compile-time string building
     using storm::orm::utilities::ConstexprString;
 
-    // Mirror of meta::FieldAttr from storm module - must match exactly
     namespace meta {
-        enum class FieldAttr { primary, indexed, unique, fk };
+        // Canonical FieldAttr + is_primary_attr live in the dependency-free
+        // storm_orm_field_attr leaf module (#387); re-exposed here so statement
+        // modules keep using the meta:: qualifier.
+        using storm::meta::FieldAttr;
+        using storm::meta::is_primary_attr;
+        using storm::meta::ref_action_sql; // NOLINT(misc-unused-using-decls) — used by storm_orm_schema
+        using storm::meta::RefAction;
+
+        // Per-attribute predicates (#421) re-exposed from the leaf so statement modules
+        // keep the meta:: qualifier (mirrors FieldAttr).
+        using storm::meta::is_auto_create;
+        using storm::meta::is_auto_update;
+        using storm::meta::is_indexed;
+        using storm::meta::is_unique;
+
+        // Many-to-many (#203, #431) and reverse-FK (#398) annotation TYPES and their
+        // "is this a relation member, not a persisted column?" detection predicates live
+        // in the storm_orm_relation_meta leaf module (#408) so storm_orm_where can gate
+        // f<>() without importing this module. Re-exposed here so statement modules keep
+        // the meta:: qualifier (mirrors how FK detection is re-exposed from field_attr).
+        using storm::meta::is_m2m_field;
+        using storm::meta::is_relation_field; // NOLINT(misc-unused-using-decls) — #408 chokepoint
+        using storm::meta::is_reverse_fk_field;
+        using storm::meta::m2m_annotation_type_of;
+        using storm::meta::many_to_many;         // NOLINT(misc-unused-using-decls) — model-declaration spelling
+        using storm::meta::many_to_many_through; // NOLINT(misc-unused-using-decls) — model-declaration spelling
+        using storm::meta::ManyToMany;           // NOLINT(misc-unused-using-decls) — re-exported for storm.cppm
+        using storm::meta::reverse_fk;           // NOLINT(misc-unused-using-decls) — model-declaration spelling
+        using storm::meta::reverse_fk_annotation_type_of;
+        using storm::meta::ReverseFk; // NOLINT(misc-unused-using-decls) — re-exported for storm.cppm
+
+        // Foreign-key annotation (#431) lives in the storm_orm_field_attr leaf module so
+        // every statement module can detect FK fields without importing this one. Re-exposed
+        // here so statement modules keep using the meta:: qualifier (mirrors FieldAttr).
+        using storm::meta::
+                append_column_name; // NOLINT(misc-unused-using-decls) — #422 canonical <identifier>[_id] writer
+        using storm::meta::column_name_size; // NOLINT(misc-unused-using-decls) — #422 its byte-exact size companion
+        using storm::meta::fk;               // NOLINT(misc-unused-using-decls)
+        using storm::meta::Fk;               // NOLINT(misc-unused-using-decls)
+        using storm::meta::fk_annotation_type_of; // NOLINT(misc-unused-using-decls)
+        using storm::meta::fk_on_delete_action_of;
+        using storm::meta::is_fk_field;
+
+        // The raw template argument of a reverse_fk member's annotation — either an
+        // owner type (^^Task) or an FK field (^^Task::assignee). The join machinery
+        // resolves it to the concrete FK field via resolve_reverse_fk_target.
+        // Precondition: `member` is a reverse_fk field (callers gate on
+        // is_reverse_fk_field), so the annotation is always present.
+        consteval auto reverse_fk_target_of(std::meta::info member) -> std::meta::info {
+            const auto annotation_type =
+                    reverse_fk_annotation_type_of(member).value(); // NOLINT(bugprone-unchecked-optional-access)
+            return std::meta::extract<std::meta::info>(std::meta::template_arguments_of(annotation_type)[0]);
+        }
+
+        // True when the FK member `fk_member` (an FieldAttr::fk data member) points back
+        // at base_t — its declared type, optional-unwrapped, is exactly base_t. The
+        // single "does this FK reverse to the base?" check across the reverse-FK code.
+        consteval auto fk_member_points_at(std::meta::info fk_member, std::meta::info base_t) -> bool {
+            const auto fk_type = std::meta::dealias(std::meta::type_of(fk_member));
+            return fk_type == base_t || (std::meta::has_template_arguments(fk_type) &&
+                                         std::meta::template_of(fk_type) ==
+                                                 std::meta::template_of(std::meta::dealias(^^std::optional<int>)) &&
+                                         std::meta::dealias(std::meta::template_arguments_of(fk_type)[0]) == base_t);
+        }
+
+        // Count of FieldAttr::fk members of `owner` whose type points back at base_t.
+        consteval auto count_fks_to(std::meta::info owner, std::meta::info base_t) -> std::size_t {
+            std::size_t count = 0;
+            for (auto m : std::meta::nonstatic_data_members_of(owner, std::meta::access_context::unchecked())) {
+                if (is_fk_field(m) && fk_member_points_at(m, base_t)) {
+                    ++count;
+                }
+            }
+            return count;
+        }
+
+        // Validate a reverse_fk member's target against base_t (the model owning the
+        // container). A type target requires the owner to expose exactly ONE FK back at
+        // base_t; a field target must be a FieldAttr::fk member of another model that
+        // points at base_t. Precondition: `member` is a reverse_fk field.
+        consteval auto reverse_fk_member_valid(std::meta::info member, std::meta::info base_t) -> bool {
+            const auto target = reverse_fk_target_of(member);
+            if (std::meta::is_type(target)) {
+                return count_fks_to(target, base_t) == 1;
+            }
+            if (!std::meta::is_nonstatic_data_member(target) || std::meta::parent_of(target) == base_t) {
+                return false;
+            }
+            return is_fk_field(target) && fk_member_points_at(target, base_t);
+        }
+
+        // Resolve a reverse_fk target (owner type OR FK field) to the concrete FK field
+        // pointing back at base_t. A type target picks the unique FieldAttr::fk member
+        // whose (optional-unwrapped) type is base_t; a field target is used directly.
+        // Takes both as runtime consteval args so it works on loop-variable members.
+        consteval auto resolve_reverse_fk_target(std::meta::info target, std::meta::info base_t) -> std::meta::info {
+            if (std::meta::is_type(target)) {
+                for (auto m : std::meta::nonstatic_data_members_of(target, std::meta::access_context::unchecked())) {
+                    if (is_fk_field(m) && fk_member_points_at(m, base_t)) {
+                        return m;
+                    }
+                }
+                std::unreachable(); // ReverseFKFieldOf guarantees a unique FK exists
+            }
+            return target; // already an FK field
+        }
+
+        // True for m2m members WITHOUT a through model (auto-generated junction table).
+        consteval auto is_m2m_auto(std::meta::info member) -> bool {
+            auto type = m2m_annotation_type_of(member);
+            return type.has_value() && std::meta::dealias(std::meta::template_arguments_of(type.value())[0]) == ^^void;
+        }
+
+        // Junction ON DELETE RefAction of an auto-junction m2m member (#431): template arg
+        // [1] of its ManyToMany annotation, applied to BOTH junction FK sides. Defaults to
+        // CASCADE. Precondition: `member` is an m2m field (callers gate on is_m2m_field).
+        consteval auto m2m_junction_on_delete_of(std::meta::info member) -> RefAction {
+            const auto type = m2m_annotation_type_of(member).value(); // NOLINT(bugprone-unchecked-optional-access)
+            return std::meta::extract<RefAction>(std::meta::template_arguments_of(type)[1]);
+        }
+
+        // Through model of an m2m member (void = auto-generated junction table).
+        template <std::meta::info Member>
+        using m2m_through_t = typename[:std::meta::template_arguments_of(m2m_annotation_type_of(Member).value())[0]:];
+
+        // Related model type extracted from a container field type via C++26 std::meta (#203):
+        // vector<Course> → Course, plf::hive<Track> → Track,
+        // vector<shared_ptr<Course>> / vector<unique_ptr<Course>> → Course.
+        consteval auto related_type_from_container(std::meta::info container_type) -> std::meta::info {
+            const auto first =
+                    std::meta::dealias(std::meta::template_arguments_of(std::meta::dealias(container_type))[0]);
+            if (std::meta::has_template_arguments(first)) {
+                // ^^std::shared_ptr names a using-declarator under `import std;` and can't
+                // be reflected directly — derive the canonical template from a concrete
+                // specialization instead.
+                const auto tmpl            = std::meta::template_of(first);
+                const auto shared_ptr_tmpl = std::meta::template_of(std::meta::dealias(^^std::shared_ptr<int>));
+                const auto unique_ptr_tmpl = std::meta::template_of(std::meta::dealias(^^std::unique_ptr<int>));
+                if (tmpl == shared_ptr_tmpl || tmpl == unique_ptr_tmpl) {
+                    return std::meta::dealias(std::meta::template_arguments_of(first)[0]);
+                }
+            }
+            return first;
+        }
+
+        template <typename Container> using m2m_related_t = typename[:related_type_from_container(^^Container):];
+
+        // Detect std::shared_ptr container elements (m2m append path wraps the
+        // extracted related object in make_shared, #203).
+        template <typename T> struct is_shared_ptr : std::false_type {};
+        template <typename TValue> struct is_shared_ptr<std::shared_ptr<TValue>> : std::true_type {};
+        template <typename TValue> constexpr bool is_shared_ptr_v = is_shared_ptr<TValue>::value;
+    } // namespace meta
+
+    // Concept: T must have at least one field annotated with FieldAttr::primary.
+    //
+    // Because a primary key is itself a non-static data member, satisfying this concept
+    // also guarantees `field_count_ >= 1`. That invariant is what makes the INSERT batch
+    // divides `MAX_DB_VARIABLES / field_count_` (insert.cppm) safe from division by zero —
+    // the divisor can never be 0 for any T that reaches a statement class (issue #362, item A).
+    template <typename T>
+    concept ModelWithPrimaryKey = []() consteval {
+        for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+            auto attr = std::meta::annotation_of_type<meta::FieldAttr>(m);
+            if (attr.has_value() && meta::is_primary_attr(attr.value())) {
+                return true;
+            }
+        }
+        return false;
+    }();
+
+    // Concept: every 64-bit unsigned field of T must carry an explicit storage
+    // annotation — FieldAttr::signed_storage or FieldAttr::full_unsigned (#436). A bare
+    // unsigned-64 field would silently store > INT64_MAX values as a negative int64
+    // (equality round-trips, but ORDER BY and external readers see the signed value),
+    // so we refuse it at the call site instead. Signed-64 and all smaller types are
+    // exempt. optional<uint64_t> is checked on its inner type. The annotation is read
+    // directly on members from nonstatic_data_members_of(^^T) (the ModelWithPrimaryKey
+    // pattern), which is BMI-safe (#262).
+    template <typename T>
+    concept ModelStorageAnnotated = []() consteval {
+        for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+            if (storm::meta::is_unsigned64_member(m)) {
+                auto attr = std::meta::annotation_of_type<meta::FieldAttr>(m);
+                if (!attr.has_value() || (attr.value() != meta::FieldAttr::signed_storage &&
+                                          attr.value() != meta::FieldAttr::full_unsigned)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }();
+
+    // Concept: every FK field carrying fk<RefAction::SetNull> must be a nullable FK —
+    // std::optional<Related> (#431). ON DELETE SET NULL writes NULL into the child column,
+    // which a NOT NULL FK column cannot hold, so we refuse it at the call site with a clear
+    // constraint violation instead of letting the database reject the DELETE at runtime.
+    // The annotation is read directly on members from nonstatic_data_members_of (BMI-safe,
+    // #262); optional-ness is a structural query on the member's type.
+    template <typename T>
+    concept ModelFkPoliciesValid = []() consteval {
+        for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+            auto action = meta::fk_on_delete_action_of(m);
+            if (action.has_value() && action.value() == meta::RefAction::SetNull) {
+                const auto type = std::meta::dealias(std::meta::type_of(m));
+                const bool is_optional =
+                        std::meta::has_template_arguments(type) && std::meta::template_of(type) == ^^std::optional;
+                if (!is_optional) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }();
+
+    // A field carrying auto_create/auto_update must be a system_clock::time_point (#209).
+    // Referenced by a static_assert in bind_field_at_index so a wrong-typed timestamp field
+    // fails to compile with a clear message rather than deep inside parameter binding.
+    template <std::meta::info Member>
+    concept ValidTimestampField = std::
+            same_as<std::remove_cvref_t<typename[:std::meta::type_of(Member):]>, std::chrono::system_clock::time_point>;
+
+    // A JOIN field selector must reflect a non-static data member of T annotated with
+    // FieldAttr::fk (#388). Constrains QuerySet::join/left_join and
+    // JoinStatement so a non-member or non-FK argument fails at the call site with a
+    // clear constraint violation.
+    //
+    // The annotation is read from the member re-derived out of ^^T (matched by
+    // identifier), NOT from Member itself: annotation_of_type on a reflection that
+    // crossed a BMI boundary segfaults clang-p2996 (#262), while structural queries
+    // (is_nonstatic_data_member / parent_of / identifier_of) are safe on it.
+    template <typename T, std::meta::info Member>
+    concept FKFieldOf = []() consteval {
+        if (!std::meta::is_nonstatic_data_member(Member) || !std::meta::has_identifier(Member)) {
+            return false;
+        }
+        if (std::meta::parent_of(Member) != ^^T) {
+            return false;
+        }
+        for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+            if (std::meta::identifier_of(m) == std::meta::identifier_of(Member)) {
+                return meta::is_fk_field(m);
+            }
+        }
+        return false;
+    }();
+
+    // A many-to-many JOIN field selector must reflect a non-static data member of T
+    // carrying a ManyToMany annotation (#203). Same BMI-boundary discipline as
+    // FKFieldOf: the annotation is read from the member re-derived out of ^^T.
+    template <typename T, std::meta::info Member>
+    concept M2MFieldOf = []() consteval {
+        if (!std::meta::is_nonstatic_data_member(Member) || !std::meta::has_identifier(Member)) {
+            return false;
+        }
+        if (std::meta::parent_of(Member) != ^^T) {
+            return false;
+        }
+        for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+            if (std::meta::identifier_of(m) == std::meta::identifier_of(Member)) {
+                return meta::is_m2m_field(m);
+            }
+        }
+        return false;
+    }();
+
+    // A cross-model reverse-FK selector (#398): Member is a FieldAttr::fk data member
+    // of ANOTHER model whose FK type (unwrapping std::optional) is the base model T.
+    //   QuerySet<Person>().left_join<^^Task::assignee>()  // Member = ^^Task::assignee
+    // The owning model (Task), FK field, and FK target (Person) all come from Member;
+    // naming the field disambiguates several FKs to the same target (assignee vs reviewer).
+    // Structural-only queries on Member (parent_of/type_of/identifier_of) — safe across a
+    // BMI boundary; the annotation is read from the member re-derived out of the owner.
+    template <typename T, std::meta::info Member>
+    concept ReverseFKSelector = []() consteval {
+        if (!std::meta::is_nonstatic_data_member(Member) || !std::meta::has_identifier(Member)) {
+            return false;
+        }
+        const auto owner = std::meta::parent_of(Member);
+        if (owner == ^^T) {
+            return false; // a reverse FK must point from a DIFFERENT model back at T
+        }
+        // The FK type, optional-unwrapped, must be exactly T.
+        if (!meta::fk_member_points_at(Member, ^^T)) {
+            return false;
+        }
+        // Member must carry an fk<...> annotation — read from the member re-derived out of owner.
+        for (auto m : std::meta::nonstatic_data_members_of(owner, std::meta::access_context::unchecked())) {
+            if (std::meta::identifier_of(m) == std::meta::identifier_of(Member)) {
+                return meta::is_fk_field(m);
+            }
+        }
+        return false;
+    }();
+
+    // A reverse-FK container destination (#398): a non-static data member of T carrying a
+    // ReverseFk annotation, whose carried FK field is itself a valid ReverseFKSelector<T>.
+    // This is the key+destination form (select()); ReverseFKSelector is the key alone
+    // (aggregate/filter chains). Same BMI discipline: annotation re-derived from ^^T.
+    template <typename T, std::meta::info Member>
+    concept ReverseFKFieldOf = []() consteval {
+        if (!std::meta::is_nonstatic_data_member(Member) || !std::meta::has_identifier(Member)) {
+            return false;
+        }
+        if (std::meta::parent_of(Member) != ^^T) {
+            return false;
+        }
+        for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+            if (std::meta::identifier_of(m) == std::meta::identifier_of(Member)) {
+                return meta::is_reverse_fk_field(m) && meta::reverse_fk_member_valid(m, ^^T);
+            }
+        }
+        return false;
+    }();
+
+    // A through model must carry exactly one fk<...> member of type Side
+    // (#203 Phase 2) — that member names the junction FK column (<identifier>_id).
+    template <typename Through, typename Side>
+    concept ThroughWithFKTo = []() consteval {
+        std::size_t count = 0;
+        for (auto m : std::meta::nonstatic_data_members_of(^^Through, std::meta::access_context::unchecked())) {
+            if (meta::is_fk_field(m) && std::meta::dealias(std::meta::type_of(m)) == std::meta::dealias(^^Side)) {
+                ++count;
+            }
+        }
+        return count == 1;
+    }();
+
+    // Parse a decimal string to uint64 for full_unsigned extraction (#436); leading
+    // zeros from the SQLite zero-padded TEXT (or PG NUMERIC) are ignored. Defensive 0
+    // on an unexpected empty/garbage value — the column is NOT NULL decimal by
+    // construction. Free function (no model state) so it stays off BaseStatement's
+    // method count (cpp:S1448).
+    inline auto parse_full_unsigned(std::string_view text) noexcept -> std::uint64_t {
+        std::uint64_t value = 0;
+        std::from_chars(text.data(), text.data() + text.size(), value);
+        return value;
+    }
+
+    // Extract a full_unsigned column (#436) into obj.[:Member:]: parse the decimal text
+    // (SQLite zero-padded TEXT or PG NUMERIC) back to uint64; nullopt on a NULL optional.
+    // Free function template (Member NTTP) so it stays off BaseStatement's method count
+    // (cpp:S1448) and keeps extract_column_fast's nesting under the limit (cpp:S134).
+    template <std::meta::info Member, typename FieldType, typename Obj, typename Statement>
+    __attribute__((always_inline)) void extract_full_unsigned_into(Statement* stmt, Obj& obj, int col_idx) noexcept {
+        if constexpr (utilities::is_optional_v<FieldType>) {
+            obj.[:Member:] = stmt->is_null(col_idx)
+                                     ? std::optional<std::uint64_t>(std::nullopt)
+                                     : parse_full_unsigned(ColumnExtractor::read_text_view(stmt, col_idx));
+        } else {
+            obj.[:Member:] = parse_full_unsigned(ColumnExtractor::read_text_view(stmt, col_idx));
+        }
     }
 
     // Shared reflection utilities for all statement types
-    template <typename T> class BaseStatement {
+    template <typename T>
+        requires ModelWithPrimaryKey<T> && ModelStorageAnnotated<T> && ModelFkPoliciesValid<T>
+    class BaseStatement {
       public:
-        // Public accessors for optimization
-        static constexpr auto get_primary_key() {
-            return primary_key_;
-        }
-        static constexpr auto get_pk_name() {
-            return pk_name_;
-        }
-        static constexpr auto get_table_name() {
+        // Compile-time accessor for table name (used in SQL generation)
+        static consteval auto get_table_name() -> std::string_view {
             return table_name_;
         }
 
       protected:
         // Helper to find primary key using storm::meta attributes
-        static consteval std::meta::info find_primary_key_impl() {
-            for (std::meta::info member :
+        static consteval auto find_primary_key_impl() -> std::meta::info {
+            for (const std::meta::info member :
                  std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
                 auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
-                if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::primary) {
+                if (field_attr.has_value() && meta::is_primary_attr(field_attr.value())) {
                     return member;
                 }
             }
-            throw "Model must have exactly one field marked with [[=storm::meta::FieldAttr::primary]]";
+            std::unreachable(); // never reached: ModelWithPrimaryKey<T> guarantees a primary key exists
         }
 
-        // FK field detection utilities
-        static consteval bool is_fk_field(std::meta::info member) {
+        // FK field detection utilities — an fk<...> class-template annotation (#431).
+        static consteval auto is_fk_field(std::meta::info member) -> bool {
+            return meta::is_fk_field(member);
+        }
+
+        // Per-attribute predicates forward to the storm_orm_field_attr leaf (#421),
+        // the single source of truth for the FieldAttr-annotation test.
+        static consteval auto is_unique_field(std::meta::info member) -> bool {
+            return meta::is_unique(member);
+        }
+
+        static consteval auto is_indexed_field(std::meta::info member) -> bool {
+            return meta::is_indexed(member);
+        }
+
+        static consteval auto is_auto_create_field(std::meta::info member) -> bool {
+            return meta::is_auto_create(member);
+        }
+
+        static consteval auto is_auto_update_field(std::meta::info member) -> bool {
+            return meta::is_auto_update(member);
+        }
+
+        // True when `member` should be stamped with now() on this operation: auto_update
+        // always; auto_create on INSERT only (IsUpdate=false). auto_create on UPDATE is
+        // false here so it binds the object's stored value (preserving created_at).
+        static consteval auto stamps_now(std::meta::info member, bool is_update) -> bool {
+            return is_auto_update_field(member) || (is_auto_create_field(member) && !is_update);
+        }
+
+        // Check if a field needs an index (indexed, unique, or fk — but not primary key).
+        // FK is now an fk<...> class-template annotation (#431), checked separately.
+        static consteval auto needs_index(std::meta::info member) -> bool {
+            using enum meta::FieldAttr;
+            if (member == primary_key_) {
+                return false;
+            }
+            if (meta::is_fk_field(member)) {
+                return true;
+            }
             auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
-            return field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk;
-        }
-
-        // Get database column name for FK field: User sender → "sender_id"
-        static consteval std::string get_fk_column_name(std::meta::info member) {
-            std::string field_name(std::meta::identifier_of(member));
-            return field_name + "_id";
-        }
-
-        // Find primary key of a FK type
-        template <typename FKType> static consteval std::meta::info find_fk_primary_key() {
-            for (std::meta::info member :
-                 std::meta::nonstatic_data_members_of(^^FKType, std::meta::access_context::unchecked())) {
-                auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
-                if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::primary) {
-                    return member;
-                }
+            if (!field_attr.has_value()) {
+                return false;
             }
-            throw "FK type must have exactly one field marked with [[=storm::meta::FieldAttr::primary]]";
+            auto val = field_attr.value();
+            return val == indexed || val == unique;
         }
 
-        // Helper to get the number of fields
-        static consteval size_t get_field_count() {
-            return std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()).size();
-        }
-
-        // Pre-compute all field members at compile-time
-        template <size_t N> static consteval std::array<std::meta::info, N> get_all_field_members() {
-            std::array<std::meta::info, N> result{};
-            auto members = std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked());
-
-            for (size_t i = 0; i < N && i < members.size(); ++i) {
-                result[i] = members[i];
-            }
-            return result;
-        }
-
-        // Calculate size of field names string at compile-time (for constexpr SQL size calculations)
-        static consteval size_t calculate_field_names_size() {
-            size_t size  = 0;
-            bool   first = true;
-            for (size_t i = 0; i < field_count_; ++i) {
-                if (!first) {
-                    size += 2; // ", "
-                }
-                // Check if this is a FK field
-                auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(all_members_[i]);
-                if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
-                    // FK field: field_name + "_id"
-                    size += std::meta::identifier_of(all_members_[i]).size() + 3; // +3 for "_id"
-                } else {
-                    size += std::meta::identifier_of(all_members_[i]).size();
-                }
-                first = false;
-            }
-            return size;
-        }
-
-        // Calculate size of non-PK field names string at compile-time
-        static consteval size_t calculate_non_pk_field_names_size() {
-            size_t size  = 0;
-            bool   first = true;
-            for (size_t i = 0; i < field_count_; ++i) {
-                // Skip primary key field
-                if (all_members_[i] == primary_key_) {
-                    continue;
-                }
-                if (!first) {
-                    size += 2; // ", "
-                }
-                // Check if this is a FK field
-                auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(all_members_[i]);
-                if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
-                    // FK field: field_name + "_id"
-                    size += std::meta::identifier_of(all_members_[i]).size() + 3; // +3 for "_id"
-                } else {
-                    size += std::meta::identifier_of(all_members_[i]).size();
-                }
-                first = false;
-            }
-            return size;
-        }
-
-        // Build comma-separated list of all field names (for SELECT statements)
-        // FK fields are mapped to their column names (User sender → sender_id)
-        static consteval auto build_all_field_names_list() {
-            constexpr size_t      size = calculate_field_names_size() + 10; // Add buffer
-            ConstexprString<size> result;
-            bool                  first = true;
-            for (size_t i = 0; i < field_count_; ++i) {
-                if (!first) {
-                    result.append(", ");
-                }
-                // Check if this is a FK field
-                auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(all_members_[i]);
-                if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
-                    // FK field: append field_name + "_id"
-                    result.append(std::meta::identifier_of(all_members_[i]));
-                    result.append("_id");
-                } else {
-                    result.append(std::meta::identifier_of(all_members_[i]));
-                }
-                first = false;
-            }
-            return result;
-        }
-
-        // Build comma-separated list of NON-PRIMARY KEY fields (for INSERT statements)
-        // Excludes primary key to allow auto-increment
-        static consteval auto build_non_pk_field_names_list() {
-            constexpr size_t      size = calculate_non_pk_field_names_size() + 10; // Add buffer
-            ConstexprString<size> result;
-            bool                  first = true;
-            for (size_t i = 0; i < field_count_; ++i) {
-                // Skip primary key field
-                if (all_members_[i] == primary_key_) {
-                    continue;
-                }
-
-                if (!first) {
-                    result.append(", ");
-                }
-                // Check if this is a FK field
-                auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(all_members_[i]);
-                if (field_attr.has_value() && field_attr.value() == meta::FieldAttr::fk) {
-                    // FK field: append field_name + "_id"
-                    result.append(std::meta::identifier_of(all_members_[i]));
-                    result.append("_id");
-                } else {
-                    result.append(std::meta::identifier_of(all_members_[i]));
-                }
-                first = false;
-            }
-            return result;
+        // Get database column name for FK field: User sender → "sender_id".
+        // Routes through the canonical column-name writer (#422) so the "_id" suffix
+        // stays single-sourced (consteval — std::format is not constant-evaluated).
+        static consteval auto get_fk_column_name(std::meta::info member) -> std::string {
+            std::string name;
+            meta::append_column_name(name, member);
+            return name;
         }
 
       public:
+        // Find primary key of a FK type (unwraps std::optional<T> → T first). Public so
+        // the free two-query join helpers (join.cppm, #398) can extract FK columns.
+        template <typename FKType>
+            requires ModelWithPrimaryKey<utilities::optional_inner_type_t<FKType>>
+        static consteval auto find_fk_primary_key() -> std::meta::info {
+            using InnerType = utilities::optional_inner_type_t<FKType>;
+            for (const std::meta::info member :
+                 std::meta::nonstatic_data_members_of(^^InnerType, std::meta::access_context::unchecked())) {
+                auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
+                if (field_attr.has_value() && meta::is_primary_attr(field_attr.value())) {
+                    return member;
+                }
+            }
+            std::unreachable(); // never reached: requires ModelWithPrimaryKey<...> guarantees a primary key exists
+        }
+
+      protected:
+        // Number of PERSISTED fields. Relation container members (many-to-many #203,
+        // reverse_fk #398) map to a separate query, not to a column, so they are
+        // invisible to INSERT/SELECT/UPDATE/SCHEMA.
+        static consteval auto get_field_count() -> std::size_t {
+            std::size_t count = 0;
+            for (const auto member :
+                 std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+                if (!meta::is_relation_field(member)) {
+                    ++count;
+                }
+            }
+            return count;
+        }
+
+        // Pre-compute all persisted field members at compile-time (relation members
+        // filtered — m2m #203, reverse_fk #398).
+        template <std::size_t N> static consteval auto get_all_field_members() -> std::array<std::meta::info, N> {
+            std::array<std::meta::info, N> result{};
+            std::size_t                    idx = 0;
+            for (const auto member :
+                 std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+                if (!meta::is_relation_field(member) && idx < N) {
+                    result[idx++] = member;
+                }
+            }
+            return result;
+        }
+
+        // Field-name SQL grammar (#434): for_each_field_name + the size-calculators and
+        // list-builders that produce "col1, col2, fk_id, ..." now live in
+        // FieldNameGrammar<BaseStatement>. INSERT/SELECT call it directly; this class uses
+        // it only to seed field_names_array_ below.
+        using FieldNames = FieldNameGrammar<BaseStatement>;
+
+      public:
         // Pre-computed field information - made public for QuerySet and JOIN optimization
-        static constexpr auto           field_count_       = get_field_count();
+        static constexpr auto field_count_ = get_field_count();
+        // Makes the ModelWithPrimaryKey invariant explicit: a model with a primary-key
+        // member always has >= 1 field, so the INSERT divides MAX_DB_VARIABLES / field_count_
+        // can never divide by zero (issue #362, item A). Fires here if the concept is ever
+        // loosened, instead of producing UB at the divide.
+        static_assert(field_count_ >= 1, "A model must have at least one field (its primary key)");
         static constexpr auto           all_members_       = get_all_field_members<field_count_>();
-        static constexpr auto           field_names_array_ = build_all_field_names_list();
+        static constexpr auto           field_names_array_ = FieldNames::build_all_field_names_list();
         static inline const std::string field_names_       = std::string(field_names_array_);
+
+        // True if T has any auto_create/auto_update field (#209). Gates the per-operation
+        // system_clock::now() read so models with no timestamp fields pay zero overhead.
+        static constexpr bool has_auto_timestamp_field_ = []() consteval {
+            for (const auto m : all_members_) {
+                if (is_auto_create_field(m) || is_auto_update_field(m)) {
+                    return true;
+                }
+            }
+            return false;
+        }();
+
+        // True if T has any many-to-many container field (#203/#391). Gates the
+        // two-query eager-load path so models WITHOUT an m2m field never instantiate
+        // it (scans raw members — m2m fields are filtered out of all_members_).
+        static constexpr bool has_m2m_field_ = []() consteval {
+            return std::ranges::any_of(
+                    std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()),
+                    [](std::meta::info m) { return meta::is_m2m_field(m); }
+            );
+        }();
+
+        // True if T has any reverse_fk container field (#398). Gates the two-query
+        // eager-load path the same way has_m2m_field_ does — a model without one
+        // never instantiates the reverse-FK select machinery.
+        static constexpr bool has_reverse_fk_field_ = []() consteval {
+            return std::ranges::any_of(
+                    std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()),
+                    [](std::meta::info m) { return meta::is_reverse_fk_field(m); }
+            );
+        }();
+
+        // One clock read per operation, but only for models that actually have a timestamp
+        // field — otherwise the call compiles away entirely (no regression on plain models).
+        [[nodiscard]] __attribute__((always_inline)) static auto batch_now() noexcept
+                -> std::chrono::system_clock::time_point {
+            if constexpr (has_auto_timestamp_field_) {
+                return std::chrono::system_clock::now();
+            } else {
+                return {};
+            }
+        }
 
         // Reflection data - made public for JOIN statement access
         static constexpr auto primary_key_ = find_primary_key_impl();
@@ -213,192 +575,209 @@ export namespace storm::orm::statements {
         using field_indices_t = std::make_index_sequence<field_count_>;
 
         // Helper template for compile-time field binding with index sequence
-        template <typename ConnType, typename Statement, size_t... Is>
+        template <typename ConnType, typename Statement, std::size_t... Is>
         [[nodiscard]] static auto
-        bind_all_fields_impl(Statement& stmt, const T& obj, std::index_sequence<Is...>) noexcept
+        bind_all_fields_impl(Statement& stmt, const T& obj, std::index_sequence<Is...> /*unused*/) noexcept
                 -> std::expected<void, typename ConnType::Error> {
-            // Use fold expression to bind all fields at compile-time indices
-            // Each field binds at parameter index (Is + 1) since SQLite parameters start at 1
-            auto bind_result = (bind_field_at_index<ConnType, Is>(stmt, obj, Is + 1) && ...);
-            if (!bind_result) {
-                // Find which field failed (this could be optimized further if needed)
-                return get_first_bind_error<ConnType, Statement, Is...>(stmt, obj);
-            }
-            return {};
+            int                                           param_index = 1;
+            std::expected<void, typename ConnType::Error> result{};
+            const auto now = batch_now(); // shared by all fields of this object (compiles away if none)
+            ((result = bind_field_at_index<ConnType, Is>(&stmt, obj, param_index, now), result.has_value()) && ...);
+            return result;
         }
 
         // Helper template for INSERT binding (skips primary key for auto-increment)
-        template <typename ConnType, typename Statement, size_t... Is>
+        template <typename ConnType, typename Statement, std::size_t... Is>
         [[nodiscard]] static auto
-        bind_non_pk_fields_impl(Statement& stmt, const T& obj, std::index_sequence<Is...>) noexcept
+        bind_non_pk_fields_impl(Statement& stmt, const T& obj, std::index_sequence<Is...> /*unused*/) noexcept
                 -> std::expected<void, typename ConnType::Error> {
-            int  param_index = 1;
-            bool bind_ok     = true;
-
-            // Bind each field, skipping the PK
-            ((bind_ok = bind_ok &&
-                        [&]() {
-                            if constexpr (Is < field_count_) {
-                                if (all_members_[Is] != primary_key_) {
-                                    bool result = bind_field_at_index<ConnType, Is>(stmt, obj, param_index);
-                                    param_index++;
-                                    return result;
-                                }
-                            }
-                            return true;
-                        }()),
+            int                                           param_index = 1;
+            std::expected<void, typename ConnType::Error> result{};
+            const auto now = batch_now(); // shared by all fields of this object (compiles away if none)
+            ((result = bind_field_at_index<ConnType, Is, true>(&stmt, obj, param_index, now), result.has_value()) &&
              ...);
+            return result;
+        }
 
-            if (!bind_ok) {
-                return std::unexpected(typename ConnType::Error{-1, "Field binding failed"});
+        // Unified field binder: binds a single field at compile-time index.
+        // SkipPK=true skips primary key fields (for INSERT/UPDATE non-PK binding).
+        // IsUpdate=true marks the UPDATE path so auto_create fields bind the object's
+        // stored value instead of now() (#209). `now` is read once per operation by the
+        // caller and threaded in so every row in a batch shares the same timestamp.
+        // Auto-increments param_index on successful bind.
+        template <typename ConnType, std::size_t Index, bool SkipPK = false, bool IsUpdate = false>
+        [[nodiscard]] __attribute__((always_inline)) static constexpr auto bind_field_at_index(
+                typename ConnType::Statement*         stmt,
+                const T&                              obj,
+                int&                                  param_index,
+                std::chrono::system_clock::time_point now = {}
+        ) noexcept -> std::expected<void, typename ConnType::Error> {
+            constexpr auto member = all_members_[Index];
+
+            // Auto-timestamp fields (#209) must be system_clock::time_point — binding now()
+            // to any other type is a model error. Fires at the call site with a clear message.
+            if constexpr (is_auto_create_field(member) || is_auto_update_field(member)) {
+                static_assert(
+                        ValidTimestampField<member>,
+                        "auto_create / auto_update fields must be std::chrono::system_clock::time_point"
+                );
             }
+
+            // Compile-time PK skip for INSERT/UPDATE non-PK paths
+            if constexpr (SkipPK && member == primary_key_) {
+                return {};
+            }
+            // Auto-timestamp (#209): stamp now() for auto_update (always) and auto_create
+            // (INSERT only). auto_create on UPDATE is not stamped here and falls through to
+            // the normal bind below, preserving the object's stored created_at.
+            else if constexpr (stamps_now(member, IsUpdate)) {
+                return bind_one<ConnType>(stmt, param_index, now);
+            }
+            // FK field - extract and bind the PK value from the foreign object
+            else if constexpr (is_fk_field(member)) {
+                return bind_fk_field_at_index<ConnType, Index>(stmt, obj, param_index);
+            }
+            // full_unsigned field (#436): order-preserving storage — bind a 20-char
+            // zero-padded decimal string instead of the signed int64 hot path. uint64_max
+            // (18446744073709551615) is 20 digits, so every value pads to the same width
+            // and lexicographic order == numeric order (SQLite TEXT); PG NUMERIC(20,0)
+            // parses the same string, leading zeros ignored. Optional binds NULL via the
+            // optional<string> dispatch in bind_parameter_value. Slow path (format +
+            // bind_text), paid only by full_unsigned fields.
+            else if constexpr (storm::meta::has_full_unsigned_attr(member)) {
+                using FieldType = std::remove_cvref_t<decltype(obj.[:member:])>;
+                if constexpr (utilities::is_optional_v<FieldType>) {
+                    return bind_one<ConnType>(
+                            stmt, param_index, obj.[:member:]
+                                    .has_value()
+                                            ? std::optional<std::string>(std::format("{:020}", obj.[:member:].value()))
+                                            : std::nullopt
+                    );
+                } else {
+                    return bind_one<ConnType>(stmt, param_index, std::format("{:020}", obj.[:member:]));
+                }
+            } else {
+                return bind_one<ConnType>(stmt, param_index, obj.[:member:]);
+            }
+        }
+
+        // Bind one value at param_index and advance it on success. Shared tail used by the
+        // plain-field and auto-timestamp branches of bind_field_at_index.
+        template <typename ConnType>
+        [[nodiscard]] __attribute__((always_inline)) static constexpr auto
+        bind_one(typename ConnType::Statement* stmt, int& param_index, const auto& value) noexcept
+                -> std::expected<void, typename ConnType::Error> {
+            auto result = bind_value_by_type<ConnType>(*stmt, param_index, value);
+            if (!result) {
+                return std::unexpected(result.error());
+            }
+            ++param_index;
             return {};
         }
 
-        // Helper to bind a single field at compile-time index with error handling
-        template <typename ConnType, size_t Index>
-        [[nodiscard]] static auto
-        bind_field_at_index(typename ConnType::Statement& stmt, const T& obj, int param_index) noexcept -> bool {
-            if constexpr (Index < field_count_) {
-                constexpr auto member = all_members_[Index];
-
-                // Check if this is a FK field - if so, extract and bind the PK value
-                if constexpr (is_fk_field(member)) {
-                    auto fk_object              = obj.[:member:];
-                    using FKType                = std::remove_cvref_t<decltype(fk_object)>;
-                    constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
-                    auto           pk_value     = fk_object.[:fk_pk_member:];
-                    auto           result       = bind_value_by_type<ConnType>(stmt, param_index, pk_value);
-                    return result.has_value();
-                } else {
-                    auto field_value = obj.[:member:];
-                    auto result      = bind_value_by_type<ConnType>(stmt, param_index, field_value);
-                    return result.has_value();
+        // Extract and bind the foreign object's PK value (NULL for an empty optional FK).
+        template <typename ConnType, std::size_t Index>
+        [[nodiscard]] __attribute__((always_inline)) static constexpr auto
+        bind_fk_field_at_index(typename ConnType::Statement* stmt, const T& obj, int& param_index) noexcept
+                -> std::expected<void, typename ConnType::Error> {
+            constexpr auto member = all_members_[Index];
+            using FKType          = std::remove_cvref_t<decltype(obj.[:member:])>;
+            if constexpr (utilities::is_optional_v<FKType>) {
+                // Optional FK: bind NULL when empty, otherwise bind the inner PK value
+                if (!obj.[:member:].has_value()) {
+                    auto null_result = stmt->bind_null(param_index);
+                    if (!null_result) {
+                        return std::unexpected(null_result.error());
+                    }
+                    ++param_index;
+                    return {};
                 }
+                constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
+                return bind_one<ConnType>(stmt, param_index, obj.[:member:].value().[:fk_pk_member:]);
+            } else {
+                constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
+                return bind_one<ConnType>(stmt, param_index, obj.[:member:].[:fk_pk_member:]);
             }
-            return true;
         }
 
-        // Helper to get the first binding error when fold expression fails
-        template <typename ConnType, typename Statement, size_t... Is>
-        [[nodiscard]] static auto get_first_bind_error(Statement& stmt, const T& obj) noexcept
-                -> std::expected<void, typename ConnType::Error> {
-            // Try each field individually to find the first error
-            auto try_bind = [&stmt, &obj](auto index_constant) -> std::expected<void, typename ConnType::Error> {
-                constexpr size_t Index = decltype(index_constant)::value;
-                if constexpr (Index < field_count_) {
-                    constexpr auto member = all_members_[Index];
-                    // Handle FK fields
-                    if constexpr (is_fk_field(member)) {
-                        auto fk_object              = obj.[:member:];
-                        using FKType                = std::remove_cvref_t<decltype(fk_object)>;
-                        constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
-                        auto           pk_value     = fk_object.[:fk_pk_member:];
-                        return bind_value_by_type<ConnType>(stmt, Index + 1, pk_value);
-                    } else {
-                        auto field_value = obj.[:member:];
-                        return bind_value_by_type<ConnType>(stmt, Index + 1, field_value);
-                    }
-                }
-                return {};
-            };
+        // Bulk binding scaffolding: iterate objects, fold the per-field bind over the
+        // index sequence, return on first error. Bound to bind_field_at_index<...>
+        // through the SkipPrimaryKey template parameter so a single body serves
+        // both the all-fields and non-PK variants.
+        template <bool SkipPrimaryKey, typename ConnType, typename Statement, typename ContainerType, std::size_t... Is>
+        [[nodiscard]] static auto bind_bulk_objects_impl(
+                Statement& stmt, const ContainerType& objects, std::index_sequence<Is...> /*unused*/
+        ) noexcept -> std::expected<void, typename ConnType::Error> {
+            int param_index = 1;
+            // One now() per batch, reused for every row (#209): all rows share the same
+            // created_at/updated_at, matching the issue's batch-timestamp intent.
+            const auto now = batch_now();
 
-            // Try each field to find the first error
-            std::expected<void, typename ConnType::Error> first_error{};
-            ((first_error = try_bind(std::integral_constant<size_t, Is>{}), first_error.has_value()) && ...);
-            return first_error;
+            for (const auto& obj : objects) {
+                std::expected<void, typename ConnType::Error> result{};
+                ((result = bind_field_at_index<ConnType, Is, SkipPrimaryKey>(&stmt, obj, param_index, now),
+                  result.has_value()) &&
+                 ...);
+                if (!result) {
+                    return result;
+                }
+            }
+            return {};
         }
 
         // Helper for bulk binding multiple objects with index sequence
-        template <typename ConnType, typename Statement, typename ContainerType, size_t... Is>
-        [[nodiscard]] static auto
-        bind_all_objects_bulk_impl(Statement& stmt, const ContainerType& objects, std::index_sequence<Is...>) noexcept
-                -> std::expected<void, typename ConnType::Error> {
-            int param_index = 1;
-
-            // Bind each object's fields sequentially
-            for (const auto& obj : objects) {
-                // Use fold expression to bind all fields for this object
-                auto bind_result = (bind_field_at_index<ConnType, Is>(stmt, obj, param_index + Is) && ...);
-                if (!bind_result) {
-                    // Find which field failed for this object
-                    return get_bulk_bind_error<ConnType, Statement, Is...>(stmt, obj, param_index);
-                }
-                param_index += field_count_; // Move to next object's parameter range
-            }
-            return {};
+        template <typename ConnType, typename Statement, typename ContainerType, std::size_t... Is>
+        [[nodiscard]] static auto bind_all_objects_bulk_impl(
+                Statement& stmt, const ContainerType& objects, std::index_sequence<Is...> seq
+        ) noexcept -> std::expected<void, typename ConnType::Error> {
+            return bind_bulk_objects_impl<false, ConnType, Statement, ContainerType, Is...>(stmt, objects, seq);
         }
 
         // Helper for bulk INSERT binding (skips PK for auto-increment)
-        template <typename ConnType, typename Statement, typename ContainerType, size_t... Is>
+        template <typename ConnType, typename Statement, typename ContainerType, std::size_t... Is>
         [[nodiscard]] static auto bind_non_pk_objects_bulk_impl(
-                Statement& stmt, const ContainerType& objects, std::index_sequence<Is...>
+                Statement& stmt, const ContainerType& objects, std::index_sequence<Is...> seq
         ) noexcept -> std::expected<void, typename ConnType::Error> {
-            int              param_index  = 1;
-            constexpr size_t non_pk_count = field_count_ - 1;
-
-            // Bind each object's non-PK fields sequentially
-            for (const auto& obj : objects) {
-                int  field_param = param_index;
-                bool bind_ok     = true;
-
-                // Bind fields skipping PK
-                ((bind_ok = bind_ok &&
-                            [&]() {
-                                if constexpr (Is < field_count_) {
-                                    if (all_members_[Is] != primary_key_) {
-                                        bool result = bind_field_at_index<ConnType, Is>(stmt, obj, field_param);
-                                        field_param++;
-                                        return result;
-                                    }
-                                }
-                                return true;
-                            }()),
-                 ...);
-
-                if (!bind_ok) {
-                    return std::unexpected(typename ConnType::Error{-1, "Bulk bind failed"});
-                }
-                param_index += non_pk_count; // Move to next object's parameter range
-            }
-            return {};
-        }
-
-        // Helper to get binding error for bulk operations
-        template <typename ConnType, typename Statement, size_t... Is>
-        [[nodiscard]] static auto get_bulk_bind_error(Statement& stmt, const T& obj, int base_param_index) noexcept
-                -> std::expected<void, typename ConnType::Error> {
-            // Try each field individually to find the first error
-            auto try_bind = [&stmt,
-                             &obj,
-                             base_param_index](auto index_constant) -> std::expected<void, typename ConnType::Error> {
-                constexpr size_t Index = decltype(index_constant)::value;
-                if constexpr (Index < field_count_) {
-                    constexpr auto member = all_members_[Index];
-                    // Handle FK fields
-                    if constexpr (is_fk_field(member)) {
-                        auto fk_object              = obj.[:member:];
-                        using FKType                = std::remove_cvref_t<decltype(fk_object)>;
-                        constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
-                        auto           pk_value     = fk_object.[:fk_pk_member:];
-                        return bind_value_by_type<ConnType>(stmt, base_param_index + Index, pk_value);
-                    } else {
-                        auto field_value = obj.[:member:];
-                        return bind_value_by_type<ConnType>(stmt, base_param_index + Index, field_value);
-                    }
-                }
-                return {};
-            };
-
-            // Try each field to find the first error
-            std::expected<void, typename ConnType::Error> first_error{};
-            ((first_error = try_bind(std::integral_constant<size_t, Is>{}), first_error.has_value()) && ...);
-            return first_error;
+            return bind_bulk_objects_impl<true, ConnType, Statement, ContainerType, Is...>(stmt, objects, seq);
         }
 
         // Common batch operation thresholds
-        static constexpr size_t BATCH_THRESHOLD      = 50;
-        static constexpr size_t MAX_SQLITE_VARIABLES = 999;
+        static constexpr std::size_t MAX_DB_VARIABLES = 999;
+
+        // Adaptive threshold calculation based on batch size and field count
+        // Returns the optimal threshold for deciding between bulk SQL and individual inserts
+        static constexpr auto calculate_adaptive_threshold(std::size_t batch_size, std::size_t max_bulk_size)
+                -> std::size_t {
+            using utilities::batch::FALLBACK_BATCH_SIZE;
+            using utilities::batch::SMALL_THRESHOLD;
+
+            // For very small batches, always use bulk SQL up to the SQLite limit
+            if (batch_size <= SMALL_THRESHOLD) {
+                return max_bulk_size;
+            }
+
+            // Calculate safe thresholds based on max_bulk_size (which already accounts for field count)
+            // max_bulk_size = 999 / field_count, so we scale our thresholds accordingly
+
+            // For small-medium batches, use bulk SQL if safe
+            // Use 50% of max_bulk_size as the sweet spot for bulk operations
+            const std::size_t bulk_sweet_spot = std::max(FALLBACK_BATCH_SIZE, max_bulk_size / 2);
+
+            if (batch_size <= bulk_sweet_spot) {
+                return bulk_sweet_spot; // Use bulk SQL - most efficient
+            }
+
+            // For medium batches, try to use bulk if within 80% of SQLite limit
+            const std::size_t bulk_max_safe = (max_bulk_size * 4) / 5; // 80% of max
+
+            if (batch_size <= bulk_max_safe) {
+                return bulk_max_safe; // Push bulk SQL to near SQLite limit
+            }
+
+            // For large batches (>80% of SQLite limit), use individual inserts with transaction
+            // Avoids hitting SQLite variable limits and better memory usage
+            return FALLBACK_BATCH_SIZE; // Force individual insert path - safe for any field count
+        }
 
         // Common binding utilities for different types
         // Delegates to unified bind_parameter_value in utilities
@@ -411,223 +790,185 @@ export namespace storm::orm::statements {
             );
         }
 
-        // Shared column extraction utility - returns value of specified type from given column index
-        // Handles: int, int64_t, uint64_t, short, float, double, bool, string, optional<T>, vector<uint8_t>
-        template <typename FieldType, typename Statement>
-        [[nodiscard]] __attribute__((always_inline)) static inline FieldType
-        extract_column_value(Statement& stmt, int col_idx) noexcept {
-            // Handle std::optional types first
-            if constexpr (utilities::is_optional_v<FieldType>) {
-                using InnerType = typename FieldType::value_type;
-                if (stmt.is_null(col_idx)) {
-                    return std::nullopt;
-                } else {
-                    // Extract the inner value and wrap it in optional
-                    InnerType inner_value = extract_column_value<InnerType>(stmt, col_idx);
-                    return FieldType{std::move(inner_value)};
-                }
-            }
-            // Boolean type (stored as INTEGER 0/1)
-            else if constexpr (std::is_same_v<FieldType, bool>) {
-                return stmt.extract_bool(col_idx);
-            }
-            // Integer types
-            else if constexpr (std::is_same_v<FieldType, int>) {
-                return stmt.extract_int(col_idx);
-            } else if constexpr (std::is_same_v<FieldType, int64_t> || std::is_same_v<FieldType, long> ||
-                                 std::is_same_v<FieldType, long long>) {
-                return static_cast<FieldType>(stmt.extract_int64(col_idx));
-            } else if constexpr (std::is_same_v<FieldType, uint64_t> || std::is_same_v<FieldType, unsigned long> ||
-                                 std::is_same_v<FieldType, unsigned long long>) {
-                return static_cast<FieldType>(stmt.extract_int64(col_idx));
-            } else if constexpr (std::is_same_v<FieldType, short> || std::is_same_v<FieldType, unsigned short> ||
-                                 std::is_same_v<FieldType, unsigned int>) {
-                return static_cast<FieldType>(stmt.extract_int(col_idx));
-            }
-            // Floating point types
-            else if constexpr (std::is_same_v<FieldType, double>) {
-                return stmt.extract_double(col_idx);
-            } else if constexpr (std::is_same_v<FieldType, float>) {
-                return stmt.extract_float(col_idx);
-            }
-            // BLOB types
-            else if constexpr (std::is_same_v<FieldType, std::vector<uint8_t>> ||
-                               std::is_same_v<FieldType, std::vector<unsigned char>>) {
-                auto [blob_ptr, blob_size] = stmt.extract_blob(col_idx);
-                if (blob_ptr && blob_size > 0) {
-                    const uint8_t* data = static_cast<const uint8_t*>(blob_ptr);
-                    return FieldType(data, data + blob_size);
-                } else {
-                    return FieldType{};
-                }
-            }
-            // String types
-            else if constexpr (std::is_same_v<FieldType, std::string>) {
-                const unsigned char* text = stmt.extract_text_ptr(col_idx);
-                if (text) {
-                    // OPTIMIZATION: Direct construction with known length (no strlen, no temporary)
-                    int len = sqlite3_column_bytes(stmt.handle(), col_idx);
-                    return FieldType(reinterpret_cast<const char*>(text), len);
-                } else {
-                    return FieldType{};
-                }
+      protected:
+        // =====================================================================
+        // COLUMN EXTRACTION HELPERS - Moved here from SelectStatement so that
+        // constexpr access to all_members_[Index] happens in base.cppm context
+        // (avoids P2996 experimental compiler limitation in select.cppm module)
+        // =====================================================================
+
+        // Extract optional FK column: set nullopt when NULL, otherwise extract inner PK
+        template <std::size_t Index, typename Statement, typename FieldType>
+        __attribute__((always_inline)) static void extract_optional_fk_column(Statement* stmt, T& obj) noexcept {
+            constexpr auto member       = all_members_[Index];
+            using InnerFKType           = utilities::optional_inner_type_t<FieldType>;
+            constexpr auto fk_pk_member = find_fk_primary_key<FieldType>();
+            using PKType                = std::remove_cvref_t<decltype(std::declval<InnerFKType>().[:fk_pk_member:])>;
+            if (stmt->is_null(Index)) {
+                obj.[:member:] = std::nullopt;
             } else {
-                static_assert(
-                        std::is_same_v<FieldType, int> || std::is_same_v<FieldType, std::string>,
-                        "Unsupported field type for column extraction. Supported types: "
-                        "int, int64_t, long, short, unsigned variants, "
-                        "float, double, bool, std::string, "
-                        "std::optional<T>, std::vector<uint8_t>"
-                );
+                InnerFKType fk_inner{};
+                fk_inner.[:fk_pk_member:] = ColumnExtractor::extract_column_value<PKType>(stmt, Index);
+                obj.[:member:]            = std::move(fk_inner);
             }
         }
 
-        // Transaction management utilities
-        template <typename ConnType>
-        [[nodiscard]] static auto begin_transaction(ConnType& conn) noexcept
-                -> std::expected<void, typename ConnType::Error> {
-            return conn.execute("BEGIN TRANSACTION");
-        }
-
-        template <typename ConnType>
-        [[nodiscard]] static auto commit_transaction(ConnType& conn) noexcept
-                -> std::expected<void, typename ConnType::Error> {
-            return conn.execute("COMMIT");
-        }
-
-        template <typename ConnType> static void rollback_transaction(ConnType& conn) noexcept {
-            (void)conn.execute("ROLLBACK");
-        }
-
-        // Utility to determine if transaction should be used
-        template <typename ContainerType> static constexpr bool should_use_transaction(const ContainerType& container) {
-            return container.size() > 1;
-        }
-
-        // Unified statement execution logic for cached/non-cached connections
-        template <typename ConnType, typename PrepareFunc, typename BindExecuteFunc>
-        [[nodiscard]] static auto execute_statement(
-                ConnType& conn, const std::string& sql, PrepareFunc&& prepare_func, BindExecuteFunc&& bind_execute_func
-        ) noexcept -> decltype(bind_execute_func(std::declval<typename ConnType::Statement>())) {
-            // Use cached prepared statement if available
-            if constexpr (requires { conn.prepare_cached(sql); }) {
-                return conn.prepare_cached(sql).and_then(
-                        [bind_execute_func = std::forward<BindExecuteFunc>(bind_execute_func)](
-                                auto* stmt
-                        ) -> decltype(bind_execute_func(std::declval<typename ConnType::Statement>())) {
-                            return bind_execute_func(*stmt);
-                        }
-                );
-            } else {
-                // Fallback to regular prepare
-                return conn.prepare(sql).and_then(
-                        [bind_execute_func = std::forward<BindExecuteFunc>(bind_execute_func)](
-                                typename ConnType::Statement stmt
-                        ) -> decltype(bind_execute_func(std::move(stmt))) { return bind_execute_func(std::move(stmt)); }
-                );
-            }
-        }
-
-        // Unified transaction wrapper for batch operations
-        template <typename ConnType, typename Operation>
-        [[nodiscard]] static auto
-        execute_with_transaction(ConnType& conn, bool use_transaction, Operation&& op) noexcept -> decltype(op()) {
-            if (!use_transaction) {
-                return op();
-            }
-
-            // Begin transaction with monadic composition
-            return begin_transaction(conn).and_then([&op, &conn]() -> decltype(op()) {
-                auto op_result = op();
-                if (!op_result) {
-                    rollback_transaction(conn);
-                    return op_result;
+        // Extract single column into obj at compile-time index
+        // Statement is deduced from stmt pointer; all_members_[Index] is valid here
+        template <std::size_t Index, typename Statement>
+        __attribute__((always_inline)) static void extract_column_fast(Statement* stmt, T& obj) noexcept {
+            if constexpr (Index < field_count_) {
+                constexpr auto member = all_members_[Index];
+                using FieldType       = std::remove_cvref_t<decltype(obj.[:member:])>;
+                if constexpr (is_fk_field(member)) {
+                    if constexpr (utilities::is_optional_v<FieldType>) {
+                        extract_optional_fk_column<Index, Statement, FieldType>(stmt, obj);
+                    } else {
+                        obj.[:member:]              = FieldType{};
+                        constexpr auto fk_pk_member = find_fk_primary_key<FieldType>();
+                        using PKType                = std::remove_cvref_t<decltype(obj.[:member:].[:fk_pk_member:])>;
+                        obj.[:member:].[:fk_pk_member:] = ColumnExtractor::extract_column_value<PKType>(stmt, Index);
+                    }
+                } else if constexpr (storm::meta::has_full_unsigned_attr(member)) {
+                    extract_full_unsigned_into<member, FieldType>(stmt, obj, Index);
+                } else {
+                    obj.[:member:] = ColumnExtractor::extract_column_value<FieldType>(stmt, Index);
                 }
+            }
+        }
 
-                // Commit transaction
-                if (auto commit_result = commit_transaction(conn); !commit_result) {
-                    rollback_transaction(conn);
-                    return std::unexpected(commit_result.error());
+        // Expand index sequence and extract each column
+        template <typename Statement, std::size_t... Is>
+        __attribute__((always_inline)) static void
+        extract_all_columns_impl(Statement* stmt, T& obj, std::index_sequence<Is...> /*unused*/) noexcept {
+            ((extract_column_fast<Is>(stmt, obj)), ...);
+        }
+
+        // Entry point: extract all columns into obj using field_indices_t
+        template <typename Statement>
+        __attribute__((always_inline)) static void extract_all_columns(Statement* stmt, T& obj) noexcept {
+            extract_all_columns_impl(stmt, obj, field_indices_t{});
+        }
+
+        // =====================================================================
+        // SQL CLAUSE HELPERS - Shared across SELECT, DISTINCT, AGGREGATE
+        // =====================================================================
+
+        // LCOV_EXCL_START — PostgreSQL-only; covered by CI PG tests, not local SQLite mock
+        // Helper: Adapt ORDER BY SQL for PostgreSQL NULL ordering semantics
+        // Adds NULLS FIRST after ASC and NULLS LAST after DESC to match SQLite behavior
+        static void adapt_order_by_for_pg(std::string& adapted) {
+            using namespace std::string_view_literals;
+            // Token lengths derived from the literals so the offsets can never drift (ES.45).
+            static constexpr auto kAsc        = " ASC"sv;
+            static constexpr auto kDesc       = " DESC"sv;
+            static constexpr auto kNulls      = " NULLS"sv; // already-adapted guard prefix
+            static constexpr auto kNullsFirst = " NULLS FIRST"sv;
+            static constexpr auto kNullsLast  = " NULLS LAST"sv;
+
+            std::size_t pos = 0;
+            while ((pos = adapted.find(kAsc, pos)) != std::string::npos) {
+                std::size_t const after = pos + kAsc.size();
+                if (adapted.substr(after, kNulls.size()) != kNulls) {
+                    adapted.insert(after, kNullsFirst);
                 }
-
-                return op_result;
-            });
+                pos = after + kNullsFirst.size();
+            }
+            pos = 0;
+            while ((pos = adapted.find(kDesc, pos)) != std::string::npos) {
+                std::size_t const after = pos + kDesc.size();
+                if (adapted.substr(after, kNulls.size()) != kNulls) {
+                    adapted.insert(after, kNullsLast);
+                }
+                pos = after + kNullsLast.size();
+            }
         }
+        // LCOV_EXCL_STOP
 
-        // Generic helper for executing with cached or non-cached statements
-        template <typename ConnType, typename ExecuteFunc>
-        [[nodiscard]] static auto
-        execute_with_statement(ConnType& conn, const std::string& sql, ExecuteFunc&& execute_func) noexcept
-                -> decltype(execute_func(std::declval<typename ConnType::Statement&>())) {
-            // Try cached statement first if available
-            if constexpr (requires { conn.prepare_cached(sql); }) {
-                return conn.prepare_cached(sql).and_then([&execute_func](auto* stmt) { return execute_func(*stmt); });
-            } else {
-                // Fallback to regular prepare
-                return conn.prepare(sql).and_then([&execute_func](typename ConnType::Statement stmt) mutable {
-                    return execute_func(stmt);
-                });
+      public:
+        // ORDER BY / LIMIT / OFFSET appenders are public so the free two-query join
+        // helpers (join.cppm, #398) can assemble Q1/Q2 base clauses for any model.
+
+        // Helper: Append ORDER BY clause to SQL from wrapper
+        // NOTE: ORDER BY must come before LIMIT/OFFSET in SQLite
+        // For PostgreSQL, adds NULLS FIRST/LAST to match SQLite semantics
+        template <typename ConnTypeForDialect = void>
+        __attribute__((always_inline)) static void
+        append_order_by(std::string& sql, const std::optional<OrderByWrapper>& order_by_wrapper) {
+            if (order_by_wrapper.has_value() && !order_by_wrapper->empty()) {
+                const auto& order_sql = order_by_wrapper->get_order_by_sql();
+                if constexpr (requires { ConnTypeForDialect::uses_pg_dialect; }) {
+                    std::string adapted = order_sql; // LCOV_EXCL_LINE — PG-only
+                    adapt_order_by_for_pg(adapted);  // LCOV_EXCL_LINE — PG-only
+                    sql += adapted;                  // LCOV_EXCL_LINE — PG-only
+                } else {
+                    sql += order_sql;
+                }
             }
         }
 
-        // Monadic helper for bind and execute operations
-        template <typename BindResult, typename Statement>
-        [[nodiscard]] static auto bind_and_execute(BindResult bind_result, Statement& stmt) noexcept -> BindResult {
-            return bind_result.and_then([&stmt]() { return stmt.execute(); });
-        }
-
-        // Monadic helper for reset, bind, and execute sequence
-        template <typename Statement, typename BindFunc>
-        [[nodiscard]] static auto reset_bind_and_execute(Statement& stmt, BindFunc&& bind_func) noexcept
-                -> decltype(bind_func(stmt)) {
-            stmt.reset();
-            return bind_func(stmt).and_then([&stmt]() { return stmt.execute(); });
-        }
-
-        // Generic batch execution template for statement classes
-        template <typename StatementType, typename Objects>
-        [[nodiscard]] static auto execute_standard_batch(
-                StatementType& statement_instance, Objects&& objects, size_t variables_per_object
-        ) noexcept -> decltype(statement_instance.execute_individual_batch(objects)) {
-            using ConnType = typename StatementType::Connection;
-            return execute_batch_optimized<ConnType>(
-                    statement_instance.conn_,
-                    objects,
-                    variables_per_object,
-                    [&statement_instance, &objects]() { return statement_instance.execute_bulk(objects); },
-                    [&statement_instance, &objects]() { return statement_instance.execute_individual_batch(objects); }
-            );
-        }
-
-        // Execute batch operations with optimal strategy selection
-        template <typename ConnType, typename ContainerType, typename BulkExecutor, typename IndividualExecutor>
-        [[nodiscard]] static auto execute_batch_optimized(
-                ConnType&            conn,
-                const ContainerType& items,
-                size_t               items_per_variable, // How many variables each item uses
-                BulkExecutor&&       bulk_executor,
-                IndividualExecutor&& individual_executor
-        ) noexcept -> decltype(individual_executor()) {
-            if (items.empty()) {
-                return {};
+        // Helper: Append LIMIT/OFFSET clauses to SQL
+        // NOTE: SQLite requires LIMIT when using OFFSET, so we use LIMIT -1 (meaning unlimited)
+        // PostgreSQL uses LIMIT ALL for unlimited rows
+        template <typename ConnTypeForDialect = void>
+        __attribute__((always_inline)) static void
+        append_limit_offset(std::string& sql, const std::optional<int>& limit, const std::optional<int>& offset) {
+            if (limit.has_value()) {
+                sql += " LIMIT ";
+                sql += std::to_string(limit.value());
+            } else if (offset.has_value()) {
+                // Need LIMIT when using OFFSET
+                if constexpr (requires { ConnTypeForDialect::supports_limit_all; }) {
+                    if constexpr (ConnTypeForDialect::supports_limit_all) {
+                        sql += " LIMIT ALL";
+                    } else {
+                        sql += " LIMIT -1";
+                    }
+                } else {
+                    sql += " LIMIT -1"; // Default: SQLite-compatible
+                }
             }
 
-            // Single item - use individual executor without transaction
-            if (items.size() == 1) {
-                return individual_executor();
+            if (offset.has_value()) {
+                sql += " OFFSET ";
+                sql += std::to_string(offset.value());
             }
+        }
 
-            // Calculate max bulk size based on SQLite variable limit
-            const size_t max_bulk_size       = MAX_SQLITE_VARIABLES / items_per_variable;
-            const size_t effective_threshold = std::min(BATCH_THRESHOLD, max_bulk_size);
-
-            // Small batch - use bulk executor
-            if (items.size() <= effective_threshold) {
-                return bulk_executor();
+      protected:
+        // Helper: Bind WHERE expression parameters to statement
+        // Returns std::expected<void, Error> - resets statement on failure
+        // Helper: bind a WHERE-style expression and convert the result. On
+        // failure, reset the statement and propagate as std::unexpected.
+        // Used by both bind_where_params (starts at param_index = 1) and
+        // bind_having_params (continues from WHERE's last index).
+        template <typename Statement, typename Error>
+        [[nodiscard]] __attribute__((always_inline)) static auto
+        bind_expr_or_reset(Statement* stmt_ptr, const orm::where::ExpressionVariantPtr& expr, int& param_index)
+                -> std::expected<void, Error> {
+            auto bind_result = orm::where::bind_params_direct<Statement, Error>(*expr, stmt_ptr, param_index);
+            if (!bind_result) [[unlikely]] {
+                stmt_ptr->reset();
+                return std::unexpected(bind_result.error());
             }
+            return {};
+        }
 
-            // Large batch - use individual statements with transaction
-            return execute_with_transaction(conn, true, individual_executor);
+        template <typename Statement, typename Error>
+        [[nodiscard]] __attribute__((always_inline)) static auto
+        bind_where_params(Statement* stmt_ptr, const orm::where::ExpressionVariantPtr& where_expr)
+                -> std::expected<void, Error> {
+            int param_index = 1;
+            return bind_expr_or_reset<Statement, Error>(stmt_ptr, where_expr, param_index);
+        }
+
+        // Helper: Bind HAVING expression parameters to statement
+        // param_index continues from WHERE's last index (or starts at 1 if no WHERE)
+        template <typename Statement, typename Error>
+        [[nodiscard]] __attribute__((always_inline)) static auto
+        bind_having_params(Statement* stmt_ptr, const orm::where::ExpressionVariantPtr& having_expr, int& param_index)
+                -> std::expected<void, Error> {
+            return bind_expr_or_reset<Statement, Error>(stmt_ptr, having_expr, param_index);
         }
     };
 

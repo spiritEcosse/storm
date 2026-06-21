@@ -1,0 +1,4 @@
+#!/bin/bash
+# Pre-commit hook: runs all checks via commit.sh
+# Setup: git config core.hooksPath .githooks
+exec ./commit.sh
