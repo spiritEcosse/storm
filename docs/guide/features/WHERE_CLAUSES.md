@@ -64,6 +64,53 @@ auto results = QuerySet<Person>()
 | `<` | `<` | `age < 30` |
 | `<=` | `<=` | `age <= 30` |
 
+### Filterable field types
+
+A field can be **read back** (any [supported field type](../reference/FIELD_TYPES.md)) but
+only a subset is **filterable in a WHERE clause** — the expression system stores operands in a
+closed `std::variant`, so a type needs a variant arm to appear in `where()`. The two sets are
+no longer the same width by accident; this table is the contract (#407).
+
+| Field type | Filterable? | Operators | Notes |
+|---|---|---|---|
+| `int`, `int64_t`, `long`, `long long` | ✅ | all 6, `BETWEEN`, `IN` | |
+| `short`, `unsigned` (`short`/`int`/`long`/…), `char`, `signed`/`unsigned char` | ✅ | all 6, `BETWEEN`, `IN` | Fold to `int` / `int64_t` (like enums) |
+| `double`, `float` | ✅ | all 6, `BETWEEN`, `IN` | |
+| `bool` | ✅ | `==`, `!=` | |
+| `std::string`, `std::string_view` | ✅ | all 6, `BETWEEN`, `IN`, `LIKE`, `COLLATE` | |
+| enum | ✅ | all 6, `IN` | Folds to underlying `int` |
+| `std::chrono::year_month_day` | ✅ | all 6, `BETWEEN`, `IN` | Compared as `"YYYY-MM-DD"` TEXT (lexicographic == chronological) |
+| `std::chrono::system_clock::time_point` | ✅ | all 6, `BETWEEN`, `IN` | Compared as `"YYYY-MM-DD HH:MM:SS"` TEXT |
+| `storm::UUID` | ✅ | `==`, `!=`, `IN` | Equality only — ordering/`BETWEEN` on a UUID is not meaningful |
+| `std::optional<T>` | ✅ | `is_null()`, `is_not_null()`, `== nullopt`, `!= nullopt` | Plus any operator `T` itself supports |
+| `std::chrono::duration` | ❌ | — | Persistable/readable, not yet filterable |
+| `std::filesystem::path` | ❌ | — | Persistable/readable, not yet filterable |
+| BLOB (`std::vector<uint8_t>` / `std::vector<std::byte>`) | ❌ | — | Persistable/readable; byte-blob comparison is not exposed |
+
+Temporal comparisons sort correctly because both serializations are zero-padded and
+lexicographically ordered, so `>`, `<`, and `BETWEEN` on a date/datetime match chronological order.
+
+```cpp
+using std::chrono::year, std::chrono::month, std::chrono::day, std::chrono::year_month_day;
+
+// Datetime range filter
+auto recent = QuerySet<Event>()
+    .where(f<^^Event::created_at>() >= cutoff_time_point)
+    .select().execute();
+
+// Date BETWEEN
+auto q2 = QuerySet<Event>()
+    .where(f<^^Event::on_date>().between(
+        year_month_day{year{2024}, month{4}, day{1}},
+        year_month_day{year{2024}, month{6}, day{30}}))
+    .select().execute();
+
+// UUID equality / IN
+auto byId = QuerySet<Event>()
+    .where(f<^^Event::id>() == storm::UUID{"…"})
+    .select().execute();
+```
+
 ### Operand lifetime
 
 `where()` is deferred — the expression node is built now and the operand is bound only at
