@@ -189,6 +189,9 @@ export namespace storm::orm::where {
                                        ComparisonExpr<float>,
                                        ComparisonExpr<std::string>,
                                        ComparisonExpr<bool>,
+                                       ComparisonExpr<std::chrono::year_month_day>,
+                                       ComparisonExpr<std::chrono::system_clock::time_point>,
+                                       ComparisonExpr<utilities::UUID>,
                                        NullCheckExpr,
                                        LikeExpr,
                                        BetweenExpr<int>,
@@ -196,11 +199,16 @@ export namespace storm::orm::where {
                                        BetweenExpr<double>,
                                        BetweenExpr<float>,
                                        BetweenExpr<std::string>,
+                                       BetweenExpr<std::chrono::year_month_day>,
+                                       BetweenExpr<std::chrono::system_clock::time_point>,
                                        InExpression<int>,
                                        InExpression<std::int64_t>,
                                        InExpression<double>,
                                        InExpression<float>,
                                        InExpression<std::string>,
+                                       InExpression<std::chrono::year_month_day>,
+                                       InExpression<std::chrono::system_clock::time_point>,
+                                       InExpression<utilities::UUID>,
                                        LogicalExpr> {
         // Inherit constructors from variant
         using variant::variant;
@@ -317,11 +325,17 @@ export namespace storm::orm::where {
     // Normalize a comparison operand to the type actually stored in ExpressionVariant.
     // The expression node can outlive the operand's source buffer (where() is deferred, #352),
     // so text operands (string_view / const char* / char arrays) are copied into an owning
-    // std::string. Enum operands are stored as their underlying int. Everything else is decayed.
+    // std::string. Enum operands are stored as their underlying int. Narrow / unsigned integer
+    // operands fold to the int / int64_t variant arm (no dedicated arm per source type — #407),
+    // mirroring the enum fold. bool keeps its own arm. Everything else is decayed.
     template <typename V> auto normalize_operand(V&& value) {
         using D = std::decay_t<V>;
         if constexpr (std::is_enum_v<D>) {
             return static_cast<int>(static_cast<std::underlying_type_t<D>>(value));
+        } else if constexpr (!std::is_same_v<D, bool> && utilities::is_int64_source_v<D>) {
+            return static_cast<std::int64_t>(value);
+        } else if constexpr (!std::is_same_v<D, bool> && utilities::is_int_source_v<D>) {
+            return static_cast<int>(value);
         } else if constexpr (std::is_convertible_v<D, std::string_view> && !std::is_same_v<D, std::string>) {
             return std::string(std::string_view(std::forward<V>(value)));
         } else {
@@ -446,28 +460,19 @@ export namespace storm::orm::where {
 
         // IN: Returns Expr wrapping VARIANT (no heap allocation for expression itself!)
         // Usage: f<^^Person::id>().in(100, 200, 300)
-        // For enum types, converts to underlying int automatically
+        // Each value is constructed to FieldType, then routed through normalize_operand so the
+        // stored element type matches the variant arm — enums/narrow ints fold to int/int64_t,
+        // text to std::string, temporal/UUID keep their own arm (#407, same rules as comparisons).
         template <typename... Values>
             requires(std::constructible_from<FieldType, Values> && ...)
         auto in(Values&&... values) const {
-            if constexpr (std::is_enum_v<FieldType>) {
-                using StoredType = int;
-                return Expr(
-                        std::make_shared<ExpressionVariant>(InExpression<StoredType>{
-                                .field_name_ = std::string(field_name_sv),
-                                .values_     = {static_cast<StoredType>(static_cast<std::underlying_type_t<FieldType>>(
-                                        FieldType{std::forward<Values>(values)}
-                                ))...}
-                        })
-                );
-            } else {
-                return Expr(
-                        std::make_shared<ExpressionVariant>(InExpression<FieldType>{
-                                .field_name_ = std::string(field_name_sv),
-                                .values_     = {FieldType{std::forward<Values>(values)}...}
-                        })
-                );
-            }
+            using StoredType = decltype(normalize_operand(std::declval<FieldType>()));
+            return Expr(
+                    std::make_shared<ExpressionVariant>(InExpression<StoredType>{
+                            .field_name_ = std::string(field_name_sv),
+                            .values_     = {normalize_operand(FieldType{std::forward<Values>(values)})...}
+                    })
+            );
         }
 
         // Comparison operators — enum values are auto-converted to underlying int

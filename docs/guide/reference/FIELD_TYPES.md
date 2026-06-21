@@ -255,6 +255,17 @@ struct Student {
 - **Junction DDL** is auto-generated for the `many_to_many<>` form (see
   [JOIN_OPERATIONS.md](../features/JOIN_OPERATIONS.md#many-to-many-joins-203)).
 
+## Persistable vs. Filterable
+
+Every type on this page is **persistable and readable** — you can `INSERT` it and `SELECT`
+it back. A **narrower** set is **filterable in a WHERE clause** (`f<^^T::field>() == …`,
+`.between(…)`, `.in(…)`): the expression system stores operands in a closed variant, so a
+type must have a variant arm to be filtered on (#407). Temporal types
+(`year_month_day`, `system_clock::time_point`) and `storm::UUID` are both persistable **and**
+filterable; `std::chrono::duration`, `std::filesystem::path`, and BLOB are persistable but
+**not** filterable. See the full filterability table in
+[WHERE_CLAUSES.md → Filterable field types](../features/WHERE_CLAUSES.md#filterable-field-types).
+
 ## Type Dispatch Implementation
 
 The binding uses compile-time `if constexpr` type dispatch to select the appropriate SQLite binding function with **zero runtime overhead**.
