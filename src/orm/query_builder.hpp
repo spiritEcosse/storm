@@ -370,8 +370,9 @@ namespace storm::orm::query_builder {
             static constexpr int OVERLAP_LEFT  = 55;
             static constexpr int OVERLAP_RIGHT = 35;
             static constexpr int SPLIT_BOUND   = 45;
-            int                  left, right;
-            bool                 overlap;
+            int                  left          = 0;
+            int                  right         = 0;
+            bool                 overlap       = false;
         };
         static consteval auto setop_thresholds() -> SetOpThresholds {
             constexpr std::string_view type    = spec.setop.type.view();

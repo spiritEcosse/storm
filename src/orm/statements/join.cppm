@@ -41,12 +41,12 @@ export namespace storm::orm::statements {
     // pk→entity map; append_related_q2_fn fills the entity's container;
     // container_empty_fn + is_left drive the per-relation INNER drop.
     struct M2MRelation {
-        M2MClauseSqlFn build_q2_sql_fn;
-        auto (*extract_q2_owner_pk_fn)(ErasedStatementPtr) -> std::int64_t;
-        auto (*append_related_q2_fn)(ErasedStatementPtr, ErasedObjectPtr) -> void;
-        auto (*container_empty_fn)(ErasedObjectPtr) -> bool;
+        M2MClauseSqlFn build_q2_sql_fn                                            = nullptr;
+        auto (*extract_q2_owner_pk_fn)(ErasedStatementPtr) -> std::int64_t        = nullptr;
+        auto (*append_related_q2_fn)(ErasedStatementPtr, ErasedObjectPtr) -> void = nullptr;
+        auto (*container_empty_fn)(ErasedObjectPtr) -> bool                       = nullptr;
         // LEFT keeps zero-relation entities; INNER drops them after the stitch.
-        bool is_left;
+        bool is_left = false;
     };
 
     struct JoinStatementWrapper {
@@ -74,6 +74,9 @@ export namespace storm::orm::statements {
         }
 
         auto extract_row(ErasedStatementPtr stmt, ErasedObjectPtr obj) const -> void {
+            // FK-join invariant: extract_row is never called on an m2m wrapper, whose
+            // extract_row_fn stays nullptr (the two-query path uses extract_all_columns).
+            assert(extract_row_fn != nullptr);
             extract_row_fn(stmt, obj);
         }
     };

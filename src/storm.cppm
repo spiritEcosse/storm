@@ -132,12 +132,12 @@ export namespace storm {
 
     // Returns the compile-time generated CREATE TABLE SQL for model T and dialect D.
     template <typename T, orm::schema::Dialect D = orm::schema::Dialect::SQLite>
-    auto create_table_sql() -> const std::string& {
+    [[nodiscard]] auto create_table_sql() -> const std::string& {
         return orm::schema::SchemaStatement<T>::template create_table_sql<D>();
     }
 
     // Returns the pre-computed CREATE INDEX SQL statements for model T.
-    template <typename T> auto create_index_sql() -> const std::vector<std::string>& {
+    template <typename T> [[nodiscard]] auto create_index_sql() -> const std::vector<std::string>& {
         return orm::schema::SchemaStatement<T>::create_index_sql();
     }
 } // namespace storm
