@@ -237,20 +237,20 @@ export namespace storm::orm::statements {
             , having_expr_(std::move(p.having_expr)) {}
 
         // HAVING clause - only available when GROUP BY is present
-        auto having(orm::where::ExpressionVariantPtr expr)
+        [[nodiscard]] auto having(orm::where::ExpressionVariantPtr expr)
             requires HasGroupBy
         {
             return AggregateStatement<T, ConnType, GroupFields, Ops...>{make_params(std::move(expr))};
         }
 
         // Chaining methods (only for non-GROUP BY queries building aggregates)
-        template <std::meta::info... FieldInfos> auto sum() {
+        template <std::meta::info... FieldInfos> [[nodiscard]] auto sum() {
             return AggregateStatement<T, ConnType, GroupFields, Ops..., AggregateOp<AggregateType::SUM, FieldInfos...>>{
                     make_params()
             };
         }
 
-        template <std::meta::info... FieldInfos> auto count() {
+        template <std::meta::info... FieldInfos> [[nodiscard]] auto count() {
             return AggregateStatement<
                     T,
                     ConnType,
@@ -259,19 +259,19 @@ export namespace storm::orm::statements {
                     AggregateOp<AggregateType::COUNT, FieldInfos...>>{make_params()};
         }
 
-        template <std::meta::info... FieldInfos> auto avg() {
+        template <std::meta::info... FieldInfos> [[nodiscard]] auto avg() {
             return AggregateStatement<T, ConnType, GroupFields, Ops..., AggregateOp<AggregateType::AVG, FieldInfos...>>{
                     make_params()
             };
         }
 
-        template <std::meta::info... FieldInfos> auto min() {
+        template <std::meta::info... FieldInfos> [[nodiscard]] auto min() {
             return AggregateStatement<T, ConnType, GroupFields, Ops..., AggregateOp<AggregateType::MIN, FieldInfos...>>{
                     make_params()
             };
         }
 
-        template <std::meta::info... FieldInfos> auto max() {
+        template <std::meta::info... FieldInfos> [[nodiscard]] auto max() {
             return AggregateStatement<T, ConnType, GroupFields, Ops..., AggregateOp<AggregateType::MAX, FieldInfos...>>{
                     make_params()
             };
@@ -672,35 +672,35 @@ export namespace storm::orm::statements {
         explicit GroupByBuilder(AggregateParams<ConnType> p) : params_(std::move(p)) {}
 
         // HAVING clause - stores expression and returns new GroupByBuilder
-        auto having(orm::where::ExpressionVariantPtr expr) {
+        [[nodiscard]] auto having(orm::where::ExpressionVariantPtr expr) {
             auto p        = params_;
             p.having_expr = std::move(expr);
             return GroupByBuilder<T, ConnType, GroupFieldInfos...>{std::move(p)};
         }
 
-        template <std::meta::info... FieldInfos> auto count() {
+        template <std::meta::info... FieldInfos> [[nodiscard]] auto count() {
             return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::COUNT, FieldInfos...>>{params_};
         }
 
-        template <std::meta::info... FieldInfos> auto count_distinct() {
+        template <std::meta::info... FieldInfos> [[nodiscard]] auto count_distinct() {
             return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::COUNT_DISTINCT, FieldInfos...>>{
                     params_
             };
         }
 
-        template <std::meta::info... FieldInfos> auto sum() {
+        template <std::meta::info... FieldInfos> [[nodiscard]] auto sum() {
             return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::SUM, FieldInfos...>>{params_};
         }
 
-        template <std::meta::info... FieldInfos> auto avg() {
+        template <std::meta::info... FieldInfos> [[nodiscard]] auto avg() {
             return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::AVG, FieldInfos...>>{params_};
         }
 
-        template <std::meta::info... FieldInfos> auto min() {
+        template <std::meta::info... FieldInfos> [[nodiscard]] auto min() {
             return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::MIN, FieldInfos...>>{params_};
         }
 
-        template <std::meta::info... FieldInfos> auto max() {
+        template <std::meta::info... FieldInfos> [[nodiscard]] auto max() {
             return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::MAX, FieldInfos...>>{params_};
         }
 

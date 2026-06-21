@@ -164,7 +164,7 @@ export namespace storm::orm::statements {
       public:
         explicit UpdateStatement(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
-        auto query(const T& obj [[clang::lifetimebound]]) -> detail::SingleQuery<T, ConnType> {
+        [[nodiscard]] auto query(const T& obj [[clang::lifetimebound]]) -> detail::SingleQuery<T, ConnType> {
             return {{}, std::move(*this), obj};
         }
         // LIFETIME CONTRACT (issue #357, finding B): the returned BulkQuery holds a
@@ -173,20 +173,23 @@ export namespace storm::orm::statements {
         // container that dies before .execute()/.to_sql() runs still dangles silently at
         // runtime. Treat the proxy as single-expression-use: keep the backing container
         // alive until the terminal call completes.
-        auto query(std::span<const T> objects [[clang::lifetimebound]]) -> detail::BulkQuery<T, ConnType> {
+        [[nodiscard]] auto query(std::span<const T> objects [[clang::lifetimebound]])
+                -> detail::BulkQuery<T, ConnType> {
             return {{}, std::move(*this), objects};
         }
 
         template <std::meta::info... Members>
             requires(sizeof...(Members) > 0 && (Grammar::template is_settable_member<Members>() && ...))
-        auto query_where(const T& proto [[clang::lifetimebound]], orm::where::ExpressionVariantPtr where_expr)
+        [[nodiscard]] auto
+        query_where(const T& proto [[clang::lifetimebound]], orm::where::ExpressionVariantPtr where_expr)
                 -> detail::ConditionalUpdateQuery<T, ConnType, Members...> {
             return {std::move(*this), proto, std::move(where_expr)};
         }
 
         template <std::meta::info... Members>
             requires(sizeof...(Members) > 0 && (Grammar::template is_settable_member<Members>() && ...))
-        auto query_all(const T& proto [[clang::lifetimebound]]) -> detail::UpdateAllQuery<T, ConnType, Members...> {
+        [[nodiscard]] auto query_all(const T& proto [[clang::lifetimebound]])
+                -> detail::UpdateAllQuery<T, ConnType, Members...> {
             return {std::move(*this), proto};
         }
 

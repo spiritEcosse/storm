@@ -48,23 +48,23 @@ export namespace storm::orm::statements {
         }
 
         // clang-format off
-        template <typename U> requires std::same_as<U, T> auto union_    (SetOpOperand<U> operand) -> SetOpBuilder&& { return add_operand(std::move(operand), SetOpType::Union);     }
-        template <typename U> requires std::same_as<U, T> auto union_all (SetOpOperand<U> operand) -> SetOpBuilder&& { return add_operand(std::move(operand), SetOpType::UnionAll);  }
-        template <typename U> requires std::same_as<U, T> auto except_   (SetOpOperand<U> operand) -> SetOpBuilder&& { return add_operand(std::move(operand), SetOpType::Except);    }
-        template <typename U> requires std::same_as<U, T> auto intersect_(SetOpOperand<U> operand) -> SetOpBuilder&& { return add_operand(std::move(operand), SetOpType::Intersect); }
+        template <typename U> requires std::same_as<U, T> [[nodiscard]] auto union_    (SetOpOperand<U> operand) -> SetOpBuilder&& { return add_operand(std::move(operand), SetOpType::Union);     }
+        template <typename U> requires std::same_as<U, T> [[nodiscard]] auto union_all (SetOpOperand<U> operand) -> SetOpBuilder&& { return add_operand(std::move(operand), SetOpType::UnionAll);  }
+        template <typename U> requires std::same_as<U, T> [[nodiscard]] auto except_   (SetOpOperand<U> operand) -> SetOpBuilder&& { return add_operand(std::move(operand), SetOpType::Except);    }
+        template <typename U> requires std::same_as<U, T> [[nodiscard]] auto intersect_(SetOpOperand<U> operand) -> SetOpBuilder&& { return add_operand(std::move(operand), SetOpType::Intersect); }
         // clang-format on
 
-        template <auto... Args> auto order_by() -> SetOpBuilder&& {
+        template <auto... Args> [[nodiscard]] auto order_by() -> SetOpBuilder&& {
             order_by_wrapper_ = make_order_by_wrapper<Args...>();
             return std::move(*this);
         }
 
-        auto limit(int n) -> SetOpBuilder&& {
+        [[nodiscard]] auto limit(int n) -> SetOpBuilder&& {
             limit_value_ = n;
             return std::move(*this);
         }
 
-        auto offset(int n) -> SetOpBuilder&& {
+        [[nodiscard]] auto offset(int n) -> SetOpBuilder&& {
             offset_value_ = n;
             return std::move(*this);
         }

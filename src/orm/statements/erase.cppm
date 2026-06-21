@@ -233,7 +233,7 @@ export namespace storm::orm::statements {
             }
         };
 
-        auto query(const T& obj [[clang::lifetimebound]]) -> SingleQuery {
+        [[nodiscard]] auto query(const T& obj [[clang::lifetimebound]]) -> SingleQuery {
             return {std::move(*this), obj};
         }
         // LIFETIME CONTRACT (issue #357, finding B): the returned BulkQuery holds a
@@ -242,13 +242,13 @@ export namespace storm::orm::statements {
         // container that dies before .execute()/.to_sql() runs still dangles silently at
         // runtime. Treat the proxy as single-expression-use: keep the backing container
         // alive until the terminal call completes.
-        auto query(std::span<const T> objects [[clang::lifetimebound]]) -> BulkQuery {
+        [[nodiscard]] auto query(std::span<const T> objects [[clang::lifetimebound]]) -> BulkQuery {
             return {std::move(*this), objects};
         }
-        auto query_all() -> DeleteAllQuery {
+        [[nodiscard]] auto query_all() -> DeleteAllQuery {
             return {std::move(*this)};
         }
-        auto query_where(orm::where::ExpressionVariantPtr where_expr) -> ConditionalDeleteQuery {
+        [[nodiscard]] auto query_where(orm::where::ExpressionVariantPtr where_expr) -> ConditionalDeleteQuery {
             return {std::move(*this), std::move(where_expr)};
         }
 

@@ -283,7 +283,7 @@ export namespace storm::orm::statements {
             }
         };
 
-        template <ReturnId R = ReturnId::Yes> auto query(const T& obj [[clang::lifetimebound]]) {
+        template <ReturnId R = ReturnId::Yes> [[nodiscard]] auto query(const T& obj [[clang::lifetimebound]]) {
             if constexpr (R == ReturnId::Yes) {
                 return SingleQuery{std::move(*this), obj};
             } else {
@@ -297,13 +297,13 @@ export namespace storm::orm::statements {
         // dangles silently at runtime. Treat the proxy as single-expression-use: keep the
         // backing container alive until the terminal call completes. Same for the
         // ReturnId-templated overload below.
-        auto
+        [[nodiscard]] auto
         query(std::span<const T> objects [[clang::lifetimebound]], std::optional<InsertOptions> opts = std::nullopt)
                 -> BulkQuery {
             return {std::move(*this), objects, opts};
         }
         template <ReturnId R>
-        auto
+        [[nodiscard]] auto
         query(std::span<const T> objects [[clang::lifetimebound]], std::optional<InsertOptions> opts = std::nullopt) {
             if constexpr (R == ReturnId::Yes) {
                 return BulkReturningQuery{std::move(*this), objects, opts};
