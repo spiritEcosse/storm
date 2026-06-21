@@ -450,10 +450,13 @@ export namespace storm::orm::statements {
             return val == indexed || val == unique;
         }
 
-        // Get database column name for FK field: User sender → "sender_id"
+        // Get database column name for FK field: User sender → "sender_id".
+        // Routes through the canonical column-name writer (#422) so the "_id" suffix
+        // stays single-sourced (consteval — std::format is not constant-evaluated).
         static consteval auto get_fk_column_name(std::meta::info member) -> std::string {
-            const std::string field_name(std::meta::identifier_of(member));
-            return field_name + "_id";
+            std::string name;
+            meta::append_column_name(name, member);
+            return name;
         }
 
       public:
@@ -855,21 +858,29 @@ export namespace storm::orm::statements {
         // Helper: Adapt ORDER BY SQL for PostgreSQL NULL ordering semantics
         // Adds NULLS FIRST after ASC and NULLS LAST after DESC to match SQLite behavior
         static void adapt_order_by_for_pg(std::string& adapted) {
+            using namespace std::string_view_literals;
+            // Token lengths derived from the literals so the offsets can never drift (ES.45).
+            static constexpr auto kAsc        = " ASC"sv;
+            static constexpr auto kDesc       = " DESC"sv;
+            static constexpr auto kNulls      = " NULLS"sv; // already-adapted guard prefix
+            static constexpr auto kNullsFirst = " NULLS FIRST"sv;
+            static constexpr auto kNullsLast  = " NULLS LAST"sv;
+
             std::size_t pos = 0;
-            while ((pos = adapted.find(" ASC", pos)) != std::string::npos) {
-                std::size_t const after = pos + 4;
-                if (adapted.substr(after, 6) != " NULLS") {
-                    adapted.insert(after, " NULLS FIRST");
+            while ((pos = adapted.find(kAsc, pos)) != std::string::npos) {
+                std::size_t const after = pos + kAsc.size();
+                if (adapted.substr(after, kNulls.size()) != kNulls) {
+                    adapted.insert(after, kNullsFirst);
                 }
-                pos = after + 12;
+                pos = after + kNullsFirst.size();
             }
             pos = 0;
-            while ((pos = adapted.find(" DESC", pos)) != std::string::npos) {
-                std::size_t const after = pos + 5;
-                if (adapted.substr(after, 6) != " NULLS") {
-                    adapted.insert(after, " NULLS LAST");
+            while ((pos = adapted.find(kDesc, pos)) != std::string::npos) {
+                std::size_t const after = pos + kDesc.size();
+                if (adapted.substr(after, kNulls.size()) != kNulls) {
+                    adapted.insert(after, kNullsLast);
                 }
-                pos = after + 11;
+                pos = after + kNullsLast.size();
             }
         }
         // LCOV_EXCL_STOP

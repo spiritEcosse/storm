@@ -108,9 +108,10 @@ export namespace storm::db::postgresql {
         template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto bind_int64(int index, std::int64_t value) noexcept
                 -> std::expected<void, Error> {
-            std::array<char, 22> buf{}; // max int64: 20 digits + sign + null
-            std::snprintf(buf.data(), buf.size(), "%lld", static_cast<long long>(value));
-            return bind_text_value(index, std::string_view{buf.data()});
+            std::array<char, 20> buf{}; // max int64: 19 digits + sign (no null needed)
+            // to_chars never fails for an int64 into a 20-byte buffer; ptr marks the end.
+            const char* ptr = std::to_chars(buf.data(), buf.data() + buf.size(), value).ptr;
+            return bind_text_value(index, std::string_view{buf.data(), ptr});
         }
 
         template <typename = void>

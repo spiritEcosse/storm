@@ -363,7 +363,9 @@ export namespace storm::orm::where {
         auto stored_max = normalize_operand(std::forward<V>(max_val));
         return Expr(
                 std::make_shared<ExpressionVariant>(BetweenExpr<decltype(stored_min)>{
-                        .field_name_ = field_name, .min_val_ = std::move(stored_min), .max_val_ = std::move(stored_max)
+                        .field_name_ = std::move(field_name),
+                        .min_val_    = std::move(stored_min),
+                        .max_val_    = std::move(stored_max)
                 })
         );
     }

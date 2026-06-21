@@ -149,9 +149,11 @@ export namespace storm::orm::utilities {
         explicit UUID(std::string_view v) : value(v) {}
 
         auto operator==(const UUID&) const -> bool = default;
-             operator std::string_view() const noexcept {
+        // Intentionally IMPLICIT (C.164, #454): is_text_source_v routes UUID to the
+        // text-bind path via is_convertible_v<UUID, string_view>; explicit breaks it.
+        operator std::string_view() const noexcept {
             return value;
-        }
+        } // NOLINT(google-explicit-constructor)
 
         // Validate UUID using stduuid library (checks RFC 4122 compliance)
         [[nodiscard]] static auto is_valid(std::string_view sv) -> bool {
@@ -533,10 +535,12 @@ export namespace storm::orm::utilities {
         }
         // LCOV_EXCL_STOP
 
-        // Runtime conversion to std::string
+        // Runtime conversion to std::string. Intentionally IMPLICIT (C.164 reviewed,
+        // #454): the INSERT/SQL builders rely on `std::string += ConstexprString` and
+        // pass these buffers where a std::string is expected; explicit breaks the build.
         operator std::string() const {
             return std::string(data.data(), len);
-        }
+        } // NOLINT(google-explicit-constructor)
     };
 
     // Generic thread-local SQL cache template
