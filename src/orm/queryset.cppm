@@ -56,12 +56,12 @@ export namespace storm {
         // LCOV_EXCL_STOP
 
         // Erase single object - returns proxy with .execute() and .to_sql()
-        auto erase(const T& obj [[clang::lifetimebound]]) {
+        [[nodiscard]] auto erase(const T& obj [[clang::lifetimebound]]) {
             return orm::statements::EraseStatement<T, ConnType>(conn_).query(obj);
         }
 
         // Bulk erase - returns proxy with .execute() and .to_sql()
-        auto erase(std::span<const T> objects [[clang::lifetimebound]]) {
+        [[nodiscard]] auto erase(std::span<const T> objects [[clang::lifetimebound]]) {
             return orm::statements::EraseStatement<T, ConnType>(conn_).query(objects);
         }
 
@@ -84,20 +84,20 @@ export namespace storm {
         // (SFINAE: only accept T, not span/container)
         template <orm::statements::ReturnId R = orm::statements::ReturnId::Yes, typename U = T>
             requires std::same_as<std::remove_cvref_t<U>, T>
-        auto insert(const U& obj [[clang::lifetimebound]]) {
+        [[nodiscard]] auto insert(const U& obj [[clang::lifetimebound]]) {
             return orm::statements::InsertStatement<T, ConnType>(conn_).template query<R>(obj);
         }
 
         // Bulk insert - returns proxy with .execute() and .to_sql()
         // Default (no template arg): .execute() returns std::expected<void, Error>
         // ReturnId::Yes: .execute() returns std::expected<std::vector<int64_t>, Error>
-        auto
+        [[nodiscard]] auto
         insert(std::span<const T>                            objects [[clang::lifetimebound]],
                std::optional<orm::statements::InsertOptions> opts = std::nullopt) {
             return orm::statements::InsertStatement<T, ConnType>(conn_).query(objects, opts);
         }
         template <orm::statements::ReturnId R>
-        auto
+        [[nodiscard]] auto
         insert(std::span<const T>                            objects [[clang::lifetimebound]],
                std::optional<orm::statements::InsertOptions> opts = std::nullopt) {
             return orm::statements::InsertStatement<T, ConnType>(conn_).template query<R>(objects, opts);
@@ -214,7 +214,7 @@ export namespace storm {
         // OPTIMIZATION: Returns cached DistinctStatement for optimal performance
         // Returns DistinctStatement by value - connection-level prepare_cached() handles SQL caching
         // No static thread_local needed since actual statement caching is at connection level
-        template <std::meta::info... FieldInfos> constexpr auto distinct() {
+        template <std::meta::info... FieldInfos> [[nodiscard]] constexpr auto distinct() {
             if constexpr (sizeof...(FieldInfos) == 0) {
                 using StmtType = orm::statements::
                         DistinctStatement<T, ConnType, orm::statements::BaseStatement<T>::primary_key_>;
@@ -235,7 +235,7 @@ export namespace storm {
         // including duplicates. Works with WHERE, JOIN, ORDER BY, LIMIT/OFFSET.
         template <std::meta::info... FieldInfos>
             requires(sizeof...(FieldInfos) > 0)
-        constexpr auto values() {
+        [[nodiscard]] constexpr auto values() {
             using StmtType = orm::statements::ValuesStatement<T, ConnType, FieldInfos...>;
             return StmtType{conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_};
         }
@@ -273,12 +273,12 @@ export namespace storm {
         // (SFINAE: only accept T, not span/container)
         template <typename U = T>
             requires std::same_as<std::remove_cvref_t<U>, T>
-        auto update(const U& obj [[clang::lifetimebound]]) {
+        [[nodiscard]] auto update(const U& obj [[clang::lifetimebound]]) {
             return orm::statements::UpdateStatement<T, ConnType>(conn_).query(obj);
         }
 
         // Bulk update - returns proxy with .execute() and .to_sql()
-        auto update(std::span<const T> objects [[clang::lifetimebound]]) {
+        [[nodiscard]] auto update(std::span<const T> objects [[clang::lifetimebound]]) {
             return orm::statements::UpdateStatement<T, ConnType>(conn_).query(objects);
         }
 
@@ -325,7 +325,7 @@ export namespace storm {
         //   qs.where(age > 25).group_by<^^Person::years_exp>().count().execute()
         template <std::meta::info... GroupFieldInfos>
             requires(sizeof...(GroupFieldInfos) > 0)
-        auto group_by() {
+        [[nodiscard]] auto group_by() {
             return orm::statements::GroupByBuilder<T, ConnType, GroupFieldInfos...>{
                     {conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_, nullptr}
             };
@@ -335,28 +335,28 @@ export namespace storm {
         // =====================================================================
 
         template <bool F_ = Finalized_>
-        auto union_(const QuerySet<T, ConnType, false>& other)
+        [[nodiscard]] auto union_(const QuerySet<T, ConnType, false>& other)
             requires(!F_)
         {
             return make_setop_builder(other, orm::statements::SetOpType::Union);
         }
 
         template <bool F_ = Finalized_>
-        auto union_all(const QuerySet<T, ConnType, false>& other)
+        [[nodiscard]] auto union_all(const QuerySet<T, ConnType, false>& other)
             requires(!F_)
         {
             return make_setop_builder(other, orm::statements::SetOpType::UnionAll);
         }
 
         template <bool F_ = Finalized_>
-        auto except_(const QuerySet<T, ConnType, false>& other)
+        [[nodiscard]] auto except_(const QuerySet<T, ConnType, false>& other)
             requires(!F_)
         {
             return make_setop_builder(other, orm::statements::SetOpType::Except);
         }
 
         template <bool F_ = Finalized_>
-        auto intersect_(const QuerySet<T, ConnType, false>& other)
+        [[nodiscard]] auto intersect_(const QuerySet<T, ConnType, false>& other)
             requires(!F_)
         {
             return make_setop_builder(other, orm::statements::SetOpType::Intersect);
@@ -381,7 +381,7 @@ export namespace storm {
         //        queryset.where(age > 30).sum<^^Person::age>().execute()
         //        queryset.join<FK>().sum<^^Person::salary>().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
-        template <std::meta::info... FieldInfos> auto sum() {
+        template <std::meta::info... FieldInfos> [[nodiscard]] auto sum() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
@@ -396,7 +396,7 @@ export namespace storm {
         //        queryset.where(age > 30).count().execute()
         //        queryset.join<FK>().count().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
-        template <std::meta::info... FieldInfos> auto count() {
+        template <std::meta::info... FieldInfos> [[nodiscard]] auto count() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
@@ -410,7 +410,7 @@ export namespace storm {
         // Usage: queryset.avg<^^Person::salary>().execute()
         //        queryset.where(department == "Engineering").avg<^^Person::salary>().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
-        template <std::meta::info... FieldInfos> auto avg() {
+        template <std::meta::info... FieldInfos> [[nodiscard]] auto avg() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
@@ -424,7 +424,7 @@ export namespace storm {
         // Usage: queryset.min<^^Person::age>().execute()
         //        queryset.where(active == true).min<^^Person::age>().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
-        template <std::meta::info... FieldInfos> auto min() {
+        template <std::meta::info... FieldInfos> [[nodiscard]] auto min() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
@@ -438,7 +438,7 @@ export namespace storm {
         // Usage: queryset.max<^^Person::age>().execute()
         //        queryset.where(department == "Sales").max<^^Person::salary>().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
-        template <std::meta::info... FieldInfos> auto max() {
+        template <std::meta::info... FieldInfos> [[nodiscard]] auto max() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
@@ -452,7 +452,7 @@ export namespace storm {
         // Usage: queryset.count_distinct<^^Person::age>().execute()
         //        queryset.where(active == true).count_distinct<^^Person::department>().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
-        template <std::meta::info FieldInfo> auto count_distinct() {
+        template <std::meta::info FieldInfo> [[nodiscard]] auto count_distinct() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
