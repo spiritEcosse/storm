@@ -1,0 +1,2537 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="C++26 ORM with compile-time reflection for SQLite">
+      
+      
+      
+        <link rel="canonical" href="https://spiritecosse.github.io/storm/superpowers/plans/2026-06-20-docs-restructure/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Documentation Restructure Implementation Plan (Part B) - Storm ORM</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#documentation-restructure-implementation-plan-part-b" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="Storm ORM" class="md-header__button md-logo" aria-label="Storm ORM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Storm ORM
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Documentation Restructure Implementation Plan (Part B)
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/spiritEcosse/storm" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    spiritEcosse/storm
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="Storm ORM" class="md-nav__button md-logo" aria-label="Storm ORM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Storm ORM
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/spiritEcosse/storm" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    spiritEcosse/storm
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/COOKBOOK/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cookbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Features
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/features/CRUD_OPERATIONS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CRUD Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/features/SELECT_QUERIES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SELECT Queries
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/features/WHERE_CLAUSES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WHERE Clauses
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/features/JOIN_OPERATIONS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JOIN Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/features/BATCH_OPERATIONS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Batch Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/features/REFERENTIAL_INTEGRITY/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Referential Integrity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/features/CONNECTION_TUNING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Connection Tuning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/reference/FIELD_TYPES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Field Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/reference/MIGRATIONS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Migrations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internals
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Internals
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_1" id="__nav_3_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/architecture/OVERVIEW/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/architecture/DESIGN_DECISIONS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Decisions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/architecture/REFLECTION/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reflection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/architecture/SQL_GENERATION/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SQL Generation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/architecture/MODULE_SYSTEM/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/architecture/STATEMENT_CACHING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Statement Caching
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/architecture/COMPILE_TIME_VS_RUNTIME/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compile-Time vs Runtime
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_2" id="__nav_3_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Building
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Building
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/building/GETTING_STARTED/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/building/COMMON_TASKS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Common Tasks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/building/ADDING_FEATURES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/building/PRE_COMMIT/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pre-Commit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/building/FORMATTING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Formatting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_3" id="__nav_3_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Testing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/testing/TESTING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/testing/CODE_COVERAGE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Coverage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/testing/SANITIZERS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sanitizers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/testing/FUZZING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fuzzing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/testing/MSAN_LIBC_FIX/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MSAN libc Fix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_4" id="__nav_3_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Performance
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/performance/PERFORMANCE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/performance/BENCHMARK_DASHBOARD/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmark Dashboard
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/performance/JOIN_ANALYSIS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JOIN Analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/performance/DISTINCT_ANALYSIS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DISTINCT Analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_5" id="__nav_3_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compiler
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Compiler
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/compiler/COMPILER_ISSUES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compiler Issues
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/compiler/COMPILER_ATTRIBUTES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compiler Attributes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/compiler/CPP26_CODING_STANDARDS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C++26 Coding Standards
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/compiler/CODE_QUALITY/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Quality
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Archive
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Archive
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../archive/SELECT_OPTIMIZATION_REPORT/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SELECT Optimization Report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../archive/SELECT_PERFORMANCE_ANALYSIS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SELECT Performance Analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../archive/UPDATE_OPTIMIZATION_REPORT/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UPDATE Optimization Report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#global-constraints" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Global Constraints
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#target-structure-reference-for-all-tasks" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Target structure (reference for all tasks)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Target structure (reference for all tasks)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-1-move-all-files-with-git-mv-no-link-edits-yet" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 1: Move all files with git mv (no link edits yet)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-2-merge-the-3-performance-docs-into-one-performancemd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 2: Merge the 3 performance docs into one PERFORMANCE.md
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-3-fix-all-internal-cross-links-inside-docs-relative-path-recompute" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 3: Fix all internal cross-links inside docs/ (relative path recompute)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-4-rewrite-docsreadmemd-as-the-new-index" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 4: Rewrite docs/README.md as the new index
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-5-rewrite-mkdocsyml-nav" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 5: Rewrite mkdocs.yml nav
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-6-update-external-references-claudemd-benchmarksreadmemd" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 6: Update external references (CLAUDE.md, benchmarks/README.md)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-7-final-verification-mkdocs-strict-build-part-a-re-audit" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 7: Final verification — mkdocs strict build + Part A re-audit
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#post-plan-push-pr-merge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Post-plan: push, PR, merge
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="documentation-restructure-implementation-plan-part-b">Documentation Restructure Implementation Plan (Part B)<a class="headerlink" href="#documentation-restructure-implementation-plan-part-b" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p><strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (<code>- [ ]</code>) syntax for tracking.</p>
+</blockquote>
+<p><strong>Goal:</strong> Reorganize <code>docs/</code> into an audience-split tree (<code>guide/</code> for users, <code>internals/</code> for contributors), rewrite <code>mkdocs.yml</code> <code>nav:</code> and <code>README.md</code>, fix all cross-links and external refs, and merge the three performance docs into one — verified by <code>mkdocs build --strict</code>.</p>
+<p><strong>Architecture:</strong> Pure file moves (<code>git mv</code>, history-preserving) + link math + one content merge. No code. Continues on branch <code>feature/docs-staleness-sweep</code> (same PR as Part A). The verification gate is a local mkdocs strict build (CI uses <code>gh-deploy --force</code>, NOT <code>--strict</code>, so CI will NOT catch broken links — local strict build is the only safety net).</p>
+<p><strong>Tech Stack:</strong> Markdown, <code>git mv</code>, MkDocs Material. Local mkdocs already installed at <code>/tmp/mkdocs-venv/bin/mkdocs</code> (v1.6.1).</p>
+<h2 id="global-constraints">Global Constraints<a class="headerlink" href="#global-constraints" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Work on branch <code>feature/docs-staleness-sweep</code> in worktree <code>/home/ihor/projects/storm/storm_develop/.claude/worktrees/feature-docs-staleness-sweep</code>. Do NOT switch branches.</li>
+<li><code>docs/superpowers/</code> and <code>docs/archive/</code> are NOT moved or renamed. <code>archive/</code>'s existing <code>mkdocs.yml</code> nav entry stays.</li>
+<li>Do NOT alter hardcoded performance NUMBERS (<code>74%</code>, <code>13.07M rows/sec</code>, <code>% of raw</code>, efficiency) — deferred follow-up.</li>
+<li>Use <code>git mv</code> for every move (preserve history). Stage only the files each task names; never <code>git add .superpowers/</code>.</li>
+<li>Pre-commit hook skips checks for docs-only commits — expected. NEVER <code>--no-verify</code>.</li>
+<li>Verification command (run from worktree root):
+  <code>/tmp/mkdocs-venv/bin/mkdocs build --strict --site-dir /tmp/mkdocs-site 2&gt;&amp;1 | grep -E 'WARNING|ERROR'</code>
+  A clean run prints NOTHING and exits 0. (INFO "not in nav" lines for <code>superpowers/</code>/<code>archive/</code> are noise, not failures — only WARNING/ERROR abort <code>--strict</code>.)</li>
+<li>Baseline (current tree) has 2 PRE-EXISTING <code>--strict</code> warnings that Tasks fix in passing:</li>
+<li><code>development/PRE_COMMIT.md:122</code> link <code>../../CLAUDE.md</code> (unresolvable; CLAUDE.md is outside docs/).</li>
+<li><code>COOKBOOK.md:122</code> bad anchor <code>reference/FIELD_TYPES.md#automatic-timestamps-auto_create--auto_update</code>.</li>
+</ul>
+<h2 id="target-structure-reference-for-all-tasks">Target structure (reference for all tasks)<a class="headerlink" href="#target-structure-reference-for-all-tasks" title="Permanent link">&para;</a></h2>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>docs/
+<a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>  README.md
+<a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>  guide/
+<a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    COOKBOOK.md
+<a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    features/  {CRUD_OPERATIONS, SELECT_QUERIES, WHERE_CLAUSES, JOIN_OPERATIONS,
+<a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>                BATCH_OPERATIONS, REFERENTIAL_INTEGRITY, CONNECTION_TUNING}.md
+<a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    reference/ {FIELD_TYPES, MIGRATIONS}.md
+<a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>  internals/
+<a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    architecture/ {OVERVIEW, DESIGN_DECISIONS, REFLECTION, SQL_GENERATION,
+<a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>                   MODULE_SYSTEM, STATEMENT_CACHING, COMPILE_TIME_VS_RUNTIME}.md
+<a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    building/     {GETTING_STARTED, COMMON_TASKS, ADDING_FEATURES, PRE_COMMIT, FORMATTING}.md
+<a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>    testing/      {TESTING, CODE_COVERAGE, SANITIZERS, FUZZING, MSAN_LIBC_FIX}.md
+<a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>    performance/  {PERFORMANCE (merged), BENCHMARK_DASHBOARD, JOIN_ANALYSIS, DISTINCT_ANALYSIS}.md
+<a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a>    compiler/     {COMPILER_ISSUES, COMPILER_ATTRIBUTES, CPP26_CODING_STANDARDS, CODE_QUALITY}.md
+<a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>  superpowers/  archive/   (untouched)
+</code></pre></div>
+<hr />
+<h3 id="task-1-move-all-files-with-git-mv-no-link-edits-yet">Task 1: Move all files with <code>git mv</code> (no link edits yet)<a class="headerlink" href="#task-1-move-all-files-with-git-mv-no-link-edits-yet" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong> 34 moves under <code>docs/</code> (the 3 perf docs are handled in Task 2, not moved here).</p>
+<p><strong>Interfaces:</strong>
+- Produces: the final file paths every later task links to. After this task the tree matches the target structure EXCEPT <code>internals/performance/PERFORMANCE.md</code> (Task 2) and all links are temporarily broken (fixed Tasks 3-6).</p>
+<ul>
+<li>[ ] <strong>Step 1: Create the new directories</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop/.claude/worktrees/feature-docs-staleness-sweep
+<a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>docs/guide/features<span class="w"> </span>docs/guide/reference
+<a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>mkdir<span class="w"> </span>-p<span class="w"> </span>docs/internals/architecture<span class="w"> </span>docs/internals/building<span class="w"> </span>docs/internals/testing<span class="w"> </span>docs/internals/performance<span class="w"> </span>docs/internals/compiler
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 2: git mv the guide files</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>git<span class="w"> </span>mv<span class="w"> </span>docs/COOKBOOK.md<span class="w"> </span>docs/guide/COOKBOOK.md
+<a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>git<span class="w"> </span>mv<span class="w"> </span>docs/features/CRUD_OPERATIONS.md<span class="w"> </span>docs/features/SELECT_QUERIES.md<span class="w"> </span>docs/features/WHERE_CLAUSES.md<span class="w"> </span>docs/features/JOIN_OPERATIONS.md<span class="w"> </span>docs/features/BATCH_OPERATIONS.md<span class="w"> </span>docs/features/REFERENTIAL_INTEGRITY.md<span class="w"> </span>docs/features/CONNECTION_TUNING.md<span class="w"> </span>docs/guide/features/
+<a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>git<span class="w"> </span>mv<span class="w"> </span>docs/reference/FIELD_TYPES.md<span class="w"> </span>docs/guide/reference/FIELD_TYPES.md
+<a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>git<span class="w"> </span>mv<span class="w"> </span>docs/development/MIGRATIONS.md<span class="w"> </span>docs/guide/reference/MIGRATIONS.md
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 3: git mv the internals files</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>git<span class="w"> </span>mv<span class="w"> </span>docs/architecture/OVERVIEW.md<span class="w"> </span>docs/architecture/DESIGN_DECISIONS.md<span class="w"> </span>docs/architecture/REFLECTION.md<span class="w"> </span>docs/architecture/SQL_GENERATION.md<span class="w"> </span>docs/architecture/MODULE_SYSTEM.md<span class="w"> </span>docs/architecture/STATEMENT_CACHING.md<span class="w"> </span>docs/architecture/COMPILE_TIME_VS_RUNTIME.md<span class="w"> </span>docs/internals/architecture/
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>git<span class="w"> </span>mv<span class="w"> </span>docs/development/GETTING_STARTED.md<span class="w"> </span>docs/development/COMMON_TASKS.md<span class="w"> </span>docs/development/ADDING_FEATURES.md<span class="w"> </span>docs/development/PRE_COMMIT.md<span class="w"> </span>docs/development/FORMATTING.md<span class="w"> </span>docs/internals/building/
+<a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>git<span class="w"> </span>mv<span class="w"> </span>docs/development/TESTING.md<span class="w"> </span>docs/development/CODE_COVERAGE.md<span class="w"> </span>docs/development/SANITIZERS.md<span class="w"> </span>docs/development/FUZZING.md<span class="w"> </span>docs/development/MSAN_LIBC_FIX.md<span class="w"> </span>docs/internals/testing/
+<a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>git<span class="w"> </span>mv<span class="w"> </span>docs/development/BENCHMARK_DASHBOARD.md<span class="w"> </span>docs/internals/performance/
+<a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>git<span class="w"> </span>mv<span class="w"> </span>docs/benchmarks/JOIN_ANALYSIS.md<span class="w"> </span>docs/benchmarks/DISTINCT_ANALYSIS.md<span class="w"> </span>docs/internals/performance/
+<a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>git<span class="w"> </span>mv<span class="w"> </span>docs/development/COMPILER_ISSUES.md<span class="w"> </span>docs/development/COMPILER_ATTRIBUTES.md<span class="w"> </span>docs/development/CPP26_CODING_STANDARDS.md<span class="w"> </span>docs/development/CODE_QUALITY.md<span class="w"> </span>docs/internals/compiler/
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 4: Also move the MSAN patch file if present (non-.md asset referenced by MSAN_LIBC_FIX)</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># fix_msan_libc_string.patch lives in development/ next to MSAN_LIBC_FIX.md</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>git<span class="w"> </span>mv<span class="w"> </span>docs/development/fix_msan_libc_string.patch<span class="w"> </span>docs/internals/testing/<span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;no patch file to move&quot;</span>
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 5: Verify the old dirs are now empty of .md (only the 3 perf docs remain in development/)</strong></li>
+</ul>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>ls<span class="w"> </span>docs/features<span class="w"> </span>docs/reference<span class="w"> </span>docs/benchmarks<span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w">    </span><span class="c1"># expect: empty or &#39;No such file&#39;</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>ls<span class="w"> </span>docs/development/<span class="w">                                            </span><span class="c1"># expect: ONLY PERFORMANCE_GUIDELINES.md, PERFORMANCE_TIPS.md, PERFORMANCE_TESTING.md</span>
+</code></pre></div>
+Expected: <code>development/</code> holds only the 3 perf docs; <code>features/</code>, <code>reference/</code>, <code>benchmarks/</code> are empty (rmdir them):
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>rmdir<span class="w"> </span>docs/features<span class="w"> </span>docs/reference<span class="w"> </span>docs/benchmarks<span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">true</span>
+</code></pre></div></p>
+<ul>
+<li>[ ] <strong>Step 6: Commit the moves (links intentionally still broken; mkdocs NOT run yet)</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>git<span class="w"> </span>add<span class="w"> </span>-A<span class="w"> </span>docs/
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;docs(restructure): git mv files into guide/ and internals/ tree (#Part B)</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+<a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="s2">Co-Authored-By: Claude Opus 4.8 &lt;noreply@anthropic.com&gt;&quot;</span>
+</code></pre></div>
+<hr />
+<h3 id="task-2-merge-the-3-performance-docs-into-one-performancemd">Task 2: Merge the 3 performance docs into one PERFORMANCE.md<a class="headerlink" href="#task-2-merge-the-3-performance-docs-into-one-performancemd" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Create: <code>docs/internals/performance/PERFORMANCE.md</code>
+- Remove: <code>docs/development/PERFORMANCE_GUIDELINES.md</code>, <code>docs/development/PERFORMANCE_TIPS.md</code>, <code>docs/development/PERFORMANCE_TESTING.md</code></p>
+<p><strong>Interfaces:</strong>
+- Consumes: the three source files' content (all already caching-clean from Part A).
+- Produces: <code>internals/performance/PERFORMANCE.md</code> — the single perf page the nav (Task 5) and README (Task 4) link to.</p>
+<ul>
+<li>[ ] <strong>Step 1: Read all three source files fully</strong></li>
+</ul>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>wc<span class="w"> </span>-l<span class="w"> </span>docs/development/PERFORMANCE_GUIDELINES.md<span class="w"> </span>docs/development/PERFORMANCE_TIPS.md<span class="w"> </span>docs/development/PERFORMANCE_TESTING.md
+</code></pre></div>
+Read each in full to understand their sections.</p>
+<ul>
+<li>[ ] <strong>Step 2: Compose the merged file</strong></li>
+</ul>
+<p>Create <code>docs/internals/performance/PERFORMANCE.md</code> with this top-level structure:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="gh"># Performance</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>Storm targets ≥95% of raw SQLite efficiency. This page collects the
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a>performance guidelines, hot-path tips, and the benchmarking/testing workflow.
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="gu">## Guidelines</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a>&lt;full content of PERFORMANCE_GUIDELINES.md, minus its H1 title&gt;
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="gu">## Tips</span>
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a>&lt;full content of PERFORMANCE_TIPS.md, minus its H1 title&gt;
+<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a>
+<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="gu">## Testing &amp; Benchmarking</span>
+<a id="__codelineno-9-13" name="__codelineno-9-13" href="#__codelineno-9-13"></a>&lt;full content of PERFORMANCE_TESTING.md, minus its H1 title&gt;
+</code></pre></div>
+<p>Rules: demote each source file's <code>#</code> H1 to fit under the new <code>##</code> sections (its existing <code>##</code> become <code>###</code>, <code>###</code> become <code>####</code>). Keep ALL non-duplicate content verbatim. Do NOT alter any performance number. If two source files state the exact same fact (e.g. the "≥95% target"), keep it once in the intro and drop the duplicate.</p>
+<ul>
+<li>[ ] <strong>Step 3: Remove the three originals</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a>git<span class="w"> </span>rm<span class="w"> </span>docs/development/PERFORMANCE_GUIDELINES.md<span class="w"> </span>docs/development/PERFORMANCE_TIPS.md<span class="w"> </span>docs/development/PERFORMANCE_TESTING.md
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 4: Confirm development/ is now empty and remove it</strong></li>
+</ul>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>ls<span class="w"> </span>docs/development/<span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>rmdir<span class="w"> </span>docs/development<span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;development/ gone&quot;</span>
+</code></pre></div>
+Expected: <code>development/</code> no longer exists.</p>
+<ul>
+<li>[ ] <strong>Step 5: Verify the merged file has all three sections and balanced fences</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a>grep<span class="w"> </span>-n<span class="w"> </span><span class="s1">&#39;^## Guidelines\|^## Tips\|^## Testing&#39;</span><span class="w"> </span>docs/internals/performance/PERFORMANCE.md<span class="w">   </span><span class="c1"># 3 hits</span>
+<a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a><span class="nb">test</span><span class="w"> </span><span class="k">$(($(</span>grep<span class="w"> </span>-c<span class="w"> </span><span class="s1">&#39;```&#39;</span><span class="w"> </span>docs/internals/performance/PERFORMANCE.md<span class="k">)</span><span class="w"> </span><span class="o">%</span><span class="w"> </span><span class="m">2</span><span class="k">))</span><span class="w"> </span>-eq<span class="w"> </span><span class="m">0</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;fences balanced&quot;</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;FENCE IMBALANCE&quot;</span>
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 6: Commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a>git<span class="w"> </span>add<span class="w"> </span>docs/internals/performance/PERFORMANCE.md
+<a id="__codelineno-13-2" name="__codelineno-13-2" href="#__codelineno-13-2"></a>git<span class="w"> </span>add<span class="w"> </span>-A<span class="w"> </span>docs/development<span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">true</span>
+<a id="__codelineno-13-3" name="__codelineno-13-3" href="#__codelineno-13-3"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;docs(perf): merge GUIDELINES + TIPS + TESTING into one PERFORMANCE.md</span>
+<a id="__codelineno-13-4" name="__codelineno-13-4" href="#__codelineno-13-4"></a>
+<a id="__codelineno-13-5" name="__codelineno-13-5" href="#__codelineno-13-5"></a><span class="s2">Co-Authored-By: Claude Opus 4.8 &lt;noreply@anthropic.com&gt;&quot;</span>
+</code></pre></div>
+<hr />
+<h3 id="task-3-fix-all-internal-cross-links-inside-docs-relative-path-recompute">Task 3: Fix all internal cross-links inside docs/ (relative path recompute)<a class="headerlink" href="#task-3-fix-all-internal-cross-links-inside-docs-relative-path-recompute" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong> every <code>.md</code> under <code>docs/guide/</code> and <code>docs/internals/</code> that contains a relative <code>.md</code> link (~102 links total across the tree).</p>
+<p><strong>Interfaces:</strong>
+- Consumes: the final paths from Tasks 1-2.
+- Produces: a tree where every intra-docs link resolves. (mkdocs <code>--strict</code> in Task 7 is the proof.)</p>
+<ul>
+<li>[ ] <strong>Step 1: List every relative .md link and its source file</strong></li>
+</ul>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a>grep<span class="w"> </span>-rnoE<span class="w"> </span><span class="s1">&#39;\]\([^)]*\.md[^)#]*(#[^)]*)?\)&#39;</span><span class="w"> </span>docs/guide<span class="w"> </span>docs/internals<span class="w"> </span>--include<span class="o">=</span><span class="s1">&#39;*.md&#39;</span>
+</code></pre></div>
+This is the worklist. Each link must be recomputed from the SOURCE file's NEW directory to the TARGET file's NEW path.</p>
+<ul>
+<li>[ ] <strong>Step 2: Recompute and fix each link</strong></li>
+</ul>
+<p>For each link, determine the target's new location (per the target structure) and write the correct relative path from the source file's directory. Common cases:
+- <code>guide/features/X.md</code> → another <code>guide/features/Y.md</code>: <code>Y.md</code> (same dir, unchanged).
+- <code>guide/features/X.md</code> → <code>internals/architecture/STATEMENT_CACHING.md</code>: <code>../../internals/architecture/STATEMENT_CACHING.md</code>.
+- <code>guide/COOKBOOK.md</code> → <code>guide/reference/FIELD_TYPES.md</code>: <code>reference/FIELD_TYPES.md</code>.
+- <code>internals/&lt;sub&gt;/X.md</code> → <code>internals/&lt;othersub&gt;/Y.md</code>: <code>../&lt;othersub&gt;/Y.md</code>.
+- Any link to one of the 3 merged perf docs (<code>PERFORMANCE_GUIDELINES.md</code> etc.) → <code>../performance/PERFORMANCE.md</code> (adjust <code>../</code> depth per source location); if it linked to a specific section, point at <code>PERFORMANCE.md#guidelines</code> / <code>#tips</code> / <code>#testing-benchmarking</code>.
+- Any link to a moved file (e.g. <code>development/TESTING.md</code>, <code>benchmarks/JOIN_ANALYSIS.md</code>, <code>reference/FIELD_TYPES.md</code>) → its new path.</p>
+<ul>
+<li>[ ] <strong>Step 3: Fix the pre-existing COOKBOOK bad anchor (now in guide/COOKBOOK.md)</strong></li>
+</ul>
+<p>The link <code>reference/FIELD_TYPES.md#automatic-timestamps-auto_create--auto_update</code> has a wrong anchor. The real heading is <code>## Automatic Timestamps (\</code>auto_create` / `auto_update`)<code>. Replace the whole link target with the section link WITHOUT a fragile anchor:</code>reference/FIELD_TYPES.md<code>(drop the</code>#...` fragment), OR use the correct mkdocs slug if verified. Simplest safe fix: drop the fragment.</p>
+<ul>
+<li>[ ] <strong>Step 4: Fix the pre-existing PRE_COMMIT CLAUDE.md link (now in internals/building/PRE_COMMIT.md)</strong></li>
+</ul>
+<p>Replace <code>[CLAUDE.md](../../CLAUDE.md)</code> with the absolute GitHub URL used elsewhere: <code>[CLAUDE.md](https://github.com/spiritEcosse/storm/blob/develop/CLAUDE.md)</code>.</p>
+<ul>
+<li>[ ] <strong>Step 5: Grep for any surviving old-path link fragments</strong></li>
+</ul>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a>grep<span class="w"> </span>-rnE<span class="w"> </span><span class="s1">&#39;\]\([^)]*(development/|features/|benchmarks/|architecture/[A-Z]|reference/[A-Z]|PERFORMANCE_GUIDELINES|PERFORMANCE_TIPS|PERFORMANCE_TESTING)&#39;</span><span class="w"> </span>docs/guide<span class="w"> </span>docs/internals<span class="w"> </span>--include<span class="o">=</span><span class="s1">&#39;*.md&#39;</span>
+</code></pre></div>
+Expected: NOTHING (every old path rewritten). Investigate and fix any hit.</p>
+<ul>
+<li>[ ] <strong>Step 6: Commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a>git<span class="w"> </span>add<span class="w"> </span>docs/guide<span class="w"> </span>docs/internals
+<a id="__codelineno-16-2" name="__codelineno-16-2" href="#__codelineno-16-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;docs(restructure): repoint all internal cross-links to new paths</span>
+<a id="__codelineno-16-3" name="__codelineno-16-3" href="#__codelineno-16-3"></a>
+<a id="__codelineno-16-4" name="__codelineno-16-4" href="#__codelineno-16-4"></a><span class="s2">Co-Authored-By: Claude Opus 4.8 &lt;noreply@anthropic.com&gt;&quot;</span>
+</code></pre></div>
+<hr />
+<h3 id="task-4-rewrite-docsreadmemd-as-the-new-index">Task 4: Rewrite docs/README.md as the new index<a class="headerlink" href="#task-4-rewrite-docsreadmemd-as-the-new-index" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong> Modify <code>docs/README.md</code>.</p>
+<p><strong>Interfaces:</strong>
+- Consumes: final tree.
+- Produces: an index linking EVERY kept file under its new path.</p>
+<ul>
+<li>[ ] <strong>Step 1: Rewrite README.md</strong></li>
+</ul>
+<p>Structure it to mirror the tree, two top sections (Guide, Internals), linking every file:
+- <strong>Guide:</strong> Cookbook (<code>guide/COOKBOOK.md</code>); Features (the 7 <code>guide/features/*</code>); Reference (<code>guide/reference/FIELD_TYPES.md</code>, <code>guide/reference/MIGRATIONS.md</code>).
+- <strong>Internals:</strong> Architecture (7); Building (<code>GETTING_STARTED</code>, <code>COMMON_TASKS</code>, <code>ADDING_FEATURES</code>, <code>PRE_COMMIT</code>, <code>FORMATTING</code>); Testing (<code>TESTING</code>, <code>CODE_COVERAGE</code>, <code>SANITIZERS</code>, <code>FUZZING</code>, <code>MSAN_LIBC_FIX</code>); Performance (<code>PERFORMANCE.md</code>, <code>BENCHMARK_DASHBOARD</code>, <code>JOIN_ANALYSIS</code>, <code>DISTINCT_ANALYSIS</code>); Compiler (<code>COMPILER_ISSUES</code>, <code>COMPILER_ATTRIBUTES</code>, <code>CPP26_CODING_STANDARDS</code>, <code>CODE_QUALITY</code>).
+- Keep the existing top links (Main Project Guide → the GitHub CLAUDE.md URL; Benchmarks → benchmarks/README.md URL).
+- Ensure the Statement Caching line says "Single Connection-level statement cache" (NOT "3-level") — carry the Part A fix forward.
+- All links are relative to <code>docs/README.md</code> (e.g. <code>guide/features/CRUD_OPERATIONS.md</code>, <code>internals/architecture/OVERVIEW.md</code>).</p>
+<ul>
+<li>[ ] <strong>Step 2: Verify every kept .md is linked exactly once</strong></li>
+</ul>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="k">for</span><span class="w"> </span>f<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="k">$(</span>find<span class="w"> </span>docs/guide<span class="w"> </span>docs/internals<span class="w"> </span>-name<span class="w"> </span><span class="s1">&#39;*.md&#39;</span><span class="k">)</span><span class="p">;</span><span class="w"> </span><span class="k">do</span><span class="w"> </span><span class="nv">rel</span><span class="o">=</span><span class="si">${</span><span class="nv">f</span><span class="p">#docs/</span><span class="si">}</span><span class="p">;</span><span class="w"> </span>grep<span class="w"> </span>-q<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$rel</span><span class="s2">&quot;</span><span class="w"> </span>docs/README.md<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;MISSING FROM README: </span><span class="nv">$rel</span><span class="s2">&quot;</span><span class="p">;</span><span class="w"> </span><span class="k">done</span>
+</code></pre></div>
+Expected: no "MISSING" lines.</p>
+<ul>
+<li>[ ] <strong>Step 3: Commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a>git<span class="w"> </span>add<span class="w"> </span>docs/README.md
+<a id="__codelineno-18-2" name="__codelineno-18-2" href="#__codelineno-18-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;docs(restructure): rewrite README index for guide/ + internals/ tree</span>
+<a id="__codelineno-18-3" name="__codelineno-18-3" href="#__codelineno-18-3"></a>
+<a id="__codelineno-18-4" name="__codelineno-18-4" href="#__codelineno-18-4"></a><span class="s2">Co-Authored-By: Claude Opus 4.8 &lt;noreply@anthropic.com&gt;&quot;</span>
+</code></pre></div>
+<hr />
+<h3 id="task-5-rewrite-mkdocsyml-nav">Task 5: Rewrite mkdocs.yml nav<a class="headerlink" href="#task-5-rewrite-mkdocsyml-nav" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong> Modify <code>mkdocs.yml</code> (the <code>nav:</code> block, ~lines 41-80).</p>
+<p><strong>Interfaces:</strong>
+- Consumes: final tree.
+- Produces: a nav listing every kept file at its new path. This is what <code>--strict</code> validates.</p>
+<ul>
+<li>[ ] <strong>Step 1: Replace the nav block</strong></li>
+</ul>
+<p>Rewrite <code>nav:</code> to:</p>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="nt">nav</span><span class="p">:</span>
+<a id="__codelineno-19-2" name="__codelineno-19-2" href="#__codelineno-19-2"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Home</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">README.md</span>
+<a id="__codelineno-19-3" name="__codelineno-19-3" href="#__codelineno-19-3"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Guide</span><span class="p">:</span>
+<a id="__codelineno-19-4" name="__codelineno-19-4" href="#__codelineno-19-4"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Cookbook</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">guide/COOKBOOK.md</span>
+<a id="__codelineno-19-5" name="__codelineno-19-5" href="#__codelineno-19-5"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Features</span><span class="p">:</span>
+<a id="__codelineno-19-6" name="__codelineno-19-6" href="#__codelineno-19-6"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">CRUD Operations</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">guide/features/CRUD_OPERATIONS.md</span>
+<a id="__codelineno-19-7" name="__codelineno-19-7" href="#__codelineno-19-7"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">SELECT Queries</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">guide/features/SELECT_QUERIES.md</span>
+<a id="__codelineno-19-8" name="__codelineno-19-8" href="#__codelineno-19-8"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">WHERE Clauses</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">guide/features/WHERE_CLAUSES.md</span>
+<a id="__codelineno-19-9" name="__codelineno-19-9" href="#__codelineno-19-9"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">JOIN Operations</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">guide/features/JOIN_OPERATIONS.md</span>
+<a id="__codelineno-19-10" name="__codelineno-19-10" href="#__codelineno-19-10"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Batch Operations</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">guide/features/BATCH_OPERATIONS.md</span>
+<a id="__codelineno-19-11" name="__codelineno-19-11" href="#__codelineno-19-11"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Referential Integrity</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">guide/features/REFERENTIAL_INTEGRITY.md</span>
+<a id="__codelineno-19-12" name="__codelineno-19-12" href="#__codelineno-19-12"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Connection Tuning</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">guide/features/CONNECTION_TUNING.md</span>
+<a id="__codelineno-19-13" name="__codelineno-19-13" href="#__codelineno-19-13"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Reference</span><span class="p">:</span>
+<a id="__codelineno-19-14" name="__codelineno-19-14" href="#__codelineno-19-14"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Field Types</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">guide/reference/FIELD_TYPES.md</span>
+<a id="__codelineno-19-15" name="__codelineno-19-15" href="#__codelineno-19-15"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Migrations</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">guide/reference/MIGRATIONS.md</span>
+<a id="__codelineno-19-16" name="__codelineno-19-16" href="#__codelineno-19-16"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Internals</span><span class="p">:</span>
+<a id="__codelineno-19-17" name="__codelineno-19-17" href="#__codelineno-19-17"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Architecture</span><span class="p">:</span>
+<a id="__codelineno-19-18" name="__codelineno-19-18" href="#__codelineno-19-18"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Overview</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">internals/architecture/OVERVIEW.md</span>
+<a id="__codelineno-19-19" name="__codelineno-19-19" href="#__codelineno-19-19"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Design Decisions</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">internals/architecture/DESIGN_DECISIONS.md</span>
+<a id="__codelineno-19-20" name="__codelineno-19-20" href="#__codelineno-19-20"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Reflection</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">internals/architecture/REFLECTION.md</span>
+<a id="__codelineno-19-21" name="__codelineno-19-21" href="#__codelineno-19-21"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">SQL Generation</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">internals/architecture/SQL_GENERATION.md</span>
+<a id="__codelineno-19-22" name="__codelineno-19-22" href="#__codelineno-19-22"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Module System</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">internals/architecture/MODULE_SYSTEM.md</span>
+<a id="__codelineno-19-23" name="__codelineno-19-23" href="#__codelineno-19-23"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Statement Caching</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">internals/architecture/STATEMENT_CACHING.md</span>
+<a id="__codelineno-19-24" name="__codelineno-19-24" href="#__codelineno-19-24"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Compile-Time vs Runtime</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">internals/architecture/COMPILE_TIME_VS_RUNTIME.md</span>
+<a id="__codelineno-19-25" name="__codelineno-19-25" href="#__codelineno-19-25"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Building</span><span class="p">:</span>
+<a id="__codelineno-19-26" name="__codelineno-19-26" href="#__codelineno-19-26"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Getting Started</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">internals/building/GETTING_STARTED.md</span>
+<a id="__codelineno-19-27" name="__codelineno-19-27" href="#__codelineno-19-27"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Common Tasks</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">internals/building/COMMON_TASKS.md</span>
+<a id="__codelineno-19-28" name="__codelineno-19-28" href="#__codelineno-19-28"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Adding Features</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">internals/building/ADDING_FEATURES.md</span>
+<a id="__codelineno-19-29" name="__codelineno-19-29" href="#__codelineno-19-29"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Pre-Commit</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">internals/building/PRE_COMMIT.md</span>
+<a id="__codelineno-19-30" name="__codelineno-19-30" href="#__codelineno-19-30"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Formatting</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">internals/building/FORMATTING.md</span>
+<a id="__codelineno-19-31" name="__codelineno-19-31" href="#__codelineno-19-31"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Testing</span><span class="p">:</span>
+<a id="__codelineno-19-32" name="__codelineno-19-32" href="#__codelineno-19-32"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Testing</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">internals/testing/TESTING.md</span>
+<a id="__codelineno-19-33" name="__codelineno-19-33" href="#__codelineno-19-33"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Code Coverage</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">internals/testing/CODE_COVERAGE.md</span>
+<a id="__codelineno-19-34" name="__codelineno-19-34" href="#__codelineno-19-34"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Sanitizers</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">internals/testing/SANITIZERS.md</span>
+<a id="__codelineno-19-35" name="__codelineno-19-35" href="#__codelineno-19-35"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Fuzzing</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">internals/testing/FUZZING.md</span>
+<a id="__codelineno-19-36" name="__codelineno-19-36" href="#__codelineno-19-36"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">MSAN libc Fix</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">internals/testing/MSAN_LIBC_FIX.md</span>
+<a id="__codelineno-19-37" name="__codelineno-19-37" href="#__codelineno-19-37"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Performance</span><span class="p">:</span>
+<a id="__codelineno-19-38" name="__codelineno-19-38" href="#__codelineno-19-38"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Performance</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">internals/performance/PERFORMANCE.md</span>
+<a id="__codelineno-19-39" name="__codelineno-19-39" href="#__codelineno-19-39"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Benchmark Dashboard</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">internals/performance/BENCHMARK_DASHBOARD.md</span>
+<a id="__codelineno-19-40" name="__codelineno-19-40" href="#__codelineno-19-40"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">JOIN Analysis</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">internals/performance/JOIN_ANALYSIS.md</span>
+<a id="__codelineno-19-41" name="__codelineno-19-41" href="#__codelineno-19-41"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">DISTINCT Analysis</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">internals/performance/DISTINCT_ANALYSIS.md</span>
+<a id="__codelineno-19-42" name="__codelineno-19-42" href="#__codelineno-19-42"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Compiler</span><span class="p">:</span>
+<a id="__codelineno-19-43" name="__codelineno-19-43" href="#__codelineno-19-43"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Compiler Issues</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">internals/compiler/COMPILER_ISSUES.md</span>
+<a id="__codelineno-19-44" name="__codelineno-19-44" href="#__codelineno-19-44"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Compiler Attributes</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">internals/compiler/COMPILER_ATTRIBUTES.md</span>
+<a id="__codelineno-19-45" name="__codelineno-19-45" href="#__codelineno-19-45"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">C++26 Coding Standards</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">internals/compiler/CPP26_CODING_STANDARDS.md</span>
+<a id="__codelineno-19-46" name="__codelineno-19-46" href="#__codelineno-19-46"></a><span class="w">          </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Code Quality</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">internals/compiler/CODE_QUALITY.md</span>
+<a id="__codelineno-19-47" name="__codelineno-19-47" href="#__codelineno-19-47"></a><span class="w">  </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">Archive</span><span class="p">:</span>
+<a id="__codelineno-19-48" name="__codelineno-19-48" href="#__codelineno-19-48"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">SELECT Optimization Report</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">archive/SELECT_OPTIMIZATION_REPORT.md</span>
+<a id="__codelineno-19-49" name="__codelineno-19-49" href="#__codelineno-19-49"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">SELECT Performance Analysis</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">archive/SELECT_PERFORMANCE_ANALYSIS.md</span>
+<a id="__codelineno-19-50" name="__codelineno-19-50" href="#__codelineno-19-50"></a><span class="w">      </span><span class="p p-Indicator">-</span><span class="w"> </span><span class="nt">UPDATE Optimization Report</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">archive/UPDATE_OPTIMIZATION_REPORT.md</span>
+</code></pre></div>
+<p>(Keep everything ABOVE <code>nav:</code> — <code>site_name</code>, theme, plugins, markdown_extensions — unchanged.)</p>
+<ul>
+<li>[ ] <strong>Step 2: Commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a>git<span class="w"> </span>add<span class="w"> </span>mkdocs.yml
+<a id="__codelineno-20-2" name="__codelineno-20-2" href="#__codelineno-20-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;docs(restructure): rewrite mkdocs nav for guide/ + internals/ tree</span>
+<a id="__codelineno-20-3" name="__codelineno-20-3" href="#__codelineno-20-3"></a>
+<a id="__codelineno-20-4" name="__codelineno-20-4" href="#__codelineno-20-4"></a><span class="s2">Co-Authored-By: Claude Opus 4.8 &lt;noreply@anthropic.com&gt;&quot;</span>
+</code></pre></div>
+<hr />
+<h3 id="task-6-update-external-references-claudemd-benchmarksreadmemd">Task 6: Update external references (CLAUDE.md, benchmarks/README.md)<a class="headerlink" href="#task-6-update-external-references-claudemd-benchmarksreadmemd" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong> Modify <code>CLAUDE.md</code> (15 <code>docs/...md</code> refs), <code>benchmarks/README.md</code> (if it links into docs/).</p>
+<p><strong>Interfaces:</strong>
+- Consumes: final tree.
+- Produces: every out-of-docs reference points to a real new path.</p>
+<ul>
+<li>[ ] <strong>Step 1: Find all docs/ path references in CLAUDE.md</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a>grep<span class="w"> </span>-noE<span class="w"> </span><span class="s1">&#39;docs/[a-z]+/[A-Za-z0-9_]+\.md|docs/[A-Z_]+\.md&#39;</span><span class="w"> </span>CLAUDE.md<span class="w"> </span><span class="p">|</span><span class="w"> </span>sort<span class="w"> </span>-u
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 2: Update each to its new path</strong></li>
+</ul>
+<p>Map each old path to new (examples): <code>docs/development/FORMATTING.md</code>→<code>docs/internals/building/FORMATTING.md</code>; <code>docs/development/CODE_COVERAGE.md</code>→<code>docs/internals/testing/CODE_COVERAGE.md</code>; <code>docs/architecture/STATEMENT_CACHING.md</code>→<code>docs/internals/architecture/STATEMENT_CACHING.md</code>; <code>docs/development/PERFORMANCE_GUIDELINES.md</code>→<code>docs/internals/performance/PERFORMANCE.md</code>; <code>docs/features/*</code>→<code>docs/guide/features/*</code>; <code>docs/reference/FIELD_TYPES.md</code>→<code>docs/guide/reference/FIELD_TYPES.md</code>; <code>docs/development/COMPILER_ISSUES.md</code>→<code>docs/internals/compiler/COMPILER_ISSUES.md</code>; <code>docs/features/CONNECTION_TUNING.md</code>→<code>docs/guide/features/CONNECTION_TUNING.md</code>; <code>docs/development/TESTING.md</code>→<code>docs/internals/testing/TESTING.md</code>; <code>docs/development/MIGRATIONS.md</code>→<code>docs/guide/reference/MIGRATIONS.md</code>. Apply the full target structure for any not listed.</p>
+<ul>
+<li>[ ] <strong>Step 3: Check benchmarks/README.md and any other root docs</strong></li>
+</ul>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a>grep<span class="w"> </span>-rnoE<span class="w"> </span><span class="s1">&#39;docs/[a-z]+/[A-Za-z0-9_]+\.md|docs/[A-Z_]+\.md&#39;</span><span class="w"> </span>benchmarks/README.md<span class="w"> </span>README.md<span class="w"> </span><span class="m">2</span>&gt;/dev/null
+</code></pre></div>
+Update any hits to new paths.</p>
+<ul>
+<li>[ ] <strong>Step 4: Verify no stale docs paths remain anywhere outside docs/superpowers + docs/archive</strong></li>
+</ul>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a>grep<span class="w"> </span>-rnE<span class="w"> </span><span class="s1">&#39;docs/(development|features|benchmarks|reference|architecture)/&#39;</span><span class="w"> </span>CLAUDE.md<span class="w"> </span>README.md<span class="w"> </span>benchmarks/README.md<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-vE<span class="w"> </span><span class="s1">&#39;docs/internals/architecture|superpowers|archive&#39;</span>
+</code></pre></div>
+Expected: NOTHING. (Old top-level group paths fully replaced.)</p>
+<ul>
+<li>[ ] <strong>Step 5: Commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a>git<span class="w"> </span>add<span class="w"> </span>CLAUDE.md<span class="w"> </span>benchmarks/README.md<span class="w"> </span>README.md<span class="w"> </span><span class="m">2</span>&gt;/dev/null
+<a id="__codelineno-24-2" name="__codelineno-24-2" href="#__codelineno-24-2"></a>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;docs(restructure): update CLAUDE.md and root refs to new doc paths</span>
+<a id="__codelineno-24-3" name="__codelineno-24-3" href="#__codelineno-24-3"></a>
+<a id="__codelineno-24-4" name="__codelineno-24-4" href="#__codelineno-24-4"></a><span class="s2">Co-Authored-By: Claude Opus 4.8 &lt;noreply@anthropic.com&gt;&quot;</span>
+</code></pre></div>
+<hr />
+<h3 id="task-7-final-verification-mkdocs-strict-build-part-a-re-audit">Task 7: Final verification — mkdocs strict build + Part A re-audit<a class="headerlink" href="#task-7-final-verification-mkdocs-strict-build-part-a-re-audit" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong> none (verification only).</p>
+<ul>
+<li>[ ] <strong>Step 1: mkdocs strict build must be clean</strong></li>
+</ul>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop/.claude/worktrees/feature-docs-staleness-sweep
+<a id="__codelineno-25-2" name="__codelineno-25-2" href="#__codelineno-25-2"></a>/tmp/mkdocs-venv/bin/mkdocs<span class="w"> </span>build<span class="w"> </span>--strict<span class="w"> </span>--site-dir<span class="w"> </span>/tmp/mkdocs-site<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-E<span class="w"> </span><span class="s1">&#39;WARNING|ERROR&#39;</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;STRICT CLEAN&quot;</span>
+</code></pre></div>
+Expected: <code>STRICT CLEAN</code> (zero WARNING/ERROR). If any warning, fix the named link and re-run until clean.</p>
+<ul>
+<li>[ ] <strong>Step 2: every kept .md is in the nav</strong></li>
+</ul>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a><span class="k">for</span><span class="w"> </span>f<span class="w"> </span><span class="k">in</span><span class="w"> </span><span class="k">$(</span>find<span class="w"> </span>docs/guide<span class="w"> </span>docs/internals<span class="w"> </span>-name<span class="w"> </span><span class="s1">&#39;*.md&#39;</span><span class="k">)</span><span class="p">;</span><span class="w"> </span><span class="k">do</span><span class="w"> </span><span class="nv">rel</span><span class="o">=</span><span class="si">${</span><span class="nv">f</span><span class="p">#docs/</span><span class="si">}</span><span class="p">;</span><span class="w"> </span>grep<span class="w"> </span>-q<span class="w"> </span><span class="s2">&quot;</span><span class="nv">$rel</span><span class="s2">&quot;</span><span class="w"> </span>mkdocs.yml<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;NOT IN NAV: </span><span class="nv">$rel</span><span class="s2">&quot;</span><span class="p">;</span><span class="w"> </span><span class="k">done</span>
+</code></pre></div>
+Expected: no "NOT IN NAV" lines.</p>
+<ul>
+<li>[ ] <strong>Step 3: history preserved on a sampled move</strong></li>
+</ul>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a>git<span class="w"> </span>log<span class="w"> </span>--follow<span class="w"> </span>--oneline<span class="w"> </span>docs/guide/features/CRUD_OPERATIONS.md<span class="w"> </span><span class="p">|</span><span class="w"> </span>head<span class="w"> </span>-3
+</code></pre></div>
+Expected: shows commits from BEFORE the move (proves <code>git mv</code>).</p>
+<ul>
+<li>[ ] <strong>Step 4: Part A staleness still clean (moves didn't reintroduce anything)</strong></li>
+</ul>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a>grep<span class="w"> </span>-rn<span class="w"> </span>--include<span class="o">=</span><span class="s1">&#39;*.md&#39;</span><span class="w"> </span><span class="s1">&#39;3-level\|three-level&#39;</span><span class="w"> </span>docs/<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-v<span class="w"> </span>superpowers<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-v<span class="w"> </span>archive<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;3-level CLEAN&quot;</span>
+<a id="__codelineno-28-2" name="__codelineno-28-2" href="#__codelineno-28-2"></a>grep<span class="w"> </span>-rn<span class="w"> </span>--include<span class="o">=</span><span class="s1">&#39;*.md&#39;</span><span class="w"> </span><span class="s1">&#39;\[\[storm::primary_key\|\[\[storm::foreign_key\|storm::auto_increment\|union_with&#39;</span><span class="w"> </span>docs/<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-v<span class="w"> </span>superpowers<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-v<span class="w"> </span>archive<span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">&quot;syntax CLEAN&quot;</span>
+</code></pre></div>
+Expected: <code>3-level CLEAN</code> and <code>syntax CLEAN</code>.</p>
+<ul>
+<li>[ ] <strong>Step 5: branch diff sanity</strong></li>
+</ul>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a>git<span class="w"> </span>diff<span class="w"> </span>origin/develop..HEAD<span class="w"> </span>--stat<span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-5
+<a id="__codelineno-29-2" name="__codelineno-29-2" href="#__codelineno-29-2"></a>git<span class="w"> </span>log<span class="w"> </span>--oneline<span class="w"> </span>origin/develop..HEAD<span class="w"> </span><span class="p">|</span><span class="w"> </span>head
+</code></pre></div>
+Expected: only docs/, mkdocs.yml, CLAUDE.md, (benchmarks/README.md) changed; no code/cmake/test files.</p>
+<hr />
+<h2 id="post-plan-push-pr-merge">Post-plan: push, PR, merge<a class="headerlink" href="#post-plan-push-pr-merge" title="Permanent link">&para;</a></h2>
+<ul>
+<li>[ ] Push: <code>git push -u origin feature/docs-staleness-sweep</code></li>
+<li>[ ] Open PR into <code>develop</code> (<code>gh pr create --base develop</code>). Docs+mkdocs+CLAUDE.md diff (no src/tests/cmake) → SonarCloud skipped per convention; CI jobs are the gate. NOTE: the docs deploy workflow (<code>mkdocs gh-deploy --force</code>) does NOT use <code>--strict</code>, so the LOCAL strict build in Task 7 is the real link-integrity gate — it must have passed before pushing.</li>
+<li>[ ] Per repo convention, arm auto-merge: <code>gh pr merge &lt;N&gt; --squash --auto</code>. Merge after CI green.</li>
+<li>[ ] After merge: <code>git checkout develop &amp;&amp; git pull</code>; <code>git worktree remove .claude/worktrees/feature-docs-staleness-sweep</code>; <code>git worktree prune</code>.</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

@@ -1,0 +1,2870 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="C++26 ORM with compile-time reflection for SQLite">
+      
+      
+      
+        <link rel="canonical" href="https://spiritecosse.github.io/storm/superpowers/plans/2026-05-30-collapse-l1-l2-cache/">
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Collapse L1/L2 Statement Caching (Option C) Implementation Plan - Storm ORM</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#collapse-l1l2-statement-caching-option-c-implementation-plan" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../../.." title="Storm ORM" class="md-header__button md-logo" aria-label="Storm ORM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Storm ORM
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Collapse L1/L2 Statement Caching (Option C) Implementation Plan
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/spiritEcosse/storm" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    spiritEcosse/storm
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../../.." title="Storm ORM" class="md-nav__button md-logo" aria-label="Storm ORM" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Storm ORM
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/spiritEcosse/storm" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    spiritEcosse/storm
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/COOKBOOK/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cookbook
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_2" id="__nav_2_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Features
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Features
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/features/CRUD_OPERATIONS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    CRUD Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/features/SELECT_QUERIES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SELECT Queries
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/features/WHERE_CLAUSES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    WHERE Clauses
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/features/JOIN_OPERATIONS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JOIN Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/features/BATCH_OPERATIONS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Batch Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/features/REFERENTIAL_INTEGRITY/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Referential Integrity
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/features/CONNECTION_TUNING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Connection Tuning
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_2_3" id="__nav_2_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_2_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/reference/FIELD_TYPES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Field Types
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../guide/reference/MIGRATIONS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Migrations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Internals
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Internals
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_1" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_1" id="__nav_3_1_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_1_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_1">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/architecture/OVERVIEW/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/architecture/DESIGN_DECISIONS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Design Decisions
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/architecture/REFLECTION/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Reflection
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/architecture/SQL_GENERATION/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SQL Generation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/architecture/MODULE_SYSTEM/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Module System
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/architecture/STATEMENT_CACHING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Statement Caching
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/architecture/COMPILE_TIME_VS_RUNTIME/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compile-Time vs Runtime
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_2" id="__nav_3_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Building
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Building
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/building/GETTING_STARTED/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/building/COMMON_TASKS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Common Tasks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/building/ADDING_FEATURES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding Features
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/building/PRE_COMMIT/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Pre-Commit
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/building/FORMATTING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Formatting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_3" id="__nav_3_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Testing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/testing/TESTING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Testing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/testing/CODE_COVERAGE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Coverage
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/testing/SANITIZERS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Sanitizers
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/testing/FUZZING/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Fuzzing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/testing/MSAN_LIBC_FIX/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    MSAN libc Fix
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_4" id="__nav_3_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Performance
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/performance/PERFORMANCE/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Performance
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/performance/BENCHMARK_DASHBOARD/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Benchmark Dashboard
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/performance/JOIN_ANALYSIS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    JOIN Analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/performance/DISTINCT_ANALYSIS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    DISTINCT Analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_3_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_5" id="__nav_3_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compiler
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Compiler
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/compiler/COMPILER_ISSUES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compiler Issues
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/compiler/COMPILER_ATTRIBUTES/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Compiler Attributes
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/compiler/CPP26_CODING_STANDARDS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    C++26 Coding Standards
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../internals/compiler/CODE_QUALITY/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Code Quality
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Archive
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Archive
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../archive/SELECT_OPTIMIZATION_REPORT/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SELECT Optimization Report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../archive/SELECT_PERFORMANCE_ANALYSIS/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    SELECT Performance Analysis
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../archive/UPDATE_OPTIMIZATION_REPORT/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UPDATE Optimization Report
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#file-structure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        File structure
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#plan-revision-2026-05-31-l1-and-l2-must-collapse-together-per-statement-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ⚠️ PLAN REVISION (2026-05-31) — L1 and L2 must collapse together per statement type
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="⚠️ PLAN REVISION (2026-05-31) — L1 and L2 must collapse together per statement type">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#task-1-branch-setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 1: Branch setup
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-2-collapse-l2-in-selectcppm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 2: Collapse L2 in select.cppm
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-3-collapse-l2-in-updatecppm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 3: Collapse L2 in update.cppm
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-4-collapse-l2-in-insertcppm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 4: Collapse L2 in insert.cppm
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-5-collapse-l2-in-erasecppm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 5: Collapse L2 in erase.cppm
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-6-verify-distinctaggregate-and-collapse-l2-in-setopcppm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 6: Verify distinct/aggregate AND collapse L2 in setop.cppm
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-7-collapse-l1-in-querysetcppm" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 7: Collapse L1 in queryset.cppm
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-8-remove-the-storm_disable_l1l2-scaffolding-and-the-probe" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 8: Remove the STORM_DISABLE_L1/L2 scaffolding and the probe
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-9-full-gate-run-sanitizers-core-8-benchmark" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 9: Full gate run (sanitizers + Core 8 benchmark)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#task-10-update-docs-and-rewrite-273" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Task 10: Update docs and rewrite #273
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="collapse-l1l2-statement-caching-option-c-implementation-plan">Collapse L1/L2 Statement Caching (Option C) Implementation Plan<a class="headerlink" href="#collapse-l1l2-statement-caching-option-c-implementation-plan" title="Permanent link">&para;</a></h1>
+<blockquote>
+<p><strong>For agentic workers:</strong> REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (<code>- [ ]</code>) syntax for tracking.</p>
+</blockquote>
+<p><strong>Goal:</strong> Remove the L1 (QuerySet statement cache) and L2 (Statement prepared-pointer cache) levels entirely, leaving the single mutex-protected L3 Connection cache, with no behavioral or performance regression.</p>
+<p><strong>Architecture:</strong> Approach A — every result proxy stops holding <code>Statement&amp;</code> and instead owns its <code>Statement</code> by value; <code>query(...)</code> factories move a freshly-constructed statement into the returned proxy, so proxy + statement share one stack lifetime. All <code>cached_*</code> pointer/string members, fast-path branches, and the <code>invalidate_cache()</code> machinery are deleted across the statement classes; the four <code>get_*_statement()</code> lazy accessors and their <code>unique_ptr</code> members are deleted from QuerySet and call sites construct a statement inline. The <code>STORM_DISABLE_L1/L2</code> flags and the <code>storm_cache_probe</code> bench are deleted.</p>
+<p><strong>Tech Stack:</strong> C++26 / clang-p2996, CMake + Ninja, GoogleTest, Google Benchmark, SQLite + PostgreSQL.</p>
+<p><strong>Spec:</strong> <code>docs/superpowers/specs/2026-05-30-collapse-l1-l2-cache-design.md</code></p>
+<hr />
+<h2 id="file-structure">File structure<a class="headerlink" href="#file-structure" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>src/orm/statements/select.cppm</code> — biggest: 6 cached members, 5 fast-path helpers, <code>invalidate_cache()</code>, 5 proxies (<code>Query</code>/<code>FirstQuery</code>/<code>GetQuery</code> own-by-value).</li>
+<li><code>src/orm/statements/update.cppm</code> — <code>cached_update_stmt_</code>, <code>ensure_cached_stmt()</code>, 2 proxies.</li>
+<li><code>src/orm/statements/insert.cppm</code> — <code>cached_insert_returning_stmt_</code>, 4 proxies.</li>
+<li><code>src/orm/statements/erase.cppm</code> — <code>cached_single_stmt_</code>, <code>cached_max_bulk_stmt_</code>, <code>invalidate_cache()</code>, 3 proxies.</li>
+<li><code>src/orm/statements/distinct.cppm</code>, <code>aggregate.cppm</code> — verify (no <code>cached_</code> members found; confirm no <code>Statement&amp;</code> proxy / L1 dependence).</li>
+<li><code>src/orm/queryset.cppm</code> — 4 <code>unique_ptr</code> members + 4 <code>get_*_statement()</code> accessors + 12 call sites + <code>reset()</code>/<code>invalidate_cache()</code> chain.</li>
+<li><code>benchmarks/cache_probe.cpp</code> (delete), <code>benchmarks/CMakeLists.txt</code> (remove target).</li>
+<li><code>docs/architecture/STATEMENT_CACHING.md</code> (rewrite to single-level).</li>
+</ul>
+<hr />
+<h2 id="plan-revision-2026-05-31-l1-and-l2-must-collapse-together-per-statement-type">⚠️ PLAN REVISION (2026-05-31) — L1 and L2 must collapse together per statement type<a class="headerlink" href="#plan-revision-2026-05-31-l1-and-l2-must-collapse-together-per-statement-type" title="Permanent link">&para;</a></h2>
+<p>During Task 2 execution we discovered the original "all L2 first, then all L1" ordering is <strong>unsound</strong>.
+Approach A's <code>std::move(*this)</code> in a <code>query()</code> factory moves the statement into the proxy. While L1
+still exists, <code>get_select_statement()</code> returns a reference to the <em>cached</em> <code>select_stmt_</code> member, so
+<code>std::move(*this)</code> moves <strong>out of the cached object</strong>, corrupting it for the QuerySet's next reuse →
+48 segfaults in reuse tests. Neither order works alone: L2-by-value needs the source to be a per-call
+temporary (L1 gone), and L1-construct-inline alone leaves the proxy holding a <code>Statement&amp;</code> to a dead
+temporary.</p>
+<p><strong>Resolution:</strong> collapse L1 + L2 <strong>together, per statement type, in one commit.</strong> Each task below now
+also rewrites that type's QuerySet call sites (from <code>get_X_statement().method(...)</code> to
+<code>XStatement&lt;T, ConnType&gt;(conn_).method(...)</code>) AND deletes that type's L1 accessor + <code>unique_ptr</code>
+member, in the SAME commit as the L2 proxy/member changes. This keeps every commit green.</p>
+<p>The per-type call sites and L1 members (from <code>queryset.cppm</code>):
+- <strong>SELECT</strong> (Task 2): call sites <code>select()</code> ~157, <code>rows()</code> ~166, <code>first()</code> ~174, <code>get()</code> ~186;
+  accessor <code>get_select_statement()</code> ~562; member <code>select_stmt_</code> ~605.
+- <strong>UPDATE</strong> (Task 3): call sites <code>update(obj)</code> ~277, <code>update(objects)</code> ~282; accessor
+  <code>get_update_statement()</code> ~550; member <code>update_stmt_</code> ~606.
+- <strong>INSERT</strong> (Task 4): call sites <code>insert(obj)</code> ~80, <code>insert(objects,opts)</code> ~89, templated <code>insert&lt;R&gt;</code>
+  ~95; accessor <code>get_insert_statement()</code> ~526; member <code>insert_stmt_</code> ~603.
+- <strong>ERASE</strong> (Task 5): call sites <code>erase(obj)</code> ~60, <code>erase(objects)</code> ~65, <code>erase_all()</code> ~70; accessor
+  <code>get_erase_statement()</code> ~538; member <code>erase_stmt_</code> ~604.</p>
+<p>After all four types are collapsed, <strong>Task 7 shrinks</strong> to: delete the now-dead
+<code>QuerySet::invalidate_cache()</code> + <code>CacheInvalidationLevel1Test</code> + the <code>reset()</code> call to it, delete the
+empty statement-level <code>invalidate_cache()</code> stubs, and confirm no <code>_stmt_</code> members or <code>get_*_statement()</code>
+accessors remain. (The per-member deletions happen in Tasks 2-5.)</p>
+<p>Each task's "convert proxies to own-by-value + delete cached members" steps stay as written below; ADD
+to each: rewrite that type's call sites + delete its accessor + member, and do NOT leave an
+<code>invalidate_cache()</code> stub if that type's QuerySet caller is removed in the same commit (SELECT/ERASE
+stubs can still be deferred to Task 7 since <code>reset()</code> calls the shared <code>invalidate_cache()</code> — simplest
+is to keep stubs through Tasks 2-5 and delete them all in Task 7).</p>
+<hr />
+<h3 id="task-1-branch-setup">Task 1: Branch setup<a class="headerlink" href="#task-1-branch-setup" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong> none (git)</p>
+<ul>
+<li>[ ] <strong>Step 1: Create the collapse branch off develop</strong></li>
+</ul>
+<p>The investigation branch (<code>feature/214-cache-investigation</code>) holds the spec, plan, results, and the
+<code>#ifdef</code> scaffolding. The collapse is new work; branch off the current branch so it inherits the spec
++ plan, then it will be rebased/PR'd onto develop.</p>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>git<span class="w"> </span>checkout<span class="w"> </span>-b<span class="w"> </span>feature/214-collapse-l1-l2
+</code></pre></div>
+Expected: switched to a new branch <code>feature/214-collapse-l1-l2</code>.</p>
+<ul>
+<li>[ ] <strong>Step 2: Verify baseline is green before any change</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>--preset<span class="w"> </span>ninja-debug<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>ninja-debug<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-5<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>ctest<span class="w"> </span>--preset<span class="w"> </span>ninja-debug<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-15
+</code></pre></div>
+Expected: build clean, all tests pass (the suite is the behavioral spec for this refactor). If
+anything fails here it is a pre-existing issue — STOP and report; do not start the refactor on a red
+baseline.</p>
+<hr />
+<h3 id="task-2-collapse-l2-in-selectcppm">Task 2: Collapse L2 in select.cppm<a class="headerlink" href="#task-2-collapse-l2-in-selectcppm" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Modify: <code>src/orm/statements/select.cppm</code></p>
+<p>This is the largest task. SelectStatement currently has the <code>#ifdef STORM_DISABLE_L2</code> guards from the
+investigation — they make the disabled path <code>if (true)</code>. The collapse makes that the <em>only</em> path and
+deletes the cached members. <strong>Keep the <code>#ifdef</code> blocks for now</strong> (they are removed wholesale in
+Task 8); this task removes the cached-member <em>reads/writes</em> and converts the proxies to own-by-value.</p>
+<p>The proxies hold <code>SelectStatement&amp; stmt;</code> (<code>QueryBase</code> at ~line 151). Approach A changes this to
+<code>SelectStatement stmt;</code> by value, and the <code>query</code>/<code>make_first_or_get</code> factories move <code>*this</code> in.</p>
+<ul>
+<li>[ ] <strong>Step 1: Read the current proxy + factory + cached members</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>sed<span class="w"> </span>-n<span class="w"> </span><span class="s1">&#39;146,262p;425,520p;625,665p&#39;</span><span class="w"> </span>src/orm/statements/select.cppm
+</code></pre></div>
+Confirm the structures match what this task edits (QueryBase <code>SelectStatement&amp; stmt</code>; <code>query()</code>
+returns <code>{*this, …}</code>; <code>make_first_or_get</code> returns <code>{{*this, …}, fast}</code>; the cached members at the
+bottom; <code>invalidate_cache()</code>; the fast-path helpers <code>prepare_simple_path</code>, <code>rebind_where_only</code>,
+<code>can_use_addr_fast_path</code>, <code>prepare_and_bind</code>, <code>prepare_statement</code>).</p>
+<ul>
+<li>[ ] <strong>Step 2: Convert <code>QueryBase</code> to own the statement by value</strong></li>
+</ul>
+<p>Change the member declaration in <code>QueryBase</code> (~line 151) from:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="w">        </span><span class="k">struct</span><span class="w"> </span><span class="nc">QueryBase</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">            </span><span class="n">SelectStatement</span><span class="o">&amp;</span><span class="w">                    </span><span class="n">stmt</span><span class="p">;</span>
+</code></pre></div>
+to:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="w">        </span><span class="k">struct</span><span class="w"> </span><span class="nc">QueryBase</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">            </span><span class="n">SelectStatement</span><span class="w">                     </span><span class="n">stmt</span><span class="p">;</span>
+</code></pre></div>
+(All three proxies — <code>Query</code>, <code>FirstQuery</code>, <code>GetQuery</code> — derive from <code>QueryBase</code>, so they inherit the
+by-value <code>stmt</code>. Their method bodies use <code>this-&gt;stmt.foo()</code> and need no change.)</p>
+<ul>
+<li>[ ] <strong>Step 3: Move <code>*this</code> into the proxy in the factories</strong></li>
+</ul>
+<p><code>query()</code> (~226):
+<div class="highlight"><pre><span></span><code><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="w">        </span><span class="k">auto</span><span class="w"> </span><span class="n">query</span><span class="p">(...)</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">Query</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="p">{</span><span class="n">std</span><span class="o">::</span><span class="n">move</span><span class="p">(</span><span class="o">*</span><span class="k">this</span><span class="p">),</span><span class="w"> </span><span class="n">jw</span><span class="p">,</span><span class="w"> </span><span class="n">we</span><span class="p">,</span><span class="w"> </span><span class="n">lv</span><span class="p">,</span><span class="w"> </span><span class="n">ov</span><span class="p">,</span><span class="w"> </span><span class="n">ob</span><span class="p">};</span>
+<a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="w">        </span><span class="p">}</span>
+</code></pre></div>
+<code>make_first_or_get</code> (~242):
+<div class="highlight"><pre><span></span><code><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="p">{{</span><span class="n">std</span><span class="o">::</span><span class="n">move</span><span class="p">(</span><span class="o">*</span><span class="k">this</span><span class="p">),</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">move</span><span class="p">(</span><span class="n">jw</span><span class="p">),</span><span class="w"> </span><span class="n">we</span><span class="p">,</span><span class="w"> </span><span class="n">lv</span><span class="p">,</span><span class="w"> </span><span class="n">ov</span><span class="p">,</span><span class="w"> </span><span class="n">ob</span><span class="p">},</span><span class="w"> </span><span class="n">fast</span><span class="p">};</span>
+</code></pre></div>
+(Keep the parameter lists exactly as they are; only <code>*this</code> → <code>std::move(*this)</code>.)</p>
+<ul>
+<li>[ ] <strong>Step 4: Delete the cached-member reads in the fast paths</strong></li>
+</ul>
+<p>The fast-path helpers exist only to reuse <code>cached_*</code> pointers. With L2 gone they reduce to a plain
+<code>prepare_cached → (bind) → return</code>. Replace the bodies:</p>
+<p><code>prepare_simple_path()</code> (~440) becomes:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="w">        </span><span class="p">[[</span><span class="n">nodiscard</span><span class="p">]]</span><span class="w"> </span><span class="n">__attribute__</span><span class="p">((</span><span class="n">always_inline</span><span class="p">))</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">prepare_simple_path</span><span class="p">()</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">expected</span><span class="o">&lt;</span><span class="n">Statement</span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">Error</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">conn_</span><span class="o">-&gt;</span><span class="n">prepare_cached</span><span class="p">(</span><span class="n">get_select_sql</span><span class="p">());</span>
+<a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a><span class="w">        </span><span class="p">}</span>
+</code></pre></div></p>
+<p><code>prepare_and_bind(...)</code> (~460): drop the <code>cached_stmt_/cached_sql_</code> guard and the address-cache write;
+it becomes a straight prepare-then-bind:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="w">        </span><span class="p">[[</span><span class="n">nodiscard</span><span class="p">]]</span><span class="w"> </span><span class="n">__attribute__</span><span class="p">((</span><span class="n">always_inline</span><span class="p">))</span><span class="w"> </span><span class="k">auto</span>
+<a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a><span class="w">        </span><span class="n">prepare_and_bind</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">string</span><span class="w"> </span><span class="n">sql</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">orm</span><span class="o">::</span><span class="n">where</span><span class="o">::</span><span class="n">ExpressionVariantPtr</span><span class="o">&amp;</span><span class="w"> </span><span class="n">where_expr</span><span class="p">)</span>
+<a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a><span class="w">                </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">expected</span><span class="o">&lt;</span><span class="n">Statement</span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">Error</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a><span class="w">            </span><span class="k">auto</span><span class="w"> </span><span class="n">prepare_result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">conn_</span><span class="o">-&gt;</span><span class="n">prepare_cached</span><span class="p">(</span><span class="n">sql</span><span class="p">);</span>
+<a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a><span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">prepare_result</span><span class="p">)</span><span class="w"> </span><span class="p">[[</span><span class="n">unlikely</span><span class="p">]]</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="w">                </span><span class="k">return</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">unexpected</span><span class="p">(</span><span class="n">Error</span><span class="p">{</span><span class="mi">-1</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Failed to prepare statement&quot;</span><span class="p">});</span>
+<a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="w">            </span><span class="p">}</span>
+<a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a><span class="w">            </span><span class="n">Statement</span><span class="o">*</span><span class="w"> </span><span class="n">stmt</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">*</span><span class="n">prepare_result</span><span class="p">;</span>
+<a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a><span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">where_expr</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a><span class="w">                </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="k">auto</span><span class="w"> </span><span class="n">r</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">Base</span><span class="o">::</span><span class="k">template</span><span class="w"> </span><span class="n">bind_where_params</span><span class="o">&lt;</span><span class="n">Statement</span><span class="p">,</span><span class="w"> </span><span class="n">Error</span><span class="o">&gt;</span><span class="p">(</span><span class="n">stmt</span><span class="p">,</span><span class="w"> </span><span class="n">where_expr</span><span class="p">);</span><span class="w"> </span><span class="o">!</span><span class="n">r</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a><span class="w">                    </span><span class="k">return</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">unexpected</span><span class="p">(</span><span class="n">r</span><span class="p">.</span><span class="n">error</span><span class="p">());</span>
+<a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a><span class="w">                </span><span class="p">}</span>
+<a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a><span class="w">            </span><span class="p">}</span>
+<a id="__codelineno-8-14" name="__codelineno-8-14" href="#__codelineno-8-14"></a><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">stmt</span><span class="p">;</span>
+<a id="__codelineno-8-15" name="__codelineno-8-15" href="#__codelineno-8-15"></a><span class="w">        </span><span class="p">}</span>
+</code></pre></div></p>
+<blockquote>
+<p>NOTE: confirm the exact spelling of the WHERE-bind call by reading the current <code>prepare_and_bind</code>
+and <code>bind_where_or_propagate</code> (the original calls a <code>bind_where_or_propagate(where_expr)</code> helper).
+Reuse whatever helper the original used to bind — do not invent a new binding call. The point of
+this step is only to remove the <code>cached_stmt_ == nullptr || cached_sql_ != sql</code> short-circuit and
+the <code>cached_sql_ = std::move(sql)</code> write, keeping the prepare+bind behavior identical.</p>
+</blockquote>
+<p><code>prepare_statement(...)</code> (~499): remove the <code>can_use_addr_fast_path</code> / <code>rebind_where_only</code> branch and
+the <code>cached_where_addr_ = where_addr</code> write, leaving:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a><span class="w">        </span><span class="p">[[</span><span class="n">nodiscard</span><span class="p">]]</span><span class="w"> </span><span class="n">__attribute__</span><span class="p">((</span><span class="n">always_inline</span><span class="p">))</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">prepare_statement</span><span class="p">(</span>
+<a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="w">                </span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">optional</span><span class="o">&lt;</span><span class="n">JoinStatementWrapper</span><span class="o">&gt;&amp;</span><span class="w"> </span><span class="n">join_wrapper</span><span class="p">,</span>
+<a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a><span class="w">                </span><span class="k">const</span><span class="w"> </span><span class="n">orm</span><span class="o">::</span><span class="n">where</span><span class="o">::</span><span class="n">ExpressionVariantPtr</span><span class="o">&amp;</span><span class="w">    </span><span class="n">where_expr</span><span class="p">,</span>
+<a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="w">                </span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">optional</span><span class="o">&lt;</span><span class="kt">int</span><span class="o">&gt;&amp;</span><span class="w">                  </span><span class="n">limit</span><span class="p">,</span>
+<a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="w">                </span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">optional</span><span class="o">&lt;</span><span class="kt">int</span><span class="o">&gt;&amp;</span><span class="w">                  </span><span class="n">offset</span><span class="p">,</span>
+<a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="w">                </span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">optional</span><span class="o">&lt;</span><span class="n">OrderByWrapper</span><span class="o">&gt;&amp;</span><span class="w">       </span><span class="n">order_by_wrapper</span>
+<a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="w">        </span><span class="p">)</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">expected</span><span class="o">&lt;</span><span class="n">Statement</span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">Error</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">is_simple_select</span><span class="p">(</span><span class="n">join_wrapper</span><span class="p">,</span><span class="w"> </span><span class="n">where_expr</span><span class="p">,</span><span class="w"> </span><span class="n">limit</span><span class="p">,</span><span class="w"> </span><span class="n">offset</span><span class="p">,</span><span class="w"> </span><span class="n">order_by_wrapper</span><span class="p">))</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-9-9" name="__codelineno-9-9" href="#__codelineno-9-9"></a><span class="w">                </span><span class="k">return</span><span class="w"> </span><span class="n">prepare_simple_path</span><span class="p">();</span>
+<a id="__codelineno-9-10" name="__codelineno-9-10" href="#__codelineno-9-10"></a><span class="w">            </span><span class="p">}</span>
+<a id="__codelineno-9-11" name="__codelineno-9-11" href="#__codelineno-9-11"></a><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">prepare_and_bind</span><span class="p">(</span><span class="n">build_sql</span><span class="p">(</span><span class="n">join_wrapper</span><span class="p">,</span><span class="w"> </span><span class="n">where_expr</span><span class="p">,</span><span class="w"> </span><span class="n">limit</span><span class="p">,</span><span class="w"> </span><span class="n">offset</span><span class="p">,</span><span class="w"> </span><span class="n">order_by_wrapper</span><span class="p">),</span><span class="w"> </span><span class="n">where_expr</span><span class="p">);</span>
+<a id="__codelineno-9-12" name="__codelineno-9-12" href="#__codelineno-9-12"></a><span class="w">        </span><span class="p">}</span>
+</code></pre></div></p>
+<p><code>execute_one_fast()</code> (~288) and <code>execute_get_fast()</code> (~328): drop the cached-pointer guard, prepare
+locally each call:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="w">        </span><span class="p">[[</span><span class="n">nodiscard</span><span class="p">]]</span><span class="w"> </span><span class="n">__attribute__</span><span class="p">((</span><span class="n">hot</span><span class="p">))</span><span class="w"> </span><span class="n">__attribute__</span><span class="p">((</span><span class="n">flatten</span><span class="p">))</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">execute_one_fast</span><span class="p">()</span>
+<a id="__codelineno-10-2" name="__codelineno-10-2" href="#__codelineno-10-2"></a><span class="w">                </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">expected</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="n">optional</span><span class="o">&lt;</span><span class="n">T</span><span class="o">&gt;</span><span class="p">,</span><span class="w"> </span><span class="n">Error</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-10-3" name="__codelineno-10-3" href="#__codelineno-10-3"></a><span class="w">            </span><span class="k">auto</span><span class="w"> </span><span class="n">prepare_result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">conn_</span><span class="o">-&gt;</span><span class="n">prepare_cached</span><span class="p">(</span><span class="n">select_limit1_sql_string</span><span class="p">);</span>
+<a id="__codelineno-10-4" name="__codelineno-10-4" href="#__codelineno-10-4"></a><span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">prepare_result</span><span class="p">)</span><span class="w"> </span><span class="p">[[</span><span class="n">unlikely</span><span class="p">]]</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-10-5" name="__codelineno-10-5" href="#__codelineno-10-5"></a><span class="w">                </span><span class="k">return</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">unexpected</span><span class="p">(</span><span class="n">prepare_result</span><span class="p">.</span><span class="n">error</span><span class="p">());</span>
+<a id="__codelineno-10-6" name="__codelineno-10-6" href="#__codelineno-10-6"></a><span class="w">            </span><span class="p">}</span>
+<a id="__codelineno-10-7" name="__codelineno-10-7" href="#__codelineno-10-7"></a><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">execute_single_row</span><span class="p">(</span><span class="o">*</span><span class="n">prepare_result</span><span class="p">,</span><span class="w"> </span><span class="p">[](</span><span class="n">Statement</span><span class="o">*</span><span class="w"> </span><span class="n">stmt</span><span class="p">,</span><span class="w"> </span><span class="n">T</span><span class="o">&amp;</span><span class="w"> </span><span class="n">obj</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-10-8" name="__codelineno-10-8" href="#__codelineno-10-8"></a><span class="w">                </span><span class="n">Base</span><span class="o">::</span><span class="n">extract_all_columns</span><span class="p">(</span><span class="n">stmt</span><span class="p">,</span><span class="w"> </span><span class="n">obj</span><span class="p">);</span>
+<a id="__codelineno-10-9" name="__codelineno-10-9" href="#__codelineno-10-9"></a><span class="w">            </span><span class="p">});</span>
+<a id="__codelineno-10-10" name="__codelineno-10-10" href="#__codelineno-10-10"></a><span class="w">        </span><span class="p">}</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a><span class="w">        </span><span class="p">[[</span><span class="n">nodiscard</span><span class="p">]]</span><span class="w"> </span><span class="n">__attribute__</span><span class="p">((</span><span class="n">hot</span><span class="p">))</span><span class="w"> </span><span class="n">__attribute__</span><span class="p">((</span><span class="n">flatten</span><span class="p">))</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">execute_get_fast</span><span class="p">()</span><span class="w"> </span><span class="o">-&gt;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">expected</span><span class="o">&lt;</span><span class="n">T</span><span class="p">,</span><span class="w"> </span><span class="n">Error</span><span class="o">&gt;</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-11-2" name="__codelineno-11-2" href="#__codelineno-11-2"></a><span class="w">            </span><span class="k">auto</span><span class="w"> </span><span class="n">prepare_result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">conn_</span><span class="o">-&gt;</span><span class="n">prepare_cached</span><span class="p">(</span><span class="n">select_limit2_sql_string</span><span class="p">);</span>
+<a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">prepare_result</span><span class="p">)</span><span class="w"> </span><span class="p">[[</span><span class="n">unlikely</span><span class="p">]]</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">                </span><span class="k">return</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">unexpected</span><span class="p">(</span><span class="n">prepare_result</span><span class="p">.</span><span class="n">error</span><span class="p">());</span>
+<a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">            </span><span class="p">}</span>
+<a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">execute_exact_one</span><span class="p">(</span><span class="o">*</span><span class="n">prepare_result</span><span class="p">,</span><span class="w"> </span><span class="p">[](</span><span class="n">Statement</span><span class="o">*</span><span class="w"> </span><span class="n">stmt</span><span class="p">,</span><span class="w"> </span><span class="n">T</span><span class="o">&amp;</span><span class="w"> </span><span class="n">obj</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="w">                </span><span class="n">Base</span><span class="o">::</span><span class="n">extract_all_columns</span><span class="p">(</span><span class="n">stmt</span><span class="p">,</span><span class="w"> </span><span class="n">obj</span><span class="p">);</span>
+<a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="w">            </span><span class="p">});</span>
+<a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="w">        </span><span class="p">}</span>
+</code></pre></div></p>
+<ul>
+<li>[ ] <strong>Step 5: Delete <code>rebind_where_only</code>, <code>can_use_addr_fast_path</code>, <code>invalidate_cache</code>, and the cached members</strong></li>
+</ul>
+<p>Delete the entire <code>rebind_where_only(...)</code> method (~445), the entire <code>can_use_addr_fast_path(...)</code>
+method (~494), the entire <code>invalidate_cache()</code> method (~254), and the six cached member declarations
+at the bottom (~651-662): <code>cached_simple_stmt_</code>, <code>cached_first_stmt_</code>, <code>cached_get_stmt_</code>,
+<code>cached_stmt_</code>, <code>cached_where_addr_</code>, <code>cached_sql_</code>.</p>
+<blockquote>
+<p>NOTE: <code>invalidate_cache()</code> is called from <code>QuerySet::reset()</code>/<code>invalidate_cache()</code> (queryset.cppm).
+Removing it here will break those callers — that is expected and is fixed in Task 7 (L1). To keep
+the suite green <em>per task</em>, this task must keep compiling: since <code>get_select_statement()</code> still
+exists in Task 2's world (L1 not yet removed) and QuerySet still calls the statement's
+<code>invalidate_cache()</code>, you have two options — (a) leave a no-op <code>invalidate_cache() noexcept {}</code> stub
+in SelectStatement for now and delete it in Task 7, or (b) do the QuerySet caller cleanup in this
+task. <strong>Choose (a): leave an empty <code>auto invalidate_cache() noexcept -&gt; void {}</code> stub</strong> so Task 2 is
+self-contained and green; Task 7 removes the stub and its callers together. Replace the body of
+<code>invalidate_cache()</code> with empty rather than deleting the method in this task.</p>
+</blockquote>
+<ul>
+<li>[ ] <strong>Step 6: Build + test</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>ninja-debug<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-15<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>ctest<span class="w"> </span>--preset<span class="w"> </span>ninja-debug<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-15
+</code></pre></div>
+Expected: clean build, all tests pass. If "malformed or corrupted precompiled file" → rebuild once
+with <code>-j1</code>. If a move-constructor error appears (SelectStatement not movable), read the class for a
+deleted/odd special member and report — do not force a fix that changes semantics.</p>
+<ul>
+<li>[ ] <strong>Step 7: Commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-13-1" name="__codelineno-13-1" href="#__codelineno-13-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>git<span class="w"> </span>add<span class="w"> </span>src/orm/statements/select.cppm<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;refactor(cache): collapse L2 in SelectStatement — proxy owns statement by value&quot;</span>
+</code></pre></div>
+<hr />
+<h3 id="task-3-collapse-l2-in-updatecppm">Task 3: Collapse L2 in update.cppm<a class="headerlink" href="#task-3-collapse-l2-in-updatecppm" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Modify: <code>src/orm/statements/update.cppm</code></p>
+<p>UpdateStatement has <code>cached_update_stmt_</code> + <code>ensure_cached_stmt()</code> (~193) and 2 proxies (<code>SingleQuery</code>,
+<code>BulkQuery</code>) holding <code>UpdateStatement&amp; stmt</code>.</p>
+<ul>
+<li>[ ] <strong>Step 1: Read the relevant regions</strong></li>
+</ul>
+<p>Run: <code>cd /home/ihor/projects/storm/storm_develop &amp;&amp; sed -n '125,310p' src/orm/statements/update.cppm</code>
+Confirm: <code>SingleQuery</code>/<code>BulkQuery</code> hold <code>UpdateStatement&amp; stmt</code>; <code>query()</code> returns <code>{{}, *this, obj}</code> /
+<code>{{}, *this, objects}</code>; <code>ensure_cached_stmt()</code> and <code>cached_update_stmt_</code> exist; the
+<code>execute_single_optimized</code> path uses <code>cached_update_stmt_</code>.</p>
+<ul>
+<li>[ ] <strong>Step 2: Convert proxies to own by value</strong></li>
+</ul>
+<p><code>SingleQuery</code> (~139) and <code>BulkQuery</code> (~150): change <code>UpdateStatement&amp;   stmt;</code> → <code>UpdateStatement   stmt;</code>.</p>
+<ul>
+<li>[ ] <strong>Step 3: Move into the proxy in the factories</strong></li>
+</ul>
+<p><code>query(const T&amp; obj …)</code> (~161): <code>return {{}, std::move(*this), obj};</code>
+<code>query(std::span&lt;const T&gt; objects …)</code> (~164): <code>return {{}, std::move(*this), objects};</code></p>
+<ul>
+<li>[ ] <strong>Step 4: Replace <code>ensure_cached_stmt()</code> + cached uses with per-call prepare</strong></li>
+</ul>
+<p><code>ensure_cached_stmt()</code> (~193) exists to lazily fill <code>cached_update_stmt_</code>. Inline a local prepare into
+the methods that called it (<code>execute_single_optimized</code> ~285 and the other caller ~228). Each callsite
+that did <code>if (auto ready = ensure_cached_stmt(); !ready) return …; … cached_update_stmt_-&gt;…</code> becomes:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-14-1" name="__codelineno-14-1" href="#__codelineno-14-1"></a><span class="w">            </span><span class="k">auto</span><span class="w"> </span><span class="n">prepare_result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">conn_</span><span class="o">-&gt;</span><span class="n">prepare_cached</span><span class="p">(</span><span class="n">get_update_sql</span><span class="p">());</span>
+<a id="__codelineno-14-2" name="__codelineno-14-2" href="#__codelineno-14-2"></a><span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">prepare_result</span><span class="p">)</span><span class="w"> </span><span class="p">[[</span><span class="n">unlikely</span><span class="p">]]</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-14-3" name="__codelineno-14-3" href="#__codelineno-14-3"></a><span class="w">                </span><span class="k">return</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">unexpected</span><span class="p">(</span><span class="n">prepare_result</span><span class="p">.</span><span class="n">error</span><span class="p">());</span>
+<a id="__codelineno-14-4" name="__codelineno-14-4" href="#__codelineno-14-4"></a><span class="w">            </span><span class="p">}</span>
+<a id="__codelineno-14-5" name="__codelineno-14-5" href="#__codelineno-14-5"></a><span class="w">            </span><span class="n">Statement</span><span class="o">*</span><span class="w"> </span><span class="n">stmt</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">*</span><span class="n">prepare_result</span><span class="p">;</span>
+<a id="__codelineno-14-6" name="__codelineno-14-6" href="#__codelineno-14-6"></a><span class="w">            </span><span class="n">stmt</span><span class="o">-&gt;</span><span class="n">reset</span><span class="p">();</span>
+<a id="__codelineno-14-7" name="__codelineno-14-7" href="#__codelineno-14-7"></a><span class="w">            </span><span class="k">auto</span><span class="w"> </span><span class="n">bind_result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">inline_bind_all_fields</span><span class="p">(</span><span class="n">stmt</span><span class="p">,</span><span class="w"> </span><span class="n">obj</span><span class="p">,</span><span class="w"> </span><span class="k">typename</span><span class="w"> </span><span class="nc">Base</span><span class="o">::</span><span class="n">field_indices_t</span><span class="p">{});</span>
+<a id="__codelineno-14-8" name="__codelineno-14-8" href="#__codelineno-14-8"></a><span class="w">            </span><span class="c1">// … then the existing execute/reset logic, using `stmt` instead of `cached_update_stmt_`</span>
+</code></pre></div></p>
+<blockquote>
+<p>NOTE: read the two current callers of <code>ensure_cached_stmt()</code> and reproduce their exact
+bind/execute/reset sequence, substituting a local <code>stmt</code> for <code>cached_update_stmt_</code>. Do not change
+the bind helper (<code>inline_bind_all_fields</code>) or the reset ordering — only remove the caching.</p>
+</blockquote>
+<ul>
+<li>[ ] <strong>Step 5: Delete <code>ensure_cached_stmt()</code> and <code>cached_update_stmt_</code></strong></li>
+</ul>
+<p>Remove the <code>ensure_cached_stmt()</code> method and the <code>cached_update_stmt_</code> member declaration.</p>
+<ul>
+<li>[ ] <strong>Step 6: Build + test</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-15-1" name="__codelineno-15-1" href="#__codelineno-15-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>ninja-debug<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-15<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>ctest<span class="w"> </span>--preset<span class="w"> </span>ninja-debug<span class="w"> </span>--output-on-failure<span class="w"> </span>-R<span class="w"> </span><span class="s2">&quot;Update|update&quot;</span><span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-20<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>ctest<span class="w"> </span>--preset<span class="w"> </span>ninja-debug<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-8
+</code></pre></div>
+Expected: clean build, update tests pass, full suite passes.</p>
+<ul>
+<li>[ ] <strong>Step 7: Commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-16-1" name="__codelineno-16-1" href="#__codelineno-16-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>git<span class="w"> </span>add<span class="w"> </span>src/orm/statements/update.cppm<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;refactor(cache): collapse L2 in UpdateStatement — proxy owns statement by value&quot;</span>
+</code></pre></div>
+<hr />
+<h3 id="task-4-collapse-l2-in-insertcppm">Task 4: Collapse L2 in insert.cppm<a class="headerlink" href="#task-4-collapse-l2-in-insertcppm" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Modify: <code>src/orm/statements/insert.cppm</code></p>
+<p>InsertStatement has <code>cached_insert_returning_stmt_</code> (~380) and 4 proxies (<code>SingleQuery</code>, <code>VoidQuery</code>,
+<code>BulkQuery</code>, <code>BulkReturningQuery</code>) holding <code>InsertStatement&amp; stmt</code>.</p>
+<ul>
+<li>[ ] <strong>Step 1: Read the regions</strong></li>
+</ul>
+<p>Run: <code>cd /home/ihor/projects/storm/storm_develop &amp;&amp; sed -n '215,420p' src/orm/statements/insert.cppm</code>
+Confirm the 4 proxies hold <code>InsertStatement&amp; stmt</code>, the <code>query&lt;R&gt;(...)</code> factories return
+<code>{*this, …}</code>-shaped aggregates, and <code>cached_insert_returning_stmt_</code> is used in the RETURNING path
+(~380-405).</p>
+<ul>
+<li>[ ] <strong>Step 2: Convert all 4 proxies to own by value</strong></li>
+</ul>
+<p>Change <code>InsertStatement&amp;   stmt;</code> / <code>InsertStatement&amp;             stmt;</code> → <code>InsertStatement   stmt;</code> in
+<code>SingleQuery</code> (~221), <code>VoidQuery</code> (~235), <code>BulkQuery</code> (~249), <code>BulkReturningQuery</code> (~264). Keep the
+<code>// NOSONAR(cpp:S1659)</code> comment on <code>BulkReturningQuery</code> if it remains an aggregate.</p>
+<ul>
+<li>[ ] <strong>Step 3: Move into the proxies in the <code>query&lt;R&gt;</code> factories</strong></li>
+</ul>
+<p>In each <code>query&lt;R&gt;(...)</code> factory (~279 onward), change the returned aggregate's first element from
+<code>*this</code> to <code>std::move(*this)</code>. Read each factory and apply the move; the brace shapes differ per proxy
+so match each one's existing initializer.</p>
+<ul>
+<li>[ ] <strong>Step 4: Replace <code>cached_insert_returning_stmt_</code> with a per-call local</strong></li>
+</ul>
+<p>In the RETURNING execution path (~378-405), replace the <code>if (cached_insert_returning_stmt_ == nullptr)
+{ … } … cached_insert_returning_stmt_-&gt;…</code> block with a local prepare:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-17-1" name="__codelineno-17-1" href="#__codelineno-17-1"></a><span class="w">            </span><span class="k">auto</span><span class="w"> </span><span class="n">stmt_result</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">conn_</span><span class="o">-&gt;</span><span class="n">prepare_cached</span><span class="p">(</span><span class="n">insert_returning_sql_string</span><span class="p">);</span>
+<a id="__codelineno-17-2" name="__codelineno-17-2" href="#__codelineno-17-2"></a><span class="w">            </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">stmt_result</span><span class="p">)</span><span class="w"> </span><span class="p">[[</span><span class="n">unlikely</span><span class="p">]]</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-17-3" name="__codelineno-17-3" href="#__codelineno-17-3"></a><span class="w">                </span><span class="k">return</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">unexpected</span><span class="p">(</span><span class="n">stmt_result</span><span class="p">.</span><span class="n">error</span><span class="p">());</span>
+<a id="__codelineno-17-4" name="__codelineno-17-4" href="#__codelineno-17-4"></a><span class="w">            </span><span class="p">}</span>
+<a id="__codelineno-17-5" name="__codelineno-17-5" href="#__codelineno-17-5"></a><span class="w">            </span><span class="n">Statement</span><span class="o">*</span><span class="w"> </span><span class="n">stmt</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">*</span><span class="n">stmt_result</span><span class="p">;</span>
+<a id="__codelineno-17-6" name="__codelineno-17-6" href="#__codelineno-17-6"></a><span class="w">            </span><span class="c1">// … reproduce the existing bind/step/extract/reset sequence using `stmt`</span>
+<a id="__codelineno-17-7" name="__codelineno-17-7" href="#__codelineno-17-7"></a><span class="w">            </span><span class="c1">//     in place of cached_insert_returning_stmt_</span>
+</code></pre></div></p>
+<blockquote>
+<p>NOTE: read the exact current sequence (bind_all_fields, step_raw, extract_int64, reset) and
+substitute <code>stmt</code> for <code>cached_insert_returning_stmt_</code> verbatim.</p>
+</blockquote>
+<ul>
+<li>[ ] <strong>Step 5: Delete <code>cached_insert_returning_stmt_</code></strong></li>
+</ul>
+<p>Remove the member declaration.</p>
+<ul>
+<li>[ ] <strong>Step 6: Build + test</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-18-1" name="__codelineno-18-1" href="#__codelineno-18-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>ninja-debug<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-15<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>ctest<span class="w"> </span>--preset<span class="w"> </span>ninja-debug<span class="w"> </span>--output-on-failure<span class="w"> </span>-R<span class="w"> </span><span class="s2">&quot;Insert|insert&quot;</span><span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-20<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>ctest<span class="w"> </span>--preset<span class="w"> </span>ninja-debug<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-8
+</code></pre></div>
+Expected: clean build, insert tests pass, full suite passes.</p>
+<ul>
+<li>[ ] <strong>Step 7: Commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-19-1" name="__codelineno-19-1" href="#__codelineno-19-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>git<span class="w"> </span>add<span class="w"> </span>src/orm/statements/insert.cppm<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;refactor(cache): collapse L2 in InsertStatement — proxy owns statement by value&quot;</span>
+</code></pre></div>
+<hr />
+<h3 id="task-5-collapse-l2-in-erasecppm">Task 5: Collapse L2 in erase.cppm<a class="headerlink" href="#task-5-collapse-l2-in-erasecppm" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Modify: <code>src/orm/statements/erase.cppm</code></p>
+<p>EraseStatement has <code>cached_single_stmt_</code>, <code>cached_max_bulk_stmt_</code>, <code>invalidate_cache()</code> (~427), and 3
+proxies holding <code>EraseStatement&amp; stmt</code>.</p>
+<ul>
+<li>[ ] <strong>Step 1: Read the regions</strong></li>
+</ul>
+<p>Run: <code>cd /home/ihor/projects/storm/storm_develop &amp;&amp; sed -n '175,300p;300,440p' src/orm/statements/erase.cppm</code>
+Confirm: 3 proxies at ~180/194/208 hold <code>EraseStatement&amp; stmt</code>; their <code>query()</code> factories; the
+single-erase path uses <code>cached_single_stmt_</code> (~303-318); the bulk path uses <code>cached_max_bulk_stmt_</code>
+(~347-373); <code>invalidate_cache()</code> at ~427 nulls both.</p>
+<ul>
+<li>[ ] <strong>Step 2: Convert the 3 proxies to own by value</strong></li>
+</ul>
+<p>Change <code>EraseStatement&amp;    stmt;</code> → <code>EraseStatement    stmt;</code> in all three proxy structs.</p>
+<ul>
+<li>[ ] <strong>Step 3: Move into the proxies in the factories</strong></li>
+</ul>
+<p>In each <code>query(...)</code> factory, change <code>*this</code> → <code>std::move(*this)</code> in the returned initializer.</p>
+<ul>
+<li>[ ] <strong>Step 4: Replace both cached pointers with per-call locals</strong></li>
+</ul>
+<p>Single path (~303-318): replace <code>if (cached_single_stmt_ == nullptr) { … } cached_single_stmt_-&gt;…</code>
+with a local prepare from the same SQL, reproducing the existing reset/bind_pk_at/execute sequence on
+a local <code>Statement* stmt</code>. Bulk path (~347-373): same — local prepare, reproduce the chunk loop's
+<code>bind_pks_and_execute(*stmt, chunk)</code> calls on a local.</p>
+<blockquote>
+<p>NOTE: read each path's exact bind/execute sequence and substitute a local for the cached pointer.
+The bulk path prepares once and reuses across chunks within one call — keep that (prepare the local
+once before the chunk loop, reuse it for all chunks of THIS call). Do not change chunking logic.</p>
+</blockquote>
+<ul>
+<li>[ ] <strong>Step 5: Delete <code>cached_single_stmt_</code>, <code>cached_max_bulk_stmt_</code>, and replace <code>invalidate_cache()</code> with an empty stub</strong></li>
+</ul>
+<p>Delete the two member declarations. Replace <code>invalidate_cache()</code>'s body with empty:
+<code>auto invalidate_cache() noexcept -&gt; void {}</code> (kept as a stub for the same reason as SelectStatement —
+QuerySet still calls it until Task 7).</p>
+<ul>
+<li>[ ] <strong>Step 6: Build + test</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-20-1" name="__codelineno-20-1" href="#__codelineno-20-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>ninja-debug<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-15<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>ctest<span class="w"> </span>--preset<span class="w"> </span>ninja-debug<span class="w"> </span>--output-on-failure<span class="w"> </span>-R<span class="w"> </span><span class="s2">&quot;Erase|erase|Delete|delete&quot;</span><span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-20<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>ctest<span class="w"> </span>--preset<span class="w"> </span>ninja-debug<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-8
+</code></pre></div>
+Expected: clean build, erase/delete tests pass, full suite passes.</p>
+<ul>
+<li>[ ] <strong>Step 7: Commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-21-1" name="__codelineno-21-1" href="#__codelineno-21-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>git<span class="w"> </span>add<span class="w"> </span>src/orm/statements/erase.cppm<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;refactor(cache): collapse L2 in EraseStatement — proxy owns statement by value&quot;</span>
+</code></pre></div>
+<hr />
+<h3 id="task-6-verify-distinctaggregate-and-collapse-l2-in-setopcppm">Task 6: Verify distinct/aggregate AND collapse L2 in setop.cppm<a class="headerlink" href="#task-6-verify-distinctaggregate-and-collapse-l2-in-setopcppm" title="Permanent link">&para;</a></h3>
+<blockquote>
+<p><strong>SCOPE EXPANSION (2026-05-31):</strong> After Task 5, a grep found a FIFTH statement class with L2 that
+the spec/plan missed: <code>src/orm/statements/setop.cppm</code> (UNION/INTERSECT/EXCEPT <code>SetOpBuilder</code>) has a
+<code>cached_stmt_</code> member (~line 198) + an <code>ensure_cached</code>-style helper (~80). Unlike the others,
+SetOpBuilder is NOT an L1-cached QuerySet member — <code>make_setop_builder()</code> already constructs it
+per-call and returns it by value, so there is no L1 to remove. But its <code>cached_stmt_</code> is an L2 cache
+holding an L3 pointer that would dangle after <code>clear_statement_cache()</code> (same latent risk INSERT
+had). It must be collapsed for consistency and safety: drop <code>cached_stmt_</code>, make the prepare path a
+per-call <code>conn_-&gt;prepare_cached(...)</code>. <code>test_setop.cpp</code> covers the behavior.</p>
+</blockquote>
+<p><strong>Files:</strong>
+- Modify (if needed): <code>src/orm/statements/distinct.cppm</code>, <code>src/orm/statements/aggregate.cppm</code></p>
+<p>Grep found no <code>cached_*</code> members in these two. But they may hold <code>Statement&amp;</code> proxies or be
+constructed via QuerySet in a way that breaks when L1 goes (Task 7). This task confirms they need no
+L2 change and are ready for the L1 transition.</p>
+<ul>
+<li>[ ] <strong>Step 1: Audit both files for L2/proxy patterns</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-22-1" name="__codelineno-22-1" href="#__codelineno-22-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>grep<span class="w"> </span>-n<span class="w"> </span><span class="s2">&quot;cached_\|&amp; stmt\|Statement&amp;\|struct.*Query\| stmt;\|invalidate_cache\|prepare_cached&quot;</span><span class="w"> </span>src/orm/statements/distinct.cppm<span class="w"> </span>src/orm/statements/aggregate.cppm
+</code></pre></div>
+Expected: no <code>cached_*</code> members. If a proxy holds <code>Statement&amp;</code> (or <code>DistinctStatement&amp;</code>/
+<code>AggregateStatement&amp;</code>), apply the same Approach-A conversion as Tasks 2-5 (by-value + <code>std::move(*this)</code>
+in the factory) and rebuild+test. If there are no such proxies (these statements may execute directly
+without a returned proxy), this task is a no-op verification.</p>
+<ul>
+<li>[ ] <strong>Step 2: Build + test (only if changes were made; otherwise just confirm baseline)</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-23-1" name="__codelineno-23-1" href="#__codelineno-23-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>ninja-debug<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-10<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>ctest<span class="w"> </span>--preset<span class="w"> </span>ninja-debug<span class="w"> </span>--output-on-failure<span class="w"> </span>-R<span class="w"> </span><span class="s2">&quot;Distinct|distinct|Aggregate|aggregate|Count|Sum|Avg&quot;</span><span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-20
+</code></pre></div>
+Expected: pass.</p>
+<ul>
+<li>[ ] <strong>Step 3: Commit (only if changes were made)</strong></li>
+</ul>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-24-1" name="__codelineno-24-1" href="#__codelineno-24-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>git<span class="w"> </span>add<span class="w"> </span>src/orm/statements/distinct.cppm<span class="w"> </span>src/orm/statements/aggregate.cppm<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;refactor(cache): collapse L2 proxies in Distinct/Aggregate statements&quot;</span>
+</code></pre></div>
+If no changes were needed, skip the commit and note "Task 6: no L2 in distinct/aggregate, verified" in
+the report.</p>
+<hr />
+<h3 id="task-7-collapse-l1-in-querysetcppm">Task 7: Collapse L1 in queryset.cppm<a class="headerlink" href="#task-7-collapse-l1-in-querysetcppm" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Modify: <code>src/orm/queryset.cppm</code></p>
+<p>Remove the four <code>get_*_statement()</code> accessors + <code>unique_ptr</code> members, rewrite the 12 call sites to
+construct a statement inline, and remove the now-dead <code>invalidate_cache()</code> chain (the statement-level
+stubs from Tasks 2/5 get deleted here too).</p>
+<ul>
+<li>[ ] <strong>Step 1: Read the call sites, accessors, members, and reset/invalidate chain</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-25-1" name="__codelineno-25-1" href="#__codelineno-25-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>sed<span class="w"> </span>-n<span class="w"> </span><span class="s1">&#39;55,100p;154,195p;270,315p;525,610p&#39;</span><span class="w"> </span>src/orm/queryset.cppm
+</code></pre></div>
+Confirm the 12 call sites (erase ~60/65/70, insert ~80/89/95, select ~158/167/177/189, update
+~277/282), the four accessors (~526-572), the four <code>unique_ptr</code> members (~603-606), and the
+<code>reset()</code>/<code>invalidate_cache()</code> methods (~297-310).</p>
+<ul>
+<li>[ ] <strong>Step 2: Rewrite the 12 call sites to construct inline</strong></li>
+</ul>
+<p>Replace each <code>get_X_statement()</code> with a constructed temporary. The statement constructors take
+<code>conn_</code> (a <code>std::shared_ptr&lt;ConnType&gt;</code>). Examples:</p>
+<p><code>select()</code> (~157):
+<div class="highlight"><pre><span></span><code><a id="__codelineno-26-1" name="__codelineno-26-1" href="#__codelineno-26-1"></a><span class="w">        </span><span class="p">[[</span><span class="n">nodiscard</span><span class="p">]]</span><span class="w"> </span><span class="n">__attribute__</span><span class="p">((</span><span class="n">hot</span><span class="p">))</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">select</span><span class="p">()</span><span class="w"> </span><span class="p">{</span>
+<a id="__codelineno-26-2" name="__codelineno-26-2" href="#__codelineno-26-2"></a><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="n">orm</span><span class="o">::</span><span class="n">statements</span><span class="o">::</span><span class="n">SelectStatement</span><span class="o">&lt;</span><span class="n">T</span><span class="p">,</span><span class="w"> </span><span class="n">ConnType</span><span class="o">&gt;</span><span class="p">(</span><span class="n">conn_</span><span class="p">)</span>
+<a id="__codelineno-26-3" name="__codelineno-26-3" href="#__codelineno-26-3"></a><span class="w">                    </span><span class="p">.</span><span class="n">query</span><span class="p">(</span><span class="n">join_stmt_</span><span class="p">,</span><span class="w"> </span><span class="n">where_expr_</span><span class="p">,</span><span class="w"> </span><span class="n">limit_value_</span><span class="p">,</span><span class="w"> </span><span class="n">offset_value_</span><span class="p">,</span><span class="w"> </span><span class="n">order_by_wrapper_</span><span class="p">);</span>
+<a id="__codelineno-26-4" name="__codelineno-26-4" href="#__codelineno-26-4"></a><span class="w">        </span><span class="p">}</span>
+</code></pre></div>
+Apply the same pattern to <code>rows()</code> (~166, <code>.rows_generator(...)</code>), <code>first()</code> (~174, <code>.query_first(...)</code>),
+<code>get()</code> (~186, <code>.query_get(...)</code>), the three <code>get_insert_statement()</code> calls (~80/89/95,
+<code>.template query&lt;R&gt;(...)</code> / <code>.query(...)</code>), the three <code>get_erase_statement()</code> calls (~60/65/70,
+<code>.query(obj)</code> / <code>.query(objects)</code> / <code>.query_all()</code>), and the two <code>get_update_statement()</code> calls
+(~277/282, <code>.query(obj)</code> / <code>.query(objects)</code>). Each becomes
+<code>orm::statements::XStatement&lt;T, ConnType&gt;(conn_).method(...)</code>.</p>
+<blockquote>
+<p>NOTE: read each call site and preserve its exact method name and arguments — only replace the
+<code>get_X_statement()</code> receiver with a freshly-constructed <code>XStatement&lt;T, ConnType&gt;(conn_)</code>. The
+<code>first()</code>/<code>get()</code> <code>fast</code> bool computation (lines ~175-176, ~187-188) stays.</p>
+</blockquote>
+<ul>
+<li>[ ] <strong>Step 3: Delete the four accessors and four members</strong></li>
+</ul>
+<p>Delete <code>get_insert_statement()</code>, <code>get_erase_statement()</code>, <code>get_update_statement()</code>,
+<code>get_select_statement()</code> (~526-572, including their <code>#ifdef STORM_DISABLE_L1</code> guards) and the four
+<code>mutable std::unique_ptr&lt;…Statement&gt; *_stmt_;</code> members (~603-606). Leave <code>join_stmt_</code> (~608) — it is
+query state, not a statement cache.</p>
+<ul>
+<li>[ ] <strong>Step 4: Remove the dead invalidate_cache chain (DECIDED: delete the L1 API + its tests)</strong></li>
+</ul>
+<p><code>QuerySet::reset()</code> (~297) calls <code>invalidate_cache()</code> (~304) which forwarded to the statement-level
+<code>invalidate_cache()</code>. With no cached statements on the QuerySet, there is nothing to invalidate. The
+user has decided: <strong>delete the QuerySet→L2 invalidation API entirely.</strong></p>
+<ul>
+<li><code>reset()</code> keeps ONLY the query-state clears (<code>join_stmt_.reset()</code>, <code>where_expr_.reset()</code>,
+  <code>limit_value_.reset()</code>, <code>offset_value_.reset()</code>, <code>order_by_wrapper_.reset()</code>) and drops its
+  <code>invalidate_cache()</code> call.</li>
+<li>Delete <code>QuerySet::invalidate_cache()</code> entirely.</li>
+<li><strong><code>Connection::clear_statement_cache()</code> and <code>clear_statement_cache(table)</code> STAY</strong> — they clear L3,
+  which is still valid and still has its own tests (<code>CacheInvalidationLevel3Test</code>). Do NOT touch them.</li>
+<li><strong>Delete the <code>CacheInvalidationLevel1Test</code> suite</strong> in <code>tests/db/test_cache_invalidation.cpp</code> — it
+  asserts L1/L2 pointer invalidation (<code>qs.invalidate_cache()</code> propagation, <code>reset()</code> clearing Level 2
+  caches), behavior that no longer exists. Remove only the <code>CacheInvalidationLevel1Test</code> TYPED_TEST
+  suite and its fixture; <strong>keep <code>CacheInvalidationLevel3Test</code></strong> (PointersStableAcrossRehash,
+  PerTableClearKeepsUnrelatedEntries, PerTableClearRespectsWordBoundaries) and the
+  <code>SqlReferencesTableFastOut</code> test — those test L3 and stay.</li>
+<li>
+<p>Also grep for any OTHER caller of <code>qs.invalidate_cache()</code>:
+  <div class="highlight"><pre><span></span><code><a id="__codelineno-27-1" name="__codelineno-27-1" href="#__codelineno-27-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>grep<span class="w"> </span>-rn<span class="w"> </span><span class="s2">&quot;\.invalidate_cache()\|-&gt;invalidate_cache()&quot;</span><span class="w"> </span>src/<span class="w"> </span>tests/<span class="w"> </span>benchmarks/
+</code></pre></div>
+  Every hit outside the deleted Level1 suite must be removed (there should be none in src/ once the
+  method is gone). Report what you found.</p>
+</li>
+<li>
+<p>[ ] <strong>Step 5: Delete the statement-level invalidate_cache stubs</strong></p>
+</li>
+</ul>
+<p>Now that QuerySet no longer forwards to them, delete the empty <code>invalidate_cache()</code> stubs left in
+<code>select.cppm</code> (Task 2 Step 5) and <code>erase.cppm</code> (Task 5 Step 5).</p>
+<ul>
+<li>[ ] <strong>Step 6: Build + test</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-28-1" name="__codelineno-28-1" href="#__codelineno-28-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>ninja-debug<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-20<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>ctest<span class="w"> </span>--preset<span class="w"> </span>ninja-debug<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-15
+</code></pre></div>
+Expected: clean build, full suite passes. This is the task most likely to surface a dangling-proxy or
+movability problem — if any test crashes or fails, that is the Approach-A lifetime contract being
+violated; report the failing test and the exact symptom.</p>
+<ul>
+<li>[ ] <strong>Step 7: Commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-29-1" name="__codelineno-29-1" href="#__codelineno-29-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>git<span class="w"> </span>add<span class="w"> </span>src/orm/queryset.cppm<span class="w"> </span>src/orm/statements/select.cppm<span class="w"> </span>src/orm/statements/erase.cppm<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;refactor(cache): collapse L1 — QuerySet constructs statements per call, no cache members&quot;</span>
+</code></pre></div>
+<hr />
+<h3 id="task-8-remove-the-storm_disable_l1l2-scaffolding-and-the-probe">Task 8: Remove the STORM_DISABLE_L1/L2 scaffolding and the probe<a class="headerlink" href="#task-8-remove-the-storm_disable_l1l2-scaffolding-and-the-probe" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Modify: <code>src/orm/statements/select.cppm</code>, <code>src/orm/queryset.cppm</code> (remove leftover <code>#ifdef</code> blocks)
+- Delete: <code>benchmarks/cache_probe.cpp</code>
+- Modify: <code>benchmarks/CMakeLists.txt</code> (remove <code>storm_cache_probe</code> target)
+- Modify: <code>.lint-skip</code> (remove the select.cppm <code>complexity, length</code> tags added in the investigation, if no longer needed)</p>
+<p>By now most <code>#ifdef STORM_DISABLE_L2</code> blocks were rewritten away in Tasks 2-5, and the
+<code>STORM_DISABLE_L1</code> guards were deleted with the accessors in Task 7. This task removes any residual
+guard text and the bench scaffolding.</p>
+<ul>
+<li>[ ] <strong>Step 1: Find any residual flag references</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-30-1" name="__codelineno-30-1" href="#__codelineno-30-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>grep<span class="w"> </span>-rn<span class="w"> </span><span class="s2">&quot;STORM_DISABLE_L1\|STORM_DISABLE_L2\|cache_probe\|storm_cache_probe&quot;</span><span class="w"> </span>src/<span class="w"> </span>benchmarks/<span class="w"> </span>.lint-skip
+</code></pre></div>
+Expected: ideally only <code>benchmarks/cache_probe.cpp</code>, the <code>storm_cache_probe</code> block in
+<code>benchmarks/CMakeLists.txt</code>, and possibly stray <code>#ifdef</code> lines in src. Remove every src-side guard so
+no <code>STORM_DISABLE_*</code> token remains in <code>src/</code>.</p>
+<ul>
+<li>[ ] <strong>Step 2: Delete the bench source and CMake target</strong></li>
+</ul>
+<p><div class="highlight"><pre><span></span><code><a id="__codelineno-31-1" name="__codelineno-31-1" href="#__codelineno-31-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>git<span class="w"> </span>rm<span class="w"> </span>benchmarks/cache_probe.cpp
+</code></pre></div>
+Then remove the <code>storm_cache_probe</code> <code>add_executable(...)</code> block and its associated
+<code>target_link_libraries</code>/<code>link_sqlite</code>/per-source property lines from <code>benchmarks/CMakeLists.txt</code>
+(the block added in the investigation Task 5).</p>
+<ul>
+<li>[ ] <strong>Step 3: Re-check .lint-skip</strong></li>
+</ul>
+<p>The investigation added <code>complexity, length</code> to the <code>select.cppm</code> <code>.lint-skip</code> entry because the
+<code>#ifdef</code> blocks confused lizard. With the guards gone and the file simpler, those tags may no longer
+be needed. Read <code>.lint-skip</code>; if the original entry had only <code>file-size</code>, restore it to that. If
+removing the tags causes the file-size/complexity hook to fire on commit, keep whatever the current
+file genuinely needs and report.</p>
+<ul>
+<li>[ ] <strong>Step 4: Configure + build (default) to confirm nothing references the removed target</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-32-1" name="__codelineno-32-1" href="#__codelineno-32-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>--preset<span class="w"> </span>ninja-release<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-10<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>ninja-release<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-10
+</code></pre></div>
+Expected: configures without the <code>storm_cache_probe</code> target, builds clean. (Use ninja-release here
+because Task 9 benchmarks from it.)</p>
+<ul>
+<li>[ ] <strong>Step 5: Commit</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-33-1" name="__codelineno-33-1" href="#__codelineno-33-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>git<span class="w"> </span>add<span class="w"> </span>-A<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;chore(cache): remove STORM_DISABLE_L1/L2 scaffolding and storm_cache_probe&quot;</span>
+</code></pre></div>
+<hr />
+<h3 id="task-9-full-gate-run-sanitizers-core-8-benchmark">Task 9: Full gate run (sanitizers + Core 8 benchmark)<a class="headerlink" href="#task-9-full-gate-run-sanitizers-core-8-benchmark" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong> none (verification)</p>
+<p>Per the spec's required gates. The object-lifetime change makes ASAN/TSAN load-bearing here.</p>
+<ul>
+<li>[ ] <strong>Step 1: ASAN+UBSAN</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-34-1" name="__codelineno-34-1" href="#__codelineno-34-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>--preset<span class="w"> </span>ninja-asan-ubsan<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>ninja-asan-ubsan<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-8<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>timeout<span class="w"> </span><span class="m">1200</span><span class="w"> </span>ctest<span class="w"> </span>--preset<span class="w"> </span>ninja-asan-ubsan<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-20
+</code></pre></div>
+Expected: all tests pass, no ASAN/UBSAN reports. (ASAN runs are 4-5× slower — the timeout is
+generous. A use-after-free here would mean a proxy outlived its statement: report it.)</p>
+<ul>
+<li>[ ] <strong>Step 2: TSAN</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-35-1" name="__codelineno-35-1" href="#__codelineno-35-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>--preset<span class="w"> </span>ninja-tsan<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>ninja-tsan<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-8<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>timeout<span class="w"> </span><span class="m">1200</span><span class="w"> </span>ctest<span class="w"> </span>--preset<span class="w"> </span>ninja-tsan<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-20
+</code></pre></div>
+Expected: all tests pass, no data races (the #271 concurrent cache tests run here — they must stay
+clean, proving the L3 shared_mutex is still the only shared mutable state).</p>
+<ul>
+<li>[ ] <strong>Step 3: Core 8 Release benchmark</strong></li>
+</ul>
+<p>The <code>#ifdef</code> bypass numbers do not transfer to the real deletion (struct layout/inlining shift), so
+re-measure. Run the project's standard regression filter from the release build (Task 8 built it):
+<div class="highlight"><pre><span></span><code><a id="__codelineno-36-1" name="__codelineno-36-1" href="#__codelineno-36-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>./build/release/benchmarks/storm_bench<span class="w"> </span>--benchmark_repetitions<span class="o">=</span><span class="m">10</span><span class="w"> </span>--benchmark_report_aggregates_only<span class="o">=</span><span class="nb">true</span><span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-40
+</code></pre></div></p>
+<blockquote>
+<p>NOTE: read <code>benchmarks/README.md</code> / <code>CLAUDE.md</code> for the exact "Core 8" filter string if a subset is
+wanted; the full run is acceptable. Compare medians against develop's published baseline (or run the
+same bench on develop in a separate build dir). Expected: within ±5%. If any category regresses</p>
+<blockquote>
+<p>5%, STOP and report — the collapse would need revisiting (the investigation predicted no
+regression, so a &gt;5% drop is a real finding).</p>
+</blockquote>
+</blockquote>
+<ul>
+<li>[ ] <strong>Step 4: Coverage</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-37-1" name="__codelineno-37-1" href="#__codelineno-37-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>--preset<span class="w"> </span>ninja-debug<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>ninja-debug<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>cmake<span class="w"> </span>--build<span class="w"> </span>--preset<span class="w"> </span>ninja-debug-coverage<span class="w"> </span>--target<span class="w"> </span>coverage<span class="w"> </span><span class="m">2</span>&gt;<span class="p">&amp;</span><span class="m">1</span><span class="w"> </span><span class="p">|</span><span class="w"> </span>tail<span class="w"> </span>-25
+</code></pre></div>
+Expected: 100% (or matching develop's baseline). Deleted code reduces total lines; ensure no newly
+<em>uncovered</em> lines were introduced. If coverage drops, identify the uncovered lines (likely an error
+branch in the new per-call prepare) and add a mock-error test, or report.</p>
+<ul>
+<li>[ ] <strong>Step 5: Record gate results</strong></li>
+</ul>
+<p>No commit (verification task). Record in the execution report: ASAN/UBSAN result, TSAN result, Core 8
+median deltas vs baseline, coverage %. These feed Task 10's docs.</p>
+<hr />
+<h3 id="task-10-update-docs-and-rewrite-273">Task 10: Update docs and rewrite #273<a class="headerlink" href="#task-10-update-docs-and-rewrite-273" title="Permanent link">&para;</a></h3>
+<p><strong>Files:</strong>
+- Modify: <code>docs/architecture/STATEMENT_CACHING.md</code>
+- Modify: <code>.claude/agents/*.md</code> if any describe the 3-level cache (per CLAUDE.md rule #8)
+- GitHub: rewrite issue #273</p>
+<ul>
+<li>[ ] <strong>Step 1: Rewrite STATEMENT_CACHING.md to single-level</strong></li>
+</ul>
+<p>Read the current doc, then rewrite so it describes a single L3 Connection-level cache (mutex-protected,</p>
+<h1 id="271-remove-the-l1-queryset-and-l2-statement-pointer-sections-and-the-lru-eviction-future">271). Remove the L1 (QuerySet) and L2 (Statement pointer) sections and the "LRU eviction (future<a class="headerlink" href="#271-remove-the-l1-queryset-and-l2-statement-pointer-sections-and-the-lru-eviction-future" title="Permanent link">&para;</a></h1>
+<p>enhancement)" note's dependence on L2 invalidation. State that statements are constructed per call and
+owned by the result proxy (Approach A), and that L3 carries all caching. Cite the #214 investigation
+results doc for the "no measurable benefit" evidence.</p>
+<ul>
+<li>[ ] <strong>Step 2: Check agent files for stale cache descriptions</strong></li>
+</ul>
+<p>Run:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-38-1" name="__codelineno-38-1" href="#__codelineno-38-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>grep<span class="w"> </span>-rln<span class="w"> </span><span class="s2">&quot;3-level\|three-level\|Level 1\|Level 2\|cached_stmt\|get_select_statement\|statement cache&quot;</span><span class="w"> </span>.claude/agents/
+</code></pre></div>
+Update any agent file that describes the old 3-level architecture to the single-level model. (Per
+CLAUDE.md rule #8: code + docs + agent files commit together.)</p>
+<ul>
+<li>[ ] <strong>Step 3: Commit docs</strong></li>
+</ul>
+<div class="highlight"><pre><span></span><code><a id="__codelineno-39-1" name="__codelineno-39-1" href="#__codelineno-39-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>git<span class="w"> </span>add<span class="w"> </span>docs/architecture/STATEMENT_CACHING.md<span class="w"> </span>.claude/agents/<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>git<span class="w"> </span>commit<span class="w"> </span>-m<span class="w"> </span><span class="s2">&quot;docs(cache): document single-level L3 cache after L1/L2 collapse (#214)&quot;</span>
+</code></pre></div>
+<ul>
+<li>[ ] <strong>Step 4: Rewrite issue #273</strong></li>
+</ul>
+<p>With L2 gone, #273's "L2 pointer invalidation on eviction is automatic" requirement no longer applies.
+Rewrite the body so it covers only: LRU eviction on the L3 <code>unordered_map</code> + hit/miss/eviction stats +
+configurable capacity + memory-growth test. Remove the L2-dangling-pointer section and the "automatic
+callback path" bullet. Use:
+<div class="highlight"><pre><span></span><code><a id="__codelineno-40-1" name="__codelineno-40-1" href="#__codelineno-40-1"></a><span class="nb">cd</span><span class="w"> </span>/home/ihor/projects/storm/storm_develop<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span>gh<span class="w"> </span>issue<span class="w"> </span>view<span class="w"> </span><span class="m">273</span><span class="w"> </span>--json<span class="w"> </span>body<span class="w"> </span>-q<span class="w"> </span>.body<span class="w">   </span><span class="c1"># read current</span>
+<a id="__codelineno-40-2" name="__codelineno-40-2" href="#__codelineno-40-2"></a><span class="c1"># then craft the new body and:</span>
+<a id="__codelineno-40-3" name="__codelineno-40-3" href="#__codelineno-40-3"></a>gh<span class="w"> </span>issue<span class="w"> </span>edit<span class="w"> </span><span class="m">273</span><span class="w"> </span>--body<span class="w"> </span><span class="s2">&quot;</span><span class="k">$(</span>cat<span class="w"> </span>/tmp/273_new_body.md<span class="k">)</span><span class="s2">&quot;</span>
+</code></pre></div></p>
+<blockquote>
+<p>NOTE: do not close #273; just rewrite its scope. Note in a comment that #214 concluded Option C and
+the L2-invalidation requirement is obsolete.</p>
+</blockquote>
+<ul>
+<li>[ ] <strong>Step 5: Report completion</strong></li>
+</ul>
+<p>Summarize: all tasks done, gate results (from Task 9), and that #273 is rewritten. Stop — do NOT open
+a PR or merge without explicit user approval (CLAUDE.md safety rule #2).</p>
+<hr />
+<h2 id="notes-for-the-implementer">Notes for the implementer<a class="headerlink" href="#notes-for-the-implementer" title="Permanent link">&para;</a></h2>
+<ul>
+<li><strong>Tests green at every task</strong> — this is a refactor of fully-covered behavior; a red suite mid-task
+  means the collapse changed observable behavior, which it must not.</li>
+<li><strong>The lifetime contract is the whole risk</strong> (Approach A): a proxy must never outlive its statement.
+  Since proxies own the statement by value, the only way to break this is to return a reference to a
+  proxy's internal statement, or to store a proxy beyond the full-expression. The existing API uses
+  <code>qs.select().execute()</code> (single full-expression), which is safe. ASAN in Task 9 is the backstop.</li>
+<li><strong>Movability</strong>: each statement holds only <code>shared_ptr&lt;ConnType&gt; conn_</code> + compile-time constants after
+  L2 removal, so implicit moves work. If a class declared a destructor or copy member that suppresses
+  the implicit move, add <code>= default</code> moves explicitly and report.</li>
+<li><strong>PCM hazards</strong>: "malformed or corrupted precompiled file" on a module build → rebuild once with
+  <code>-j1</code>, then resume.</li>
+<li><strong>No PR/merge</strong> without user approval. The plan ends at "report completion."</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../../..", "features": ["navigation.sections", "navigation.expand", "navigation.top", "search.suggest", "search.highlight", "content.code.copy"], "search": "../../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
