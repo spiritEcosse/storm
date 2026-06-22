@@ -38,26 +38,9 @@ export namespace storm::orm::statements {
         using Error      = typename ConnType::Error;
         using Statement  = typename ConnType::Statement;
 
-        // Pre-compute placeholders for SQL VALUES clause (excluding PK for auto-increment)
-        static consteval auto build_placeholders() {
-            ConstexprString<utilities::buffer_size::SQL_SMALL> result;
-            bool                                               first = true;
-            for (std::size_t i = 0; i < Base::field_count_; ++i) {
-                // Skip primary key
-                if (Base::all_members_[i] == Base::primary_key_) {
-                    continue;
-                }
-                if (!first) {
-                    result += ", ";
-                }
-                result += "?";
-                first = false;
-            }
-            return result;
-        }
-
-        // Pre-computed placeholders (excludes PK for auto-increment)
-        static constexpr auto placeholders_ = build_placeholders();
+        // Pre-computed placeholders (excludes PK for auto-increment). Shared with
+        // UpsertGrammar via FieldNameGrammar<Base>::build_placeholders() (#205).
+        static constexpr auto placeholders_ = FieldNameGrammar<Base>::build_placeholders();
 
         // Compile-time SQL size calculation
         static consteval auto calculate_insert_sql_size() -> std::size_t {

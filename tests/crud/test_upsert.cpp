@@ -25,3 +25,20 @@ TEST(UpsertGrammarTest, ExcludedSetClauseMultipleColumns) {
     const std::string s(set);
     EXPECT_EQ(s, "age=excluded.age, salary=excluded.salary");
 }
+
+// Full DO NOTHING statement for Person conflicting on name.
+TEST(UpsertGrammarTest, FullSqlDoNothing) {
+    const std::string& sql = UpsertGrammar<Person>::nothing_sql<^^Person::name>();
+    EXPECT_TRUE(sql.starts_with("INSERT INTO Person ")) << sql;
+    EXPECT_NE(sql.find("ON CONFLICT (name) DO NOTHING"), std::string::npos) << sql;
+    EXPECT_TRUE(sql.ends_with("RETURNING id")) << sql;
+}
+
+// Full DO UPDATE statement, conflict on name, set age.
+TEST(UpsertGrammarTest, FullSqlDoUpdate) {
+    const std::string sql = UpsertGrammar<Person>::update_sql<^^Person::name>(
+            UpsertGrammar<Person>::build_excluded_set_clause<^^Person::age>()
+    );
+    EXPECT_NE(sql.find("ON CONFLICT (name) DO UPDATE SET age=excluded.age"), std::string::npos) << sql;
+    EXPECT_TRUE(sql.ends_with("RETURNING id")) << sql;
+}
