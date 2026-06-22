@@ -31,6 +31,97 @@ export namespace storm::orm::statements {
         std::optional<std::size_t> batch_size = std::nullopt; // nullopt = automatic (999/field_count)
     };
 
+    template <typename T, storm::db::DatabaseConnection ConnType> class InsertStatement;
+
+    // Upsert proxy chain (#205): lifted OUT of InsertStatement so their sql()/execute()/to_sql()
+    // methods don't count toward InsertStatement's method total (cpp:S1448 — mirrors the
+    // UpdateStatement proxy split in #438). on_conflict<Target...>() returns a ConflictTarget,
+    // whose update<SetCols...>()/nothing() are the two terminal upsert proxies.
+    //
+    // ConflictTargetTag<Target...> carries the conflict-target columns as a TYPE (not a pack)
+    // so UpdateUpsertQuery can be a class template with exactly one variadic NTTP pack
+    // (SetCols...). A class template cannot declare two `std::meta::info...` packs — both
+    // would need independent deduction/specification, which the language does not support —
+    // so Target... must be wrapped before it reaches a second pack's scope.
+    template <std::meta::info... Target> struct ConflictTargetTag {};
+
+    namespace detail {
+
+        // DO UPDATE terminal proxy. TargetTag is a ConflictTargetTag<Target...> instantiation.
+        template <typename T, storm::db::DatabaseConnection ConnType, typename TargetTag, std::meta::info... SetCols>
+        struct UpdateUpsertQuery;
+
+        template <
+                typename T,
+                storm::db::DatabaseConnection ConnType,
+                std::meta::info... Target,
+                std::meta::info... SetCols>
+        struct UpdateUpsertQuery<T, ConnType, ConflictTargetTag<Target...>, SetCols...> {
+            using Error = typename ConnType::Error;
+            InsertStatement<T, ConnType> stmt;
+            const T&                     obj;
+            [[nodiscard]] auto           execute() -> std::expected<std::int64_t, Error> {
+                return stmt.template upsert_update_runner<Target...>().template run<SetCols...>(obj);
+            }
+            [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
+                const std::string sql = UpsertGrammar<T>::template update_sql<Target...>(
+                        UpsertGrammar<T>::template build_excluded_set_clause<SetCols...>()
+                );
+                return stmt.template to_sql_with<SetCols...>(sql, obj);
+            }
+            [[nodiscard]] auto sql() -> std::string {
+                return UpsertGrammar<T>::template update_sql<Target...>(
+                        UpsertGrammar<T>::template build_excluded_set_clause<SetCols...>()
+                );
+            }
+        };
+
+        // DO NOTHING terminal proxy.
+        template <typename T, storm::db::DatabaseConnection ConnType, std::meta::info... Target>
+        struct NothingUpsertQuery {
+            using Error = typename ConnType::Error;
+            InsertStatement<T, ConnType> stmt;
+            const T&                     obj;
+            [[nodiscard]] auto           execute() -> std::expected<std::optional<std::int64_t>, Error> {
+                return stmt.template execute_upsert_nothing<Target...>(obj);
+            }
+            [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
+                return stmt.template to_sql_with<>(UpsertGrammar<T>::template nothing_sql<Target...>(), obj);
+            }
+            [[nodiscard]] auto sql() -> std::string {
+                return UpsertGrammar<T>::template nothing_sql<Target...>();
+            }
+        };
+
+        // Intermediate: carries the conflict target, offers update<>/nothing().
+        template <typename T, storm::db::DatabaseConnection ConnType, std::meta::info... Target> struct ConflictTarget {
+            InsertStatement<T, ConnType> stmt;
+            const T&                     obj;
+            template <std::meta::info... SetCols>
+                requires UpsertSettable<T, SetCols...>
+            [[nodiscard]] auto update() -> UpdateUpsertQuery<T, ConnType, ConflictTargetTag<Target...>, SetCols...> {
+                return {std::move(stmt), obj};
+            }
+            [[nodiscard]] auto nothing() -> NothingUpsertQuery<T, ConnType, Target...> {
+                return {std::move(stmt), obj};
+            }
+        };
+
+        // Shared upsert entry point (#205) for the single-row query proxies (SingleQuery/
+        // VoidQuery): INSERT ... ON CONFLICT (Target...) DO {UPDATE|NOTHING}. CRTP base so
+        // both proxies offer on_conflict() without duplicating the method body — the derived
+        // proxy supplies `stmt`/`obj` via Derived's own members.
+        template <typename T, storm::db::DatabaseConnection ConnType, typename Derived> struct OnConflictMixin {
+            template <std::meta::info... Target>
+                requires ConflictTargetUnique<T, Target...>
+            [[nodiscard]] auto on_conflict() -> ConflictTarget<T, ConnType, Target...> {
+                auto* self = static_cast<Derived*>(this);
+                return {std::move(self->stmt), self->obj};
+            }
+        };
+
+    } // namespace detail
+
     // Statement class for ORM insert operations
     template <typename T, storm::db::DatabaseConnection ConnType> class InsertStatement : private BaseStatement<T> {
         friend class BaseStatement<T>; // Allow BaseStatement to access protected/private members
@@ -209,7 +300,7 @@ export namespace storm::orm::statements {
       public:
         explicit InsertStatement(std::shared_ptr<ConnType> conn) : conn_(std::move(conn)) {}
 
-        struct SingleQuery {
+        struct SingleQuery : detail::OnConflictMixin<T, ConnType, SingleQuery> {
             InsertStatement    stmt;
             const T&           obj;
             [[nodiscard]] auto execute() -> std::expected<std::int64_t, Error> {
@@ -223,7 +314,7 @@ export namespace storm::orm::statements {
             }
         };
 
-        struct VoidQuery {
+        struct VoidQuery : detail::OnConflictMixin<T, ConnType, VoidQuery> {
             InsertStatement    stmt;
             const T&           obj;
             [[nodiscard]] auto execute() -> std::expected<void, Error> {
@@ -270,9 +361,9 @@ export namespace storm::orm::statements {
 
         template <ReturnId R = ReturnId::Yes> [[nodiscard]] auto query(const T& obj [[clang::lifetimebound]]) {
             if constexpr (R == ReturnId::Yes) {
-                return SingleQuery{std::move(*this), obj};
+                return SingleQuery{{}, std::move(*this), obj};
             } else {
-                return VoidQuery{std::move(*this), obj};
+                return VoidQuery{{}, std::move(*this), obj};
             }
         }
         // LIFETIME CONTRACT (issue #357, finding B): the returned BulkQuery holds a
@@ -324,6 +415,20 @@ export namespace storm::orm::statements {
             }
             return to_sql_impl(get_bulk_insert_returning_sql(objects.size()), [&](Statement& s) {
                 return bind_bulk(s, objects);
+            });
+        }
+
+        // Returns SQL string with bound parameters inlined for an upsert (DO UPDATE/DO NOTHING)
+        // statement (for debugging). Generalizes to_sql_impl to bind the non-PK VALUES fields
+        // plus the auto_update now() tail (#209) for any auto_update column not in SetCols —
+        // empty SetCols (the DO NOTHING proxy) binds just the non-PK fields.
+        template <std::meta::info... SetCols>
+        [[nodiscard]] auto to_sql_with(const std::string& sql, const T& obj) -> std::expected<std::string, Error> {
+            return to_sql_impl(sql, [&](Statement& s) -> std::expected<void, Error> {
+                if (auto bound = bind_single(s, obj); !bound) {
+                    return std::unexpected(bound.error());
+                }
+                return bind_upsert_auto_updates<SetCols...>(&s);
             });
         }
 
@@ -449,31 +554,52 @@ export namespace storm::orm::statements {
         // Upsert DO UPDATE — always touches a row, so RETURNING always yields the id.
         // The SET clause is "col=excluded.col, ..." for SetCols, plus an auto_update
         // tail (#209) for any auto_update column not already listed.
-        template <std::meta::info... Target, std::meta::info... SetCols>
-        [[nodiscard]] auto execute_upsert_update(const T& obj) -> std::expected<std::int64_t, Error> {
-            const std::string sql =
-                    Grammar::template update_sql<Target...>(Grammar::template build_excluded_set_clause<SetCols...>());
-            auto stmt_result = conn_->prepare_cached(sql);
-            if (!stmt_result) {
-                return std::unexpected(stmt_result.error());
-            }
-            Statement* stmt = *stmt_result;
-            // (1) bind VALUES params (non-PK fields, same as plain INSERT).
-            if (auto bind_result = bind_all_fields(*stmt, obj); !bind_result) {
-                return std::unexpected(bind_result.error());
-            }
-            // (2) bind the trailing auto_update now() params (excluded.col targets bind nothing).
-            if (auto bind_result = bind_upsert_auto_updates<SetCols...>(stmt); !bind_result) {
-                return std::unexpected(bind_result.error());
-            }
-            const int rc = stmt->step_raw();
-            if (rc == Statement::ROW_AVAILABLE) {
-                std::int64_t id = stmt->extract_int64(0);
+        //
+        // NOTE (#205, found while wiring the on_conflict() proxy in Task 5): a SINGLE
+        // function template cannot take two variadic NTTP packs — `template <info...
+        // Target, info... SetCols>` compiles, but ALL explicitly-supplied arguments bind
+        // to the first pack and the second is silently always empty (verified: GCC/Clang
+        // both do this — no diagnostic). The original two-pack signature here was never
+        // caught because Task 4 shipped it with zero call sites. Splitting into Target
+        // (this function's pack) + SetCols (the nested run<>() pack) mirrors the proven
+        // ConflictTarget<Target...>::update<SetCols...>() shape and resolves both packs
+        // unambiguously.
+        template <std::meta::info... Target> struct UpsertUpdateRunner {
+            InsertStatement* self;
+            template <std::meta::info... SetCols>
+            [[nodiscard]] auto run(const T& obj) -> std::expected<std::int64_t, Error> {
+                const std::string sql = Grammar::template update_sql<Target...>(
+                        Grammar::template build_excluded_set_clause<SetCols...>()
+                );
+                auto stmt_result = self->conn_->prepare_cached(sql);
+                if (!stmt_result) {
+                    return std::unexpected(stmt_result.error());
+                }
+                Statement* stmt = *stmt_result;
+                // (1) bind VALUES params (non-PK fields, same as plain INSERT).
+                if (auto bind_result = self->bind_all_fields(*stmt, obj); !bind_result) {
+                    return std::unexpected(bind_result.error());
+                }
+                // (2) bind the trailing auto_update now() params (excluded.col targets bind nothing).
+                if (auto bind_result = self->template bind_upsert_auto_updates<SetCols...>(stmt); !bind_result) {
+                    return std::unexpected(bind_result.error());
+                }
+                const int rc = stmt->step_raw();
+                if (rc == Statement::ROW_AVAILABLE) {
+                    std::int64_t id = stmt->extract_int64(0);
+                    stmt->reset();
+                    return id;
+                }
                 stmt->reset();
-                return id;
+                return std::unexpected(Error{rc, stmt->get_error_message()});
             }
-            stmt->reset();
-            return std::unexpected(Error{rc, stmt->get_error_message()});
+        };
+
+        // Entry point: fixes Target... via UpsertUpdateRunner; callers then supply
+        // SetCols... via run<>(). Used by the detail::UpdateUpsertQuery proxy.
+        template <std::meta::info... Target>
+        [[nodiscard]] auto upsert_update_runner() -> UpsertUpdateRunner<Target...> {
+            return {this};
         }
 
       protected: // Changed to protected so BaseStatement can access
