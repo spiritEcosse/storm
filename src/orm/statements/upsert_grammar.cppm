@@ -142,6 +142,9 @@ export namespace storm::orm::statements {
                         if constexpr (Idx::unique) {
                             if (Idx::fields.size() == targets.size()) {
                                 bool all = true;
+                                // Conflict-target columns must be supplied in the same declared order as
+                                // the matching UniqueIndex. This is a v1 simplification; set-comparison
+                                // (order-insensitive matching) can be added later if needed.
                                 for (std::size_t i = 0; i < targets.size(); ++i) {
                                     if (Idx::fields[i] != targets[i]) {
                                         all = false;
