@@ -42,3 +42,18 @@ TEST(UpsertGrammarTest, FullSqlDoUpdate) {
     EXPECT_NE(sql.find("ON CONFLICT (name) DO UPDATE SET age=excluded.age"), std::string::npos) << sql;
     EXPECT_TRUE(sql.ends_with("RETURNING id")) << sql;
 }
+
+// Positive: a single unique field IS a valid conflict target.
+static_assert(storm::orm::statements::ConflictTargetUnique<Person, ^^Person::name>);
+// Positive: the UniqueIndex<name, department> column set IS valid.
+static_assert(storm::orm::statements::ConflictTargetUnique<Person, ^^Person::name, ^^Person::department>);
+// Negative: a non-unique column is NOT a valid conflict target.
+static_assert(!storm::orm::statements::ConflictTargetUnique<Person, ^^Person::age>);
+// Negative: the PK is NOT settable.
+static_assert(!storm::orm::statements::UpsertSettable<Person, ^^Person::id>);
+// Positive: a normal column IS settable.
+static_assert(storm::orm::statements::UpsertSettable<Person, ^^Person::age>);
+
+TEST(UpsertGrammarTest, ConstraintsCompile) {
+    SUCCEED();
+}

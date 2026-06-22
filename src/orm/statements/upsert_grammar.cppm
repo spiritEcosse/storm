@@ -14,6 +14,8 @@ import std;
 import storm_orm_statements_base;
 import storm_orm_statements_field_names;
 import storm_orm_utilities;
+import storm_orm_indexes;
+import storm_orm_field_attr;
 
 export namespace storm::orm::statements {
 
@@ -129,5 +131,45 @@ export namespace storm::orm::statements {
             return out;
         }
     };
+
+    // True if the Target... column set exactly matches some UniqueIndex<...> in Indexes<T>.
+    template <typename T, std::meta::info... Target> consteval auto target_matches_unique_index() -> bool {
+        constexpr std::array targets{Target...};
+        bool                 matched = false;
+        [&]<typename... Idx>(std::tuple<Idx...>*) {
+            (
+                    [&] {
+                        if constexpr (Idx::unique) {
+                            if (Idx::fields.size() == targets.size()) {
+                                bool all = true;
+                                for (std::size_t i = 0; i < targets.size(); ++i) {
+                                    if (Idx::fields[i] != targets[i]) {
+                                        all = false;
+                                    }
+                                }
+                                if (all) {
+                                    matched = true;
+                                }
+                            }
+                        }
+                    }(),
+                    ...
+            );
+        }(static_cast<storm::indexes_t<T>*>(nullptr));
+        return matched;
+    }
+
+    // A valid conflict target: every Target is a data member of T, AND either a
+    // single FieldAttr::unique field, or the PK, or a matching UniqueIndex<...>.
+    template <typename T, std::meta::info... Target>
+    concept ConflictTargetUnique =
+            ((std::meta::is_nonstatic_data_member(Target)) && ...) &&
+            ((sizeof...(Target) == 1 &&
+              ((storm::meta::is_unique(Target) || Target == BaseStatement<T>::primary_key_) && ...)) ||
+             target_matches_unique_index<T, Target...>());
+
+    // A valid SET target: a non-static data member of T that is not the PK.
+    template <typename T, std::meta::info... SetCols>
+    concept UpsertSettable = (UpsertGrammar<T>::template is_settable_member<SetCols>() && ...);
 
 } // namespace storm::orm::statements
