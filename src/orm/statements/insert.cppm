@@ -11,6 +11,7 @@ import std;
 
 import storm_orm_statements_base;
 import storm_orm_statements_field_names;
+import storm_orm_statements_upsert_grammar;
 import storm_orm_utilities;
 import storm_orm_transaction;
 import storm_db_concept;
@@ -34,6 +35,7 @@ export namespace storm::orm::statements {
     template <typename T, storm::db::DatabaseConnection ConnType> class InsertStatement : private BaseStatement<T> {
         friend class BaseStatement<T>; // Allow BaseStatement to access protected/private members
         using Base       = BaseStatement<T>;
+        using Grammar    = UpsertGrammar<T>;
         using Connection = ConnType;
         using Error      = typename ConnType::Error;
         using Statement  = typename ConnType::Statement;
@@ -416,6 +418,64 @@ export namespace storm::orm::statements {
             return std::unexpected(Error{rc, stmt->get_error_message()});
         }
 
+        // Non-PK field count — the number of VALUES placeholders in a plain INSERT.
+        // Used by the DO UPDATE upsert path to find where the auto_update now() tail
+        // starts binding (right after the VALUES params).
+        static consteval auto placeholders_count() -> std::size_t {
+            return Base::field_count_ - 1;
+        }
+
+        // Upsert DO NOTHING — RETURNING yields the new id, or no row when skipped.
+        template <std::meta::info... Target>
+        [[nodiscard]] auto execute_upsert_nothing(const T& obj) -> std::expected<std::optional<std::int64_t>, Error> {
+            const std::string& sql      = Grammar::template nothing_sql<Target...>();
+            auto               prepared = prepare_and_bind(sql, obj);
+            if (!prepared) {
+                return std::unexpected(prepared.error());
+            }
+            Statement*                  stmt = *prepared;
+            const int                   rc   = stmt->step_raw();
+            std::optional<std::int64_t> out;
+            if (rc == Statement::ROW_AVAILABLE) {
+                out = stmt->extract_int64(0);
+            }
+            stmt->reset();
+            if (rc == Statement::ROW_AVAILABLE || rc == Statement::NO_MORE_ROWS) {
+                return out; // value() set when a row came back, nullopt when skipped
+            }
+            return std::unexpected(Error{rc, stmt->get_error_message()});
+        }
+
+        // Upsert DO UPDATE — always touches a row, so RETURNING always yields the id.
+        // The SET clause is "col=excluded.col, ..." for SetCols, plus an auto_update
+        // tail (#209) for any auto_update column not already listed.
+        template <std::meta::info... Target, std::meta::info... SetCols>
+        [[nodiscard]] auto execute_upsert_update(const T& obj) -> std::expected<std::int64_t, Error> {
+            const std::string sql =
+                    Grammar::template update_sql<Target...>(Grammar::template build_excluded_set_clause<SetCols...>());
+            auto stmt_result = conn_->prepare_cached(sql);
+            if (!stmt_result) {
+                return std::unexpected(stmt_result.error());
+            }
+            Statement* stmt = *stmt_result;
+            // (1) bind VALUES params (non-PK fields, same as plain INSERT).
+            if (auto bind_result = bind_all_fields(*stmt, obj); !bind_result) {
+                return std::unexpected(bind_result.error());
+            }
+            // (2) bind the trailing auto_update now() params (excluded.col targets bind nothing).
+            if (auto bind_result = bind_upsert_auto_updates<SetCols...>(stmt); !bind_result) {
+                return std::unexpected(bind_result.error());
+            }
+            const int rc = stmt->step_raw();
+            if (rc == Statement::ROW_AVAILABLE) {
+                std::int64_t id = stmt->extract_int64(0);
+                stmt->reset();
+                return id;
+            }
+            stmt->reset();
+            return std::unexpected(Error{rc, stmt->get_error_message()});
+        }
+
       protected: // Changed to protected so BaseStatement can access
         // Bind non-PK fields for INSERT (skips primary key for auto-increment)
         [[nodiscard]] auto bind_all_fields(Statement& stmt, const T& obj) noexcept -> std::expected<void, Error> {
@@ -533,6 +593,38 @@ export namespace storm::orm::statements {
         }
 
       private:
+        // Bind now() for each unlisted auto_update column (#209), in declaration order,
+        // starting right after the VALUES placeholders (excluded.col SET targets need
+        // no params; only the trailing "col=?" auto_update tail does). Mirrors
+        // UpdateStatement::bind_unlisted_auto_updates (update.cppm).
+        template <std::meta::info... SetCols>
+        [[nodiscard]] auto bind_upsert_auto_updates(Statement* stmt) noexcept -> std::expected<void, Error> {
+            int        param_index = static_cast<int>(placeholders_count()) + 1; // 1-based, after VALUES
+            const auto now         = Base::batch_now();
+            return bind_upsert_auto_updates_impl<SetCols...>(stmt, param_index, now, typename Base::field_indices_t{});
+        }
+
+        template <std::meta::info... SetCols, std::size_t... Is>
+        [[nodiscard]] auto bind_upsert_auto_updates_impl(
+                Statement*                            stmt,
+                int&                                  param_index,
+                std::chrono::system_clock::time_point now,
+                std::index_sequence<Is...> /*unused*/
+        ) noexcept -> std::expected<void, Error> {
+            std::expected<void, Error> result{};
+            (
+                    [&] {
+                        if constexpr (Grammar::template is_unlisted_auto_update<SetCols...>(Base::all_members_[Is])) {
+                            if (result.has_value()) {
+                                result = Base::template bind_one<ConnType>(stmt, param_index, now);
+                            }
+                        }
+                    }(),
+                    ...
+            );
+            return result;
+        }
+
         // Prepare (L3-cached) the given INSERT SQL and bind the object's non-PK
         // fields. Both single-row execute paths share this so the prepare +
         // bind + error-check sequence lives in one place.

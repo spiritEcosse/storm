@@ -57,3 +57,17 @@ static_assert(storm::orm::statements::UpsertSettable<Person, ^^Person::age>);
 TEST(UpsertGrammarTest, ConstraintsCompile) {
     SUCCEED();
 }
+
+template <typename ConnType> class UpsertTest : public StormTestFixture<Person, ConnType> {};
+TYPED_TEST_SUITE(UpsertTest, DatabaseTypes);
+
+// Temporary direct-call test (delete after Task 5 wires the on_conflict() proxy):
+// exercises execute_upsert_nothing() directly since the fluent proxy isn't wired yet.
+TYPED_TEST(UpsertTest, DirectExecuteNothing) {
+    auto conn = storm::QuerySet<Person, TypeParam>::get_default_connection();
+    storm::orm::statements::InsertStatement<Person, TypeParam> stmt{conn};
+    Person const                                               obj{.name = "Zed", .age = 1, .department = "X"};
+    auto r = stmt.template execute_upsert_nothing<^^Person::name>(obj);
+    ASSERT_TRUE(r.has_value());
+    EXPECT_TRUE(r.value().has_value());
+}

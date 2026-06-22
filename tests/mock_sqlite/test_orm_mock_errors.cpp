@@ -143,6 +143,40 @@ namespace {
     }
 
     // ============================================================================
+    // UPSERT Error Tests (#205) — execute_upsert_nothing() called directly since
+    // the on_conflict() fluent proxy isn't wired up yet (Task 5).
+    // ============================================================================
+
+    TEST_F(ORMMockErrorTest, UpsertNothingFailsOnBindError) {
+        // Fail bind_text (used for the "name" field) so prepare_and_bind() errors out.
+        MockSqlite3Config::bind_text_returns(SQLITE_NOMEM);
+
+        auto conn = QuerySet<MockPerson>::get_default_connection();
+        storm::orm::statements::InsertStatement<MockPerson, storm::db::sqlite::Connection> stmt{conn};
+        MockPerson const person{.id = 0, .name = "Alice", .age = 30};
+
+        auto result = stmt.template execute_upsert_nothing<^^MockPerson::name>(person);
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+    }
+
+    TEST_F(ORMMockErrorTest, UpsertNothingFailsOnStepError) {
+        // Let prepare and binding succeed, but fail on step with a real DB error
+        // (neither ROW_AVAILABLE nor NO_MORE_ROWS).
+        MockSqlite3Config::step_returns(SQLITE_IOERR);
+
+        auto conn = QuerySet<MockPerson>::get_default_connection();
+        storm::orm::statements::InsertStatement<MockPerson, storm::db::sqlite::Connection> stmt{conn};
+        MockPerson const person{.id = 0, .name = "Alice", .age = 30};
+
+        auto result = stmt.template execute_upsert_nothing<^^MockPerson::name>(person);
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_IOERR);
+    }
+
+    // ============================================================================
     // SELECT Error Tests
     // ============================================================================
 
