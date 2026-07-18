@@ -99,6 +99,7 @@ When tests fail, systematically check:
 
 ### 5. Common Storm-Specific Issues
 - Batch operation adaptive thresholds (999/field_count for bulk SQL; FALLBACK_BATCH_SIZE=50 is a minimum constant, not the primary cutoff)
+- Upsert (#205/#458) `on_conflict<Target...>().update<Cols...>()`/`.nothing()`: test both DO UPDATE (`std::expected<int64_t, Error>`) and DO NOTHING (`std::expected<std::optional<int64_t>, Error>`, nullopt on existing row); conflict on a `FieldAttr::unique` field vs a `UniqueIndex<...>`; insert-new vs conflict paths; unlisted `auto_update` cols still stamped; cross-backend via TYPED_TEST
 - Transaction management in BaseStatement utilities
 - SQL generation with runtime std::format
 - Statement caching and prepared statement lifecycle

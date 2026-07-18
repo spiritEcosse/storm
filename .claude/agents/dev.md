@@ -21,6 +21,7 @@ When implementing features:
    - `SMALL_THRESHOLD=10`: always bulk SQL for very small batches
    - `FALLBACK_BATCH_SIZE=50`: safe minimum constant in the adaptive algorithm
 6. Use `TransactionGuard` (`storm::begin(conn)`) for transaction management — cooperative with batch ops (#415)
+   - Upsert (#205/#458): single-row `insert(p).on_conflict<Target...>().update<Cols...>(proto)` / `.nothing()`. The `on_conflict<Target...>()` proxy lives on the insert statement (`insert.cppm`); `ConflictTarget`/`.update()`/`.nothing()` grammar in `storm_orm_statements_upsert_grammar`. Conflict target must be a single `FieldAttr::unique` field or a matching `UniqueIndex<...>` (compile-time checked via `target_matches_unique_index`). `DO UPDATE` → `std::expected<int64_t, Error>`; `DO NOTHING` → `std::expected<std::optional<int64_t>, Error>` (nullopt when the row already existed). Unlisted `auto_update` cols are still auto-stamped in the SET list
 7. Cache SQL strings using static methods like `get_insert_sql()`
 8. Handle `SQLITE_MAX_VARIABLE_NUMBER` (999) in all batch operations
 
@@ -31,7 +32,7 @@ When implementing features:
 - `storm_db_sqlite` / `storm_db_postgresql` implement concepts
 - `storm_orm_utilities`, `storm_orm_transaction` — no storm imports
 - `storm_orm_statements_base` uses db_concept + utilities
-- Statement modules (insert, erase, update, select, etc.) use statements_base
+- Statement modules (insert, erase, update, select, upsert, etc.) use statements_base
 - `storm_orm_queryset` at the top, imports all statement modules
 
 **Concept-Based Abstraction**: All database operations work through `DatabaseConnection` and `DatabaseStatement` concepts — SQLite-specific code stays in `storm_db_sqlite`.

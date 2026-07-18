@@ -34,6 +34,7 @@ You are a senior C++ code reviewer specializing in the Storm ORM project, with d
 
 ### 4. BaseStatement Consolidation
 - New statement classes inherit from `BaseStatement<T>`
+- Upsert (#205/#458): `insert(p).on_conflict<Target...>().update<Cols...>(proto)`/`.nothing()`. Conflict target MUST be a single `FieldAttr::unique` field or matching `UniqueIndex<...>` (compile-time checked). Verify return types: `DO UPDATE` → `std::expected<int64_t, Error>`, `DO NOTHING` → `std::expected<std::optional<int64_t>, Error>` (nullopt when the row already existed). Empty-WHERE refusal does not apply (single-row, INSERT-driven)
 - Batch transactions use `TransactionGuard` (`storm::begin(conn)`), not raw BEGIN/COMMIT
 - SQL string caching via static methods like `get_insert_sql()`
 - Minimize code duplication through shared binding helpers
