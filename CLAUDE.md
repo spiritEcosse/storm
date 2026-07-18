@@ -90,12 +90,13 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 4. **NEVER work directly on `develop` for issue-linked tasks** - Always create `feature/<N>-<description>` branch first (see [Branching Rules](#branching-rules))
 5. **ALWAYS show files before commit** - Run `git status --short`, get user approval, then commit
 6. **ALWAYS benchmark after code changes** - Use Release builds; revert if ANY slowdown
-7. **ALWAYS run sanitizer builds after code changes** - `ninja-asan-ubsan` (memory + UB) and `ninja-tsan` (data races); revert if new violations appear
+7. **NEVER run sanitizer builds locally — CI runs them** - `ninja-asan-ubsan` (memory + UB) and `ninja-tsan` (data races) run on every PR in CI; check results with `gh pr checks <PR#>`. Fix or revert if CI reports new violations. Do NOT build or run sanitizer presets locally.
 8. **ALWAYS update docs AND agent files after changes** - Code + docs + `.claude/agents/*.md` commit together. If you change a feature, preset, command, or pattern described in any agent file, update that agent file too.
 9. **ALWAYS write thorough unit tests BEFORE implementing** - Every feature or fix needs comprehensive tests first (see [Testing Checklist](#thorough-testing-checklist)). Workflow: (1) write tests → (2) run — new tests MUST fail (proves they test real behavior) → (3) implement → (4) run again — ALL tests must pass
 10. **SonarCloud gate MUST pass before merging** - Zero issues on new code; no exceptions, even for minor issues (see [SonarCloud Gate](#sonarcloud-gate-mandatory-before-merge))
 11. **NEVER use `throw` for compile-time errors in `consteval` functions** - Use `requires` constraints instead. Define a concept that checks the condition and constrain the template. The `throw "string literal"` trick works but fires late with a poor error message. `requires` fires at the call site with a clear constraint violation. Use `std::unreachable()` after the loop body if needed to satisfy the return type.
 12. **NEVER close an issue without verifying all subtasks** - Before closing, read the issue body and confirm every "Definition of done" checkbox was genuinely completed. Only check off items that were delivered. If some are intentionally skipped, ask the user first.
+13. **ALWAYS run the `storm-code-reviewer` agent before every commit that touches code** - After staging (`git add`) and BEFORE `git commit`, dispatch `storm-code-reviewer` on the staged diff and address its findings. The pre-commit hook checks mechanics (format, tidy, tests, coverage); the reviewer checks design and correctness. Applies to ALL code commits, including inline fixes and SonarCloud-fix commits; docs-only commits are exempt.
 
 **Doc conventions:**
 - ASK before creating new `.md` files
@@ -110,9 +111,9 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 | `ninja-debug` | Debug | ✓ | ✓ | — | — | ✓ | Development, coverage |
 | `ninja-release` | Release | ✓ | — | ✓ | — | ✓ | CI, benchmarking |
 | `ninja-prod` | Release | — | — | — | — | — | Production artifact |
-| `ninja-asan-ubsan` | Debug | ✓ | — | — | ASAN+UBSAN | — | Memory safety + undefined behavior |
-| `ninja-tsan` | Debug | ✓ | — | — | TSAN | — | Data race detection |
-| `ninja-msan` | Debug | ✓ | — | — | MSAN | — | Uninitialized memory reads |
+| `ninja-asan-ubsan` | Debug | ✓ | — | — | ASAN+UBSAN | — | Memory safety + undefined behavior (**CI only** — rule 7) |
+| `ninja-tsan` | Debug | ✓ | — | — | TSAN | — | Data race detection (**CI only** — rule 7) |
+| `ninja-msan` | Debug | ✓ | — | — | MSAN | — | Uninitialized memory reads (**CI only** — rule 7) |
 
 ### Build & Test
 ```bash
