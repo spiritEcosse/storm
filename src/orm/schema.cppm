@@ -999,6 +999,7 @@ export namespace storm::orm::schema {
             auto result = create_fk_parents(conn, done).and_then([&conn] {
                 return conn->execute(with_if_not_exists(create_table_sql<dialect>()));
             });
+            result      = result.and_then([&conn] { return create_indexes_if_not_exist(conn); });
 
             // Auto-generated junction tables for many_to_many fields — one per
             // auto-junction field (#203 Phase 1; #392 several relations). Each junction

@@ -170,6 +170,22 @@ namespace {
         EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
     }
 
+    TEST_F(ORMMockErrorTest, UpsertToSqlFailsOnBindError) {
+        // Fail bind_text so the bind step inside to_sql_with() errors out.
+        MockSqlite3Config::bind_text_returns(SQLITE_NOMEM);
+
+        auto conn = QuerySet<MockPerson>::get_default_connection();
+        storm::orm::statements::InsertStatement<MockPerson, storm::db::sqlite::Connection> stmt{conn};
+        MockPerson const person{.id = 0, .name = "Alice", .age = 30};
+
+        auto result = stmt.template to_sql_with<>(
+                storm::orm::statements::UpsertGrammar<MockPerson>::template nothing_sql<^^MockPerson::name>(), person
+        );
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+    }
+
     TEST_F(ORMMockErrorTest, UpsertNothingFailsOnStepError) {
         // Let prepare and binding succeed, but fail on step with a real DB error
         // (neither ROW_AVAILABLE nor NO_MORE_ROWS).

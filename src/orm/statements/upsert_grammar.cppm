@@ -163,13 +163,12 @@ export namespace storm::orm::statements {
     }
 
     // A valid conflict target: every Target is a data member of T, AND either a
-    // single FieldAttr::unique field, or the PK, or a matching UniqueIndex<...>.
+    // single FieldAttr::unique field or a matching UniqueIndex<...>. INSERT
+    // omits the primary key, so it cannot form a useful conflict target.
     template <typename T, std::meta::info... Target>
-    concept ConflictTargetUnique =
-            ((std::meta::is_nonstatic_data_member(Target)) && ...) &&
-            ((sizeof...(Target) == 1 &&
-              ((storm::meta::is_unique(Target) || Target == BaseStatement<T>::primary_key_) && ...)) ||
-             target_matches_unique_index<T, Target...>());
+    concept ConflictTargetUnique = ((std::meta::is_nonstatic_data_member(Target)) && ...) &&
+                                   ((sizeof...(Target) == 1 && (storm::meta::is_unique(Target) && ...)) ||
+                                    target_matches_unique_index<T, Target...>());
 
     // A valid SET target: a non-static data member of T that is not the PK.
     template <typename T, std::meta::info... SetCols>
