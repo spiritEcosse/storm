@@ -60,6 +60,14 @@ namespace {
         std::optional<int>                           age;
     };
 
+    // Test model with an auto_update timestamp (#209), used to cover the upsert
+    // DO UPDATE auto_update-tail bind-error branch (#205).
+    struct MockPersonAutoUpdate {
+        [[= storm::FieldAttr::primary]] std::int64_t                              id{};
+        std::string                                                               name;
+        [[= storm::FieldAttr::auto_update]] std::chrono::system_clock::time_point updated_at{};
+    };
+
     /**
      * @brief Test fixture for ORM mock error tests
      *
@@ -140,6 +148,119 @@ namespace {
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
+    }
+
+    // ============================================================================
+    // UPSERT Error Tests (#205) — execute_upsert_nothing() called directly to
+    // inject mock bind/step errors; the on_conflict() proxy chain (Task 5) only
+    // runs against a real connection, so it can't hit these error paths.
+    // ============================================================================
+
+    TEST_F(ORMMockErrorTest, UpsertNothingFailsOnBindError) {
+        // Fail bind_text (used for the "name" field) so prepare_and_bind() errors out.
+        MockSqlite3Config::bind_text_returns(SQLITE_NOMEM);
+
+        auto conn = QuerySet<MockPerson>::get_default_connection();
+        storm::orm::statements::InsertStatement<MockPerson, storm::db::sqlite::Connection> stmt{conn};
+        MockPerson const person{.id = 0, .name = "Alice", .age = 30};
+
+        auto result = stmt.template execute_upsert_nothing<^^MockPerson::name>(person);
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+    }
+
+    TEST_F(ORMMockErrorTest, UpsertToSqlFailsOnBindError) {
+        // Fail bind_text so the bind step inside to_sql_with() errors out.
+        MockSqlite3Config::bind_text_returns(SQLITE_NOMEM);
+
+        auto conn = QuerySet<MockPerson>::get_default_connection();
+        storm::orm::statements::InsertStatement<MockPerson, storm::db::sqlite::Connection> stmt{conn};
+        MockPerson const person{.id = 0, .name = "Alice", .age = 30};
+
+        auto result = stmt.template to_sql_with<>(
+                storm::orm::statements::UpsertGrammar<MockPerson>::template nothing_sql<^^MockPerson::name>(), person
+        );
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+    }
+
+    TEST_F(ORMMockErrorTest, UpsertNothingFailsOnStepError) {
+        // Let prepare and binding succeed, but fail on step with a real DB error
+        // (neither ROW_AVAILABLE nor NO_MORE_ROWS).
+        MockSqlite3Config::step_returns(SQLITE_IOERR);
+
+        auto conn = QuerySet<MockPerson>::get_default_connection();
+        storm::orm::statements::InsertStatement<MockPerson, storm::db::sqlite::Connection> stmt{conn};
+        MockPerson const person{.id = 0, .name = "Alice", .age = 30};
+
+        auto result = stmt.template execute_upsert_nothing<^^MockPerson::name>(person);
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_IOERR);
+    }
+
+    TEST_F(ORMMockErrorTest, UpsertUpdateFailsOnPrepareError) {
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        auto conn = QuerySet<MockPerson>::get_default_connection();
+        storm::orm::statements::InsertStatement<MockPerson, storm::db::sqlite::Connection> stmt{conn};
+        MockPerson const person{.id = 0, .name = "Alice", .age = 30};
+
+        auto result = stmt.template upsert_update_runner<^^MockPerson::name>().template run<^^MockPerson::age>(person);
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_ERROR);
+    }
+
+    TEST_F(ORMMockErrorTest, UpsertUpdateFailsOnBindError) {
+        // Fail bind_text (used for the "name" VALUES field) so bind_all_fields() errors out.
+        MockSqlite3Config::bind_text_returns(SQLITE_NOMEM);
+
+        auto conn = QuerySet<MockPerson>::get_default_connection();
+        storm::orm::statements::InsertStatement<MockPerson, storm::db::sqlite::Connection> stmt{conn};
+        MockPerson const person{.id = 0, .name = "Alice", .age = 30};
+
+        auto result = stmt.template upsert_update_runner<^^MockPerson::name>().template run<^^MockPerson::age>(person);
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+    }
+
+    TEST_F(ORMMockErrorTest, UpsertUpdateFailsOnStepError) {
+        // Let prepare and binding succeed, but fail on step with a real DB error.
+        MockSqlite3Config::step_returns(SQLITE_IOERR);
+
+        auto conn = QuerySet<MockPerson>::get_default_connection();
+        storm::orm::statements::InsertStatement<MockPerson, storm::db::sqlite::Connection> stmt{conn};
+        MockPerson const person{.id = 0, .name = "Alice", .age = 30};
+
+        auto result = stmt.template upsert_update_runner<^^MockPerson::name>().template run<^^MockPerson::age>(person);
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_IOERR);
+    }
+
+    TEST_F(ORMMockErrorTest, UpsertUpdateFailsOnAutoUpdateBindError) {
+        // A system_clock::time_point binds via bind_text (tp_to_string), NOT bind_int64.
+        // For MockPersonAutoUpdate{id(PK), name, updated_at}, the DO UPDATE binds, in order:
+        // VALUES name -> text #1, VALUES updated_at -> text #2; then SetCols=name leaves
+        // updated_at unlisted, so the auto_update tail (#209) re-binds it -> text #3.
+        // Fail only text #3 to isolate bind_upsert_auto_updates' error branch from
+        // bind_all_fields'.
+        MockSqlite3Config::bind_text_fails_on_call(3, SQLITE_NOMEM);
+
+        (void)QuerySet<MockPersonAutoUpdate>::set_default_connection(":memory:");
+        auto conn = QuerySet<MockPersonAutoUpdate>::get_default_connection();
+        storm::orm::statements::InsertStatement<MockPersonAutoUpdate, storm::db::sqlite::Connection> stmt{conn};
+        MockPersonAutoUpdate const person{.id = 0, .name = "Alice"};
+
+        auto result = stmt.template upsert_update_runner<^^MockPersonAutoUpdate::id>()
+                              .template run<^^MockPersonAutoUpdate::name>(person);
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
     }
 
     // ============================================================================

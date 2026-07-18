@@ -85,6 +85,20 @@ export namespace storm::orm::statements {
         static consteval auto build_non_pk_field_names_list() {
             return build_field_names_list_impl<true>();
         }
+
+        // "?, ?, ..." placeholders for the SQL VALUES clause, one per non-PK field
+        // (skips the primary key for auto-increment). Shared by InsertStatement's
+        // VALUES clause and UpsertGrammar's re-derived INSERT prefix (#205).
+        static consteval auto build_placeholders() {
+            ConstexprString<utilities::buffer_size::SQL_SMALL> result;
+            for_each_field_name<true>([&](std::size_t /*i*/, bool needs_comma) {
+                if (needs_comma) {
+                    result.append(", ");
+                }
+                result.append("?");
+            });
+            return result;
+        }
     };
 
 } // namespace storm::orm::statements

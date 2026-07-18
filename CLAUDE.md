@@ -483,6 +483,11 @@ qs.where(f<^^Person::salary>() < 50000)
 // Empty where() is refused (no full-table write); update_all<>() is the explicit wipe (#409).
 qs.update_all<^^Person::department>(Person{.department="Global"}).execute(); // UPDATE … SET, no WHERE
 
+// Upsert (#205) — single-row INSERT ... ON CONFLICT (target) DO UPDATE / DO NOTHING.
+// Conflict target must be a unique field / UniqueIndex (compile-time checked).
+qs.insert(p).on_conflict<^^Person::name>().update<^^Person::age>().execute(); // std::expected<int64_t, Error>
+qs.insert(p).on_conflict<^^Person::name>().nothing().execute();                // std::expected<std::optional<int64_t>, Error>
+
 // Public transaction API (#415) — storm::begin(conn) returns an RAII
 // storm::TransactionGuard<ConnType> (both re-exported from `storm`). BEGIN on
 // begin(), explicit txn->commit(), auto-ROLLBACK on early return / throw / scope

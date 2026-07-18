@@ -24,6 +24,7 @@ Documentation for users of Storm ORM — patterns, features, and field/migration
 - **[WHERE Clauses](guide/features/WHERE_CLAUSES.md)** - Type-safe filtering with pure C++26 reflection
 - **[JOIN Operations](guide/features/JOIN_OPERATIONS.md)** - Single and multi-FK JOINs with type erasure
 - **[Batch Operations](guide/features/BATCH_OPERATIONS.md)** - Bulk INSERT/UPDATE/DELETE with smart thresholds
+- **[UPSERT Operations](guide/features/UPSERT.md)** - Single-row ON CONFLICT DO UPDATE / DO NOTHING
 - **[Referential Integrity](guide/features/REFERENTIAL_INTEGRITY.md)** - Always-on FK constraints, junction FOREIGN KEYs, SQLite PRAGMA
 - **[Connection Tuning](guide/features/CONNECTION_TUNING.md)** - SQLite busy_timeout default, optional WAL, pooled concurrency
 
