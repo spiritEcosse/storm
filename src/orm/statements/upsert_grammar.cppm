@@ -132,6 +132,22 @@ export namespace storm::orm::statements {
         }
     };
 
+    // True if the two field lists are identical element-wise. Conflict-target
+    // columns must be supplied in the same declared order as the matching
+    // UniqueIndex. This is a v1 simplification; set-comparison (order-insensitive
+    // matching) can be added later if needed.
+    consteval auto fields_equal_ordered(const auto& lhs, const auto& rhs) -> bool {
+        if (lhs.size() != rhs.size()) {
+            return false;
+        }
+        for (std::size_t i = 0; i < lhs.size(); ++i) {
+            if (lhs[i] != rhs[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     // True if the Target... column set exactly matches some UniqueIndex<...> in Indexes<T>.
     template <typename T, std::meta::info... Target> consteval auto target_matches_unique_index() -> bool {
         constexpr std::array targets{Target...};
@@ -140,19 +156,8 @@ export namespace storm::orm::statements {
             (
                     [&] {
                         if constexpr (Idx::unique) {
-                            if (Idx::fields.size() == targets.size()) {
-                                bool all = true;
-                                // Conflict-target columns must be supplied in the same declared order as
-                                // the matching UniqueIndex. This is a v1 simplification; set-comparison
-                                // (order-insensitive matching) can be added later if needed.
-                                for (std::size_t i = 0; i < targets.size(); ++i) {
-                                    if (Idx::fields[i] != targets[i]) {
-                                        all = false;
-                                    }
-                                }
-                                if (all) {
-                                    matched = true;
-                                }
+                            if (fields_equal_ordered(Idx::fields, targets)) {
+                                matched = true;
                             }
                         }
                     }(),

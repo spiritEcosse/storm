@@ -82,7 +82,7 @@ export namespace storm::orm::statements {
             using Error = typename ConnType::Error;
             InsertStatement<T, ConnType> stmt;
             const T&                     obj;
-            [[nodiscard]] auto           execute() -> std::expected<std::optional<std::int64_t>, Error> {
+            [[nodiscard]] auto execute() -> std::expected<std::optional<std::int64_t>, Error> { // NOSONAR(cpp:S1659)
                 return stmt.template execute_upsert_nothing<Target...>(obj);
             }
             [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
