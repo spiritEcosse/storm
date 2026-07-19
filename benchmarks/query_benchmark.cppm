@@ -17,7 +17,7 @@ module;
 #include <sqlite3.h>
 #include <plf_hive/plf_hive.h>
 
-// `<tuple>` is needed by models.hpp (Indexes<Person>::type) before
+// `<tuple>` is needed by models.hpp (Person::storm_indexes) before
 // reflection-annotated structs are visible. Annotations are blind across BMI
 // boundaries (clang-p2996 #262, see feedback_cpp26_module_reflection_annotations),
 // so model types must be textually visible in the consumer's GMF for any

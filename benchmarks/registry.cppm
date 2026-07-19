@@ -13,7 +13,7 @@
 module;
 
 // shared/models.h (pulled in by models.hpp) uses std::tuple for the
-// Indexes<Person>::type typedef — needs to be visible textually before that
+// Person::storm_indexes typedef — needs to be visible textually before that
 // header expands inside the GMF.
 #include <tuple>
 

@@ -34,12 +34,13 @@ struct Person {
     std::optional<int> score;
     std::optional<std::string> nickname;
     std::vector<uint8_t> avatar;
-};
 
-// Composite indexes for Person — specialize the trait after struct definition
-template <> struct storm::Indexes<Person> {
-    using type = std::tuple<storm::Index<^^Person::department, ^^Person::age>,
-                            storm::UniqueIndex<^^Person::name, ^^Person::department>>;
+    // Composite indexes — nested-typedef opt-in (issue #464). This header is
+    // textually included in several module TUs; an explicit Indexes<Person>
+    // specialization would exist once per TU and trip clang-p2996's cross-BMI
+    // declaration merging (ambiguous Indexes<Person>::type).
+    using storm_indexes = std::tuple<storm::Index<^^Person::department, ^^Person::age>,
+                                     storm::UniqueIndex<^^Person::name, ^^Person::department>>;
 };
 
 // Shared simple record — covers batch/transaction/update/reset tests needing {id, name, value}.

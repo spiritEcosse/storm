@@ -371,6 +371,7 @@ See [docs/guide/reference/FIELD_TYPES.md](docs/guide/reference/FIELD_TYPES.md).
 - **std::function errors**: Use abstract base classes
 - **C headers / macros**: `<cassert>` (the `assert` macro) and POSIX headers (`<csignal>`, `<sys/*.h>`) must stay textual `#include` — `import std;` cannot deliver macros or POSIX extensions
 - **Template alias can't be specialized**: `template<T> using X = Y<T>;` doesn't allow `template<> struct X<Foo>`. Use a real class template in a dedicated module to avoid circular deps.
+- **No explicit specializations in multi-GMF headers**: an explicit specialization of a module-owned template (e.g. `Indexes<Person>`) in a header included by several module TUs' GMFs breaks with "reference to 'type' is ambiguous" once the import graph offers a second BMI path (#464). Use the nested-typedef opt-in (`using storm_indexes = std::tuple<...>;` inside the model) instead. See [COMPILER_ISSUES.md §11](docs/internals/compiler/COMPILER_ISSUES.md).
 - **`if constexpr` in consteval loops**: `if constexpr(f(arr[i]))` fails even in `consteval` — loop variable `i` isn't a core constant expression. Use plain `if` (both branches must compile, but that's fine in consteval).
 - **Compile-time errors: use `requires`, not `throw`**: `throw "msg"` in `consteval` produces a poor error message. Instead define a concept and constrain the template — the error fires at the call site with a clear constraint violation:
   ```cpp
