@@ -13,8 +13,8 @@
  *   #include "test_models.h"  // AFTER import
  */
 
-// Shared model structs (Person, SimpleRecord, Message, ExtendedTypes, Task, Color,
-// Indexes<Person>, PEOPLE_25, MESSAGES_8) — also used by benchmarks.
+// Shared model structs (Person incl. its storm_indexes typedef, SimpleRecord,
+// Message, ExtendedTypes, Task, Color, PEOPLE_25, MESSAGES_8) — also used by benchmarks.
 #include "../shared/models.h"
 
 #include <gtest/gtest.h>

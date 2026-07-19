@@ -268,6 +268,52 @@ Found in #388: the `FKFieldOf<T, Member>` concept (base.cppm) constrains
 `join<^^T::field>()` and must work with FK reflections produced by the benchmark
 registry module (`storm_benchmark_registry::resolve_fk_field`).
 
+### 11. Explicit Specialization in a Multi-GMF Header — Ambiguous Member Lookup
+
+**Problem**: An explicit specialization of a module-owned class template (e.g.
+`template <> struct storm::Indexes<Person>`), placed in a header that is
+textually included in **several module TUs' global module fragments** plus a
+plain TU that imports those modules, can make member lookup ambiguous:
+
+```
+src/orm/indexes.cppm:27:27: error: reference to 'type' is ambiguous
+shared/models.h:41:11: note: candidate found by name lookup is 'storm::Indexes<Person>::type'
+  (identical note repeated once per TU that carries the header)
+```
+
+Each GMF inclusion produces its own copy of the specialization; clang-p2996
+should merge them as one entity but fails when the specialization's members
+carry reflection NTTPs (`Index<^^Person::department, ...>` — same family as
+cross-BMI reflection-equality issues, see §10). The failure is **latent**: it
+only fires once the import graph gives the consumer TU more than one BMI path
+to the primary template. Found in #464: `storm_bench`'s `register.cpp` (textual
+`shared/models.h` + imports of 3 bench modules whose GMFs also include it)
+compiled fine until #458 added a second import path to `storm_orm_indexes`
+(`storm → insert → upsert_grammar → indexes`), then broke deterministically.
+
+**Solution**: For model headers consumed by multiple module TUs, do not
+explicitly specialize the trait. Declare the index list as a nested typedef
+inside the model instead — the constrained partial specialization in
+`indexes.cppm` (single owner, exactly one visible declaration) picks it up:
+
+```cpp
+// ❌ Explicit specialization — one copy per including TU, fragile merging
+template <> struct storm::Indexes<Person> {
+    using type = std::tuple<storm::Index<^^Person::department, ^^Person::age>>;
+};
+
+// ✅ Nested-typedef opt-in — merged as part of Person itself
+struct Person {
+    // ... fields ...
+    using storm_indexes = std::tuple<storm::Index<^^Person::department, ^^Person::age>>;
+};
+```
+
+Explicit specializations remain fine in single-TU contexts (test files,
+`tools/storm_schema`). Note: CI does **not** cover this — the `ninja-release`
+CI job is disabled (§ clang-scan-deps crash, issue #262), so `storm_bench`
+compiles only locally; a green CI is no evidence against a bench-only breakage.
+
 ## Debugging Tips
 
 1. **Clean build**: `rm -rf build/ && cmake --preset ninja-debug`

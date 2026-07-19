@@ -24,6 +24,15 @@ export namespace storm {
         using type = std::tuple<>;
     };
 
+    // Nested-typedef opt-in — models declare `using storm_indexes = std::tuple<...>;`
+    // inside the struct instead of specializing Indexes<T>. Required when the model
+    // header is textually included in multiple module TUs (see issue #464).
+    template <typename T>
+        requires requires { typename T::storm_indexes; }
+    struct Indexes<T> {
+        using type = typename T::storm_indexes;
+    };
+
     template <typename T> using indexes_t = typename Indexes<T>::type;
 
 } // namespace storm
