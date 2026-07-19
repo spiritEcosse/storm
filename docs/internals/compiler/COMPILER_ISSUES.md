@@ -310,9 +310,10 @@ struct Person {
 ```
 
 Explicit specializations remain fine in single-TU contexts (test files,
-`tools/storm_schema`). Note: CI does **not** cover this — the `ninja-release`
-CI job is disabled (§ clang-scan-deps crash, issue #262), so `storm_bench`
-compiles only locally; a green CI is no evidence against a bench-only breakage.
+`tools/storm_schema`). Note: since #466 re-enabled the `ninja-release` CI job
+(the historical clang-scan-deps crash no longer reproduces with the clang-p2996
+build in the pinned CI image), CI compiles `storm_bench` on every PR — a green
+CI now does cover this class of bench-only breakage.
 
 ## Debugging Tips
 
