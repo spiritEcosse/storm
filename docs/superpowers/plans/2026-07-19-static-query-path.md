@@ -1,5 +1,9 @@
 # Static Query Path (#462) Implementation Plan
 
+> **CLOSED 2026-07-19 — Task 1's spike gate FAILED (slot variant ≈ noise vs baseline);
+> Tasks 2-10 were never executed. Kept as the record of the investigation. See the
+> spec's Outcome note and https://github.com/spiritEcosse/storm/issues/462.**
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Compile-time (consteval) SQL strings for statically-shaped SELECT queries plus slot-indexed prepared-statement lookup, opt-in via `storm::static_query<Model>()` — hard-gated on a spike showing ≥2% steady-state win.

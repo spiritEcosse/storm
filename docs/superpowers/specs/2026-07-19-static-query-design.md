@@ -2,7 +2,16 @@
 
 **Issue**: [#462](https://github.com/spiritEcosse/storm/issues/462)
 **Date**: 2026-07-19
-**Status**: Approved design — implementation gated on the Phase 0 spike
+**Status**: CLOSED 2026-07-19 — Phase 0 spike gate FAILED; feature not implemented
+
+> **Outcome**: the three-way spike (baseline vs consteval-SQL+`prepare_cached` vs
+> consteval-SQL+slot-lookup) showed the slot variant within noise of baseline
+> (−0.11% / +0.32% across two interleaved runs, cv ≤ 1.37%) and the
+> consteval-SQL-only variant consistently ~1.1–1.3% SLOWER. Per-call cost is
+> dominated by `sqlite3_step`/extraction, not SQL assembly or the statement-cache
+> hash lookup — consistent with the #214 cache investigation. Numbers + spike
+> source: https://github.com/spiritEcosse/storm/issues/462. Do not reintroduce
+> this design without new evidence from a different workload shape.
 
 ## Problem
 
