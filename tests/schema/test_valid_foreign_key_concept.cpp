@@ -43,6 +43,22 @@ static_assert(ValidForeignKey<std::optional<Node>>);
 static_assert(!ValidForeignKey<NoPkModel>);
 static_assert(!ValidForeignKey<std::optional<NoPkModel>>);
 
+// ---- Call-site rejection: FKFieldOf must reject an FK whose target has no PK --
+using storm::orm::statements::FKFieldOf;
+
+struct BadOwner {
+    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::fk<>]] NoPkModel         ref; // FK to a PK-less target
+};
+
+struct GoodOwner {
+    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::fk<>]] Related           ref; // FK to a valid target
+};
+
+static_assert(FKFieldOf<GoodOwner, ^^GoodOwner::ref>); // valid FK target
+static_assert(!FKFieldOf<BadOwner, ^^BadOwner::ref>);  // PK-less target rejected at the gate
+
 TEST(ValidForeignKeyConceptTest, CompileTimeOnly) {
     // Verification is entirely in the static_asserts above; this body just gives
     // GoogleTest something to run.

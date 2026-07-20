@@ -68,6 +68,39 @@ export namespace storm::orm::statements {
         using storm::meta::fk_on_delete_action_of;
         using storm::meta::is_fk_field;
 
+        // True iff `type` has at least one non-static data member annotated with
+        // FieldAttr::primary. The info-value core of the ModelWithPrimaryKey<T> concept
+        // (below), factored out so it can also run on an info VALUE — needed by
+        // valid_fk_target, whose target type is derived from a range-for loop variable
+        // over nonstatic_data_members_of and so cannot be spliced into a type template
+        // argument (splice operands must be constant expressions; a plain for-loop
+        // variable over a heap-backed std::vector<info> range is not one).
+        consteval auto has_primary_key(std::meta::info type) -> bool {
+            for (auto m : std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked())) {
+                auto attr = std::meta::annotation_of_type<meta::FieldAttr>(m);
+                if (attr.has_value() && meta::is_primary_attr(attr.value())) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // True iff the FK field type `fk_type` refers to an entity that has a primary key.
+        // The info-value equivalent of the ValidForeignKey<FieldType> concept: unwrap an
+        // optional<Related> to Related structurally (same pattern as fk_member_points_at),
+        // then delegate to has_primary_key. Used by FKFieldOf (#474), which cannot splice
+        // its range-for loop variable into ValidForeignKey<typename[:...:]> directly (see
+        // has_primary_key above). Single-level: only the target's own PK, never recursing
+        // into the target's FKs.
+        consteval auto valid_fk_target(std::meta::info fk_type) -> bool {
+            auto target = std::meta::dealias(fk_type);
+            if (std::meta::has_template_arguments(target) &&
+                std::meta::template_of(target) == std::meta::template_of(std::meta::dealias(^^std::optional<int>))) {
+                target = std::meta::dealias(std::meta::template_arguments_of(target)[0]);
+            }
+            return has_primary_key(target);
+        }
+
         // The raw template argument of a reverse_fk member's annotation — either an
         // owner type (^^Task) or an FK field (^^Task::assignee). The join machinery
         // resolves it to the concrete FK field via resolve_reverse_fk_target.
@@ -186,15 +219,7 @@ export namespace storm::orm::statements {
     // divides `MAX_DB_VARIABLES / field_count_` (insert.cppm) safe from division by zero —
     // the divisor can never be 0 for any T that reaches a statement class (issue #362, item A).
     template <typename T>
-    concept ModelWithPrimaryKey = []() consteval {
-        for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
-            auto attr = std::meta::annotation_of_type<meta::FieldAttr>(m);
-            if (attr.has_value() && meta::is_primary_attr(attr.value())) {
-                return true;
-            }
-        }
-        return false;
-    }();
+    concept ModelWithPrimaryKey = meta::has_primary_key(^^T);
 
     // A field type is a valid FK target iff its referenced entity (optional-unwrapped)
     // has a primary key. Names the boundary find_fk_primary_key relies on and that
@@ -275,7 +300,7 @@ export namespace storm::orm::statements {
         }
         for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
             if (std::meta::identifier_of(m) == std::meta::identifier_of(Member)) {
-                return meta::is_fk_field(m);
+                return meta::is_fk_field(m) && meta::valid_fk_target(std::meta::type_of(m));
             }
         }
         return false;
