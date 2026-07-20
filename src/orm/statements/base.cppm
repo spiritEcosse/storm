@@ -85,6 +85,17 @@ export namespace storm::orm::statements {
             return false;
         }
 
+        // std::optional<T> → T (dealiased); any other type returned dealiased unchanged.
+        // Shared optional-unwrap for FK-target queries.
+        consteval auto unwrap_optional_type(std::meta::info type) -> std::meta::info {
+            auto t = std::meta::dealias(type);
+            if (std::meta::has_template_arguments(t) &&
+                std::meta::template_of(t) == std::meta::template_of(std::meta::dealias(^^std::optional<int>))) {
+                return std::meta::dealias(std::meta::template_arguments_of(t)[0]);
+            }
+            return t;
+        }
+
         // True iff the FK field type `fk_type` refers to an entity that has a primary key.
         // The info-value equivalent of the ValidForeignKey<FieldType> concept: unwrap an
         // optional<Related> to Related structurally (same pattern as fk_member_points_at),
@@ -93,12 +104,7 @@ export namespace storm::orm::statements {
         // has_primary_key above). Single-level: only the target's own PK, never recursing
         // into the target's FKs.
         consteval auto valid_fk_target(std::meta::info fk_type) -> bool {
-            auto target = std::meta::dealias(fk_type);
-            if (std::meta::has_template_arguments(target) &&
-                std::meta::template_of(target) == std::meta::template_of(std::meta::dealias(^^std::optional<int>))) {
-                target = std::meta::dealias(std::meta::template_arguments_of(target)[0]);
-            }
-            return has_primary_key(target);
+            return has_primary_key(unwrap_optional_type(fk_type));
         }
 
         // The raw template argument of a reverse_fk member's annotation — either an
@@ -116,11 +122,7 @@ export namespace storm::orm::statements {
         // at base_t — its declared type, optional-unwrapped, is exactly base_t. The
         // single "does this FK reverse to the base?" check across the reverse-FK code.
         consteval auto fk_member_points_at(std::meta::info fk_member, std::meta::info base_t) -> bool {
-            const auto fk_type = std::meta::dealias(std::meta::type_of(fk_member));
-            return fk_type == base_t || (std::meta::has_template_arguments(fk_type) &&
-                                         std::meta::template_of(fk_type) ==
-                                                 std::meta::template_of(std::meta::dealias(^^std::optional<int>)) &&
-                                         std::meta::dealias(std::meta::template_arguments_of(fk_type)[0]) == base_t);
+            return unwrap_optional_type(std::meta::type_of(fk_member)) == base_t;
         }
 
         // Count of FieldAttr::fk members of `owner` whose type points back at base_t.
