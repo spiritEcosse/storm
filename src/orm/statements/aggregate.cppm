@@ -277,11 +277,28 @@ export namespace storm::orm::statements {
             };
         }
 
-        // Return the SQL that would be executed (for testing/debugging)
+        // Return the SQL that would be executed (for testing/debugging). Assembles
+        // the complete aggregate SQL (JOIN/WHERE/GROUP BY/HAVING/modifiers); to_sql()
+        // reuses this to build the string it then prepares and binds.
         [[nodiscard]] auto sql() -> std::string
             requires(NumOps > 0)
         {
-            return build_full_sql();
+            std::string result;
+            if (join_stmt_.has_value()) {
+                result = build_join_sql();
+            } else {
+                result = base_sql_;
+            }
+            if (where_expr_) {
+                insert_where_clause(result);
+            }
+            if constexpr (HasGroupBy) {
+                if (having_expr_) {
+                    insert_having_clause(result);
+                }
+            }
+            append_modifiers(result);
+            return result;
         }
 
         // Return the SQL with bound parameters inlined (for debugging). Builds the
@@ -290,9 +307,13 @@ export namespace storm::orm::statements {
         [[nodiscard]] auto to_sql() -> std::expected<std::string, Error>
             requires(NumOps > 0)
         {
-            auto stmt = ready_bind_where_having(build_full_sql());
+            std::string built = sql();
+            auto        stmt  = ready_aggregate_statement(built);
             if (!stmt) [[unlikely]] {
                 return std::unexpected(stmt.error());
+            }
+            if (auto bound = bind_where_then_having(*stmt); !bound) [[unlikely]] {
+                return std::unexpected(bound.error());
             }
             return (*stmt)->expanded_sql();
         }
@@ -459,27 +480,6 @@ export namespace storm::orm::statements {
             Base::template append_limit_offset<ConnType>(sql, limit_, offset_);
         }
 
-        // Assemble the complete aggregate SQL (JOIN/WHERE/GROUP BY/HAVING/modifiers).
-        // Shared by sql() and to_sql().
-        [[nodiscard]] auto build_full_sql() -> std::string {
-            std::string result;
-            if (join_stmt_.has_value()) {
-                result = build_join_sql();
-            } else {
-                result = base_sql_;
-            }
-            if (where_expr_) {
-                insert_where_clause(result);
-            }
-            if constexpr (HasGroupBy) {
-                if (having_expr_) {
-                    insert_having_clause(result);
-                }
-            }
-            append_modifiers(result);
-            return result;
-        }
-
         [[nodiscard]] auto prepare_and_extract(const std::string& sql) -> std::expected<ResultType, Error> {
             auto prepare_result = conn_->prepare_cached(sql);
             if (!prepare_result) [[unlikely]] {
@@ -528,10 +528,7 @@ export namespace storm::orm::statements {
             return {};
         }
 
-        // Prepare the SQL then bind WHERE+HAVING, returning the ready statement.
-        // Shared by prepare_bind_extract() (which extracts) and to_sql() (which
-        // reads back expanded_sql()).
-        [[nodiscard]] auto ready_bind_where_having(const std::string& sql) -> std::expected<Statement*, Error> {
+        [[nodiscard]] auto prepare_bind_extract(const std::string& sql) -> std::expected<ResultType, Error> {
             auto prepare_result = ready_aggregate_statement(sql);
             if (!prepare_result) [[unlikely]] {
                 return std::unexpected(prepare_result.error());
@@ -539,15 +536,7 @@ export namespace storm::orm::statements {
             if (auto bound = bind_where_then_having(*prepare_result); !bound) [[unlikely]] {
                 return std::unexpected(bound.error());
             }
-            return *prepare_result;
-        }
-
-        [[nodiscard]] auto prepare_bind_extract(const std::string& sql) -> std::expected<ResultType, Error> {
-            auto stmt = ready_bind_where_having(sql);
-            if (!stmt) [[unlikely]] {
-                return std::unexpected(stmt.error());
-            }
-            return extract_results(*stmt);
+            return extract_results(*prepare_result);
         }
 
         [[nodiscard]] auto prepare_bind_having_extract(const std::string& sql) -> std::expected<ResultType, Error> {
