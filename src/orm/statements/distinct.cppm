@@ -194,8 +194,29 @@ export namespace storm::orm::statements {
             return build_sql();
         }
 
+        // Return the SQL with bound parameters inlined (for debugging). Mirrors
+        // execute()'s prepare+bind, then hands back the statement's expanded SQL.
+        [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
+            auto stmt_result = prepare_and_bind();
+            if (!stmt_result) [[unlikely]] {
+                return std::unexpected(stmt_result.error());
+            }
+            return (*stmt_result)->expanded_sql();
+        }
+
         // Execute SELECT or SELECT DISTINCT query on the specified field(s)
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute() -> std::expected<ResultType, Error> {
+            auto stmt_result = prepare_and_bind();
+            if (!stmt_result) [[unlikely]] {
+                return std::unexpected(stmt_result.error());
+            }
+            return execute_query_loop(*stmt_result);
+        }
+
+      private:
+        // Build the projection SQL, prepare it via the connection cache, and bind
+        // any WHERE params. Shared prepare→bind prologue for execute()/to_sql().
+        [[nodiscard]] auto prepare_and_bind() -> std::expected<Statement*, Error> {
             auto sql = build_sql();
 
             auto stmt_result = conn_->prepare_cached(sql);
@@ -203,7 +224,6 @@ export namespace storm::orm::statements {
                 return std::unexpected(stmt_result.error());
             }
 
-            // Bind WHERE params if needed
             if (where_expr_) {
                 auto bind_result = Base::template bind_where_params<Statement, Error>(*stmt_result, where_expr_);
                 if (!bind_result) [[unlikely]] {
@@ -211,10 +231,9 @@ export namespace storm::orm::statements {
                 }
             }
 
-            return execute_query_loop(*stmt_result);
+            return *stmt_result;
         }
 
-      private:
         // Build the complete SQL string for this projection query
         [[nodiscard]] auto build_sql() -> std::string {
             std::string sql;

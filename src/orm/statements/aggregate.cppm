@@ -281,22 +281,45 @@ export namespace storm::orm::statements {
         [[nodiscard]] auto sql() -> std::string
             requires(NumOps > 0)
         {
-            std::string result;
-            if (join_stmt_.has_value()) {
-                result = build_join_sql();
-            } else {
-                result = base_sql_;
+            return build_full_sql();
+        }
+
+        // Return the SQL with bound parameters inlined (for debugging). Builds the
+        // same SQL as sql(), prepares it, binds WHERE then HAVING (matching the
+        // execute paths' param order), and hands back the statement's expanded SQL.
+        [[nodiscard]] auto to_sql() -> std::expected<std::string, Error>
+            requires(NumOps > 0)
+        {
+            std::string sql = build_full_sql();
+
+            auto prepare_result = ready_aggregate_statement(sql);
+            if (!prepare_result) [[unlikely]] {
+                return std::unexpected(prepare_result.error());
             }
+
+            int param_index = 1;
             if (where_expr_) {
-                insert_where_clause(result);
+                auto bind_result =
+                        orm::where::bind_params_direct<Statement, Error>(*where_expr_, *prepare_result, param_index);
+                if (!bind_result) [[unlikely]] {
+                    (*prepare_result)->reset();
+                    return std::unexpected(bind_result.error());
+                }
             }
             if constexpr (HasGroupBy) {
                 if (having_expr_) {
-                    insert_having_clause(result);
+                    // bind_having_params resets the statement itself on failure
+                    // (matches prepare_bind_extract) — no explicit reset here.
+                    auto having_bind = Base::template bind_having_params<Statement, Error>(
+                            *prepare_result, having_expr_, param_index
+                    );
+                    if (!having_bind) [[unlikely]] {
+                        return std::unexpected(having_bind.error());
+                    }
                 }
             }
-            append_modifiers(result);
-            return result;
+
+            return (*prepare_result)->expanded_sql();
         }
 
         [[nodiscard]] __attribute__((flatten)) auto execute() -> std::expected<ResultType, Error>
@@ -459,6 +482,27 @@ export namespace storm::orm::statements {
         void append_modifiers(std::string& sql) const {
             Base::template append_order_by<ConnType>(sql, order_by_wrapper_);
             Base::template append_limit_offset<ConnType>(sql, limit_, offset_);
+        }
+
+        // Assemble the complete aggregate SQL (JOIN/WHERE/GROUP BY/HAVING/modifiers).
+        // Shared by sql() and to_sql().
+        [[nodiscard]] auto build_full_sql() -> std::string {
+            std::string result;
+            if (join_stmt_.has_value()) {
+                result = build_join_sql();
+            } else {
+                result = base_sql_;
+            }
+            if (where_expr_) {
+                insert_where_clause(result);
+            }
+            if constexpr (HasGroupBy) {
+                if (having_expr_) {
+                    insert_having_clause(result);
+                }
+            }
+            append_modifiers(result);
+            return result;
         }
 
         [[nodiscard]] auto prepare_and_extract(const std::string& sql) -> std::expected<ResultType, Error> {
