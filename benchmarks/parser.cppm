@@ -10,7 +10,7 @@
 //     "model": "Person",
 //     "operation": "order_by_where",
 //     "iterations": 1000,
-//     "dataset_size": 10000,
+//     "init_dataset_size": 10000,
 //     "where":    { "field": "age", "op": ">", "value": 30 },
 //     "order_by": [ { "field": "salary", "direction": "DESC" } ],
 //     "group_by": { "fields": ["department"],
@@ -560,7 +560,7 @@ export namespace storm::benchmark {
             test.operation = parse_string<32>(json, pos);
         } else if (key == "iterations") {
             test.iterations = parse_int(json, pos);
-        } else if (key == "dataset_size") {
+        } else if (key == "init_dataset_size" || key == "dataset_size") {
             test.dataset_size = parse_int(json, pos);
         } else if (key == "batch_size") {
             test.batch_size = parse_int(json, pos);

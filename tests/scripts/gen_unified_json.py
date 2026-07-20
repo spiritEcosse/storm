@@ -5,7 +5,7 @@ Regenerate tests/test_cases/unified_cases.json from unified_cases.yaml.
 Emits only the keys the C++ TestCase parser understands:
   Bench-shared:  name (→ test_name alias handled in parser), model, operation,
                  where, order_by, group_by, distinct, limit, aggregate, join, setop
-  Test-only:     query_type, dataset, dataset_size, expected,
+  Test-only:     query_type, dataset, init_dataset_size, expected,
                  insert_count, update_count, erase_count,
                  aggregations (chain tests), where_expr / has_where_expr
 
@@ -59,8 +59,8 @@ def _clean_case(c: dict) -> dict:
 
     if c.get("dataset"):
         out["dataset"] = c["dataset"]
-    if c.get("dataset_size"):
-        out["dataset_size"] = c["dataset_size"]
+    if c.get("init_dataset_size"):
+        out["init_dataset_size"] = c["init_dataset_size"]
 
     # --- operation (first / get_where) ---
     op = c.get("operation") or _OP_MAP.get(qt or "", "")
