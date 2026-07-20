@@ -71,6 +71,9 @@ the issue asks for real rejection, no runtime path:
 - **Valid**: a real FK'd model pair. `static_assert(ValidForeignKey<Related>)` where
   `Related` is a model with a `primary` field; and the optional form
   `static_assert(ValidForeignKey<std::optional<Related>>)`.
+- **Self-referential**: a model whose FK points at itself (e.g. `Node::parent` → `Node`).
+  `static_assert(ValidForeignKey<...>)` passes and terminates in one step — proves the
+  concept does not recurse into the target's FKs.
 - **Invalid**: an FK-typed target lacking a primary key →
   `static_assert(!ValidForeignKey<NoPkModel>)`, proving genuine rejection (not merely a
   substitution that happens to fail elsewhere).
@@ -81,6 +84,22 @@ the issue asks for real rejection, no runtime path:
 
 The test TU must be reachable by the release `storm_tests` target for clang-tidy
 (new-test-TU modmap rule).
+
+## Recursive / self-referential joins
+
+Two senses were considered:
+
+- **Multi-hop traversal** (`.join(A).join(B)` where B is a field of the *joined* table):
+  the API does not support it. `join<FKFields...>()` returns `QuerySet<T>` and every
+  selector is constrained `FKFieldOf<T, …>` — a member of the **base** `T` only. There is
+  no surface that joins off a foreign table, so no additional concept is required.
+- **Self-referential FK** (e.g. `Employee::manager` → `Employee`, a hierarchy): a
+  legitimate single-hop join, already handled. `ValidForeignKey<manager's type>` reduces to
+  `ModelWithPrimaryKey<Employee>`, which passes (Employee has a PK). The concept checks **one
+  level** — "does the FK target have a PK?" — and never recurses into the target's own FKs,
+  so a self-referential or mutually-referential (`A→B`, `B→A`) model terminates in one step
+  with no infinite-instantiation risk. Covered by an added self-referential static_assert in
+  Verification; no concept change.
 
 ## Non-goals
 
