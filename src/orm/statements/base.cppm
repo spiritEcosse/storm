@@ -196,6 +196,15 @@ export namespace storm::orm::statements {
         return false;
     }();
 
+    // A field type is a valid FK target iff its referenced entity (optional-unwrapped)
+    // has a primary key. Names the boundary find_fk_primary_key relies on and that
+    // FKFieldOf did not previously enforce at the call site (#474). Single-level: it
+    // checks only the target's PK, never recursing into the target's own FKs — so a
+    // self-referential (an FK field whose target is its own owning model) or
+    // mutually-referential model terminates in one step.
+    template <typename FieldType>
+    concept ValidForeignKey = ModelWithPrimaryKey<utilities::optional_inner_type_t<FieldType>>;
+
     // Concept: every 64-bit unsigned field of T must carry an explicit storage
     // annotation — FieldAttr::signed_storage or FieldAttr::full_unsigned (#436). A bare
     // unsigned-64 field would silently store > INT64_MAX values as a negative int64
