@@ -35,7 +35,9 @@ struct Node {
 static_assert(ValidForeignKey<Related>);
 static_assert(ValidForeignKey<std::optional<Related>>); // nullable FK unwraps to Related
 
-// ---- Self-referential: terminates in one step, no recursion into target FKs --
+// ---- Self-referential target: the owning model is itself a valid FK target ----
+// (ValidForeignKey inspects only the target type, so this reduces to the same
+// single-level PK check as the positive case above — it never recurses into FKs.)
 static_assert(ValidForeignKey<Node>);
 static_assert(ValidForeignKey<std::optional<Node>>);
 

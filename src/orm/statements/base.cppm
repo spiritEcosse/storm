@@ -102,7 +102,9 @@ export namespace storm::orm::statements {
         // then delegate to has_primary_key. Used by FKFieldOf (#474), which cannot splice
         // its range-for loop variable into ValidForeignKey<typename[:...:]> directly (see
         // has_primary_key above). Single-level: only the target's own PK, never recursing
-        // into the target's FKs.
+        // into the target's FKs. Intentionally parallel to ValidForeignKey<FieldType>: the
+        // concept serves the type-argument path (find_fk_primary_key), this the loop-variable
+        // path (FKFieldOf); both compute "the FK target, optional-unwrapped, has a PK".
         consteval auto valid_fk_target(std::meta::info fk_type) -> bool {
             return has_primary_key(unwrap_optional_type(fk_type));
         }
