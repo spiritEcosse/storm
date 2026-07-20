@@ -325,8 +325,11 @@ the SQL default — no `ON DELETE` clause emitted). The `ON DELETE` policy is th
 arg: `fk<RefAction::Cascade>` / `fk<RefAction::SetNull>` / `fk<RefAction::Restrict>` /
 `fk<RefAction::NoAction>`. `SetNull` REQUIRES a nullable FK (`std::optional<Related>`) —
 enforced at compile time by `ModelFkPoliciesValid<T>`. NOT a FieldAttr enumerator (enum
-members can't be templated); FK detection runs through `meta::is_fk_field`. `ON UPDATE` is
-not emitted (identity PKs never change). See
+members can't be templated); FK detection runs through `meta::is_fk_field`. An FK target
+must have a primary key: the `ValidForeignKey<FieldType>` concept (#474) constrains
+`find_fk_primary_key` and the `FKFieldOf` gate on `join<>`/`left_join<>`, so a `join<>` on an
+FK whose target lacks a PK fails at the call site (single-level — never recurses into the
+target's own FKs). `ON UPDATE` is not emitted (identity PKs never change). See
 [docs/guide/features/REFERENTIAL_INTEGRITY.md](docs/guide/features/REFERENTIAL_INTEGRITY.md).
 
 **Many-to-many (#203)**: `[[= storm::many_to_many<>]]` (auto junction `<Owner>_<Related>`,
