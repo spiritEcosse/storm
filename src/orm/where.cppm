@@ -328,7 +328,9 @@ export namespace storm::orm::where {
     // std::string. Enum operands are stored as their underlying int. Narrow / unsigned integer
     // operands fold to the int / int64_t variant arm (no dedicated arm per source type — #407),
     // mirroring the enum fold. bool keeps its own arm. Everything else is decayed.
-    template <typename V> auto normalize_operand(V&& value) {
+    template <typename V>
+        requires utilities::BindableType<std::decay_t<V>>
+    auto normalize_operand(V&& value) {
         using D = std::decay_t<V>;
         if constexpr (std::is_enum_v<D>) {
             return static_cast<int>(static_cast<std::underlying_type_t<D>>(value));
