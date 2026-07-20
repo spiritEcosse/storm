@@ -18,7 +18,7 @@ tests:
     model: Person
     operation: where
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     where:
         field: age
         op: ">"
@@ -30,7 +30,7 @@ tests:
     model: Person
     operation: where
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     where:
         field: is_active
         op: ==
@@ -42,7 +42,7 @@ tests:
     model: Person
     operation: where
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     where:
         field: salary
         op: ">="
@@ -54,7 +54,7 @@ tests:
     model: Person
     operation: where
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     where:
         field: age
         op: <
@@ -323,7 +323,7 @@ tests:
     model: Person
     operation: select_limit
     iterations: 10000
-    dataset_size: 10000
+    init_dataset_size: 10000
     limit:
         value: 10
 
@@ -333,7 +333,7 @@ tests:
     model: Person
     operation: select_limit
     iterations: 2000
-    dataset_size: 10000
+    init_dataset_size: 10000
     limit:
         value: 100
 
@@ -343,7 +343,7 @@ tests:
     model: Person
     operation: select_limit
     iterations: 200
-    dataset_size: 10000
+    init_dataset_size: 10000
     limit:
         value: 1000
 
@@ -353,7 +353,7 @@ tests:
     model: Person
     operation: select_offset
     iterations: 1000
-    dataset_size: 1000
+    init_dataset_size: 1000
     limit:
         offset: 100
 
@@ -363,7 +363,7 @@ tests:
     model: Person
     operation: select_limit_offset
     iterations: 2000
-    dataset_size: 10000
+    init_dataset_size: 10000
     limit:
         value: 100
         offset: 0
@@ -374,7 +374,7 @@ tests:
     model: Person
     operation: select_limit_offset
     iterations: 2000
-    dataset_size: 10000
+    init_dataset_size: 10000
     limit:
         value: 100
         offset: 9000
@@ -385,7 +385,7 @@ tests:
     model: Person
     operation: select_where_limit
     iterations: 2000
-    dataset_size: 10000
+    init_dataset_size: 10000
     where:
         field: age
         op: ">"
@@ -399,7 +399,7 @@ tests:
     model: FKMessage
     operation: select_join_limit
     iterations: 2000
-    dataset_size: 10000
+    init_dataset_size: 10000
     join:
         type: inner
         related: User
@@ -413,7 +413,7 @@ tests:
     model: FKMessage
     operation: select_join_limit_offset
     iterations: 2000
-    dataset_size: 10000
+    init_dataset_size: 10000
     join:
         type: inner
         related: User
@@ -431,7 +431,7 @@ tests:
     model: Person
     operation: order_by_asc
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     order_by:
         - field: age
           direction: ASC
@@ -442,7 +442,7 @@ tests:
     model: Person
     operation: order_by_desc
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     order_by:
         - field: salary
           direction: DESC
@@ -453,7 +453,7 @@ tests:
     model: Person
     operation: order_by_where
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     where:
         field: age
         op: ">"
@@ -468,7 +468,7 @@ tests:
     model: Person
     operation: order_by_limit
     iterations: 5000
-    dataset_size: 10000
+    init_dataset_size: 10000
     order_by:
         - field: salary
           direction: DESC
@@ -484,7 +484,7 @@ tests:
     model: Person
     operation: order_by_collate
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     order_by:
         - field: name
           direction: ASC
@@ -496,7 +496,7 @@ tests:
     model: Person
     operation: order_by_collate
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     order_by:
         - field: name
           direction: DESC
@@ -508,7 +508,7 @@ tests:
     model: Person
     operation: order_by_collate
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     order_by:
         - field: name
           direction: ASC
@@ -520,7 +520,7 @@ tests:
     model: Person
     operation: order_by_collate_where
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     where:
         field: age
         op: ">"
@@ -539,7 +539,7 @@ tests:
     model: Person
     operation: group_by
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     group_by:
         fields: [age]
     aggregate:
@@ -551,7 +551,7 @@ tests:
     model: Person
     operation: group_by
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     group_by:
         fields: [is_active]
     aggregate:
@@ -563,7 +563,7 @@ tests:
     model: Person
     operation: group_by_where
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     where:
         field: salary
         op: ">"
@@ -579,7 +579,7 @@ tests:
     model: Person
     operation: group_by_multi_2
     iterations: 500
-    dataset_size: 10000
+    init_dataset_size: 10000
     group_by:
         fields: [age, is_active]
     aggregate:
@@ -591,7 +591,7 @@ tests:
     model: Person
     operation: group_by_with_count
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     group_by:
         fields: [age]
     aggregate:
@@ -603,7 +603,7 @@ tests:
     model: Person
     operation: group_by_with_sum
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     group_by:
         fields: [age]
     aggregate:
@@ -616,7 +616,7 @@ tests:
     model: Person
     operation: group_by_with_avg
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     group_by:
         fields: [age]
     aggregate:
@@ -629,7 +629,7 @@ tests:
     model: Person
     operation: group_by_with_min
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     group_by:
         fields: [age]
     aggregate:
@@ -642,7 +642,7 @@ tests:
     model: Person
     operation: group_by_with_max
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     group_by:
         fields: [age]
     aggregate:
@@ -658,7 +658,7 @@ tests:
     model: Person
     operation: group_by_having_count
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     group_by:
         fields: [age]
         having:
@@ -674,7 +674,7 @@ tests:
     model: Person
     operation: group_by_having_sum
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     group_by:
         fields: [age]
         having:
@@ -694,7 +694,7 @@ tests:
     model: Person
     operation: where_like
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     where:
         field: name
         op: LIKE
@@ -706,7 +706,7 @@ tests:
     model: Person
     operation: where_like
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     where:
         field: name
         op: LIKE
@@ -718,7 +718,7 @@ tests:
     model: Person
     operation: where_between
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     where:
         field: age
         op: BETWEEN
@@ -730,7 +730,7 @@ tests:
     model: Person
     operation: where_in
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     where:
         field: age
         op: IN
@@ -742,7 +742,7 @@ tests:
     model: Person
     operation: where_and
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     where:
         conditions:
             - field: age
@@ -759,7 +759,7 @@ tests:
     model: Person
     operation: where_or
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     where:
         conditions:
             - field: age
@@ -779,7 +779,7 @@ tests:
     model: Person
     operation: where_is_null
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     where:
         field: score
         op: IS NULL
@@ -790,7 +790,7 @@ tests:
     model: Person
     operation: where_is_not_null
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     where:
         field: score
         op: IS NOT NULL
@@ -804,7 +804,7 @@ tests:
     model: Person
     operation: distinct_multi_2
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     distinct:
         fields: [name, age]
 
@@ -814,7 +814,7 @@ tests:
     model: Person
     operation: distinct_multi_3
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     distinct:
         fields: [name, age, is_active]
 
@@ -824,7 +824,7 @@ tests:
     model: Person
     operation: distinct_order_by_asc
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     order_by:
         - field: age
           direction: ASC
@@ -837,7 +837,7 @@ tests:
     model: Person
     operation: distinct_order_by_desc
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     order_by:
         - field: age
           direction: DESC
@@ -853,7 +853,7 @@ tests:
     model: Person
     operation: order_by_multi_2_asc
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     order_by:
         - field: age
           direction: ASC
@@ -866,7 +866,7 @@ tests:
     model: Person
     operation: order_by_multi_2_desc
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     order_by:
         - field: age
           direction: DESC
@@ -879,7 +879,7 @@ tests:
     model: Person
     operation: order_by_multi_2_mixed
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
     order_by:
         - field: age
           direction: ASC
@@ -902,7 +902,7 @@ tests:
     model: Person
     operation: first_where
     iterations: 10000
-    dataset_size: 10000
+    init_dataset_size: 10000
     where:
         field: age
         op: ">"
@@ -917,7 +917,7 @@ tests:
     model: Person
     operation: get_where
     iterations: 10000
-    dataset_size: 10000
+    init_dataset_size: 10000
     where:
         field: id
         op: ==

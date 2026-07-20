@@ -41,7 +41,7 @@ SCALAR_PASSTHROUGH = {
     "model",
     "operation",
     "iterations",
-    "dataset_size",
+    "init_dataset_size",
     "batch_size",
     "size_profile",
 }
