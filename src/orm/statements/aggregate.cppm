@@ -290,36 +290,11 @@ export namespace storm::orm::statements {
         [[nodiscard]] auto to_sql() -> std::expected<std::string, Error>
             requires(NumOps > 0)
         {
-            std::string sql = build_full_sql();
-
-            auto prepare_result = ready_aggregate_statement(sql);
-            if (!prepare_result) [[unlikely]] {
-                return std::unexpected(prepare_result.error());
+            auto stmt = ready_bind_where_having(build_full_sql());
+            if (!stmt) [[unlikely]] {
+                return std::unexpected(stmt.error());
             }
-
-            int param_index = 1;
-            if (where_expr_) {
-                auto bind_result =
-                        orm::where::bind_params_direct<Statement, Error>(*where_expr_, *prepare_result, param_index);
-                if (!bind_result) [[unlikely]] {
-                    (*prepare_result)->reset();
-                    return std::unexpected(bind_result.error());
-                }
-            }
-            if constexpr (HasGroupBy) {
-                if (having_expr_) {
-                    // bind_having_params resets the statement itself on failure
-                    // (matches prepare_bind_extract) — no explicit reset here.
-                    auto having_bind = Base::template bind_having_params<Statement, Error>(
-                            *prepare_result, having_expr_, param_index
-                    );
-                    if (!having_bind) [[unlikely]] {
-                        return std::unexpected(having_bind.error());
-                    }
-                }
-            }
-
-            return (*prepare_result)->expanded_sql();
+            return (*stmt)->expanded_sql();
         }
 
         [[nodiscard]] __attribute__((flatten)) auto execute() -> std::expected<ResultType, Error>
@@ -530,26 +505,49 @@ export namespace storm::orm::statements {
             return *prepare_result;
         }
 
-        [[nodiscard]] auto prepare_bind_extract(const std::string& sql) -> std::expected<ResultType, Error> {
-            auto prepare_result = ready_aggregate_statement(sql);
-            if (!prepare_result) [[unlikely]] {
-                return std::unexpected(prepare_result.error());
-            }
-            int  param_index = 1;
-            auto bind_result = // NOSONAR(S1659)
-                    orm::where::bind_params_direct<Statement, Error>(*where_expr_, *prepare_result, param_index);
-            if (!bind_result) [[unlikely]] {
-                (*prepare_result)->reset();
-                return std::unexpected(bind_result.error());
+        // Bind WHERE params (if any) then HAVING params (if any) onto an already
+        // prepared statement, in the execute paths' param order. Shared by
+        // prepare_bind_extract() and to_sql(). On WHERE-bind failure the statement
+        // is reset here; bind_having_params resets itself on HAVING failure.
+        [[nodiscard]] auto bind_where_then_having(Statement* stmt) -> std::expected<void, Error> {
+            int param_index = 1;
+            if (where_expr_) {
+                auto bind_result = // NOSONAR(S1659)
+                        orm::where::bind_params_direct<Statement, Error>(*where_expr_, stmt, param_index);
+                if (!bind_result) [[unlikely]] {
+                    stmt->reset();
+                    return std::unexpected(bind_result.error());
+                }
             }
             if (having_expr_) {
-                auto having_bind =
-                        Base::template bind_having_params<Statement, Error>(*prepare_result, having_expr_, param_index);
+                auto having_bind = Base::template bind_having_params<Statement, Error>(stmt, having_expr_, param_index);
                 if (!having_bind) [[unlikely]] {
                     return std::unexpected(having_bind.error());
                 }
             }
-            return extract_results(*prepare_result);
+            return {};
+        }
+
+        // Prepare the SQL then bind WHERE+HAVING, returning the ready statement.
+        // Shared by prepare_bind_extract() (which extracts) and to_sql() (which
+        // reads back expanded_sql()).
+        [[nodiscard]] auto ready_bind_where_having(const std::string& sql) -> std::expected<Statement*, Error> {
+            auto prepare_result = ready_aggregate_statement(sql);
+            if (!prepare_result) [[unlikely]] {
+                return std::unexpected(prepare_result.error());
+            }
+            if (auto bound = bind_where_then_having(*prepare_result); !bound) [[unlikely]] {
+                return std::unexpected(bound.error());
+            }
+            return *prepare_result;
+        }
+
+        [[nodiscard]] auto prepare_bind_extract(const std::string& sql) -> std::expected<ResultType, Error> {
+            auto stmt = ready_bind_where_having(sql);
+            if (!stmt) [[unlikely]] {
+                return std::unexpected(stmt.error());
+            }
+            return extract_results(*stmt);
         }
 
         [[nodiscard]] auto prepare_bind_having_extract(const std::string& sql) -> std::expected<ResultType, Error> {
