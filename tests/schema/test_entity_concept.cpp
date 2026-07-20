@@ -30,6 +30,16 @@ static_assert(!storm::meta::Entity<int&>);
 static_assert(!storm::meta::Entity<void>);
 static_assert(!storm::meta::Entity<void()>);
 
+// The constraint is load-bearing: QuerySet is instantiable for a real model and
+// NOT for a non-model type (the requires clause rejects it, not deep reflection).
+// The `typename QuerySet<T>` probe is wrapped in a variable template so the
+// failed-constraint case is a dependent SFINAE soft-fail; naming the constrained
+// specialization directly in a namespace-scope `requires` is eagerly instantiated
+// by clang-p2996 and hard-errors instead of yielding false.
+template <class T> constexpr bool queryset_instantiable = requires { typename storm::QuerySet<T>; };
+static_assert(queryset_instantiable<Person>);
+static_assert(!queryset_instantiable<int>);
+
 // NOLINTEND(misc-const-correctness)
 
 TEST(EntityConcept, CompileTimeOnly) {
