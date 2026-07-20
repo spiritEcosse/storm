@@ -495,6 +495,13 @@ namespace storm::test {
         return jn;
     }
 
+    // Issue #72: `init_dataset_size` is the preferred config key; `dataset_size`
+    // stays a backward-compatible alias. Kept as a free predicate so
+    // parse_bench_field's branch count is unchanged.
+    constexpr auto is_init_dataset_size_key(const char* ptr, JsonKeyRef kr) -> bool {
+        return jkey_eq(ptr, kr.start, kr.len, "init_dataset_size") || jkey_eq(ptr, kr.start, kr.len, "dataset_size");
+    }
+
     constexpr void
     parse_bench_field(BenchmarkTest& b, const char* ptr, JsonKeyRef kr, std::string_view j, std::size_t& p) {
         if (jkey_eq(ptr, kr.start, kr.len, "model"))
@@ -513,7 +520,7 @@ namespace storm::test {
             b.aggregate = parse_aggregate(j, p);
         else if (jkey_eq(ptr, kr.start, kr.len, "join"))
             b.join = parse_join(j, p);
-        else if (jkey_eq(ptr, kr.start, kr.len, "dataset_size"))
+        else if (is_init_dataset_size_key(ptr, kr))
             b.dataset_size = parse_int(j, p);
         else
             skip_value(j, p);

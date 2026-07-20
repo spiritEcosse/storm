@@ -206,7 +206,6 @@ def transform_case(case: dict) -> dict:
         "model",
         "query_type",
         "dataset",
-        "dataset_size",
         "limit_value",
         "offset_value",
         "insert_count",
@@ -225,6 +224,12 @@ def transform_case(case: dict) -> dict:
     ):
         if k in case and case[k] is not None:
             out[k] = case[k]
+
+    # Issue #72: legacy input uses `dataset_size`; emit the renamed
+    # `init_dataset_size` key so a rerun stays consistent with the current YAML.
+    init_dataset_size = case.get("init_dataset_size", case.get("dataset_size"))
+    if init_dataset_size is not None:
+        out["init_dataset_size"] = init_dataset_size
 
     # where_expr: keep as-is in YAML and signal via has_where_expr in JSON.
     if "where_expr" in case:

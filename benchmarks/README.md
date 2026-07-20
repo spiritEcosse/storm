@@ -1699,7 +1699,7 @@ Edit `benchmarks/tests/benchmark_tests.yaml` (the human-friendly source of truth
     where_op: LIKE
     where_value_string: "Person%"
     iterations: 1000
-    dataset_size: 10000
+    init_dataset_size: 10000
 ```
 
 **Option B: Size profile test** (auto-iterates over multiple sizes)
@@ -1886,7 +1886,7 @@ for (int i = 0; i < iterations; i++) {
   "model": "Person",
   "operation": "where|insert|select|select_limit|select_offset|select_limit_offset|select_where_limit|select_join_limit|select_join_limit_offset|order_by_asc|order_by_desc|order_by_where|order_by_limit|order_by_multi_2_asc|order_by_multi_2_desc|order_by_multi_2_mixed|where_like|where_between|where_in|where_and|where_or",
   "iterations": 1000,
-  "dataset_size": 10000,
+  "init_dataset_size": 10000,
   "batch_size": 1,  // For batch operations (1 = single, >1 = batch)
 
   // For WHERE operations

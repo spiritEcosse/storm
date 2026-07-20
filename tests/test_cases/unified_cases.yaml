@@ -187,7 +187,7 @@
   model: simple
   query_type: update_batch
   dataset: custom
-  dataset_size: 10
+  init_dataset_size: 10
   update_count: 3
   expected:
     unchanged: 7
@@ -195,7 +195,7 @@
   model: simple
   query_type: update_batch
   dataset: custom
-  dataset_size: 5
+  init_dataset_size: 5
   update_count: 3
   expected:
     unchanged: 2
@@ -203,7 +203,7 @@
   model: simple
   query_type: update_batch
   dataset: custom
-  dataset_size: 3
+  init_dataset_size: 3
   update_count: 1
   expected:
     unchanged: 2
@@ -211,7 +211,7 @@
   model: simple
   query_type: update_batch
   dataset: custom
-  dataset_size: 5
+  init_dataset_size: 5
   update_count: 0
   expected:
     unchanged: 5
@@ -219,7 +219,7 @@
   model: simple
   query_type: update_batch
   dataset: custom
-  dataset_size: 5
+  init_dataset_size: 5
   update_count: 5
   expected:
     unchanged: 0
@@ -227,7 +227,7 @@
   model: simple
   query_type: update_batch
   dataset: custom
-  dataset_size: 50
+  init_dataset_size: 50
   update_count: 25
   expected:
     unchanged: 25
@@ -235,7 +235,7 @@
   model: simple
   query_type: update_batch
   dataset: custom
-  dataset_size: 5
+  init_dataset_size: 5
   update_count: 1
   expected:
     unchanged: 4
@@ -243,7 +243,7 @@
   model: simple
   query_type: update_batch
   dataset: custom
-  dataset_size: 20
+  init_dataset_size: 20
   update_count: 10
   expected:
     unchanged: 10
@@ -251,7 +251,7 @@
   model: simple
   query_type: update_batch
   dataset: custom
-  dataset_size: 103
+  init_dataset_size: 103
   update_count: 100
   expected:
     unchanged: 3
@@ -259,28 +259,28 @@
   model: simple
   query_type: erase_all
   dataset: custom
-  dataset_size: 0
+  init_dataset_size: 0
   expected:
     remaining: 0
 - name: erase_all_5_persons
   model: person
   query_type: erase_all
   dataset: custom
-  dataset_size: 5
+  init_dataset_size: 5
   expected:
     remaining: 0
 - name: erase_all_5_simple
   model: simple
   query_type: erase_all
   dataset: custom
-  dataset_size: 5
+  init_dataset_size: 5
   expected:
     remaining: 0
 - name: erase_batch_2_of_5_persons
   model: person
   query_type: erase_batch
   dataset: custom
-  dataset_size: 5
+  init_dataset_size: 5
   erase_count: 2
   expected:
     remaining: 3
@@ -288,7 +288,7 @@
   model: simple
   query_type: erase_batch
   dataset: custom
-  dataset_size: 5
+  init_dataset_size: 5
   erase_count: 3
   expected:
     remaining: 2
@@ -296,7 +296,7 @@
   model: simple
   query_type: erase_batch
   dataset: custom
-  dataset_size: 5
+  init_dataset_size: 5
   erase_count: 5
   expected:
     remaining: 0
@@ -304,7 +304,7 @@
   model: simple
   query_type: erase_batch
   dataset: custom
-  dataset_size: 5
+  init_dataset_size: 5
   erase_count: 1
   expected:
     remaining: 4
@@ -312,7 +312,7 @@
   model: simple
   query_type: erase_batch
   dataset: custom
-  dataset_size: 15
+  init_dataset_size: 15
   erase_count: 10
   expected:
     remaining: 5
@@ -320,7 +320,7 @@
   model: simple
   query_type: erase_batch
   dataset: custom
-  dataset_size: 1000
+  init_dataset_size: 1000
   erase_count: 799
   expected:
     remaining: 201
@@ -328,7 +328,7 @@
   model: simple
   query_type: erase_batch
   dataset: custom
-  dataset_size: 1000
+  init_dataset_size: 1000
   erase_count: 800
   expected:
     remaining: 200
@@ -336,7 +336,7 @@
   model: simple
   query_type: erase_batch
   dataset: custom
-  dataset_size: 1000
+  init_dataset_size: 1000
   erase_count: 850
   expected:
     remaining: 150
@@ -344,7 +344,7 @@
   model: simple
   query_type: erase_batch
   dataset: custom
-  dataset_size: 2000
+  init_dataset_size: 2000
   erase_count: 1598
   expected:
     remaining: 402
@@ -352,7 +352,7 @@
   model: simple
   query_type: erase_batch
   dataset: custom
-  dataset_size: 2000
+  init_dataset_size: 2000
   erase_count: 1600
   expected:
     remaining: 400
@@ -360,7 +360,7 @@
   model: simple
   query_type: erase_batch
   dataset: custom
-  dataset_size: 5
+  init_dataset_size: 5
   erase_count: 0
   expected:
     remaining: 5
@@ -368,7 +368,7 @@
   model: simple
   query_type: erase_batch
   dataset: custom
-  dataset_size: 50
+  init_dataset_size: 50
   erase_count: 50
   expected:
     remaining: 0
@@ -376,7 +376,7 @@
   model: simple
   query_type: erase_batch
   dataset: custom
-  dataset_size: 799
+  init_dataset_size: 799
   erase_count: 799
   expected:
     remaining: 0
@@ -384,7 +384,7 @@
   model: simple
   query_type: erase_batch
   dataset: custom
-  dataset_size: 800
+  init_dataset_size: 800
   erase_count: 800
   expected:
     remaining: 0
@@ -392,7 +392,7 @@
   model: simple
   query_type: erase_batch
   dataset: custom
-  dataset_size: 850
+  init_dataset_size: 850
   erase_count: 850
   expected:
     remaining: 0
@@ -400,7 +400,7 @@
   model: simple
   query_type: erase_batch
   dataset: custom
-  dataset_size: 1600
+  init_dataset_size: 1600
   erase_count: 1600
   expected:
     remaining: 0
@@ -408,7 +408,7 @@
   model: simple
   query_type: erase_batch
   dataset: custom
-  dataset_size: 1598
+  init_dataset_size: 1598
   erase_count: 1598
   expected:
     remaining: 0
@@ -416,7 +416,7 @@
   model: simple
   query_type: update_batch
   dataset: custom
-  dataset_size: 50
+  init_dataset_size: 50
   update_count: 50
   expected:
     unchanged: 0
@@ -424,7 +424,7 @@
   model: simple
   query_type: update_batch
   dataset: custom
-  dataset_size: 850
+  init_dataset_size: 850
   update_count: 850
   expected:
     unchanged: 0
@@ -2194,7 +2194,7 @@
 - name: limit_5_from_20
   model: person
   query_type: select
-  dataset_size: 20
+  init_dataset_size: 20
   limit:
     value: 5
     offset: 0
@@ -2203,7 +2203,7 @@
 - name: offset_10_from_20
   model: person
   query_type: select
-  dataset_size: 20
+  init_dataset_size: 20
   limit:
     value: 0
     offset: 10
@@ -2212,7 +2212,7 @@
 - name: limit_5_offset_10
   model: person
   query_type: select
-  dataset_size: 20
+  init_dataset_size: 20
   limit:
     value: 5
     offset: 10
@@ -2221,7 +2221,7 @@
 - name: limit_exceeds_dataset
   model: person
   query_type: select
-  dataset_size: 20
+  init_dataset_size: 20
   limit:
     value: 100
     offset: 0
@@ -2230,7 +2230,7 @@
 - name: offset_exceeds_dataset
   model: person
   query_type: select
-  dataset_size: 20
+  init_dataset_size: 20
   limit:
     value: 0
     offset: 100
@@ -2239,7 +2239,7 @@
 - name: limit_1
   model: person
   query_type: select
-  dataset_size: 20
+  init_dataset_size: 20
   limit:
     value: 1
     offset: 0
@@ -2248,7 +2248,7 @@
 - name: limit_zero
   model: person
   query_type: select
-  dataset_size: 20
+  init_dataset_size: 20
   limit:
     value: 0
     offset: 0
@@ -2257,7 +2257,7 @@
 - name: offset_zero
   model: person
   query_type: select
-  dataset_size: 20
+  init_dataset_size: 20
   limit:
     value: 0
     offset: 0
@@ -2266,7 +2266,7 @@
 - name: limit_offset_partial_page
   model: person
   query_type: select
-  dataset_size: 20
+  init_dataset_size: 20
   limit:
     value: 10
     offset: 15
@@ -2275,7 +2275,7 @@
 - name: limit_offset_boundary
   model: person
   query_type: select
-  dataset_size: 20
+  init_dataset_size: 20
   limit:
     value: 5
     offset: 15
@@ -2284,7 +2284,7 @@
 - name: limit_1_offset_1
   model: person
   query_type: select
-  dataset_size: 20
+  init_dataset_size: 20
   limit:
     value: 1
     offset: 1
@@ -2293,7 +2293,7 @@
 - name: distinct_name_limit_offset
   model: person
   query_type: distinct
-  dataset_size: 20
+  init_dataset_size: 20
   distinct:
     fields:
     - name
@@ -2305,7 +2305,7 @@
 - name: distinct_name_age_limit
   model: person
   query_type: distinct
-  dataset_size: 20
+  init_dataset_size: 20
   distinct:
     fields:
     - name
@@ -2318,7 +2318,7 @@
 - name: distinct_name_where_age_gt30_limit
   model: person
   query_type: distinct
-  dataset_size: 20
+  init_dataset_size: 20
   where:
     conditions:
     - field: age
@@ -3321,7 +3321,7 @@
 - name: limit_where_age_gt25
   model: person
   query_type: select
-  dataset_size: 20
+  init_dataset_size: 20
   where:
     conditions:
     - field: age
@@ -3336,7 +3336,7 @@
 - name: limit_offset_where_age_gt25
   model: person
   query_type: select
-  dataset_size: 20
+  init_dataset_size: 20
   where:
     conditions:
     - field: age
