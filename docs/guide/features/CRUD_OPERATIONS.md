@@ -304,13 +304,31 @@ QuerySet<Person>().erase_all().execute();   // DELETE FROM Person (explicit full
 > **See also:** conditional bulk **UPDATE** (`where(cond).update<Members...>(proto)`)
 > shipped in #403 — see [Conditional UPDATE](#conditional-update-403) above.
 
-## SQL Inspection — `to_sql()` backend behavior (#411)
+## SQL Inspection — `.sql()` vs `.to_sql()` (#197)
 
-Every statement builder exposes `.to_sql()`, which returns the SQL with the bound
-parameter values inlined. It is a **debug / inspection aid only** — execution always
-binds `?` parameters and never uses this string. Because it is produced by a different
-mechanism per backend, the rendered text is **not byte-identical across SQLite and
-PostgreSQL**:
+Every query builder exposes two inspection methods with a consistent split:
+
+| Method | Returns | Content |
+|---|---|---|
+| `.sql()` | `std::string` | raw SQL **template** (`?` placeholders), no binding |
+| `.to_sql()` | `std::expected<std::string, Error>` | SQL with bound parameter values **inlined** |
+
+Both are **debug / inspection aids only** — execution always binds `?` parameters and
+never uses these strings. As of #197 the split is uniform across all proxies: SELECT,
+INSERT/upsert, UPDATE, DELETE, set operations, **DISTINCT / VALUES**, and the
+**aggregates** (`count()`, `sum()`, `avg()`, `min()`, `max()`, with or without
+`group_by()` / `having()`).
+
+```cpp
+qs.distinct<^^Person::name>().sql();                  // std::string (template)
+qs.distinct<^^Person::name>().to_sql();               // expected<string, Error> (bound)
+qs.where(f<^^Person::age>() > 30).count().to_sql();   // "SELECT COUNT(*) … WHERE age > 30"
+```
+
+### `to_sql()` backend behavior (#411)
+
+Because `.to_sql()` is produced by a different mechanism per backend, the rendered text
+is **not byte-identical across SQLite and PostgreSQL**:
 
 - **SQLite** uses the engine-native `sqlite3_expanded_sql()`.
 - **PostgreSQL** hand-rolls `?`-placeholder substitution, storing every bound value as

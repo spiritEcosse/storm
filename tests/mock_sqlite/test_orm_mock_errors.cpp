@@ -590,6 +590,64 @@ namespace {
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
     }
 
+    // #197: distinct().to_sql() prepare failure (distinct.cppm prepare_and_bind).
+    TEST_F(ORMMockErrorTest, DistinctToSqlFailsOnPrepareError) {
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        QuerySet<MockPerson> qs;
+        auto                 result = qs.distinct<^^MockPerson::name>().to_sql();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_ERROR);
+    }
+
+    // #197: distinct().to_sql() WHERE bind failure (distinct.cppm prepare_and_bind).
+    TEST_F(ORMMockErrorTest, DistinctToSqlWithWhereFailsOnBindError) {
+        MockSqlite3Config::bind_int_returns(SQLITE_NOMEM);
+
+        QuerySet<MockPerson> qs;
+        auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
+        auto                 result = qs.where(age > 25).distinct<^^MockPerson::name>().to_sql();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+    }
+
+    // #197: count().to_sql() prepare failure (aggregate.cppm to_sql).
+    TEST_F(ORMMockErrorTest, CountToSqlFailsOnPrepareError) {
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        QuerySet<MockPerson> qs;
+        auto                 result = qs.count().to_sql();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_ERROR);
+    }
+
+    // #197: where().count().to_sql() WHERE bind failure (aggregate.cppm to_sql).
+    TEST_F(ORMMockErrorTest, CountToSqlWithWhereFailsOnBindError) {
+        MockSqlite3Config::bind_int_returns(SQLITE_NOMEM);
+
+        QuerySet<MockPerson> qs;
+        auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
+        auto                 result = qs.where(age > 25).count().to_sql();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+    }
+
+    // #197: group_by().having().count().to_sql() HAVING bind failure (aggregate.cppm to_sql).
+    TEST_F(ORMMockErrorTest, GroupByHavingToSqlFailsOnBindError) {
+        MockSqlite3Config::bind_int_returns(SQLITE_NOMEM);
+
+        QuerySet<MockPerson> qs;
+        auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
+        auto                 result = qs.group_by<^^MockPerson::age>().having(age > 25).count().to_sql();
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+    }
+
     // ============================================================================
     // GROUP BY Error Tests
     // ============================================================================

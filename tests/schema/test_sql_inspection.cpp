@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
 #include "test_db_helpers.h"
 
-// NOLINTBEGIN(misc-const-correctness,misc-use-anonymous-namespace)
+// readability-implicit-bool-conversion: false positive from GTest's
+// EXPECT_TRUE(cond) << "msg" — clang-tidy misreads the streamed message literal.
+// NOLINTBEGIN(misc-const-correctness,misc-use-anonymous-namespace,readability-implicit-bool-conversion)
 
 import storm;
 import std;
@@ -584,4 +586,124 @@ TYPED_TEST(SqlInspectionTest, ToSqlDoubleByBackend) {
     EXPECT_TRUE(contains(sql, "1234.5")) << "double value should appear in the rendered SQL: " << sql;
 }
 
-// NOLINTEND(misc-const-correctness,misc-use-anonymous-namespace)
+// ============================================================================
+// DISTINCT / VALUES .to_sql() tests (#197 — parity with SELECT)
+// ============================================================================
+
+TYPED_TEST(SqlInspectionTest, DistinctBareToSql) {
+    QuerySet<Person, TypeParam> qs;
+    auto                        result = qs.template distinct<^^Person::name>().to_sql();
+    ASSERT_TRUE(result.has_value()) << "distinct().to_sql() failed: " << result.error().message();
+
+    const std::string& sql = result.value();
+    EXPECT_TRUE(contains(sql, "SELECT DISTINCT")) << "Should contain SELECT DISTINCT: " << sql;
+    EXPECT_TRUE(contains(sql, "name")) << "Should contain projected field 'name': " << sql;
+    EXPECT_TRUE(contains(sql, "Person")) << "Should contain table name: " << sql;
+    EXPECT_FALSE(contains(sql, "WHERE")) << "Bare distinct should have no WHERE: " << sql;
+}
+
+TYPED_TEST(SqlInspectionTest, DistinctWithWhereToSql) {
+    QuerySet<Person, TypeParam> qs;
+    auto                        result = qs.where(f<^^Person::age>() > 30).template distinct<^^Person::name>().to_sql();
+    ASSERT_TRUE(result.has_value()) << "distinct().to_sql() failed: " << result.error().message();
+
+    const std::string& sql = result.value();
+    EXPECT_TRUE(contains(sql, "SELECT DISTINCT")) << "Should contain SELECT DISTINCT: " << sql;
+    EXPECT_TRUE(contains(sql, "WHERE")) << "Should contain WHERE: " << sql;
+    EXPECT_TRUE(contains(sql, "30")) << "WHERE value 30 should be bound into the SQL: " << sql;
+}
+
+TYPED_TEST(SqlInspectionTest, ValuesBareToSql) {
+    QuerySet<Person, TypeParam> qs;
+    auto                        result = qs.template values<^^Person::name, ^^Person::age>().to_sql();
+    ASSERT_TRUE(result.has_value()) << "values().to_sql() failed: " << result.error().message();
+
+    const std::string& sql = result.value();
+    EXPECT_TRUE(contains(sql, "SELECT")) << "Should contain SELECT: " << sql;
+    EXPECT_FALSE(contains(sql, "DISTINCT")) << "values() must not emit DISTINCT: " << sql;
+    EXPECT_TRUE(contains(sql, "name")) << "Should contain field 'name': " << sql;
+    EXPECT_TRUE(contains(sql, "age")) << "Should contain field 'age': " << sql;
+}
+
+TYPED_TEST(SqlInspectionTest, ValuesWithWhereToSql) {
+    QuerySet<Person, TypeParam> qs;
+    auto result = qs.where(f<^^Person::name>() == "Alice").template values<^^Person::age>().to_sql();
+    ASSERT_TRUE(result.has_value()) << "values().to_sql() failed: " << result.error().message();
+
+    const std::string& sql = result.value();
+    EXPECT_TRUE(contains(sql, "WHERE")) << "Should contain WHERE: " << sql;
+    EXPECT_TRUE(contains(sql, "Alice")) << "WHERE value 'Alice' should be bound into the SQL: " << sql;
+}
+
+// ============================================================================
+// AGGREGATE .to_sql() tests (#197 — parity with SELECT)
+// ============================================================================
+
+TYPED_TEST(SqlInspectionTest, CountBareToSql) {
+    QuerySet<Person, TypeParam> qs;
+    auto                        result = qs.count().to_sql();
+    ASSERT_TRUE(result.has_value()) << "count().to_sql() failed: " << result.error().message();
+
+    const std::string& sql = result.value();
+    EXPECT_TRUE(contains(sql, "COUNT")) << "Should contain COUNT: " << sql;
+    EXPECT_TRUE(contains(sql, "Person")) << "Should contain table name: " << sql;
+    EXPECT_FALSE(contains(sql, "WHERE")) << "Bare count should have no WHERE: " << sql;
+}
+
+TYPED_TEST(SqlInspectionTest, CountWithWhereToSql) {
+    QuerySet<Person, TypeParam> qs;
+    auto                        result = qs.where(f<^^Person::age>() > 30).count().to_sql();
+    ASSERT_TRUE(result.has_value()) << "count().to_sql() failed: " << result.error().message();
+
+    const std::string& sql = result.value();
+    EXPECT_TRUE(contains(sql, "COUNT")) << "Should contain COUNT: " << sql;
+    EXPECT_TRUE(contains(sql, "WHERE")) << "Should contain WHERE: " << sql;
+    EXPECT_TRUE(contains(sql, "30")) << "WHERE value 30 should be bound into the SQL: " << sql;
+}
+
+TYPED_TEST(SqlInspectionTest, SumWithWhereToSql) {
+    QuerySet<Person, TypeParam> qs;
+    auto                        result = qs.where(f<^^Person::age>() >= 25).template sum<^^Person::age>().to_sql();
+    ASSERT_TRUE(result.has_value()) << "sum().to_sql() failed: " << result.error().message();
+
+    const std::string& sql = result.value();
+    EXPECT_TRUE(contains(sql, "SUM")) << "Should contain SUM: " << sql;
+    EXPECT_TRUE(contains(sql, "WHERE")) << "Should contain WHERE: " << sql;
+    EXPECT_TRUE(contains(sql, "25")) << "WHERE value 25 should be bound into the SQL: " << sql;
+}
+
+TYPED_TEST(SqlInspectionTest, GroupByCountToSql) {
+    QuerySet<Person, TypeParam> qs;
+    auto                        result = qs.template group_by<^^Person::age>().count().to_sql();
+    ASSERT_TRUE(result.has_value()) << "group_by().count().to_sql() failed: " << result.error().message();
+
+    const std::string& sql = result.value();
+    EXPECT_TRUE(contains(sql, "COUNT")) << "Should contain COUNT: " << sql;
+    EXPECT_TRUE(contains(sql, "GROUP BY")) << "Should contain GROUP BY: " << sql;
+    EXPECT_TRUE(contains(sql, "age")) << "Should contain group field 'age': " << sql;
+}
+
+TYPED_TEST(SqlInspectionTest, GroupByHavingCountToSql) {
+    QuerySet<Person, TypeParam> qs;
+    auto result = qs.template group_by<^^Person::age>().having(f<^^Person::age>() > 30).count().to_sql();
+    ASSERT_TRUE(result.has_value()) << "group_by().having().count().to_sql() failed: " << result.error().message();
+
+    const std::string& sql = result.value();
+    EXPECT_TRUE(contains(sql, "GROUP BY")) << "Should contain GROUP BY: " << sql;
+    EXPECT_TRUE(contains(sql, "HAVING")) << "Should contain HAVING: " << sql;
+    EXPECT_TRUE(contains(sql, "30")) << "HAVING value 30 should be bound into the SQL: " << sql;
+}
+
+// Other chaining position: count() before having().
+TYPED_TEST(SqlInspectionTest, GroupByCountHavingToSql) {
+    QuerySet<Person, TypeParam> qs;
+    auto result = qs.template group_by<^^Person::age>().count().having(f<^^Person::age>() > 30).to_sql();
+    ASSERT_TRUE(result.has_value()) << "group_by().count().having().to_sql() failed: " << result.error().message();
+
+    const std::string& sql = result.value();
+    EXPECT_TRUE(contains(sql, "GROUP BY")) << "Should contain GROUP BY: " << sql;
+    EXPECT_TRUE(contains(sql, "HAVING")) << "Should contain HAVING: " << sql;
+    EXPECT_TRUE(contains(sql, "30")) << "HAVING value 30 should be bound into the SQL: " << sql;
+}
+
+// NOLINTEND(misc-const-correctness,misc-use-anonymous-namespace,readability-implicit-bool-conversion)
