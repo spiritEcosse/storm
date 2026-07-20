@@ -68,6 +68,47 @@ export namespace storm::orm::statements {
         using storm::meta::fk_on_delete_action_of;
         using storm::meta::is_fk_field;
 
+        // True iff `type` has at least one non-static data member annotated with
+        // FieldAttr::primary. The info-value core of the ModelWithPrimaryKey<T> concept
+        // (below), factored out so it can also run on an info VALUE — needed by
+        // valid_fk_target, whose target type is derived from a range-for loop variable
+        // over nonstatic_data_members_of and so cannot be spliced into a type template
+        // argument (splice operands must be constant expressions; a plain for-loop
+        // variable over a heap-backed std::vector<info> range is not one).
+        consteval auto has_primary_key(std::meta::info type) -> bool {
+            for (auto m : std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked())) {
+                auto attr = std::meta::annotation_of_type<meta::FieldAttr>(m);
+                if (attr.has_value() && meta::is_primary_attr(attr.value())) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // std::optional<T> → T (dealiased); any other type returned dealiased unchanged.
+        // Shared optional-unwrap for FK-target queries.
+        consteval auto unwrap_optional_type(std::meta::info type) -> std::meta::info {
+            auto t = std::meta::dealias(type);
+            if (std::meta::has_template_arguments(t) &&
+                std::meta::template_of(t) == std::meta::template_of(std::meta::dealias(^^std::optional<int>))) {
+                return std::meta::dealias(std::meta::template_arguments_of(t)[0]);
+            }
+            return t;
+        }
+
+        // True iff the FK field type `fk_type` refers to an entity that has a primary key.
+        // The info-value equivalent of the ValidForeignKey<FieldType> concept: unwrap an
+        // optional<Related> to Related structurally (same pattern as fk_member_points_at),
+        // then delegate to has_primary_key. Used by FKFieldOf (#474), which cannot splice
+        // its range-for loop variable into ValidForeignKey<typename[:...:]> directly (see
+        // has_primary_key above). Single-level: only the target's own PK, never recursing
+        // into the target's FKs. Intentionally parallel to ValidForeignKey<FieldType>: the
+        // concept serves the type-argument path (find_fk_primary_key), this the loop-variable
+        // path (FKFieldOf); both compute "the FK target, optional-unwrapped, has a PK".
+        consteval auto valid_fk_target(std::meta::info fk_type) -> bool {
+            return has_primary_key(unwrap_optional_type(fk_type));
+        }
+
         // The raw template argument of a reverse_fk member's annotation — either an
         // owner type (^^Task) or an FK field (^^Task::assignee). The join machinery
         // resolves it to the concrete FK field via resolve_reverse_fk_target.
@@ -83,11 +124,7 @@ export namespace storm::orm::statements {
         // at base_t — its declared type, optional-unwrapped, is exactly base_t. The
         // single "does this FK reverse to the base?" check across the reverse-FK code.
         consteval auto fk_member_points_at(std::meta::info fk_member, std::meta::info base_t) -> bool {
-            const auto fk_type = std::meta::dealias(std::meta::type_of(fk_member));
-            return fk_type == base_t || (std::meta::has_template_arguments(fk_type) &&
-                                         std::meta::template_of(fk_type) ==
-                                                 std::meta::template_of(std::meta::dealias(^^std::optional<int>)) &&
-                                         std::meta::dealias(std::meta::template_arguments_of(fk_type)[0]) == base_t);
+            return unwrap_optional_type(std::meta::type_of(fk_member)) == base_t;
         }
 
         // Count of FieldAttr::fk members of `owner` whose type points back at base_t.
@@ -186,15 +223,16 @@ export namespace storm::orm::statements {
     // divides `MAX_DB_VARIABLES / field_count_` (insert.cppm) safe from division by zero —
     // the divisor can never be 0 for any T that reaches a statement class (issue #362, item A).
     template <typename T>
-    concept ModelWithPrimaryKey = []() consteval {
-        for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
-            auto attr = std::meta::annotation_of_type<meta::FieldAttr>(m);
-            if (attr.has_value() && meta::is_primary_attr(attr.value())) {
-                return true;
-            }
-        }
-        return false;
-    }();
+    concept ModelWithPrimaryKey = meta::has_primary_key(^^T);
+
+    // A field type is a valid FK target iff its referenced entity (optional-unwrapped)
+    // has a primary key. Names the boundary find_fk_primary_key relies on and that
+    // FKFieldOf did not previously enforce at the call site (#474). Single-level: it
+    // checks only the target's PK, never recursing into the target's own FKs — so a
+    // self-referential (an FK field whose target is its own owning model) or
+    // mutually-referential model terminates in one step.
+    template <typename FieldType>
+    concept ValidForeignKey = ModelWithPrimaryKey<utilities::optional_inner_type_t<FieldType>>;
 
     // Concept: every 64-bit unsigned field of T must carry an explicit storage
     // annotation — FieldAttr::signed_storage or FieldAttr::full_unsigned (#436). A bare
@@ -266,7 +304,7 @@ export namespace storm::orm::statements {
         }
         for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
             if (std::meta::identifier_of(m) == std::meta::identifier_of(Member)) {
-                return meta::is_fk_field(m);
+                return meta::is_fk_field(m) && meta::valid_fk_target(std::meta::type_of(m));
             }
         }
         return false;
@@ -463,7 +501,7 @@ export namespace storm::orm::statements {
         // Find primary key of a FK type (unwraps std::optional<T> → T first). Public so
         // the free two-query join helpers (join.cppm, #398) can extract FK columns.
         template <typename FKType>
-            requires ModelWithPrimaryKey<utilities::optional_inner_type_t<FKType>>
+            requires ValidForeignKey<FKType>
         static consteval auto find_fk_primary_key() -> std::meta::info {
             using InnerType = utilities::optional_inner_type_t<FKType>;
             for (const std::meta::info member :

@@ -97,6 +97,15 @@ on a non-optional field fails to compile with a clear constraint violation.
 keys whose value never changes, so an `ON UPDATE` action would never fire. It can be added
 later if natural-key FKs are introduced.
 
+**An FK target must have a primary key** (#474). The `ValidForeignKey<FieldType>` concept —
+`ModelWithPrimaryKey` applied to the FK type, optional-unwrapped — names this boundary.
+`find_fk_primary_key` is constrained by it, and the `FKFieldOf<T, Member>` gate on
+`join<>` / `left_join<>` selectors now also requires it, so selecting a `join<>` on an FK
+whose target type has no primary key fails at the **call site** with a clear constraint
+violation instead of deep inside result extraction. The check is single-level (only the
+target's own PK, never the target's own FKs), so self-referential and mutually-referential
+FKs resolve in one step.
+
 ### Junction `ON DELETE` override
 
 The junction default is `CASCADE`, overridable per m2m field via the
