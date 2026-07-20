@@ -95,23 +95,60 @@ export namespace storm::db {
         { conn.cache_stats() } -> std::same_as<CacheStats>;
     };
 
-    // Database statement concept
+    // Database statement concept.
+    // Issue #206: covers the full bind/extract/control surface actually used by
+    // orm/utilities.cppm and orm/statements/extract.cppm, not just the minimal
+    // insert-and-step path — so a non-compliant backend fails here, at the
+    // static_assert boundary in sqlite.cppm / postgresql_connection.cppm, with a
+    // clear concept violation instead of deep inside the binder/extractor.
     template <typename T>
-    concept DatabaseStatement = requires(T& stmt, int int_val, std::string_view str_val) {
+    concept DatabaseStatement = requires(
+            T&               stmt,
+            int              int_val,
+            std::int64_t     int64_val,
+            double           double_val,
+            std::string_view str_val,
+            const void*      blob_ptr
+    ) {
         // Type alias required
         typename T::Error;
 
-        // Parameter binding
-        { stmt.bind_int(1, int_val) } -> std::same_as<std::expected<void, typename T::Error>>;
-        { stmt.bind_text(1, str_val) } -> std::same_as<std::expected<void, typename T::Error>>;
+        // Parameter binding (int_val doubles as the 1-based bind index)
+        { stmt.bind_int(int_val, int_val) } -> std::same_as<std::expected<void, typename T::Error>>;
+        { stmt.bind_text(int_val, str_val) } -> std::same_as<std::expected<void, typename T::Error>>;
+        { stmt.bind_int64(int_val, int64_val) } -> std::same_as<std::expected<void, typename T::Error>>;
+        { stmt.bind_double(int_val, double_val) } -> std::same_as<std::expected<void, typename T::Error>>;
+        { stmt.bind_null(int_val) } -> std::same_as<std::expected<void, typename T::Error>>;
+        {
+            stmt.bind_blob(int_val, blob_ptr, static_cast<std::size_t>(int_val))
+        } -> std::same_as<std::expected<void, typename T::Error>>;
 
         // Execution
         { stmt.execute() } -> std::same_as<std::expected<void, typename T::Error>>;
         { stmt.step() } -> std::same_as<std::expected<bool, typename T::Error>>; // true if row available
+        { stmt.step_raw() } -> std::convertible_to<int>; // no std::expected overhead in hot loop
 
         // Statement management
         { stmt.reset() } -> std::same_as<void>;
         { stmt.finalize() } -> std::same_as<void>;
+
+        // Column extraction (result-row reading; int_val doubles as the column index)
+        { stmt.extract_int(int_val) } -> std::convertible_to<int>;
+        { stmt.extract_int64(int_val) } -> std::convertible_to<std::int64_t>;
+        { stmt.extract_double(int_val) } -> std::convertible_to<double>;
+        { stmt.extract_float(int_val) } -> std::convertible_to<float>;
+        { stmt.extract_bool(int_val) } -> std::convertible_to<bool>;
+        { stmt.extract_text_ptr(int_val) } -> std::convertible_to<const unsigned char*>;
+        { stmt.extract_bytes(int_val) } -> std::convertible_to<int>;
+        { stmt.extract_blob_ptr(int_val) } -> std::convertible_to<const void*>;
+        { stmt.is_null(int_val) } -> std::convertible_to<bool>;
+
+        // Error reporting
+        { stmt.get_error_message() } -> std::convertible_to<const char*>;
+
+        // Step-return-code constants (checked at the boundary via step_raw())
+        { T::ROW_AVAILABLE } -> std::convertible_to<int>;
+        { T::NO_MORE_ROWS } -> std::convertible_to<int>;
     };
 
     // Database error concept
