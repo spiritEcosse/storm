@@ -472,7 +472,7 @@ export namespace storm::orm::statements {
         // Find primary key of a FK type (unwraps std::optional<T> → T first). Public so
         // the free two-query join helpers (join.cppm, #398) can extract FK columns.
         template <typename FKType>
-            requires ModelWithPrimaryKey<utilities::optional_inner_type_t<FKType>>
+            requires ValidForeignKey<FKType>
         static consteval auto find_fk_primary_key() -> std::meta::info {
             using InnerType = utilities::optional_inner_type_t<FKType>;
             for (const std::meta::info member :
