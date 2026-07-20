@@ -291,6 +291,19 @@ static constexpr auto bind_value_by_type(Statement& stmt, int index, const U& va
 }
 ```
 
+### `BindableType` concept (#473)
+
+The parameter binder (`bind_parameter_value`) and the WHERE operand path
+(`normalize_operand`) are both constrained by
+`storm::orm::utilities::BindableType<T>` — a concept whose disjunction mirrors the
+`if constexpr` dispatch arms exactly (integer/64-bit-integer, `enum`, `bool`,
+`double`/`float`, chrono date/datetime/duration, `filesystem::path`, `UUID`, text,
+BLOB byte-vectors, and `std::optional<U>` where `U` is itself bindable). Passing an
+unsupported operand type now fails at the call site with a clear constraint
+violation instead of deep inside the binder's dispatch. Composed from the same
+`is_*_source_v` predicates the dispatcher branches on, so the concept cannot drift
+from what actually binds.
+
 ## Future Type Support
 
 Planned additions:
