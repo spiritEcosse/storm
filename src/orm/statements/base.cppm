@@ -381,7 +381,7 @@ export namespace storm::orm::statements {
 
     // Shared reflection utilities for all statement types
     template <typename T>
-        requires ModelWithPrimaryKey<T> && ModelStorageAnnotated<T> && ModelFkPoliciesValid<T>
+        requires storm::meta::Entity<T> && ModelWithPrimaryKey<T> && ModelStorageAnnotated<T> && ModelFkPoliciesValid<T>
     class BaseStatement {
       public:
         // Compile-time accessor for table name (used in SQL generation)

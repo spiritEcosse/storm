@@ -335,3 +335,30 @@ Storm ORM provides compile-time type safety:
 - Incorrect type usage → Compilation error
 - No runtime type checking overhead
 - SQLite type affinity automatically handled
+
+## Model Type Validation (`Entity`) (#472)
+
+`storm::meta::Entity<T>` is the compile-time **structural** gate for model types — true iff
+`T` is a reflectable class:
+
+```cpp
+template <typename T>
+concept Entity = std::meta::is_class_type(^^T) && requires {
+    std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked());
+    std::meta::identifier_of(^^T);
+};
+```
+
+`QuerySet<T>` and `BaseStatement<T>` (and therefore every statement class) `require` it, so a
+non-model `T` — `int`, a pointer, a function type — fails at this named boundary with a clear
+constraint violation instead of deep inside reflection-based code.
+
+`Entity` sits **above** and stays **separate from** the semantic model concepts on
+`BaseStatement<T>` — `ModelWithPrimaryKey`, `ModelStorageAnnotated`, `ModelFkPoliciesValid`.
+Those check model *policy* (a primary key exists, every `uint64_t` field is storage-annotated,
+every `SET NULL` FK is nullable); `Entity` checks *reflectability*. They are deliberately not
+merged: `QuerySet<T>` must be usable without requiring a primary key, so it needs the structural
+gate alone.
+
+`Entity` is structural only — a `union` also satisfies it. Full model-ness is guaranteed by the
+semantic concepts together with `Entity`, not by `Entity` alone.
