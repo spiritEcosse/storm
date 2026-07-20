@@ -361,6 +361,15 @@ same `bind_int64`/`extract_int64` hot path, zero perf change) for values ≤ INT
 the `full_unsigned` bind/extract branches and the concept gate are compile-time-dispatched, so unrelated
 types and signed-64/smaller integers are unaffected. Signed-64 types stay correct as `BIGINT`/`INTEGER`.
 
+**Entity concept (#472)**: `storm::meta::Entity<T>` is the compile-time structural gate for model
+types — true iff `T` is a reflectable class (shipped as `std::meta::is_class_type(^^T) && requires
+{ nonstatic_data_members_of(^^T, …); identifier_of(^^T); }`). `QuerySet<T>` and `BaseStatement<T>`
+`require` it, so a non-model `T` (`int`, a pointer, a function type) fails at that named boundary
+instead of deep inside reflection code. It sits ABOVE, and stays SEPARATE from, the semantic model
+concepts (`ModelWithPrimaryKey`, `ModelStorageAnnotated`, `ModelFkPoliciesValid`) — those check model
+*policy*, `Entity` checks *reflectability*. Structural only: a `union` also satisfies `Entity`, so
+full model-ness is guaranteed by the semantic concepts together with it, not by `Entity` alone.
+
 See [docs/guide/reference/FIELD_TYPES.md](docs/guide/reference/FIELD_TYPES.md).
 
 ## Known Compiler Issues
