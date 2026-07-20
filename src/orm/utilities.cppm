@@ -336,6 +336,28 @@ export namespace storm::orm::utilities {
     constexpr bool is_text_source_v =
             std::is_same_v<T, std::filesystem::path> || std::is_convertible_v<T, std::string_view>;
 
+    // ---- BindableType concept (#473) --------------------------------------------------
+    // The set of field/operand types bind_parameter_value can actually dispatch. Composed
+    // from the same is_*_source_v predicates the dispatcher branches on, so the concept
+    // cannot silently drift from the binder. Constraining the binder and the WHERE operand
+    // path with this makes an unsupported type fail at a clear boundary instead of deep
+    // inside the dispatcher.
+
+    // Non-optional storage classes the dispatcher can bind directly.
+    template <typename T>
+    constexpr bool is_bindable_scalar_v =
+            is_integer_source_v<T> || std::is_enum_v<T> || std::is_same_v<T, bool> || is_floating_source_v<T> ||
+            is_chrono_source_v<T> || is_blob_source_v<T> || std::is_same_v<T, UUID> || is_text_source_v<T>;
+
+    // is_bindable_v<T>: T is directly bindable, or T is std::optional<U> with U bindable
+    // (recurses through optional_inner_type_t, matching bind_optional_value's recursion).
+    template <typename T>
+    constexpr bool is_bindable_v =
+            is_optional_v<T> ? is_bindable_scalar_v<optional_inner_type_t<T>> : is_bindable_scalar_v<T>;
+
+    template <typename T>
+    concept BindableType = is_bindable_v<T>;
+
     // Bind a text-shaped value via stmt.bind_text. filesystem::path needs an extra
     // .string() step; everything else converts directly to string_view.
     template <typename T, typename StmtType, typename ErrorType>
@@ -363,9 +385,12 @@ export namespace storm::orm::utilities {
     }
 
     // Forward declaration so bind_optional_value can recurse into bind_parameter_value.
+    // Constrained on BindableType (#473) so an unsupported operand is rejected at this
+    // boundary with a clear constraint message instead of deep inside the dispatcher.
     template <typename StmtType, typename ErrorType>
     [[nodiscard]] auto bind_parameter_value(StmtType& stmt, int param_index, const auto& value) noexcept
-            -> std::expected<void, ErrorType>;
+            -> std::expected<void, ErrorType>
+        requires BindableType<std::decay_t<decltype(value)>>;
 
     // Bind a std::optional<T>: NULL if empty, otherwise recurse on the contained value.
     // Pulled out so the dispatcher carries one branch for "optional" rather than one + the
@@ -388,7 +413,9 @@ export namespace storm::orm::utilities {
     // accepted as terminate-on-OOM in the bind hot path (issue #262).
     template <typename StmtType, typename ErrorType>
     [[nodiscard]] auto bind_parameter_value(StmtType& stmt, int param_index, const auto& value) noexcept
-            -> std::expected<void, ErrorType> {
+            -> std::expected<void, ErrorType>
+        requires BindableType<std::decay_t<decltype(value)>>
+    {
         using ValueType = std::decay_t<decltype(value)>;
         if constexpr (is_optional_v<ValueType>) {
             return bind_optional_value<StmtType, ErrorType>(stmt, param_index, value);
@@ -406,22 +433,13 @@ export namespace storm::orm::utilities {
             return bind_blob_like<ValueType, StmtType, ErrorType>(stmt, param_index, value);
         } else if constexpr (std::is_same_v<ValueType, UUID>) {
             return bind_uuid<StmtType, ErrorType>(stmt, param_index, value);
-        } else if constexpr (is_text_source_v<ValueType>) {
-            return bind_text_value<ValueType, StmtType, ErrorType>(stmt, param_index, value);
         } else {
-            // ValueType-dependent false so the assertion only fires when this branch
-            // is actually selected (i.e. no storage group matched).
-            static_assert(
-                    !std::is_same_v<ValueType, ValueType>,
-                    "Unsupported field type for binding. Supported types: "
-                    "int, int64_t, long, short, char, unsigned variants, enum, "
-                    "double, float, bool, std::string, std::string_view, "
-                    "chrono::year_month_day, chrono::time_point, chrono::duration, "
-                    "filesystem::path, UUID, std::optional<T>, "
-                    "std::vector<uint8_t>, std::vector<std::byte>"
-            );
-            return std::unexpected(ErrorType{});
+            static_assert(is_text_source_v<ValueType>, "bind_parameter_value: BindableType arm exhaustion");
+            return bind_text_value<ValueType, StmtType, ErrorType>(stmt, param_index, value);
         }
+        // No trailing unsupported-type branch: the BindableType<> constraint (#473)
+        // guarantees exactly one arm above matches, so an unbindable type is rejected
+        // at the call site rather than reaching a runtime std::unexpected here.
     }
 
     // ============================================================================
