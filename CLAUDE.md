@@ -441,6 +441,10 @@ qs.min<^^Person::age>().execute();             // std::optional<double> — null
 qs.max<^^Person::age>().execute();             // std::optional<double> — nullopt over empty set (#416)
 // MIN/MAX/AVG of no rows have NO value → std::nullopt, distinguishable from a real 0.
 // GROUP BY MIN/MAX/AVG tuple columns are std::optional<double> too (NULL within a group).
+// sum/avg/min/max require a NumericAggregateable target field (#475): arithmetic and
+// not bool, one level of std::optional<> unwrapped (nullable numeric columns are fine).
+// A string/BLOB/enum/UUID/temporal/bool field is a COMPILE ERROR, not a silent coercion.
+// count()/count_distinct() are unconstrained — COUNT is type-agnostic.
 
 // GROUP BY with aggregates → .select()
 qs.group_by<^^Person::department>().count().execute();
