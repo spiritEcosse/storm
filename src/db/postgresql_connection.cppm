@@ -341,4 +341,10 @@ export namespace storm::db::postgresql {
     static_assert(storm::db::DatabaseStatement<Statement>);
     static_assert(storm::db::DatabaseError<Error>);
 
+    // Dialect-support concepts (#477). PostgreSQL uses the PG dialect, declares
+    // supports_limit_all, and is transaction-capable.
+    static_assert(storm::db::SupportsPgDialect<Connection>);
+    static_assert(storm::db::SupportsLimitAll<Connection>);
+    static_assert(storm::db::TransactionCapable<Connection>);
+
 } // namespace storm::db::postgresql

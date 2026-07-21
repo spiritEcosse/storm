@@ -373,6 +373,20 @@ concepts (`ModelWithPrimaryKey`, `ModelStorageAnnotated`, `ModelFkPoliciesValid`
 *policy*, `Entity` checks *reflectability*. Structural only: a `union` also satisfies `Entity`, so
 full model-ness is guaranteed by the semantic concepts together with it, not by `Entity` alone.
 
+**Dialect-support concepts (#477)**: named backend-capability gates in `src/db/concept.cppm`
+(`namespace storm::db`), replacing ad-hoc `if constexpr (requires { ConnType::trait; })` probes.
+`SupportsPgDialect<ConnType>` (present iff the backend declares `uses_pg_dialect`) IS the
+SQLite/PG dialect switch — true for PG, false for SQLite — used at `schema.cppm` (the `Dialect`
+enum) and `base.cppm` (`append_order_by` NULLS FIRST/LAST). `SupportsLimitAll<ConnType>` is an
+EXISTENCE probe true for BOTH backends; `append_limit_offset` still reads the bool VALUE to pick
+`LIMIT ALL` (PG) vs `LIMIT -1` (SQLite). `TransactionCapable<ConnType>` names the
+`in_transaction()`/`enter_transaction()`/`leave_transaction()`/`execute()`/`Error` surface that
+`TransactionGuard` (#415) calls, and now constrains `TransactionGuard` + `storm::begin`/`storm::transaction`,
+so a mis-typed connection fails at the `begin()` call site. NOT added: `SupportsRightJoin`
+(`right_join()` was removed in #397 — no call site) and `SupportsReturning`/`SupportsStrictTables`
+(declared on the connections but never read). Each backend static-asserts these next to its
+`Connection` definition.
+
 See [docs/guide/reference/FIELD_TYPES.md](docs/guide/reference/FIELD_TYPES.md).
 
 ## Known Compiler Issues

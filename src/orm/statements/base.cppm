@@ -935,7 +935,7 @@ export namespace storm::orm::statements {
         append_order_by(std::string& sql, const std::optional<OrderByWrapper>& order_by_wrapper) {
             if (order_by_wrapper.has_value() && !order_by_wrapper->empty()) {
                 const auto& order_sql = order_by_wrapper->get_order_by_sql();
-                if constexpr (requires { ConnTypeForDialect::uses_pg_dialect; }) {
+                if constexpr (db::SupportsPgDialect<ConnTypeForDialect>) {
                     std::string adapted = order_sql; // LCOV_EXCL_LINE — PG-only
                     adapt_order_by_for_pg(adapted);  // LCOV_EXCL_LINE — PG-only
                     sql += adapted;                  // LCOV_EXCL_LINE — PG-only
@@ -956,7 +956,7 @@ export namespace storm::orm::statements {
                 sql += std::to_string(limit.value());
             } else if (offset.has_value()) {
                 // Need LIMIT when using OFFSET
-                if constexpr (requires { ConnTypeForDialect::supports_limit_all; }) {
+                if constexpr (db::SupportsLimitAll<ConnTypeForDialect>) {
                     if constexpr (ConnTypeForDialect::supports_limit_all) {
                         sql += " LIMIT ALL";
                     } else {

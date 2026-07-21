@@ -988,7 +988,7 @@ export namespace storm::orm::schema {
         [[nodiscard]] static auto
         create_table_if_not_exists(std::shared_ptr<ConnType> conn, std::set<std::string, std::less<>>& done)
                 -> std::expected<void, typename ConnType::Error> {
-            constexpr Dialect dialect = requires { ConnType::uses_pg_dialect; } ? Dialect::PostgreSQL : Dialect::SQLite;
+            constexpr Dialect dialect = db::SupportsPgDialect<ConnType> ? Dialect::PostgreSQL : Dialect::SQLite;
 
             // Already created in this call tree — break FK cycles and avoid redundant DDL.
             if (!done.insert(std::string(Base::table_name_)).second) {

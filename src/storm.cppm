@@ -41,7 +41,7 @@ export namespace storm {
     // resolving the nested-BEGIN bug (#9).
     template <typename ConnType> using TransactionGuard = orm::utilities::TransactionGuard<ConnType>;
 
-    template <typename ConnType>
+    template <db::TransactionCapable ConnType>
     [[nodiscard]] auto begin(std::shared_ptr<ConnType> conn)
             -> std::expected<TransactionGuard<ConnType>, typename ConnType::Error> {
         return orm::utilities::TransactionGuard<ConnType>::begin(std::move(conn));
@@ -51,7 +51,7 @@ export namespace storm {
     // std::expected<T, Error>; on a value the scope COMMITs and forwards it, on a
     // std::unexpected (or a throw) the guard ROLLBACKs and the error propagates.
     // A thin convenience layer over storm::begin — same cooperative nesting (#9).
-    template <typename ConnType, typename Body>
+    template <db::TransactionCapable ConnType, typename Body>
     [[nodiscard]] auto transaction(std::shared_ptr<ConnType> conn, Body&& body)
             -> std::invoke_result_t<Body&, TransactionGuard<ConnType>&> {
         using Ret = std::invoke_result_t<Body&, TransactionGuard<ConnType>&>;
