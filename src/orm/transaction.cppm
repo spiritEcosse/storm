@@ -5,6 +5,7 @@ module;
 export module storm_orm_transaction;
 
 import std;
+import storm_db_concept;
 
 export namespace storm::orm::utilities {
 
@@ -24,7 +25,7 @@ export namespace storm::orm::utilities {
     // Destructor automatically ROLLBACKs if commit() was not called.
     // ============================================================================
 
-    template <typename ConnType> class TransactionGuard {
+    template <db::TransactionCapable ConnType> class TransactionGuard {
         using Error = typename ConnType::Error;
 
         std::shared_ptr<ConnType> conn_;

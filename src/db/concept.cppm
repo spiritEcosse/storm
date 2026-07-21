@@ -95,6 +95,43 @@ export namespace storm::db {
         { conn.cache_stats() } -> std::same_as<CacheStats>;
     };
 
+    // ── Dialect-support concepts (Issue #477) ────────────────────────────────
+    // Named gates for backend-dialect capability checks that were previously
+    // done ad-hoc via anonymous `if constexpr (requires { ConnType::trait; })`
+    // probes. Each models PRESENCE of a static trait, not its truth.
+
+    // A connection whose backend uses the PostgreSQL SQL dialect. PG declares
+    // `uses_pg_dialect`; SQLite does not — so this concept IS the dialect switch
+    // (true for PG, false for SQLite), used to pick PG-specific SQL (NULLS
+    // FIRST/LAST ordering, LIMIT ALL, the schema-generation Dialect enum).
+    template <typename ConnType>
+    concept SupportsPgDialect = requires {
+        { ConnType::uses_pg_dialect } -> std::convertible_to<bool>;
+    };
+
+    // A connection that declares how it spells "unlimited rows" after OFFSET:
+    // PG uses `LIMIT ALL`, SQLite uses `LIMIT -1`. Both backends declare the
+    // trait, so this concept is an EXISTENCE probe — call sites still read the
+    // bool VALUE to choose the spelling; a backend that declares neither falls
+    // back to the SQLite-compatible form.
+    template <typename ConnType>
+    concept SupportsLimitAll = requires {
+        { ConnType::supports_limit_all } -> std::convertible_to<bool>;
+    };
+
+    // A connection that can run an RAII transaction (storm::begin /
+    // TransactionGuard, #415). Captures exactly the surface TransactionGuard
+    // calls, so a mis-typed connection fails at the begin() call site with a
+    // clear constraint violation instead of deep inside the guard body.
+    template <typename ConnType>
+    concept TransactionCapable = requires(ConnType& conn, std::string_view sql) {
+        typename ConnType::Error;
+        { conn.in_transaction() } -> std::convertible_to<bool>;
+        conn.enter_transaction();
+        conn.leave_transaction();
+        { conn.execute(sql) } -> std::same_as<std::expected<void, typename ConnType::Error>>;
+    };
+
     // Database statement concept.
     // Issue #206: covers the full bind/extract/control surface actually used by
     // orm/utilities.cppm and orm/statements/extract.cppm, not just the minimal

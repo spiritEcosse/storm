@@ -524,4 +524,10 @@ export namespace storm::db::sqlite {
     static_assert(storm::db::DatabaseStatement<Statement>);
     static_assert(storm::db::DatabaseError<Error>);
 
+    // Dialect-support concepts (#477). SQLite uses its own dialect (no
+    // uses_pg_dialect), declares supports_limit_all, and is transaction-capable.
+    static_assert(!storm::db::SupportsPgDialect<Connection>);
+    static_assert(storm::db::SupportsLimitAll<Connection>);
+    static_assert(storm::db::TransactionCapable<Connection>);
+
 } // namespace storm::db::sqlite
