@@ -219,6 +219,10 @@ git status --short           # Show files
 git add -A && git commit -m "message"
 # Pre-commit hook (commit.sh): clang-format (C++) + cmake-format → clang-tidy → tests → coverage
 # Smart skips: no C++/cmake → skip all; cmake-only → tests+coverage+cmake-format; C++ only-bench → skip tests/coverage
+# Self-heal (#489): commit.sh configures + fully builds build/release before clang-tidy
+#   (BMIs + mock binaries, so no missing compile_commands.json / std.pcm) and
+#   build/debug before ctest (so no storm_mock_tests_NOT_BUILT). No-op on the warm
+#   path; covers both the git-hook path and a manual ./commit.sh on a fresh worktree.
 
 git push
 # Pre-push hook (.githooks/pre-push): SonarCloud gate disabled (C++26 not yet supported)
