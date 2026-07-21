@@ -72,6 +72,21 @@ export namespace storm::meta {
         return attr == primary || attr == primary_autoincrement;
     }
 
+    // Issue #478: ValidFieldInfo is the compile-time gate that a std::meta::info
+    // NTTP names a real field — a non-static data member with an identifier — the
+    // exact precondition the field selector f<> and every FieldAttr predicate below
+    // assume of their `member` argument. It gives that precondition a name so a bad
+    // NTTP (a static member, a member function, or a whole type reflection) fails at
+    // the named constraint instead of deep inside identifier_of/type_of. Unlike the
+    // Entity structural gate, the requirements here are load-bearing on this
+    // clang-p2996 build: is_nonstatic_data_member(^^int) and
+    // is_nonstatic_data_member(^^Type::static_member) are both false, so the concept
+    // genuinely rejects. has_identifier mirrors the f<> precondition and guards the
+    // identifier_of use in the field proxies against an unnamed member — a case not
+    // reachable through a ^^ NTTP today, but named so the contract is explicit.
+    template <std::meta::info MemberInfo>
+    concept ValidFieldInfo = std::meta::is_nonstatic_data_member(MemberInfo) && std::meta::has_identifier(MemberInfo);
+
     // Per-attribute field predicates (#421): the single source of truth for the
     // `annotation_of_type<FieldAttr>(member) == FieldAttr::X` idiom, so the same
     // test cannot drift between statement modules. FK detection lives in is_fk_field

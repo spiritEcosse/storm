@@ -11,6 +11,7 @@ export module storm_orm_where;
 import std;
 
 import storm_orm_utilities;     // For ConstexprString
+import storm_orm_field_attr;    // ValidFieldInfo — gate the field-selector NTTP (#478)
 import storm_orm_relation_meta; // is_relation_field — reject m2m/reverse_fk members in f<>() (#408)
 
 export namespace storm::orm::where {
@@ -376,7 +377,7 @@ export namespace storm::orm::where {
     // Created via f<^^Person::name>().collate(Collate::NoCase)
     // All comparison operators produce SQL like: "name COLLATE NOCASE = ?"
     template <std::meta::info MemberInfo>
-        requires(std::meta::is_nonstatic_data_member(MemberInfo) && !storm::meta::is_relation_field(MemberInfo))
+        requires(storm::meta::ValidFieldInfo<MemberInfo> && !storm::meta::is_relation_field(MemberInfo))
     class CollatedField {
       public:
         using FieldType = typename[:std::meta::type_of(MemberInfo):];
@@ -451,7 +452,7 @@ export namespace storm::orm::where {
     // Field proxy - stores reflection info as template parameter
     // Provides compile-time IN expression and runtime comparison/special methods
     template <std::meta::info MemberInfo>
-        requires(std::meta::is_nonstatic_data_member(MemberInfo) && !storm::meta::is_relation_field(MemberInfo))
+        requires(storm::meta::ValidFieldInfo<MemberInfo> && !storm::meta::is_relation_field(MemberInfo))
     class Field {
       public:
         static constexpr auto field_name_sv = std::meta::identifier_of(MemberInfo);
@@ -541,14 +542,12 @@ export namespace storm::orm::where {
     //
     // COMPILE-TIME VALIDATION: Uses P2996 to ensure MemberInfo is a valid field
     template <std::meta::info MemberInfo>
-        requires(
-                std::meta::is_nonstatic_data_member(MemberInfo) && std::meta::has_identifier(MemberInfo) &&
-                !storm::meta::is_relation_field(MemberInfo)
-        ) // a named, persisted column — not an m2m/reverse_fk relation member (#408)
+        requires(storm::meta::ValidFieldInfo<MemberInfo> && !storm::meta::is_relation_field(MemberInfo))
+    // a named, persisted column — not an m2m/reverse_fk relation member (#408)
     constexpr auto f() {
         // Additional compile-time validation: field must be accessible
         static_assert(
-                std::meta::is_nonstatic_data_member(MemberInfo),
+                storm::meta::ValidFieldInfo<MemberInfo>,
                 "f<> requires a non-static data member reflection (use ^^Type::member syntax)"
         );
         return Field<MemberInfo>();
