@@ -96,6 +96,20 @@ for (auto& p : people) { p.salary *= 1.1; }
 qs.update(people).execute();
 ```
 
+## Upsert
+
+```cpp
+// INSERT ... ON CONFLICT (name) DO UPDATE — conflict target must be a
+// unique field / UniqueIndex (compile-time checked).
+qs.insert(p).on_conflict<^^Person::name>().update<^^Person::age>().execute();
+
+// INSERT ... ON CONFLICT (name) DO NOTHING
+qs.insert(p).on_conflict<^^Person::name>().nothing().execute();
+```
+
+See [reference/FIELD_TYPES.md](reference/FIELD_TYPES.md) and the QuerySet API section of
+[CLAUDE.md](../../CLAUDE.md) for details (#205).
+
 ## Automatic Timestamps
 
 ```cpp
@@ -157,6 +171,12 @@ if (lo && lo->has_value()) {
 
 // With WHERE
 auto active_count = qs.where(f<^^Person::is_active>() == true).count().execute();
+
+// COUNT(DISTINCT field) — counts distinct values, not distinct rows
+auto distinct_depts = qs.count_distinct<^^Person::department>().execute(); // expected<int64_t>
+auto active_distinct = qs.where(f<^^Person::is_active>() == true)
+    .count_distinct<^^Person::department>()
+    .execute();
 ```
 
 ## GROUP BY + HAVING
@@ -226,6 +246,35 @@ auto common = qs1.where(...).intersect_(qs2.where(...)).select().execute();
 auto diff   = qs1.where(...).except_(qs2.where(...)).select().execute();
 ```
 
+## Transactions
+
+```cpp
+auto conn = QuerySet<Person>::get_default_connection();
+
+// RAII guard — explicit commit; rollback on early return/throw/scope exit.
+auto txn = storm::begin(conn);
+if (!txn) return std::unexpected(txn.error());
+if (auto r = qs.insert(a).execute(); !r) return std::unexpected(r.error());
+if (auto r = qs.update(b).execute(); !r) return std::unexpected(r.error());
+return txn->commit();
+
+// Scope helper — commits on a returned value, rolls back on std::unexpected/throw.
+auto r = storm::transaction(conn, [&](auto& txn) -> std::expected<int, Error> {
+    if (auto x = qs.insert(a).execute(); !x) return std::unexpected(x.error());
+    return 42;
+});
+```
+
+Nesting is cooperative: `begin()` on an already-open connection returns a passive guard, so
+batch operations that open their own inner transaction never collide with an outer one (#415).
+Never issue a raw `conn->execute("BEGIN TRANSACTION")`.
+
+## Connection Tuning & Pooling
+
+SQLite connections take a `busy_timeout_ms` and `journal_mode` (WAL opt-in), applied once at
+`open()` — see [features/CONNECTION_TUNING.md](features/CONNECTION_TUNING.md) for pooled setups
+and WAL recommendations (#410).
+
 ## Thread Safety
 
 ```cpp
@@ -237,4 +286,10 @@ void worker() {
 }
 
 std::jthread t1(worker), t2(worker);
+
+// Check before use — has_default_connection() avoids the assert in
+// get_default_connection() when a thread might not have set one yet.
+if (!QuerySet<Person>::has_default_connection()) {
+    QuerySet<Person>::set_default_connection(":memory:");
+}
 ```

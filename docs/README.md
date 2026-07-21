@@ -26,6 +26,7 @@ Documentation for users of Storm ORM — patterns, features, and field/migration
 - **[Batch Operations](guide/features/BATCH_OPERATIONS.md)** - Bulk INSERT/UPDATE/DELETE with smart thresholds
 - **[UPSERT Operations](guide/features/UPSERT.md)** - Single-row ON CONFLICT DO UPDATE / DO NOTHING
 - **[Referential Integrity](guide/features/REFERENTIAL_INTEGRITY.md)** - Always-on FK constraints, junction FOREIGN KEYs, SQLite PRAGMA
+- **[Indexes](guide/features/INDEXES.md)** - Single-column `indexed`/`unique` tags and composite `Index<>`/`UniqueIndex<>`
 - **[Connection Tuning](guide/features/CONNECTION_TUNING.md)** - SQLite busy_timeout default, optional WAL, pooled concurrency
 
 ### Reference

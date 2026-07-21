@@ -149,7 +149,7 @@ std::vector<Person> people = {
 
 auto result = queryset.update(std::span<const Person>(people));
 if (!result) {
-    std::cerr << "Batch update failed: " << result.error().message << std::endl;
+    std::cerr << "Batch update failed: " << result.error().message() << std::endl;
 }
 ```
 

@@ -124,7 +124,7 @@ Updates all non-primary-key fields:
 Person person{1, "Alice", 26};  // ID = 1, new age
 auto result = queryset.update(person).execute();
 if (!result) {
-    std::cerr << "Update failed: " << result.error().message << std::endl;
+    std::cerr << "Update failed: " << result.error().message() << std::endl;
 }
 ```
 
@@ -362,8 +362,8 @@ if (result) {
     int64_t id = result.value();
 } else {
     // Error
-    std::cerr << "Error: " << result.error().message << std::endl;
-    std::cerr << "Code: " << result.error().code << std::endl;
+    std::cerr << "Error: " << result.error().message() << std::endl;
+    std::cerr << "Code: " << result.error().code() << std::endl;
 }
 ```
 

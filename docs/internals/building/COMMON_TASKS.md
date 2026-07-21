@@ -154,12 +154,17 @@ static auto get_cached_sql(size_t key) -> std::string {
 - Debug bottlenecks
 - Regression testing
 
-## Adding PostgreSQL Support
+## Adding a New Database Backend (e.g. MySQL)
 
-1. Create `src/db/postgresql.cppm` implementing concepts
-2. Add PostgreSQL-specific statement implementations
-3. Update `ConnectionManager` for multiple backends
-4. Ensure concepts properly abstract differences
+PostgreSQL support already ships this way (`src/db/postgresql.cppm`,
+`postgresql_connection.cppm`, `postgresql_error.cppm`, `postgresql_statement.cppm`),
+alongside SQLite. To add another backend:
+
+1. Create `src/db/<backend>.cppm` implementing the concepts in `src/db/concept.cppm`
+   (including the dialect-support concepts, e.g. `SupportsPgDialect`, `TransactionCapable`)
+2. Add backend-specific connection/statement/error modules, mirroring the PostgreSQL split
+3. Static-assert the dialect-support concepts next to the new `Connection` definition
+4. Ensure concepts properly abstract differences — no ORM-layer (`src/orm/`) code changes needed
 
 ## Performance Checklist
 

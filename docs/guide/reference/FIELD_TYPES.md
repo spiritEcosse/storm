@@ -167,6 +167,21 @@ app layer, so it emits a real `CHECK` on SQLite — nothing to remember or bypas
 Out of scope (YAGNI): `min_length` (separate follow-up — `CHECK(length >= N)` passes on NULL,
 so it does *not* mean "required") and `check<"expr">` (raw-SQL escape hatch).
 
+### Single-column indexes (`unique` / `indexed`)
+
+```cpp
+struct Person {
+    [[= storm::primary]] int id;
+    [[= storm::unique]] std::string email;    // CREATE UNIQUE INDEX
+    [[= storm::indexed]] std::string name;    // CREATE INDEX
+};
+```
+
+`unique` adds a uniqueness constraint (`UNIQUE INDEX`); `indexed` adds a plain lookup index
+with no uniqueness constraint. Foreign-key fields (`fk<>`) are indexed automatically without
+either tag. See [features/INDEXES.md](../features/INDEXES.md) for full coverage, including
+composite (multi-column) indexes via `storm::Index<>` / `storm::UniqueIndex<>`.
+
 ## Optional Types (NULL Support)
 
 | C++ Type | SQLite Type | Binding Method | Extraction Method |
@@ -421,3 +436,46 @@ accept `int` and rely on `is_class_type` to gate).
 call site's extra `!is_relation_field(MemberInfo)` check, which excludes `many_to_many` /
 `reverse_fk` container members that are not persisted columns — that check is still ANDed alongside
 `ValidFieldInfo` at each selector site.
+
+## Foreign Key Target Validation (`ValidForeignKey`) (#474)
+
+`storm::orm::statements::ValidForeignKey<FieldType>` is the compile-time gate that an FK field's
+target has a primary key — a plain alias over the existing model concept, unwrapping one level of
+`std::optional` first (an FK field is often `std::optional<Related>`):
+
+```cpp
+template <typename FieldType>
+concept ValidForeignKey = ModelWithPrimaryKey<utilities::optional_inner_type_t<FieldType>>;
+```
+
+`join<>()` / `left_join<>()` and `find_fk_primary_key<FKType>()` `require` it, so calling
+`join<^^Message::sender>()` when `sender`'s target type has no primary key fails at the join call
+site instead of deep inside FK-column extraction. It is single-level only — it checks the target's
+own PK, never recursing into the target's FKs (a Base⟷Owner reference cycle would otherwise never
+terminate). Loop bodies that walk members at runtime (e.g. `FKFieldOf`) can't splice a loop variable
+into `ValidForeignKey<typename[:...:]>`, so `base.cppm` also carries an info-value twin,
+`valid_fk_target(std::meta::info fk_type) -> bool`, computing the same "target, optional-unwrapped,
+has a PK" check for that path.
+
+## Numeric Aggregate Validation (`NumericAggregateable`) (#475)
+
+`storm::orm::statements::NumericAggregateable<T>` is the compile-time gate on the target field(s)
+of `sum()` / `avg()` / `min()` / `max()` — true for an arithmetic, non-`bool` type, unwrapping one
+level of `std::optional` (a nullable numeric column, e.g. `std::optional<int>`, is a legitimate
+aggregate target; SQL simply skips NULLs):
+
+```cpp
+template <typename T>
+constexpr bool is_numeric_aggregateable_v =
+        utilities::is_optional_v<T> ? is_numeric_scalar_v<utilities::optional_inner_type_t<T>>
+                                    : is_numeric_scalar_v<T>;
+
+template <typename T>
+concept NumericAggregateable = is_numeric_aggregateable_v<T>;
+```
+
+`AllNumericAggregateable<FieldInfos...>` folds this over the whole field pack (multi-field
+aggregates sum/min/max several columns, e.g. `SUM(a + b)`) and is the `requires`-clause on
+`QuerySet::sum/avg/min/max`. A string/BLOB/enum/UUID/temporal/`bool` field is a **compile error**
+at the aggregate call site, not a silent coercion. `count()` / `count_distinct()` are unconstrained
+— `COUNT` is type-agnostic and accepts any column.
