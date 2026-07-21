@@ -52,6 +52,41 @@ TYPED_TEST(M2MThroughTest, ThroughSqlUsesJunctionModel) {
     EXPECT_TRUE(sql.contains("WHERE t2.pupil_id IN (SELECT id FROM Pupil)")) << sql;
 }
 
+// Single-row and bulk UPDATE on a through-model owner must skip the m2m
+// container (#485); round-trip re-select verifies values and PK bind order.
+TYPED_TEST(M2MThroughTest, SingleRowUpdateIgnoresThroughField) {
+    QuerySet<Pupil, TypeParam> qs;
+    Pupil const updated{.id = 1, .name = "Dora Updated", .age = 13, .courses{{.id = 99, .title = "ghost"}}};
+    auto        upd = qs.update(updated).execute();
+    ASSERT_TRUE(upd.has_value()) << upd.error().message();
+
+    auto rows = qs.where(f<^^Pupil::id>() == 1).select().execute();
+    ASSERT_TRUE(rows.has_value()) << rows.error().message();
+    ASSERT_EQ(rows->size(), 1U);
+    EXPECT_EQ(rows->begin()->name, "Dora Updated");
+    EXPECT_EQ(rows->begin()->age, 13);
+}
+
+TYPED_TEST(M2MThroughTest, BulkUpdateIgnoresThroughField) {
+    QuerySet<Pupil, TypeParam> qs;
+    std::vector<Pupil> const   updated = {
+            {.id = 1, .name = "Dora2", .age = 14, .courses{{.id = 99, .title = "ghost"}}},
+            {.id = 2, .name = "Eli2", .age = 15},
+    };
+    auto upd = qs.update(std::span<const Pupil>(updated)).execute();
+    ASSERT_TRUE(upd.has_value()) << upd.error().message();
+
+    auto rows = qs.template order_by<^^Pupil::id>().select().execute();
+    ASSERT_TRUE(rows.has_value()) << rows.error().message();
+    ASSERT_EQ(rows->size(), 2U);
+    auto it = rows->begin();
+    EXPECT_EQ(it->name, "Dora2");
+    EXPECT_EQ(it->age, 14);
+    ++it;
+    EXPECT_EQ(it->name, "Eli2");
+    EXPECT_EQ(it->age, 15);
+}
+
 TYPED_TEST(M2MThroughTest, ThroughEagerLoadIgnoresMetadata) {
     QuerySet<Pupil, TypeParam> qs;
     auto                       rows = qs.template join<^^Pupil::courses>().select().execute();

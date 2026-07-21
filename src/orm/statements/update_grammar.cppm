@@ -23,14 +23,16 @@ export namespace storm::orm::statements {
 
         // Helper to build field assignments string for UPDATE SQL
         static consteval auto build_field_assignments() {
-            // Get all members directly
-            auto members = std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked());
-            auto pk      = Base::primary_key_;
+            // Iterate the relation-filtered persisted members (#485): m2m/reverse_fk
+            // containers are not columns, so they must not appear in the SET clause.
+            // Base::all_members_ already excludes them and matches the bind order used
+            // by inline_bind_all_fields.
+            auto pk = Base::primary_key_;
 
             ConstexprString<utilities::buffer_size::SQL_MEDIUM> result;
             bool                                                first = true;
 
-            for (const auto& member : members) {
+            for (const auto& member : Base::all_members_) {
                 if (member != pk) {
                     if (!first) {
                         result.append(", ");
@@ -59,9 +61,12 @@ export namespace storm::orm::statements {
             std::unreachable(); // guarded by is_settable_member() at the call site
         }
 
-        // Each SET target must be a non-static data member of T and not the primary key.
+        // Each SET target must be a non-static data member of T, not the primary key,
+        // and not a relation container (#486) — m2m / reverse_fk members are not
+        // persisted columns, so setting them would emit a non-existent column.
         template <std::meta::info Member> static consteval auto is_settable_member() -> bool {
-            return std::meta::is_nonstatic_data_member(Member) && Member != Base::primary_key_;
+            return std::meta::is_nonstatic_data_member(Member) && Member != Base::primary_key_ &&
+                   !meta::is_relation_field(Member);
         }
 
         // Append "<name>=?" (or "<name>_id=?" for FK fields) for one member.

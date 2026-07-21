@@ -5,6 +5,7 @@
 // NOLINTBEGIN(misc-const-correctness)
 
 import storm;
+import storm_orm_statements_update_grammar; // UpdateGrammar — SET-target gate (#486) / SQL leak assert (#485); not re-exported by `storm`
 import std;
 
 using storm::QuerySet;
@@ -26,6 +27,12 @@ static_assert(stmt::BaseStatement<RfBug>::field_count_ == 4); // id, summary, au
 static_assert(stmt::BaseStatement<RfBoard>::field_count_ == 2, "notes (reverse_fk) is not a persisted column");
 static_assert(stmt::BaseStatement<RfPerson>::has_reverse_fk_field_);
 static_assert(!stmt::BaseStatement<RfTask>::has_reverse_fk_field_);
+
+// Pre-computed single-row/bulk UPDATE SQL must not name relation containers (#485).
+constexpr std::string_view rf_person_update_sql{
+        stmt::UpdateGrammar<RfPerson>::update_sql_array.data.data(), stmt::UpdateGrammar<RfPerson>::update_sql_array.len
+};
+static_assert(!rf_person_update_sql.contains("tasks"), "reverse_fk container leaked into UPDATE SET clause");
 
 // ============================================================================
 // Compile-time: reverse-FK concepts
@@ -60,6 +67,23 @@ static_assert(!FCallableRfk<^^RfPerson::tasks>, "reverse_fk member rejected by f
 static_assert(!FCallableRfk<^^RfBoard::notes>, "reverse_fk member rejected by f<>()");
 static_assert(FCallableRfk<^^RfPerson::name>, "persisted column still accepted");
 static_assert(FCallableRfk<^^RfTask::assignee>, "FK column still accepted");
+
+// ============================================================================
+// Compile-time: SET-target gates reject reverse_fk relation members (#486)
+// A reverse_fk container is not a persisted column, so passing it as a SET NTTP
+// to update<>()/update_all<>() or upsert .update<>() must fail at the call site.
+// ============================================================================
+
+static_assert(
+        !stmt::UpdateGrammar<RfPerson>::is_settable_member<^^RfPerson::tasks>(),
+        "reverse_fk member rejected as a conditional-UPDATE SET target"
+);
+static_assert(
+        !stmt::UpsertGrammar<RfPerson>::is_settable_member<^^RfPerson::tasks>(),
+        "reverse_fk member rejected as an upsert DO UPDATE SET target"
+);
+static_assert(!stmt::UpsertSettable<RfPerson, ^^RfPerson::tasks>, "UpsertSettable rejects a reverse_fk SET target");
+static_assert(stmt::UpdateGrammar<RfPerson>::is_settable_member<^^RfPerson::name>(), "persisted column still settable");
 
 // ============================================================================
 // Schema: reverse_fk creates NO junction table and is not a column
@@ -113,6 +137,43 @@ TYPED_TEST(ReverseFKTest, PlainSelectDoesNotPopulateReverseContainer) {
     for (const auto& p : *rows) {
         EXPECT_TRUE(p.tasks.empty()) << "plain select must not eager-load reverse_fk";
     }
+}
+
+// Single-row UPDATE must skip the reverse_fk container (#485): the SET clause
+// may only name persisted columns; the round-trip re-select verifies values and
+// that the PK binds into the last placeholder.
+TYPED_TEST(ReverseFKTest, SingleRowUpdateIgnoresReverseContainer) {
+    QuerySet<RfPerson, TypeParam> qs;
+    RfPerson const updated{.id = 1, .name = "Alice Updated", .age = 33, .tasks{{.id = 99, .title = "ghost"}}};
+    auto           upd = qs.update(updated).execute();
+    ASSERT_TRUE(upd.has_value()) << upd.error().message();
+
+    auto rows = qs.where(f<^^RfPerson::id>() == 1).select().execute();
+    ASSERT_TRUE(rows.has_value()) << rows.error().message();
+    ASSERT_EQ(rows->size(), 1U);
+    EXPECT_EQ(rows->begin()->name, "Alice Updated");
+    EXPECT_EQ(rows->begin()->age, 33);
+}
+
+// Bulk UPDATE goes through the same pre-computed SQL (#485).
+TYPED_TEST(ReverseFKTest, BulkUpdateIgnoresReverseContainer) {
+    QuerySet<RfPerson, TypeParam> qs;
+    std::vector<RfPerson> const   updated = {
+            {.id = 1, .name = "Alice2", .age = 40, .tasks{{.id = 99, .title = "ghost"}}},
+            {.id = 2, .name = "Bob2", .age = 41},
+    };
+    auto upd = qs.update(std::span<const RfPerson>(updated)).execute();
+    ASSERT_TRUE(upd.has_value()) << upd.error().message();
+
+    auto rows = qs.template order_by<^^RfPerson::id>().limit(2).select().execute();
+    ASSERT_TRUE(rows.has_value()) << rows.error().message();
+    ASSERT_EQ(rows->size(), 2U);
+    auto it = rows->begin();
+    EXPECT_EQ(it->name, "Alice2");
+    EXPECT_EQ(it->age, 40);
+    ++it;
+    EXPECT_EQ(it->name, "Bob2");
+    EXPECT_EQ(it->age, 41);
 }
 
 // LEFT join: every person, container filled (empty when none).

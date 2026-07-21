@@ -5,6 +5,7 @@
 // NOLINTBEGIN(misc-const-correctness)
 
 import storm;
+import storm_orm_statements_update_grammar; // UpdateGrammar — SET-target gate (#486) / SQL leak assert (#485); not re-exported by `storm`
 import std;
 
 using storm::QuerySet;
@@ -21,6 +22,18 @@ static_assert(
         "courses (m2m) must not count as a persisted column"
 );
 static_assert(storm::orm::statements::BaseStatement<Course>::field_count_ == 2);
+
+// Pre-computed single-row/bulk UPDATE SQL must not name relation containers (#485).
+constexpr std::string_view student_update_sql{
+        storm::orm::statements::UpdateGrammar<Student>::update_sql_array.data.data(),
+        storm::orm::statements::UpdateGrammar<Student>::update_sql_array.len
+};
+static_assert(!student_update_sql.contains("courses"), "m2m container leaked into UPDATE SET clause");
+constexpr std::string_view pupil_update_sql{
+        storm::orm::statements::UpdateGrammar<Pupil>::update_sql_array.data.data(),
+        storm::orm::statements::UpdateGrammar<Pupil>::update_sql_array.len
+};
+static_assert(!pupil_update_sql.contains("courses"), "m2m_through container leaked into UPDATE SET clause");
 
 // ============================================================================
 // Compile-time: M2MFieldOf concept
@@ -44,6 +57,45 @@ static_assert(!FCallableM2M<^^Student::courses>, "m2m member rejected by f<>()")
 static_assert(!FCallableM2M<^^Pupil::courses>, "m2m_through member rejected by f<>()");
 static_assert(FCallableM2M<^^Student::name>, "persisted column still accepted");
 static_assert(FCallableM2M<^^Student::age>, "persisted column still accepted");
+
+// ============================================================================
+// Compile-time: SET-target gates reject m2m relation members (#486)
+// A relation container is not a persisted column, so passing it as a
+// SET-column NTTP to update<>()/update_all<>() or upsert .update<>() must
+// fail at the named gate, not at runtime with "no such column".
+// ============================================================================
+
+static_assert(
+        !storm::orm::statements::UpdateGrammar<Student>::is_settable_member<^^Student::courses>(),
+        "m2m member rejected as a conditional-UPDATE SET target"
+);
+static_assert(
+        !storm::orm::statements::UpsertGrammar<Student>::is_settable_member<^^Student::courses>(),
+        "m2m member rejected as an upsert DO UPDATE SET target"
+);
+static_assert(
+        !storm::orm::statements::UpsertSettable<Student, ^^Student::courses>,
+        "UpsertSettable concept rejects an m2m SET target"
+);
+static_assert(
+        !storm::orm::statements::UpsertSettable<Pupil, ^^Pupil::courses>,
+        "UpsertSettable concept rejects an m2m_through SET target"
+);
+
+// Persisted, non-PK columns are still accepted at the same gate.
+static_assert(storm::orm::statements::UpdateGrammar<Student>::is_settable_member<^^Student::name>());
+static_assert(storm::orm::statements::UpsertGrammar<Student>::is_settable_member<^^Student::age>());
+static_assert(storm::orm::statements::UpsertSettable<Student, ^^Student::name>);
+// The primary key remains rejected (pre-existing gate behavior).
+static_assert(!storm::orm::statements::UpdateGrammar<Student>::is_settable_member<^^Student::id>());
+
+// The conflict-target gate is already safe (#486 DoD): a relation member carries
+// no FieldAttr::unique annotation and cannot appear in a UniqueIndex, so
+// ConflictTargetUnique rejects it without needing an is_relation_field check.
+static_assert(
+        !storm::orm::statements::ConflictTargetUnique<Student, ^^Student::courses>,
+        "an m2m member is not a valid conflict target"
+);
 
 // ============================================================================
 // Compile-time: related-type extraction from containers via std::meta
@@ -75,6 +127,56 @@ TYPED_TEST(M2MBaseTest, PlainCrudIgnoresM2MField) {
     EXPECT_EQ(rows->begin()->name, "Alice");
     EXPECT_EQ(rows->begin()->age, 20);
     EXPECT_TRUE(rows->begin()->courses.empty()); // plain select never populates m2m
+}
+
+// Single-row UPDATE must skip the m2m container (#485): the SET clause may only
+// name persisted columns, and the PK must bind into the last placeholder —
+// verified by round-tripping through a re-select.
+TYPED_TEST(M2MBaseTest, SingleRowUpdateIgnoresM2MField) {
+    QuerySet<Student, TypeParam> qs;
+    Student const                s{.name = "Alice", .age = 20};
+    auto                         ins = qs.insert(s).execute();
+    ASSERT_TRUE(ins.has_value()) << ins.error().message();
+
+    Student const updated{
+            .id   = static_cast<int>(ins.value()),
+            .name = "Alice Updated",
+            .age  = 21,
+            .courses{{.id = 99, .title = "ghost"}}
+    };
+    auto upd = qs.update(updated).execute();
+    ASSERT_TRUE(upd.has_value()) << upd.error().message();
+
+    auto rows = qs.select().execute();
+    ASSERT_TRUE(rows.has_value()) << rows.error().message();
+    ASSERT_EQ(rows->size(), 1U);
+    EXPECT_EQ(rows->begin()->id, static_cast<int>(ins.value()));
+    EXPECT_EQ(rows->begin()->name, "Alice Updated");
+    EXPECT_EQ(rows->begin()->age, 21);
+}
+
+// Bulk UPDATE goes through the same pre-computed SQL (#485).
+TYPED_TEST(M2MBaseTest, BulkUpdateIgnoresM2MField) {
+    QuerySet<Student, TypeParam> qs;
+    std::vector<Student> const   students = {{.name = "Alice", .age = 20}, {.name = "Bob", .age = 22}};
+    ASSERT_TRUE(qs.insert(std::span<const Student>(students)).execute().has_value());
+
+    std::vector<Student> const updated = {
+            {.id = 1, .name = "Alice2", .age = 30, .courses{{.id = 99, .title = "ghost"}}},
+            {.id = 2, .name = "Bob2", .age = 32},
+    };
+    auto upd = qs.update(std::span<const Student>(updated)).execute();
+    ASSERT_TRUE(upd.has_value()) << upd.error().message();
+
+    auto rows = qs.template order_by<^^Student::id>().select().execute();
+    ASSERT_TRUE(rows.has_value()) << rows.error().message();
+    ASSERT_EQ(rows->size(), 2U);
+    auto it = rows->begin();
+    EXPECT_EQ(it->name, "Alice2");
+    EXPECT_EQ(it->age, 30);
+    ++it;
+    EXPECT_EQ(it->name, "Bob2");
+    EXPECT_EQ(it->age, 32);
 }
 
 // ============================================================================

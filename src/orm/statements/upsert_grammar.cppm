@@ -48,9 +48,12 @@ export namespace storm::orm::statements {
             return result;
         }
 
-        // Each SET target must be a non-static data member of T and not the PK.
+        // Each SET target must be a non-static data member of T, not the PK, and
+        // not a relation container (#486) — m2m / reverse_fk members are not
+        // persisted columns, so "col=excluded.col" would reference a missing column.
         template <std::meta::info Member> static consteval auto is_settable_member() -> bool {
-            return std::meta::is_nonstatic_data_member(Member) && Member != Base::primary_key_;
+            return std::meta::is_nonstatic_data_member(Member) && Member != Base::primary_key_ &&
+                   !meta::is_relation_field(Member);
         }
 
         // True when `member` carries auto_update (#209) and is NOT in the explicit pack.
