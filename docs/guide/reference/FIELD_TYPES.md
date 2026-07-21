@@ -362,3 +362,27 @@ gate alone.
 
 `Entity` is structural only — a `union` also satisfies it. Full model-ness is guaranteed by the
 semantic concepts together with `Entity`, not by `Entity` alone.
+
+## Field Selector Validation (`ValidFieldInfo`) (#478)
+
+`storm::meta::ValidFieldInfo<MemberInfo>` is the compile-time gate that a `std::meta::info`
+**NTTP** names a real field — a non-static data member that has an identifier:
+
+```cpp
+template <std::meta::info MemberInfo>
+concept ValidFieldInfo =
+    std::meta::is_nonstatic_data_member(MemberInfo) && std::meta::has_identifier(MemberInfo);
+```
+
+The field selector `f<^^Model::member>()` and its `Field` / `CollatedField` proxies `require` it,
+so a selector that is not a field — a static member, a member function, a whole-type reflection
+such as `^^Person`, or a scalar like `^^int` — fails at this named boundary instead of deep inside
+`identifier_of` / `type_of`. Both requirements are load-bearing: on the clang-p2996 build,
+`is_nonstatic_data_member(^^int)` and `is_nonstatic_data_member(^^Type::static_member)` are both
+`false`, so the concept genuinely rejects (contrast `Entity`, whose structural requirements alone
+accept `int` and rely on `is_class_type` to gate).
+
+`ValidFieldInfo` is orthogonal to `Entity` (which gates the whole model *type*) and to the `f<>`
+call site's extra `!is_relation_field(MemberInfo)` check, which excludes `many_to_many` /
+`reverse_fk` container members that are not persisted columns — that check is still ANDed alongside
+`ValidFieldInfo` at each selector site.

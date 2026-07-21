@@ -387,6 +387,16 @@ so a mis-typed connection fails at the `begin()` call site. NOT added: `Supports
 (declared on the connections but never read). Each backend static-asserts these next to its
 `Connection` definition.
 
+**ValidFieldInfo concept (#478)**: `storm::meta::ValidFieldInfo<MemberInfo>` is the compile-time gate
+that a `std::meta::info` NTTP names a real field — `std::meta::is_nonstatic_data_member(MemberInfo) &&
+std::meta::has_identifier(MemberInfo)`. It names the precondition the field selector `f<>` (and its
+`Field`/`CollatedField` proxies) assumed inline, so a bad selector (a static member, a member function,
+a whole-type reflection like `^^Person`, or `^^int`) fails at the named constraint instead of deep inside
+`identifier_of`/`type_of`. Both requirements are load-bearing here (unlike `Entity`):
+`is_nonstatic_data_member(^^int)` and `is_nonstatic_data_member(^^Type::static_member)` are both `false`,
+so the concept genuinely rejects. Orthogonal to `Entity` (whole model type) and to `is_relation_field`
+(the `f<>` extra check excluding m2m/reverse_fk members — still ANDed at the call site).
+
 See [docs/guide/reference/FIELD_TYPES.md](docs/guide/reference/FIELD_TYPES.md).
 
 ## Known Compiler Issues
