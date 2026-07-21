@@ -23,14 +23,16 @@ export namespace storm::orm::statements {
 
         // Helper to build field assignments string for UPDATE SQL
         static consteval auto build_field_assignments() {
-            // Get all members directly
-            auto members = std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked());
-            auto pk      = Base::primary_key_;
+            // Iterate the relation-filtered persisted members (#485): m2m/reverse_fk
+            // containers are not columns, so they must not appear in the SET clause.
+            // Base::all_members_ already excludes them and matches the bind order used
+            // by inline_bind_all_fields.
+            auto pk = Base::primary_key_;
 
             ConstexprString<utilities::buffer_size::SQL_MEDIUM> result;
             bool                                                first = true;
 
-            for (const auto& member : members) {
+            for (const auto& member : Base::all_members_) {
                 if (member != pk) {
                     if (!first) {
                         result.append(", ");
