@@ -265,7 +265,10 @@ export namespace storm::orm::statements {
         [[nodiscard]] auto having(orm::where::ExpressionVariantPtr expr)
             requires HasGroupBy
         {
-            return AggregateStatement<T, ConnType, GroupFields, Ops...>{make_params(std::move(expr))};
+            AggregateParams<ConnType> params{
+                    conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_, std::move(expr)
+            };
+            return AggregateStatement<T, ConnType, GroupFields, Ops...>{std::move(params)};
         }
 
         // Chaining methods (only for non-GROUP BY queries building aggregates).
@@ -703,10 +706,6 @@ export namespace storm::orm::statements {
 
         auto make_params() -> AggregateParams<ConnType> {
             return {conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_, having_expr_};
-        }
-
-        auto make_params(orm::where::ExpressionVariantPtr having) -> AggregateParams<ConnType> {
-            return {conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_, std::move(having)};
         }
 
         std::shared_ptr<ConnType>           conn_;
