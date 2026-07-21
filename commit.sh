@@ -185,23 +185,23 @@ TOTAL_STEPS=0
 [[ "$RUN_FORMAT" == true ]] && ((TOTAL_STEPS++))
 [[ "$RUN_CMAKE_FORMAT" == true ]] && ((TOTAL_STEPS++))
 [[ "$RUN_TIDY" == true ]] && ((TOTAL_STEPS++))
-# clang-tidy needs module BMIs built first when the tree consumes `import std;`
-# (issues #330, #326). Only counts as a step when build/release actually uses the
-# std named module — keeps the count accurate on pre-#326 trees that skip it.
-#
-# Detection: CMake synthesizes a `__cmake_cxx_std_26` target (the std module's
-# BMI producer) into build.ninja whenever any target sets CXX_MODULE_STD ON.
-# This appears at configure time, before any build. We key on it rather than a
-# compile-flag string: CMake's import-std support does NOT emit `-fmodule-file=std=`
-# into compile_commands.json (the std module and the per-TU `@….modmap` are wired
-# via ninja dyndep, invisible to compile_commands). clang-tidy replays
-# compile_commands and so cannot find `module 'std'` (or the `.modmap`) until the
-# release build has produced both — hence the prebuild below. See issue #326
-# Finding C.
+# clang-tidy replays build/release/compile_commands.json, so it needs the release
+# build both CONFIGURED (compile_commands.json present) and its default targets
+# BUILT before it runs (issues #330, #326, #489). Two failure modes it prevents:
+#   1. `module file '…std.pcm' not found` — a TU that does `import std;` (or
+#      `import storm;`) needs the std/storm module BMIs (.pcm), which clang-tidy
+#      will NOT build itself. CMake wires the std module + per-TU `@….modmap` via
+#      ninja dyndep, invisible to compile_commands — only a real release build
+#      produces them (#326 Finding C).
+#   2. `storm_mock_tests_NOT_BUILT` on a later `ctest`/tidy run against release —
+#      the mock test binaries were never compiled. Building `--target storm` alone
+#      (the pre-#489 behavior) produced the BMIs but not the mock binaries.
+# So this prebuild configures release if needed, then builds the FULL default
+# release target set (BMIs + mock test binaries), self-healing a fresh/stale
+# worktree for both the git-hook path and a manual `./commit.sh` run (#489).
 RELEASE_BUILD_NINJA="build/release/build.ninja"
 RUN_TIDY_BMI=false
-if [[ "$RUN_TIDY" == true && -f "$RELEASE_BUILD_NINJA" ]] \
-   && grep -q '__cmake_cxx_std_26' "$RELEASE_BUILD_NINJA" 2>/dev/null; then
+if [[ "$RUN_TIDY" == true ]]; then
     RUN_TIDY_BMI=true
     ((TOTAL_STEPS++))
 fi
@@ -237,21 +237,18 @@ fi
 # lines, so pre-existing drift in unrelated files doesn't block unrelated work.
 # Set STORM_TIDY_FULL=1 to force whole-file staged scan (the pre-#262 behavior).
 if [[ "$RUN_TIDY" == true ]]; then
-    # clang-tidy parses each TU using build/release/compile_commands.json. A TU
-    # that does `import std;` (or `import storm;`, which transitively imports
-    # std) needs the std/storm module BMIs (.pcm) to exist, and clang-tidy will
-    # NOT build them itself — it fails with "module file '…std.pcm' not found".
-    # Those BMIs are produced by the release build, which runs AFTER tidy
-    # (Step 3b), so on a fresh/stale build/release the tidy step fails. Build the
-    # module BMIs first — but only when the project actually consumes the std
-    # module (post-#326). On a tree without `import std;`, TUs parse standalone
-    # and this build is pure overhead, so we skip it. See issue #330.
+    # Self-heal a fresh/stale build/release before clang-tidy (#489): configure
+    # if compile_commands.json is absent, then build the FULL default release
+    # target set so both the module BMIs (for `import std;`/`import storm;`) and
+    # the mock test binaries exist. This is a no-op when release is already up to
+    # date (the ninja build short-circuits), so the warm path stays fast. See the
+    # RUN_TIDY_BMI comment above for the two failures this prevents.
     if [[ "$RUN_TIDY_BMI" == true ]]; then
-        if [[ ! -f "$RELEASE_BUILD_NINJA" ]]; then
+        if [[ ! -f "build/release/compile_commands.json" ]]; then
             cmake --preset ninja-release > /dev/null 2>&1
         fi
-        run_step "module BMIs (for clang-tidy)" "$LOG_TIDY_BMI" \
-            cmake --build --preset ninja-release --target storm
+        run_step "release build (BMIs + mock binaries, for clang-tidy)" "$LOG_TIDY_BMI" \
+            cmake --build --preset ninja-release
     fi
 
     if [[ -n "$STORM_TIDY_FULL" ]]; then
@@ -276,8 +273,22 @@ if [[ "$RUN_BENCH_RELEASE" == true ]]; then
 fi
 
 # --- Step 4: tests ---
+# `ctest` only runs tests, it never builds them. The mock test binaries are
+# discovered PRE_TEST (they must be executed to enumerate their cases), so on a
+# fresh/stale build/debug ctest reports `storm_mock_tests_NOT_BUILT` (and the
+# other mock targets) instead of running them (#489). Self-heal first: configure
+# build/debug if absent, then build the FULL default debug target set so every
+# mock binary exists. Both are no-ops on the warm path (config guarded by a file
+# check; the ninja build short-circuits when up to date).
 if [[ "$RUN_TESTS" == true ]]; then
-    run_step_live "tests (SQLite + PostgreSQL)" "$LOG_TESTS" ctest --preset ninja-debug || true
+    build_debug_then_test() {
+        if [[ ! -f "build/debug/build.ninja" ]]; then
+            cmake --preset ninja-debug || return 1
+        fi
+        cmake --build --preset ninja-debug || return 1
+        ctest --preset ninja-debug
+    }
+    run_step_live "tests (SQLite + PostgreSQL)" "$LOG_TESTS" build_debug_then_test || true
 fi
 
 # --- Step 5: coverage ---
