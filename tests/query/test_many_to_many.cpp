@@ -5,7 +5,7 @@
 // NOLINTBEGIN(misc-const-correctness)
 
 import storm;
-import storm_orm_statements_update_grammar;
+import storm_orm_statements_update_grammar; // UpdateGrammar — SET-target gate (#486) / SQL leak assert (#485); not re-exported by `storm`
 import std;
 
 using storm::QuerySet;
@@ -57,6 +57,45 @@ static_assert(!FCallableM2M<^^Student::courses>, "m2m member rejected by f<>()")
 static_assert(!FCallableM2M<^^Pupil::courses>, "m2m_through member rejected by f<>()");
 static_assert(FCallableM2M<^^Student::name>, "persisted column still accepted");
 static_assert(FCallableM2M<^^Student::age>, "persisted column still accepted");
+
+// ============================================================================
+// Compile-time: SET-target gates reject m2m relation members (#486)
+// A relation container is not a persisted column, so passing it as a
+// SET-column NTTP to update<>()/update_all<>() or upsert .update<>() must
+// fail at the named gate, not at runtime with "no such column".
+// ============================================================================
+
+static_assert(
+        !storm::orm::statements::UpdateGrammar<Student>::is_settable_member<^^Student::courses>(),
+        "m2m member rejected as a conditional-UPDATE SET target"
+);
+static_assert(
+        !storm::orm::statements::UpsertGrammar<Student>::is_settable_member<^^Student::courses>(),
+        "m2m member rejected as an upsert DO UPDATE SET target"
+);
+static_assert(
+        !storm::orm::statements::UpsertSettable<Student, ^^Student::courses>,
+        "UpsertSettable concept rejects an m2m SET target"
+);
+static_assert(
+        !storm::orm::statements::UpsertSettable<Pupil, ^^Pupil::courses>,
+        "UpsertSettable concept rejects an m2m_through SET target"
+);
+
+// Persisted, non-PK columns are still accepted at the same gate.
+static_assert(storm::orm::statements::UpdateGrammar<Student>::is_settable_member<^^Student::name>());
+static_assert(storm::orm::statements::UpsertGrammar<Student>::is_settable_member<^^Student::age>());
+static_assert(storm::orm::statements::UpsertSettable<Student, ^^Student::name>);
+// The primary key remains rejected (pre-existing gate behavior).
+static_assert(!storm::orm::statements::UpdateGrammar<Student>::is_settable_member<^^Student::id>());
+
+// The conflict-target gate is already safe (#486 DoD): a relation member carries
+// no FieldAttr::unique annotation and cannot appear in a UniqueIndex, so
+// ConflictTargetUnique rejects it without needing an is_relation_field check.
+static_assert(
+        !storm::orm::statements::ConflictTargetUnique<Student, ^^Student::courses>,
+        "an m2m member is not a valid conflict target"
+);
 
 // ============================================================================
 // Compile-time: related-type extraction from containers via std::meta

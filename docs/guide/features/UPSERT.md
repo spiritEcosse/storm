@@ -27,7 +27,10 @@ RETURNING id
 
 Only the `update<...>()` members are overwritten. An `auto_update` timestamp is
 also refreshed automatically. Foreign-key members use their database column
-name (`owner_id`) in both the conflict target and update clause.
+name (`owner_id`) in both the conflict target and update clause. Each SET column
+is checked at compile time: it must be a non-static data member that is not the
+primary key and not a relation container (m2m / reverse-FK members are not
+columns, so they are rejected at the call site — #486).
 
 ## DO NOTHING
 

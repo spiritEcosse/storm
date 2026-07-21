@@ -61,9 +61,12 @@ export namespace storm::orm::statements {
             std::unreachable(); // guarded by is_settable_member() at the call site
         }
 
-        // Each SET target must be a non-static data member of T and not the primary key.
+        // Each SET target must be a non-static data member of T, not the primary key,
+        // and not a relation container (#486) — m2m / reverse_fk members are not
+        // persisted columns, so setting them would emit a non-existent column.
         template <std::meta::info Member> static consteval auto is_settable_member() -> bool {
-            return std::meta::is_nonstatic_data_member(Member) && Member != Base::primary_key_;
+            return std::meta::is_nonstatic_data_member(Member) && Member != Base::primary_key_ &&
+                   !meta::is_relation_field(Member);
         }
 
         // Append "<name>=?" (or "<name>_id=?" for FK fields) for one member.

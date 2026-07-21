@@ -5,7 +5,7 @@
 // NOLINTBEGIN(misc-const-correctness)
 
 import storm;
-import storm_orm_statements_update_grammar;
+import storm_orm_statements_update_grammar; // UpdateGrammar — SET-target gate (#486) / SQL leak assert (#485); not re-exported by `storm`
 import std;
 
 using storm::QuerySet;
@@ -67,6 +67,23 @@ static_assert(!FCallableRfk<^^RfPerson::tasks>, "reverse_fk member rejected by f
 static_assert(!FCallableRfk<^^RfBoard::notes>, "reverse_fk member rejected by f<>()");
 static_assert(FCallableRfk<^^RfPerson::name>, "persisted column still accepted");
 static_assert(FCallableRfk<^^RfTask::assignee>, "FK column still accepted");
+
+// ============================================================================
+// Compile-time: SET-target gates reject reverse_fk relation members (#486)
+// A reverse_fk container is not a persisted column, so passing it as a SET NTTP
+// to update<>()/update_all<>() or upsert .update<>() must fail at the call site.
+// ============================================================================
+
+static_assert(
+        !stmt::UpdateGrammar<RfPerson>::is_settable_member<^^RfPerson::tasks>(),
+        "reverse_fk member rejected as a conditional-UPDATE SET target"
+);
+static_assert(
+        !stmt::UpsertGrammar<RfPerson>::is_settable_member<^^RfPerson::tasks>(),
+        "reverse_fk member rejected as an upsert DO UPDATE SET target"
+);
+static_assert(!stmt::UpsertSettable<RfPerson, ^^RfPerson::tasks>, "UpsertSettable rejects a reverse_fk SET target");
+static_assert(stmt::UpdateGrammar<RfPerson>::is_settable_member<^^RfPerson::name>(), "persisted column still settable");
 
 // ============================================================================
 // Schema: reverse_fk creates NO junction table and is not a column

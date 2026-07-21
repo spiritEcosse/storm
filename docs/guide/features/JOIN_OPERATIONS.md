@@ -150,6 +150,15 @@ for (const auto& s : *students) {
   `<OwnerTable>_<RelatedTable>` with `<Table>_id` columns.
 - The m2m container member is **not a column**: plain `select()`, `insert()`,
   `update()` ignore it entirely (zero cost for models without m2m fields).
+  Explicitly naming it as a SET target — `update<^^Student::courses>(proto)`,
+  `update_all<^^Student::courses>(proto)`, or upsert
+  `.on_conflict<…>().update<^^Student::courses>()` — is **rejected at compile
+  time** (#486): the `is_settable_member` gate on both grammars ANDs in
+  `!is_relation_field(Member)`, so the error fires at the call site as a
+  constraint violation instead of at runtime with "no such column". The same
+  holds for reverse-FK containers. A relation member is likewise not a valid
+  conflict target (it carries no `unique` annotation and cannot appear in a
+  `UniqueIndex`).
 
 **SQL Generated** (two statements, run inside one transaction):
 ```sql
