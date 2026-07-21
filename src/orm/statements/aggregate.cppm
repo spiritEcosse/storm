@@ -23,6 +23,31 @@ export namespace storm::orm::statements {
 
     using storm::orm::utilities::ConstexprString;
 
+    // True for an arithmetic-but-not-bool scalar. SUM/AVG/MIN/MAX always yield a
+    // numeric result (int64_t / double / std::optional<double>), so a text, BLOB,
+    // enum, or struct target would silently coerce rather than fail. bool is
+    // excluded — aggregating a boolean column is a modelling mistake.
+    template <typename T> constexpr bool is_numeric_scalar_v = std::is_arithmetic_v<T> && !std::is_same_v<T, bool>;
+
+    // A field type valid as the target of a numeric aggregate. Unwraps one level
+    // of std::optional (a nullable numeric column, e.g. std::optional<int>, is a
+    // legitimate SUM/AVG target — NULLs are simply skipped by SQL). Routed through
+    // a constexpr bool because a concept body cannot use ?: / unwrap directly.
+    template <typename T>
+    constexpr bool is_numeric_aggregateable_v =
+            utilities::is_optional_v<T> ? is_numeric_scalar_v<utilities::optional_inner_type_t<T>>
+                                        : is_numeric_scalar_v<T>;
+
+    template <typename T>
+    concept NumericAggregateable = is_numeric_aggregateable_v<T>;
+
+    // Every field in the pack is a NumericAggregateable column. Used as the
+    // requires-clause on the numeric aggregate methods, which take the target
+    // fields as a std::meta::info pack (SUM(a + b) over several fields).
+    template <std::meta::info... FieldInfos>
+    concept AllNumericAggregateable =
+            (NumericAggregateable<std::remove_cvref_t<typename[:std::meta::type_of(FieldInfos):]>> && ...);
+
     // Aggregate function types
     enum class AggregateType : std::uint8_t { SUM, COUNT, AVG, MIN, MAX, COUNT_DISTINCT };
 
@@ -240,41 +265,42 @@ export namespace storm::orm::statements {
         [[nodiscard]] auto having(orm::where::ExpressionVariantPtr expr)
             requires HasGroupBy
         {
-            return AggregateStatement<T, ConnType, GroupFields, Ops...>{make_params(std::move(expr))};
+            AggregateParams<ConnType> params{
+                    conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_, std::move(expr)
+            };
+            return AggregateStatement<T, ConnType, GroupFields, Ops...>{std::move(params)};
         }
 
-        // Chaining methods (only for non-GROUP BY queries building aggregates)
-        template <std::meta::info... FieldInfos> [[nodiscard]] auto sum() {
-            return AggregateStatement<T, ConnType, GroupFields, Ops..., AggregateOp<AggregateType::SUM, FieldInfos...>>{
-                    make_params()
-            };
+        // Chaining methods (only for non-GROUP BY queries building aggregates).
+        // sum/avg/min/max share one body — chain_op<Type>() — differing only by
+        // AggregateType; the numeric methods gate their target fields through
+        // AllNumericAggregateable, count() accepts any field (COUNT is type-agnostic).
+        template <std::meta::info... FieldInfos>
+            requires AllNumericAggregateable<FieldInfos...>
+        [[nodiscard]] auto sum() {
+            return chain_op<AggregateType::SUM, FieldInfos...>();
         }
 
         template <std::meta::info... FieldInfos> [[nodiscard]] auto count() {
-            return AggregateStatement<
-                    T,
-                    ConnType,
-                    GroupFields,
-                    Ops...,
-                    AggregateOp<AggregateType::COUNT, FieldInfos...>>{make_params()};
+            return chain_op<AggregateType::COUNT, FieldInfos...>();
         }
 
-        template <std::meta::info... FieldInfos> [[nodiscard]] auto avg() {
-            return AggregateStatement<T, ConnType, GroupFields, Ops..., AggregateOp<AggregateType::AVG, FieldInfos...>>{
-                    make_params()
-            };
+        template <std::meta::info... FieldInfos>
+            requires AllNumericAggregateable<FieldInfos...>
+        [[nodiscard]] auto avg() {
+            return chain_op<AggregateType::AVG, FieldInfos...>();
         }
 
-        template <std::meta::info... FieldInfos> [[nodiscard]] auto min() {
-            return AggregateStatement<T, ConnType, GroupFields, Ops..., AggregateOp<AggregateType::MIN, FieldInfos...>>{
-                    make_params()
-            };
+        template <std::meta::info... FieldInfos>
+            requires AllNumericAggregateable<FieldInfos...>
+        [[nodiscard]] auto min() {
+            return chain_op<AggregateType::MIN, FieldInfos...>();
         }
 
-        template <std::meta::info... FieldInfos> [[nodiscard]] auto max() {
-            return AggregateStatement<T, ConnType, GroupFields, Ops..., AggregateOp<AggregateType::MAX, FieldInfos...>>{
-                    make_params()
-            };
+        template <std::meta::info... FieldInfos>
+            requires AllNumericAggregateable<FieldInfos...>
+        [[nodiscard]] auto max() {
+            return chain_op<AggregateType::MAX, FieldInfos...>();
         }
 
         // Return the SQL that would be executed (for testing/debugging). Assembles
@@ -670,12 +696,16 @@ export namespace storm::orm::statements {
             return prepare_bind_extract(sql);
         }
 
-        auto make_params() -> AggregateParams<ConnType> {
-            return {conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_, having_expr_};
+        // Shared body for the chaining aggregate methods: append one AggregateOp
+        // of the given AggregateType and return the extended statement.
+        template <AggregateType AType, std::meta::info... FieldInfos> [[nodiscard]] auto chain_op() {
+            return AggregateStatement<T, ConnType, GroupFields, Ops..., AggregateOp<AType, FieldInfos...>>{
+                    make_params()
+            };
         }
 
-        auto make_params(orm::where::ExpressionVariantPtr having) -> AggregateParams<ConnType> {
-            return {conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_, std::move(having)};
+        auto make_params() -> AggregateParams<ConnType> {
+            return {conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_, having_expr_};
         }
 
         std::shared_ptr<ConnType>           conn_;
@@ -709,33 +739,48 @@ export namespace storm::orm::statements {
             return GroupByBuilder<T, ConnType, GroupFieldInfos...>{std::move(p)};
         }
 
+        // count/count_distinct accept any field type (COUNT is type-agnostic);
+        // sum/avg/min/max gate their target fields through AllNumericAggregateable.
+        // All delegate to grouped_op<Type>(), which appends one AggregateOp.
         template <std::meta::info... FieldInfos> [[nodiscard]] auto count() {
-            return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::COUNT, FieldInfos...>>{params_};
+            return grouped_op<AggregateType::COUNT, FieldInfos...>();
         }
 
         template <std::meta::info... FieldInfos> [[nodiscard]] auto count_distinct() {
-            return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::COUNT_DISTINCT, FieldInfos...>>{
-                    params_
-            };
+            return grouped_op<AggregateType::COUNT_DISTINCT, FieldInfos...>();
         }
 
-        template <std::meta::info... FieldInfos> [[nodiscard]] auto sum() {
-            return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::SUM, FieldInfos...>>{params_};
+        template <std::meta::info... FieldInfos>
+            requires AllNumericAggregateable<FieldInfos...>
+        [[nodiscard]] auto sum() {
+            return grouped_op<AggregateType::SUM, FieldInfos...>();
         }
 
-        template <std::meta::info... FieldInfos> [[nodiscard]] auto avg() {
-            return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::AVG, FieldInfos...>>{params_};
+        template <std::meta::info... FieldInfos>
+            requires AllNumericAggregateable<FieldInfos...>
+        [[nodiscard]] auto avg() {
+            return grouped_op<AggregateType::AVG, FieldInfos...>();
         }
 
-        template <std::meta::info... FieldInfos> [[nodiscard]] auto min() {
-            return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::MIN, FieldInfos...>>{params_};
+        template <std::meta::info... FieldInfos>
+            requires AllNumericAggregateable<FieldInfos...>
+        [[nodiscard]] auto min() {
+            return grouped_op<AggregateType::MIN, FieldInfos...>();
         }
 
-        template <std::meta::info... FieldInfos> [[nodiscard]] auto max() {
-            return AggregateStatement<T, ConnType, GBFields, AggregateOp<AggregateType::MAX, FieldInfos...>>{params_};
+        template <std::meta::info... FieldInfos>
+            requires AllNumericAggregateable<FieldInfos...>
+        [[nodiscard]] auto max() {
+            return grouped_op<AggregateType::MAX, FieldInfos...>();
         }
 
       private:
+        // Shared body: append one AggregateOp of the given type to the GROUP BY
+        // aggregate statement.
+        template <AggregateType AType, std::meta::info... FieldInfos> [[nodiscard]] auto grouped_op() {
+            return AggregateStatement<T, ConnType, GBFields, AggregateOp<AType, FieldInfos...>>{params_};
+        }
+
         AggregateParams<ConnType> params_;
     };
 
