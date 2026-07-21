@@ -203,4 +203,24 @@ export namespace storm::meta {
         return action == RefAction::Restrict ? std::nullopt : std::optional<RefAction>(action);
     }
 
+    // Issue #472: Entity is the compile-time STRUCTURAL gate for model types —
+    // "is T a reflectable class type at all?". It is layered ABOVE the semantic
+    // model concepts (ModelWithPrimaryKey / ModelStorageAnnotated /
+    // ModelFkPoliciesValid in statements/base.cppm), which presuppose
+    // reflectability. Constraining QuerySet<T> and BaseStatement<T> with it makes
+    // a non-model T (int, a pointer, a function type) fail at this named boundary
+    // instead of deep inside reflection-based code. is_class_type(^^T) is the gate
+    // that actually rejects scalars/pointers/functions: in this clang-p2996 build
+    // nonstatic_data_members_of(^^int, unchecked()) is NOT ill-formed (it yields an
+    // empty std::vector<info>) and identifier_of(^^int) yields "int", so the two
+    // structural requirements alone would accept int. The requirements are kept so
+    // the concept still asserts T is reflectable the exact way the statement layer
+    // uses it. access_context::unchecked() matches the semantic concepts' call
+    // sites in statements/base.cppm.
+    template <typename T>
+    concept Entity = std::meta::is_class_type(^^T) && requires {
+        { std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()) };
+        { std::meta::identifier_of(^^T) } -> std::convertible_to<std::string_view>;
+    };
+
 } // namespace storm::meta

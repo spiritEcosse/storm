@@ -11,6 +11,7 @@ import std;
 import storm_db_concept;
 import storm_db_sqlite;
 import storm_db_pool;
+import storm_orm_field_attr;
 import storm_orm_statements_base;
 import storm_orm_statements_erase;
 import storm_orm_statements_insert;
@@ -39,11 +40,14 @@ export namespace storm {
             class T,
             storm::db::DatabaseConnection ConnType   = storm::db::sqlite::Connection,
             bool                          Finalized_ = false>
+        requires storm::meta::Entity<T>
     class QuerySet { // NOSONAR(cpp:S1448) — ORM facade class; method count grows with supported operations
         using Error     = typename ConnType::Error;
         using Statement = typename ConnType::Statement;
 
-        template <class U, storm::db::DatabaseConnection C, bool F> friend class QuerySet;
+        template <class U, storm::db::DatabaseConnection C, bool F>
+            requires storm::meta::Entity<U>
+        friend class QuerySet;
 
       public:
         // Default constructor using default connection
