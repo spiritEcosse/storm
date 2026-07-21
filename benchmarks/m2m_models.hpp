@@ -16,12 +16,12 @@
 namespace storm::benchmark::m2m {
 
     struct BCourse {
-        [[= storm::meta::FieldAttr::primary]] int id{};
-        std::string                               title;
+        [[= storm::meta::primary]] int id{};
+        std::string                    title;
     };
 
     struct BStudent {
-        [[= storm::meta::FieldAttr::primary]] int              id{};
+        [[= storm::meta::primary]] int                         id{};
         std::string                                            name;
         int                                                    age{};
         [[= storm::meta::many_to_many<>]] std::vector<BCourse> courses;

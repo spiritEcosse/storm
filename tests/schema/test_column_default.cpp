@@ -21,17 +21,17 @@ using storm::orm::schema::Dialect;
 using storm::orm::schema::SchemaStatement;
 
 // Local model exercising every covered scalar/text default. Defined after
-// `import storm;` so the FieldAttr annotation binds to the imported enum.
+// `import storm;` so the storm:: annotation binds to the imported object.
 struct ColumnDefaultModel {
-    [[= storm::FieldAttr::primary]] int id{};
-    int                                 priority{1};
-    std::int64_t                        big{1000000000000};
-    int                                 neg{-5};
-    double                              rate{0.0};
-    double                              pi{3.14};
-    float                               ratio{2.5F};
-    std::string                         status{"new"};
-    std::string                         tricky{"O'Brien"};
+    [[= storm::primary]] int id{};
+    int                      priority{1};
+    std::int64_t             big{1000000000000};
+    int                      neg{-5};
+    double                   rate{0.0};
+    double                   pi{3.14};
+    float                    ratio{2.5F};
+    std::string              status{"new"};
+    std::string              tricky{"O'Brien"};
 };
 
 // A model whose non-bool columns carry NO default initializer at all (not even
@@ -39,9 +39,9 @@ struct ColumnDefaultModel {
 // from `int x = 0;`, so the "no DEFAULT" guarantee only holds for members with no
 // initializer token whatsoever.
 struct NoDefaultModel {
-    [[= storm::FieldAttr::primary]] int id{};
-    int                                 count;
-    std::string                         label;
+    [[= storm::primary]] int id{};
+    int                      count;
+    std::string              label;
 };
 
 // ============================================================================

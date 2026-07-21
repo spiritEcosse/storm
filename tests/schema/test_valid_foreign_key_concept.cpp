@@ -11,8 +11,8 @@ using storm::orm::statements::ValidForeignKey;
 
 // A valid FK target: has a primary key.
 struct Related {
-    [[= storm::FieldAttr::primary]] int id{};
-    std::string                         name;
+    [[= storm::primary]] int id{};
+    std::string              name;
 };
 
 // An FK target lacking a primary key — must be rejected.
@@ -28,7 +28,7 @@ struct NoPkModel {
 // below exercises the identical "FK target == owning model" scenario without that
 // language-level obstacle.
 struct Node {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
 };
 
 // ---- Positive: FK whose target has a primary key -----------------------------
@@ -49,13 +49,13 @@ static_assert(!ValidForeignKey<std::optional<NoPkModel>>);
 using storm::orm::statements::FKFieldOf;
 
 struct BadOwner {
-    [[= storm::FieldAttr::primary]] int id{};
-    [[= storm::fk<>]] NoPkModel         ref; // FK to a PK-less target
+    [[= storm::primary]] int    id{};
+    [[= storm::fk<>]] NoPkModel ref; // FK to a PK-less target
 };
 
 struct GoodOwner {
-    [[= storm::FieldAttr::primary]] int id{};
-    [[= storm::fk<>]] Related           ref; // FK to a valid target
+    [[= storm::primary]] int  id{};
+    [[= storm::fk<>]] Related ref; // FK to a valid target
 };
 
 static_assert(FKFieldOf<GoodOwner, ^^GoodOwner::ref>); // valid FK target

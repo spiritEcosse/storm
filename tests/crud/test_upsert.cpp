@@ -9,10 +9,10 @@ import std;
 #include "test_seed_helpers.h"
 
 struct CompositeUpsertRecord {
-    [[= storm::FieldAttr::primary]] int id{};
-    std::string                         name;
-    std::string                         department;
-    int                                 age{};
+    [[= storm::primary]] int id{};
+    std::string              name;
+    std::string              department;
+    int                      age{};
 };
 
 template <> struct storm::Indexes<CompositeUpsertRecord> {
@@ -20,16 +20,16 @@ template <> struct storm::Indexes<CompositeUpsertRecord> {
 };
 
 struct TimestampedUpsertRecord {
-    [[= storm::FieldAttr::primary]] int                                       id{};
-    [[= storm::FieldAttr::unique]] std::string                                name;
-    [[= storm::FieldAttr::auto_create]] std::chrono::system_clock::time_point created_at{};
-    [[= storm::FieldAttr::auto_update]] std::chrono::system_clock::time_point updated_at{};
+    [[= storm::primary]] int                                       id{};
+    [[= storm::unique]] std::string                                name;
+    [[= storm::auto_create]] std::chrono::system_clock::time_point created_at{};
+    [[= storm::auto_update]] std::chrono::system_clock::time_point updated_at{};
 };
 
 struct UniqueOwnerRecord {
-    [[= storm::FieldAttr::primary]] int                    id{};
-    [[= storm::FieldAttr::unique]][[= storm::fk<>]] Person owner;
-    std::string                                            label;
+    [[= storm::primary]] int                    id{};
+    [[= storm::unique]][[= storm::fk<>]] Person owner;
+    std::string                                 label;
 };
 
 namespace {

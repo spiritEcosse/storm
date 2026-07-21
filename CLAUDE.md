@@ -263,7 +263,7 @@ src/
 │   └── sqlite.cppm             # SQLite implementation
 └── orm/
     ├── queryset.cppm           # QuerySet ORM interface
-    ├── field_attr.cppm         # FieldAttr annotation enum + is_primary_attr (leaf module)
+    ├── field_attr.cppm         # Free-standing flag annotation objects + is_primary_member (leaf module)
     ├── utilities.cppm          # ConstexprString, SQLCache
     ├── indexes.cppm            # Index, UniqueIndex, Indexes<T> trait (namespace storm)
     └── statements/             # INSERT, SELECT, UPDATE, DELETE, DISTINCT, JOIN
@@ -315,17 +315,32 @@ See [docs/internals/performance/PERFORMANCE.md](docs/internals/performance/PERFO
 `int`, `int64_t`, `double`, `float`, `bool`, `std::string`, `std::string_view`, `std::optional<T>`, `std::vector<uint8_t>` (BLOB)
 
 **Annotation spelling (#442)**: annotation names are re-exported into the top-level `storm`
-namespace — write `storm::FieldAttr::primary`, `storm::fk<>`, `storm::many_to_many<>`,
+namespace — write `storm::primary`, `storm::fk<>`, `storm::many_to_many<>`,
 `storm::reverse_fk<...>` instead of the longer `storm::meta::...`. The `storm::meta::` spelling
 still works (re-exports are additive). Internal reflection helpers (`is_fk_field`,
 `find_primary_key`, …) stay in `storm::meta`.
+
+**Free-standing flag annotations (#492)**: the column flags are free-standing tag-object
+annotations — `storm::primary`, `storm::primary_autoincrement`, `storm::indexed`,
+`storm::unique`, `storm::auto_create`, `storm::auto_update`, `storm::signed_storage`,
+`storm::full_unsigned` — replacing the former `enum class FieldAttr` (breaking, no
+dual-spelling). Each is an empty tag struct + `inline constexpr` object in the
+`storm_orm_field_attr` leaf (`storm::meta`), mirroring `fk<>`; detection scans
+`annotations_of(m)` for the tag type (`has_annotation_type<Tag>`), the same pattern as
+`is_fk_field`. The per-flag predicates (`is_unique`, `is_indexed`, `is_auto_create`,
+`is_auto_update`, `has_full_unsigned_attr`, `has_signed_storage_attr`) keep their
+names/signatures; PK detection routes through `is_primary_member(info)` (matches `primary`
+OR `primary_autoincrement`). The exclusivity the enum gave for free is restored by the
+`ModelAnnotationsValid<T>` concept (in `base.cppm`, ANDed into the `BaseStatement<T>`
+constraint list), which rejects per member: `primary` + `primary_autoincrement`, or
+`signed_storage` + `full_unsigned`. DDL is byte-identical — pure spelling change.
 
 **Foreign keys (#431)**: `[[= storm::fk<>]]` marks an FK field (bare = `RESTRICT`,
 the SQL default — no `ON DELETE` clause emitted). The `ON DELETE` policy is the template
 arg: `fk<RefAction::Cascade>` / `fk<RefAction::SetNull>` / `fk<RefAction::Restrict>` /
 `fk<RefAction::NoAction>`. `SetNull` REQUIRES a nullable FK (`std::optional<Related>`) —
-enforced at compile time by `ModelFkPoliciesValid<T>`. NOT a FieldAttr enumerator (enum
-members can't be templated); FK detection runs through `meta::is_fk_field`. An FK target
+enforced at compile time by `ModelFkPoliciesValid<T>`. A class-template annotation (the flag
+tag objects can't carry a parameter); FK detection runs through `meta::is_fk_field`. An FK target
 must have a primary key: the `ValidForeignKey<FieldType>` concept (#474) constrains
 `find_fk_primary_key` and the `FKFieldOf` gate on `join<>`/`left_join<>`, so a `join<>` on an
 FK whose target lacks a PK fails at the call site (single-level — never recurses into the
@@ -349,7 +364,7 @@ chains also accept a cross-model FK selector `join<^^Owner::fk>()`, which disamb
 FKs (e.g. `^^Bug::author` vs `^^Bug::reviewer`). See
 [docs/guide/features/JOIN_OPERATIONS.md](docs/guide/features/JOIN_OPERATIONS.md).
 
-**Auto-timestamps (#209)**: `[[= FieldAttr::auto_create]]` / `[[= FieldAttr::auto_update]]` on a
+**Auto-timestamps (#209)**: `[[= storm::auto_create]]` / `[[= storm::auto_update]]` on a
 `std::chrono::system_clock::time_point` field auto-stamp `now()` — `auto_create` on INSERT only,
 `auto_update` on INSERT and UPDATE. **Bind-time only, no write-back** (the caller's object is never
 mutated; re-SELECT to read the value). UPDATE preserves `created_at` by binding the object's stored
@@ -357,9 +372,9 @@ value, so pass the original `created_at` when updating. Zero cost on models with
 
 **64-bit unsigned storage (#436)**: a bare `uint64_t` / `unsigned long` / `unsigned long long` field
 is a **compile-time error** (`ModelStorageAnnotated<T>` constraint on `BaseStatement`). Annotate with
-exactly one: `[[= FieldAttr::signed_storage]]` keeps today's signed `INTEGER`/`BIGINT` (byte-identical,
+exactly one: `[[= storm::signed_storage]]` keeps today's signed `INTEGER`/`BIGINT` (byte-identical,
 same `bind_int64`/`extract_int64` hot path, zero perf change) for values ≤ INT64_MAX; or
-`[[= FieldAttr::full_unsigned]]` for order-preserving full-range `0..2⁶⁴−1` storage — SQLite zero-padded
+`[[= storm::full_unsigned]]` for order-preserving full-range `0..2⁶⁴−1` storage — SQLite zero-padded
 20-char `TEXT` (lexicographic == numeric order), PG `NUMERIC(20,0)`, slower string bind/extract. Both
 the `full_unsigned` bind/extract branches and the concept gate are compile-time-dispatched, so unrelated
 types and signed-64/smaller integers are unaffected. Signed-64 types stay correct as `BIGINT`/`INTEGER`.

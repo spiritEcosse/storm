@@ -25,16 +25,17 @@ export namespace storm::orm::statements {
     using storm::orm::utilities::ConstexprString;
 
     namespace meta {
-        // Canonical FieldAttr + is_primary_attr live in the dependency-free
-        // storm_orm_field_attr leaf module (#387); re-exposed here so statement
+        // Canonical flag annotations + is_primary_member live in the dependency-free
+        // storm_orm_field_attr leaf module (#387, #492); re-exposed here so statement
         // modules keep using the meta:: qualifier.
-        using storm::meta::FieldAttr;
-        using storm::meta::is_primary_attr;
+        using storm::meta::is_primary_member;
         using storm::meta::ref_action_sql; // NOLINT(misc-unused-using-decls) — used by storm_orm_schema
         using storm::meta::RefAction;
 
         // Per-attribute predicates (#421) re-exposed from the leaf so statement modules
-        // keep the meta:: qualifier (mirrors FieldAttr).
+        // keep the meta:: qualifier.
+        using storm::meta::has_full_unsigned_attr;  // NOLINT(misc-unused-using-decls)
+        using storm::meta::has_signed_storage_attr; // NOLINT(misc-unused-using-decls)
         using storm::meta::is_auto_create;
         using storm::meta::is_auto_update;
         using storm::meta::is_indexed;
@@ -58,7 +59,7 @@ export namespace storm::orm::statements {
 
         // Foreign-key annotation (#431) lives in the storm_orm_field_attr leaf module so
         // every statement module can detect FK fields without importing this one. Re-exposed
-        // here so statement modules keep using the meta:: qualifier (mirrors FieldAttr).
+        // here so statement modules keep using the meta:: qualifier.
         using storm::meta::
                 append_column_name; // NOLINT(misc-unused-using-decls) — #422 canonical <identifier>[_id] writer
         using storm::meta::column_name_size; // NOLINT(misc-unused-using-decls) — #422 its byte-exact size companion
@@ -69,7 +70,7 @@ export namespace storm::orm::statements {
         using storm::meta::is_fk_field;
 
         // True iff `type` has at least one non-static data member annotated with
-        // FieldAttr::primary. The info-value core of the ModelWithPrimaryKey<T> concept
+        // storm::primary/primary_autoincrement. The info-value core of the ModelWithPrimaryKey<T> concept
         // (below), factored out so it can also run on an info VALUE — needed by
         // valid_fk_target, whose target type is derived from a range-for loop variable
         // over nonstatic_data_members_of and so cannot be spliced into a type template
@@ -77,8 +78,7 @@ export namespace storm::orm::statements {
         // variable over a heap-backed std::vector<info> range is not one).
         consteval auto has_primary_key(std::meta::info type) -> bool {
             for (auto m : std::meta::nonstatic_data_members_of(type, std::meta::access_context::unchecked())) {
-                auto attr = std::meta::annotation_of_type<meta::FieldAttr>(m);
-                if (attr.has_value() && meta::is_primary_attr(attr.value())) {
+                if (meta::is_primary_member(m)) {
                     return true;
                 }
             }
@@ -120,14 +120,14 @@ export namespace storm::orm::statements {
             return std::meta::extract<std::meta::info>(std::meta::template_arguments_of(annotation_type)[0]);
         }
 
-        // True when the FK member `fk_member` (an FieldAttr::fk data member) points back
+        // True when the FK member `fk_member` (an fk<...> data member) points back
         // at base_t — its declared type, optional-unwrapped, is exactly base_t. The
         // single "does this FK reverse to the base?" check across the reverse-FK code.
         consteval auto fk_member_points_at(std::meta::info fk_member, std::meta::info base_t) -> bool {
             return unwrap_optional_type(std::meta::type_of(fk_member)) == base_t;
         }
 
-        // Count of FieldAttr::fk members of `owner` whose type points back at base_t.
+        // Count of fk<...> members of `owner` whose type points back at base_t.
         consteval auto count_fks_to(std::meta::info owner, std::meta::info base_t) -> std::size_t {
             std::size_t count = 0;
             for (auto m : std::meta::nonstatic_data_members_of(owner, std::meta::access_context::unchecked())) {
@@ -140,7 +140,7 @@ export namespace storm::orm::statements {
 
         // Validate a reverse_fk member's target against base_t (the model owning the
         // container). A type target requires the owner to expose exactly ONE FK back at
-        // base_t; a field target must be a FieldAttr::fk member of another model that
+        // base_t; a field target must be an fk<...> member of another model that
         // points at base_t. Precondition: `member` is a reverse_fk field.
         consteval auto reverse_fk_member_valid(std::meta::info member, std::meta::info base_t) -> bool {
             const auto target = reverse_fk_target_of(member);
@@ -154,7 +154,7 @@ export namespace storm::orm::statements {
         }
 
         // Resolve a reverse_fk target (owner type OR FK field) to the concrete FK field
-        // pointing back at base_t. A type target picks the unique FieldAttr::fk member
+        // pointing back at base_t. A type target picks the unique fk<...> member
         // whose (optional-unwrapped) type is base_t; a field target is used directly.
         // Takes both as runtime consteval args so it works on loop-variable members.
         consteval auto resolve_reverse_fk_target(std::meta::info target, std::meta::info base_t) -> std::meta::info {
@@ -216,7 +216,7 @@ export namespace storm::orm::statements {
         template <typename TValue> constexpr bool is_shared_ptr_v = is_shared_ptr<TValue>::value;
     } // namespace meta
 
-    // Concept: T must have at least one field annotated with FieldAttr::primary.
+    // Concept: T must have at least one field annotated with storm::primary (#492).
     //
     // Because a primary key is itself a non-static data member, satisfying this concept
     // also guarantees `field_count_ >= 1`. That invariant is what makes the INSERT batch
@@ -235,7 +235,7 @@ export namespace storm::orm::statements {
     concept ValidForeignKey = ModelWithPrimaryKey<utilities::optional_inner_type_t<FieldType>>;
 
     // Concept: every 64-bit unsigned field of T must carry an explicit storage
-    // annotation — FieldAttr::signed_storage or FieldAttr::full_unsigned (#436). A bare
+    // annotation — storm::signed_storage or storm::full_unsigned (#436). A bare
     // unsigned-64 field would silently store > INT64_MAX values as a negative int64
     // (equality round-trips, but ORDER BY and external readers see the signed value),
     // so we refuse it at the call site instead. Signed-64 and all smaller types are
@@ -245,12 +245,9 @@ export namespace storm::orm::statements {
     template <typename T>
     concept ModelStorageAnnotated = []() consteval {
         for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
-            if (storm::meta::is_unsigned64_member(m)) {
-                auto attr = std::meta::annotation_of_type<meta::FieldAttr>(m);
-                if (!attr.has_value() || (attr.value() != meta::FieldAttr::signed_storage &&
-                                          attr.value() != meta::FieldAttr::full_unsigned)) {
-                    return false;
-                }
+            if (storm::meta::is_unsigned64_member(m) &&
+                !(meta::has_signed_storage_attr(m) || meta::has_full_unsigned_attr(m))) {
+                return false;
             }
         }
         return true;
@@ -278,6 +275,29 @@ export namespace storm::orm::statements {
         return true;
     }();
 
+    // Concept: no member of T carries a conflicting pair of flag annotations (#492).
+    // The former `enum class FieldAttr` made these conflicts unrepresentable — a field
+    // could carry at most one enumerator. The free-standing annotation objects can be
+    // stacked, so this concept restores the exclusivity guarantee at compile time,
+    // rejecting per member:
+    //   * both primary and primary_autoincrement (two primary-key modes),
+    //   * both signed_storage and full_unsigned (two 64-bit storage modes).
+    // Scope is exactly those two mutually-exclusive mode pairs; other flag properties
+    // are validated by the sibling concepts (storage-type presence by ModelStorageAnnotated,
+    // FK-policy nullability by ModelFkPoliciesValid, timestamp field type by the
+    // ValidTimestampField static_assert). Members are read directly from
+    // nonstatic_data_members_of(^^T) (BMI-safe, #262), matching those siblings.
+    template <typename T>
+    concept ModelAnnotationsValid = std::ranges::all_of(
+            std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()),
+            [](std::meta::info m) consteval {
+                const bool primary_conflict = storm::meta::has_annotation_type<storm::meta::Primary>(m) &&
+                                              storm::meta::has_annotation_type<storm::meta::PrimaryAutoincrement>(m);
+                const bool storage_conflict = meta::has_signed_storage_attr(m) && meta::has_full_unsigned_attr(m);
+                return !primary_conflict && !storage_conflict;
+            }
+    );
+
     // A field carrying auto_create/auto_update must be a system_clock::time_point (#209).
     // Referenced by a static_assert in bind_field_at_index so a wrong-typed timestamp field
     // fails to compile with a clear message rather than deep inside parameter binding.
@@ -286,7 +306,7 @@ export namespace storm::orm::statements {
             same_as<std::remove_cvref_t<typename[:std::meta::type_of(Member):]>, std::chrono::system_clock::time_point>;
 
     // A JOIN field selector must reflect a non-static data member of T annotated with
-    // FieldAttr::fk (#388). Constrains QuerySet::join/left_join and
+    // an fk<...> annotation (#388). Constrains QuerySet::join/left_join and
     // JoinStatement so a non-member or non-FK argument fails at the call site with a
     // clear constraint violation.
     //
@@ -329,7 +349,7 @@ export namespace storm::orm::statements {
         return false;
     }();
 
-    // A cross-model reverse-FK selector (#398): Member is a FieldAttr::fk data member
+    // A cross-model reverse-FK selector (#398): Member is an fk<...> data member
     // of ANOTHER model whose FK type (unwrapping std::optional) is the base model T.
     //   QuerySet<Person>().left_join<^^Task::assignee>()  // Member = ^^Task::assignee
     // The owning model (Task), FK field, and FK target (Person) all come from Member;
@@ -419,7 +439,8 @@ export namespace storm::orm::statements {
 
     // Shared reflection utilities for all statement types
     template <typename T>
-        requires storm::meta::Entity<T> && ModelWithPrimaryKey<T> && ModelStorageAnnotated<T> && ModelFkPoliciesValid<T>
+        requires storm::meta::Entity<T> && ModelWithPrimaryKey<T> && ModelStorageAnnotated<T> &&
+                 ModelFkPoliciesValid<T> && ModelAnnotationsValid<T>
     class BaseStatement {
       public:
         // Compile-time accessor for table name (used in SQL generation)
@@ -432,8 +453,7 @@ export namespace storm::orm::statements {
         static consteval auto find_primary_key_impl() -> std::meta::info {
             for (const std::meta::info member :
                  std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
-                auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
-                if (field_attr.has_value() && meta::is_primary_attr(field_attr.value())) {
+                if (meta::is_primary_member(member)) {
                     return member;
                 }
             }
@@ -446,7 +466,7 @@ export namespace storm::orm::statements {
         }
 
         // Per-attribute predicates forward to the storm_orm_field_attr leaf (#421),
-        // the single source of truth for the FieldAttr-annotation test.
+        // the single source of truth for each flag-annotation test.
         static consteval auto is_unique_field(std::meta::info member) -> bool {
             return meta::is_unique(member);
         }
@@ -473,19 +493,13 @@ export namespace storm::orm::statements {
         // Check if a field needs an index (indexed, unique, or fk — but not primary key).
         // FK is now an fk<...> class-template annotation (#431), checked separately.
         static consteval auto needs_index(std::meta::info member) -> bool {
-            using enum meta::FieldAttr;
             if (member == primary_key_) {
                 return false;
             }
             if (meta::is_fk_field(member)) {
                 return true;
             }
-            auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
-            if (!field_attr.has_value()) {
-                return false;
-            }
-            auto val = field_attr.value();
-            return val == indexed || val == unique;
+            return meta::is_indexed(member) || meta::is_unique(member);
         }
 
         // Get database column name for FK field: User sender → "sender_id".
@@ -506,8 +520,7 @@ export namespace storm::orm::statements {
             using InnerType = utilities::optional_inner_type_t<FKType>;
             for (const std::meta::info member :
                  std::meta::nonstatic_data_members_of(^^InnerType, std::meta::access_context::unchecked())) {
-                auto field_attr = std::meta::annotation_of_type<meta::FieldAttr>(member);
-                if (field_attr.has_value() && meta::is_primary_attr(field_attr.value())) {
+                if (meta::is_primary_member(member)) {
                     return member;
                 }
             }

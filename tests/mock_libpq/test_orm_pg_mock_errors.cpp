@@ -1228,9 +1228,9 @@ namespace {
     // ============================================================================
 
     struct MockPgPerson {
-        [[= storm::FieldAttr::primary]] std::int64_t id{};
-        std::string                                  name;
-        int                                          age{};
+        [[= storm::primary]] std::int64_t id{};
+        std::string                       name;
+        int                               age{};
     };
 
     using PgQuerySet = storm::QuerySet<MockPgPerson, PgConnection>;

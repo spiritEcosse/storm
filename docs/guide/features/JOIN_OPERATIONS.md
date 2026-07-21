@@ -17,13 +17,13 @@ Key features:
 
 ```cpp
 struct User {
-    [[=storm::FieldAttr::primary]] int id;
+    [[=storm::primary]] int id;
     std::string username;
     int level;
 };
 
 struct Message {
-    [[=storm::FieldAttr::primary]] int id;
+    [[=storm::primary]] int id;
     std::string content;
     User sender;  // FK field
 };
@@ -52,7 +52,7 @@ INNER JOIN User t2 ON t2.id = t1.sender_id
 
 ```cpp
 struct Message {
-    [[=storm::FieldAttr::primary]] int id;
+    [[=storm::primary]] int id;
     std::string content;
     User sender;    // First FK
     User receiver;  // Second FK
@@ -123,12 +123,12 @@ Several m2m fields of the same model can be loaded in **one call** (#392) — se
 
 ```cpp
 struct Course {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string title;
 };
 
 struct Student {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string name;
     int age{};
     [[= storm::many_to_many<>]] std::vector<Course> courses;
@@ -178,14 +178,14 @@ Q2's `IN (…)` subquery, so both pick exactly the same base entities.
 
 ```cpp
 struct Enrollment {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     [[= storm::fk<>]] Pupil pupil;
     [[= storm::fk<>]] Course course;
     std::string grade;  // relationship metadata
 };
 
 struct Pupil {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string name;
     [[= storm::many_to_many_through<Enrollment>]] std::vector<Course> courses;
 };
@@ -211,7 +211,7 @@ any subset of them:
 
 ```cpp
 struct Member {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string name;
     int age{};
     [[= storm::many_to_many<>]] std::vector<Course> courses;
@@ -257,7 +257,7 @@ auto members = QuerySet<Member>()
 - Write-side helpers (`add()`/`remove()`) are not provided — insert junction
   rows via the through model (`QuerySet<Enrollment>`) or raw SQL for Phase 1.
 - The annotation spelling differs from issue #203's sketch
-  (`FieldAttr::many_to_many<T>` is impossible — `FieldAttr` is an enum; the FK marker `fk<>` is likewise a class-template annotation, not an enumerator).
+  (`many_to_many<><T>` is impossible — the flag annotations are plain tag objects; the FK marker `fk<>` is likewise a class-template annotation).
 
 ### Execution Strategy (#391)
 
@@ -314,7 +314,7 @@ Declare a reverse-FK container (not a column — invisible to CRUD, like m2m):
 struct Task; // forward declaration breaks the Person⟷Task reference cycle
 
 struct Person {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string name;
     int age{};
     // Filled on eager load. The annotation names the OWNER TYPE; the unique FK
@@ -323,7 +323,7 @@ struct Person {
 };
 
 struct Task {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string title;
     [[= storm::fk<>]] Person assignee;   // FK → Person
 };
@@ -375,8 +375,8 @@ the modifier-free complete SQL `Person t1 <KW> Owner t2 ON t2.<fk>_id = t1.<pk>`
   (`^^Bug::author` vs `^^Bug::reviewer`), which has no container and no cycle.
 - Eager only (no lazy loading), no tuple/pair result shapes, no `right_join`-style
   base rows with defaulted fields (removed in #397).
-- The annotation spelling carries the owner type, not `FieldAttr::reverse_fk` —
-  `FieldAttr` is an enum, so a templated enumerator is impossible (as for m2m).
+- The annotation spelling carries the owner type, not `reverse_fk<>` —
+  the flag annotations are plain tag objects, so a templated flag is impossible (as for m2m).
 
 ## Architecture
 

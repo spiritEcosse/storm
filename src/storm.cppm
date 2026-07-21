@@ -73,8 +73,8 @@ export namespace storm {
     }
 
     // Meta functionality for ORM field attributes and reflection.
-    // FieldAttr + is_primary_attr come from the storm_orm_field_attr leaf module
-    // (re-exported above), which already declares them in storm::meta (#387).
+    // The flag annotation objects + is_primary_member come from the storm_orm_field_attr
+    // leaf module (re-exported above), which already declares them in storm::meta (#387, #492).
     namespace meta {
         // Many-to-many annotations (#203): many_to_many (auto junction table) and
         // many_to_many_through<Through> (explicit junction model). These re-exports
@@ -96,19 +96,13 @@ export namespace storm {
         using orm::statements::meta::fk; // NOLINT(misc-unused-using-decls)
         using orm::statements::meta::Fk; // NOLINT(misc-unused-using-decls)
 
-        // Check if member has primary attribute
-        consteval auto has_primary_attr(std::meta::info member) -> bool {
-            auto field_attr = std::meta::annotation_of_type<FieldAttr>(member);
-            return field_attr.has_value() && is_primary_attr(field_attr.value());
-        }
-
         // Find primary key member — T must satisfy ModelWithPrimaryKey<T>
         template <typename T>
             requires orm::statements::ModelWithPrimaryKey<T>
         consteval auto find_primary_key() -> std::meta::info {
             for (const std::meta::info member :
                  std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
-                if (has_primary_attr(member)) {
+                if (is_primary_member(member)) {
                     return member;
                 }
             }
@@ -117,11 +111,22 @@ export namespace storm {
     } // namespace meta
 
     // Convenience re-exports of the user-facing annotation names into the top-level
-    // `storm` namespace (#442). Model declarations can spell `storm::FieldAttr::primary`,
+    // `storm` namespace (#442). Model declarations can spell `storm::primary`,
     // `storm::fk<>`, `storm::many_to_many<>` etc. instead of the longer `storm::meta::...`.
     // Purely additive — the `storm::meta::` spelling keeps working. Internal reflection
     // helpers (is_fk_field, find_primary_key, …) stay in storm::meta, not re-exported here.
-    using meta::FieldAttr;            // NOLINT(misc-unused-using-decls)
+    //
+    // The eight free-standing flag annotation objects (#492) replace the former
+    // enum class FieldAttr. Each is an inline constexpr tag object in storm::meta.
+    using meta::auto_create;           // NOLINT(misc-unused-using-decls)
+    using meta::auto_update;           // NOLINT(misc-unused-using-decls)
+    using meta::full_unsigned;         // NOLINT(misc-unused-using-decls)
+    using meta::indexed;               // NOLINT(misc-unused-using-decls)
+    using meta::primary;               // NOLINT(misc-unused-using-decls)
+    using meta::primary_autoincrement; // NOLINT(misc-unused-using-decls)
+    using meta::signed_storage;        // NOLINT(misc-unused-using-decls)
+    using meta::unique;                // NOLINT(misc-unused-using-decls)
+
     using meta::fk;                   // NOLINT(misc-unused-using-decls)
     using meta::Fk;                   // NOLINT(misc-unused-using-decls)
     using meta::many_to_many;         // NOLINT(misc-unused-using-decls)

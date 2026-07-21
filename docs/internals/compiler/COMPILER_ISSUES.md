@@ -253,12 +253,12 @@ match by identifier, then call `annotation_of_type` on the freshly derived info:
 
 ```cpp
 // ❌ Crashes when Member crossed a BMI boundary
-auto attr = std::meta::annotation_of_type<meta::FieldAttr>(Member);
+bool primary = meta::is_primary_member(Member); // scans annotations_of(Member)
 
-// ✅ Safe — annotation read from a locally derived reflection
+// ✅ Safe — annotations read from a locally derived reflection
 for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
     if (std::meta::identifier_of(m) == std::meta::identifier_of(Member)) {
-        auto attr = std::meta::annotation_of_type<meta::FieldAttr>(m);
+        bool primary = meta::is_primary_member(m);
         // ...
     }
 }

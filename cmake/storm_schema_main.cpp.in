@@ -23,8 +23,7 @@ consteval auto count_models() -> std::size_t {
     for (auto member : std::meta::members_of(^^@STORM_MODELS_NAMESPACE@, std::meta::access_context::unchecked())) {
         if (std::meta::is_type(member) && std::meta::is_class_type(member)) {
             for (auto dm : std::meta::nonstatic_data_members_of(member, std::meta::access_context::unchecked())) {
-                auto attr = std::meta::annotation_of_type<storm::meta::FieldAttr>(dm);
-                if (attr.has_value() && attr.value() == storm::meta::FieldAttr::primary) {
+                if (storm::meta::is_primary_member(dm)) {
                     ++count;
                     break;
                 }
@@ -40,8 +39,7 @@ consteval auto get_model_infos() -> std::array<std::meta::info, count_models()> 
     for (auto member : std::meta::members_of(^^@STORM_MODELS_NAMESPACE@, std::meta::access_context::unchecked())) {
         if (std::meta::is_type(member) && std::meta::is_class_type(member)) {
             for (auto dm : std::meta::nonstatic_data_members_of(member, std::meta::access_context::unchecked())) {
-                auto attr = std::meta::annotation_of_type<storm::meta::FieldAttr>(dm);
-                if (attr.has_value() && attr.value() == storm::meta::FieldAttr::primary) {
+                if (storm::meta::is_primary_member(dm)) {
                     result[idx++] = member;
                     break;
                 }

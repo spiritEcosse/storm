@@ -30,7 +30,7 @@ struct RfTask; // forward declaration breaks the Base⟷Owner cycle
 // Base model: owns a reverse_fk container of the tasks pointing at it. The
 // annotation names the OWNER TYPE; the unique FK back at RfPerson is resolved.
 struct RfPerson {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string name;
     int age{};
     // Not a column — invisible to CRUD, filled on eager load.
@@ -38,7 +38,7 @@ struct RfPerson {
 };
 
 struct RfTask {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string title;
     [[= storm::fk<>]] RfPerson assignee;
 };
@@ -47,13 +47,13 @@ struct RfTask {
 struct RfNote;
 
 struct RfBoard {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string name;
     [[= storm::reverse_fk<^^RfNote>]] std::vector<std::shared_ptr<RfNote>> notes;
 };
 
 struct RfNote {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string body;
     [[= storm::fk<>]] RfBoard board;
 };
@@ -61,12 +61,12 @@ struct RfNote {
 // Multi-FK disambiguation (aggregate/selector path — no reverse container, no
 // cycle, so RfReporter is complete before RfBug): two FKs back at RfReporter.
 struct RfReporter {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string name;
 };
 
 struct RfBug {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string summary;
     [[= storm::fk<>]] RfReporter author;
     [[= storm::fk<>]] RfReporter reviewer;

@@ -18,7 +18,7 @@ Key optimizations:
 
 ```cpp
 struct Person {
-    [[=storm::FieldAttr::primary]] int id;
+    [[=storm::primary]] int id;
     std::string name;
     int age;
 };

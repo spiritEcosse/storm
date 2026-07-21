@@ -16,7 +16,7 @@ using storm::orm::schema::SchemaStatement;
 // ============================================================================
 // Referential Integrity — FK REFERENCES (#412)
 //
-// Always-on: every FieldAttr::fk column emits REFERENCES <Related>(id). Base
+// Always-on: every fk<...> column emits REFERENCES <Related>(id). Base
 // FKs use plain REFERENCES (= RESTRICT / NO ACTION, the SQL default). The
 // related table name is the FK field's C++ type identifier; the PK is always
 // "id". Both dialects.
@@ -47,7 +47,7 @@ TEST(SchemaFkRefTest, TaskBothFksEmitReferencesSqlite) {
 
 // Test: a nullable FK (optional<Related>) still emits REFERENCES, without NOT NULL.
 struct NullableFkRow {
-    [[= storm::FieldAttr::primary]] int     id{};
+    [[= storm::primary]] int                id{};
     [[= storm::fk<>]] std::optional<Person> owner;
     std::string                             label;
 };

@@ -697,9 +697,7 @@ export namespace storm::orm::statements {
                 return ThroughWithFKTo<Through, T> && ThroughWithFKTo<Through, Related>;
             }
         }
-        static_assert(
-                through_is_valid(), "through model must have exactly one FieldAttr::fk field for each side (#203)"
-        );
+        static_assert(through_is_valid(), "through model must have exactly one fk<...> field for each side (#203)");
 
         // ---- Junction descriptor ---------------------------------------------
         template <typename Side> static consteval auto find_through_fk() -> std::meta::info {

@@ -23,7 +23,7 @@ Storm ORM returns auto-generated IDs from all INSERT operations:
 Tables use a plain integer primary key, which SQLite auto-assigns on insert (it
 aliases the rowid). Since #379 Storm emits plain `INTEGER PRIMARY KEY` by default —
 `AUTOINCREMENT` (the never-reuse guarantee, ~358 ns/insert) is opt-in via
-`FieldAttr::primary_autoincrement`.
+`storm::primary_autoincrement`.
 
 ```cpp
 conn.execute("CREATE TABLE Person ("
@@ -37,7 +37,7 @@ To opt into the never-reuse guarantee for a specific model, annotate its PK with
 
 ```cpp
 struct Audit {
-    [[= storm::FieldAttr::primary_autoincrement]] int id{};  // id INTEGER PRIMARY KEY AUTOINCREMENT
+    [[= storm::primary_autoincrement]] int id{};  // id INTEGER PRIMARY KEY AUTOINCREMENT
     // ...
 };
 ```
@@ -46,7 +46,7 @@ struct Audit {
 
 ```cpp
 struct Person {
-    [[= storm::FieldAttr::primary]] int id;
+    [[= storm::primary]] int id;
     std::string name;
     int age;
     double salary;
@@ -183,7 +183,7 @@ QuerySet<Message>()
 ```
 
 **`auto_update` timestamps are refreshed automatically.** If the model has an
-`[[= FieldAttr::auto_update]]` `time_point` field, it is appended to the SET clause
+`[[= storm::auto_update]]` `time_point` field, it is appended to the SET clause
 (stamped `now()`) even when not listed — matching single-row UPDATE semantics:
 
 ```cpp
@@ -417,7 +417,7 @@ static auto bind_value_by_type(Statement& stmt, int idx, const FieldType& value)
 
 ```cpp
 struct Message {
-    [[=storm::FieldAttr::primary]] int id;
+    [[=storm::primary]] int id;
     std::string content;
     User sender;  // FK field - entire object
 };
