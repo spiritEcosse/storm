@@ -385,7 +385,9 @@ export namespace storm {
         //        queryset.where(age > 30).sum<^^Person::age>().execute()
         //        queryset.join<FK>().sum<^^Person::salary>().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
-        template <std::meta::info... FieldInfos> [[nodiscard]] auto sum() {
+        template <std::meta::info... FieldInfos>
+            requires orm::statements::AllNumericAggregateable<FieldInfos...>
+        [[nodiscard]] auto sum() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
@@ -414,7 +416,9 @@ export namespace storm {
         // Usage: queryset.avg<^^Person::salary>().execute()
         //        queryset.where(department == "Engineering").avg<^^Person::salary>().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
-        template <std::meta::info... FieldInfos> [[nodiscard]] auto avg() {
+        template <std::meta::info... FieldInfos>
+            requires orm::statements::AllNumericAggregateable<FieldInfos...>
+        [[nodiscard]] auto avg() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
@@ -428,7 +432,9 @@ export namespace storm {
         // Usage: queryset.min<^^Person::age>().execute()
         //        queryset.where(active == true).min<^^Person::age>().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
-        template <std::meta::info... FieldInfos> [[nodiscard]] auto min() {
+        template <std::meta::info... FieldInfos>
+            requires orm::statements::AllNumericAggregateable<FieldInfos...>
+        [[nodiscard]] auto min() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
@@ -442,7 +448,9 @@ export namespace storm {
         // Usage: queryset.max<^^Person::age>().execute()
         //        queryset.where(department == "Sales").max<^^Person::salary>().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
-        template <std::meta::info... FieldInfos> [[nodiscard]] auto max() {
+        template <std::meta::info... FieldInfos>
+            requires orm::statements::AllNumericAggregateable<FieldInfos...>
+        [[nodiscard]] auto max() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
