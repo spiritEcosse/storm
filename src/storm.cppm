@@ -96,6 +96,11 @@ export namespace storm {
         using orm::statements::meta::fk; // NOLINT(misc-unused-using-decls)
         using orm::statements::meta::Fk; // NOLINT(misc-unused-using-decls)
 
+        // Text-length bound annotation (#493): max_length<N> on a text field emits
+        // VARCHAR(N) (PG) / TEXT ... CHECK(length(col) <= N) (SQLite), DB-enforced.
+        using orm::statements::meta::max_length; // NOLINT(misc-unused-using-decls)
+        using orm::statements::meta::MaxLength;  // NOLINT(misc-unused-using-decls)
+
         // Find primary key member — T must satisfy ModelWithPrimaryKey<T>
         template <typename T>
             requires orm::statements::ModelWithPrimaryKey<T>
@@ -132,6 +137,8 @@ export namespace storm {
     using meta::many_to_many;         // NOLINT(misc-unused-using-decls)
     using meta::many_to_many_through; // NOLINT(misc-unused-using-decls)
     using meta::ManyToMany;           // NOLINT(misc-unused-using-decls)
+    using meta::max_length;           // NOLINT(misc-unused-using-decls)
+    using meta::MaxLength;            // NOLINT(misc-unused-using-decls)
     using meta::RefAction;            // NOLINT(misc-unused-using-decls)
     using meta::reverse_fk;           // NOLINT(misc-unused-using-decls)
     using meta::ReverseFk;            // NOLINT(misc-unused-using-decls)

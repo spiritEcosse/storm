@@ -132,6 +132,41 @@ std::string_view title_view = "Title";
 Document doc3{0, std::string(title_view), "Content"};
 ```
 
+### Bounded length (`max_length<N>`) (#493)
+
+Annotate a text field with `max_length<N>` to bound its length **in the database**:
+
+```cpp
+struct Account {
+    [[=storm::primary]] int id;
+    [[=storm::max_length<50>]] std::string name;              // NOT NULL, ≤ 50
+    [[=storm::max_length<20>]] std::optional<std::string> tag; // nullable, ≤ 20
+};
+```
+
+| Field | PostgreSQL | SQLite |
+|-------|-----------|--------|
+| `std::string name` + `max_length<50>` | `name VARCHAR(50) NOT NULL` | `name TEXT NOT NULL CHECK(length(name) <= 50)` |
+| `std::optional<std::string> tag` + `max_length<20>` | `tag VARCHAR(20)` | `tag TEXT CHECK(length(tag) <= 20)` |
+
+**Both dialects genuinely enforce the bound** on every write path — Storm's own
+INSERT/UPDATE/upsert *and* any raw SQL. This is stronger than Django
+(`CharField(max_length=…)`) and SQLAlchemy (`String(…)`), which emit `varchar(N)` that
+**SQLite silently ignores**; they rely on an optional app-layer validator. Storm has no
+app layer, so it emits a real `CHECK` on SQLite — nothing to remember or bypass.
+
+- **Nullable + bounded**: the SQLite `CHECK` passes when the value is NULL (standard SQL),
+  so a `std::optional<std::string>` column allows NULL and still rejects over-limit values.
+- **Combines with** `unique` (appended after the CHECK/VARCHAR), a C++ default-member
+  initializer (`#413`, DEFAULT precedes the CHECK on SQLite), and `indexed` (orthogonal).
+  SQLite regular-field order: `<name> TEXT [NOT NULL] [DEFAULT <v>] [CHECK(length(<name>) <= N)] [UNIQUE]`.
+- **Type guard**: `max_length<N>` on a non-text field is a **compile error** at the model
+  boundary (`ModelMaxLengthValid<T>`), consistent with the bare-`uint64` hard error — only
+  `std::string` / `std::string_view` / `std::optional<those>` accept it.
+
+Out of scope (YAGNI): `min_length` (separate follow-up — `CHECK(length >= N)` passes on NULL,
+so it does *not* mean "required") and `check<"expr">` (raw-SQL escape hatch).
+
 ## Optional Types (NULL Support)
 
 | C++ Type | SQLite Type | Binding Method | Extraction Method |
