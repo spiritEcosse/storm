@@ -209,6 +209,53 @@ export namespace storm::meta {
         return fk_annotation_type_of(member).has_value();
     }
 
+    // Text-length bound annotation (#493). A class-template annotation carries the
+    // bound N as an NTTP (a FieldAttr enumerator cannot be templated, same as fk<Action>).
+    // Enforced by the database on every write path: PG emits VARCHAR(N), SQLite emits
+    // TEXT ... CHECK(length(col) <= N). Only a text field accepts it (std::string /
+    // std::string_view / std::optional<those>) — a non-text field is a compile-time error
+    // at the model boundary via ModelMaxLengthValid (statements/base.cppm).
+    //   [[= storm::max_length<50>]] std::string name;
+    template <std::size_t N> struct MaxLength {
+        static constexpr std::size_t value = N;
+    };
+    // NOLINTNEXTLINE(readability-identifier-length) — `max_length` is the public annotation spelling
+    template <std::size_t N> inline constexpr MaxLength<N> max_length{};
+
+    // The bound N of a max_length<N> annotation on `member`, or std::nullopt when the
+    // member carries none. Mirrors fk_annotation_type_of / fk_on_delete_action_of.
+    consteval auto max_length_of(std::meta::info member) -> std::optional<std::size_t> {
+        for (const auto annotation : std::meta::annotations_of(member)) {
+            const auto type = std::meta::type_of(annotation);
+            if (std::meta::has_template_arguments(type) && std::meta::template_of(type) == ^^MaxLength) {
+                return std::meta::extract<std::size_t>(std::meta::template_arguments_of(type)[0]);
+            }
+        }
+        return std::nullopt;
+    }
+
+    // True when the data member `member` has a text type (std::string / std::string_view),
+    // looking through std::optional<>. Reflection-level type comparison (not `if constexpr`)
+    // so it is usable inside a consteval loop where the loop variable is not a core constant
+    // expression — the same discipline as is_unsigned64_member. Drives the max_length<N>
+    // type guard: the annotation is only valid on a text field (#493). `std::string` /
+    // `std::string_view` are using-declarators for basic_string<char> / basic_string_view<char>,
+    // which cannot be reflected with ^^ directly; match on the class template plus a char
+    // element instead. Both templates take char as their first argument, which is what
+    // distinguishes the char specializations from the wide ones.
+    consteval auto is_text_member(std::meta::info member) -> bool {
+        std::meta::info t = std::meta::dealias(std::meta::type_of(member));
+        if (std::meta::has_template_arguments(t) && std::meta::template_of(t) == ^^std::optional) {
+            t = std::meta::dealias(std::meta::template_arguments_of(t)[0]);
+        }
+        if (!std::meta::has_template_arguments(t)) {
+            return false;
+        }
+        const auto tmpl = std::meta::template_of(t);
+        return (tmpl == ^^std::basic_string || tmpl == ^^std::basic_string_view) &&
+               std::meta::dealias(std::meta::template_arguments_of(t)[0]) == ^^char;
+    }
+
     // The "_id" suffix an FK column carries, paired with its byte length so the writer
     // (append_column_name) and the sizer (column_name_size) can never disagree (ES.45).
     inline constexpr std::string_view fk_id_suffix      = "_id";

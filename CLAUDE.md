@@ -383,6 +383,19 @@ same `bind_int64`/`extract_int64` hot path, zero perf change) for values ≤ INT
 the `full_unsigned` bind/extract branches and the concept gate are compile-time-dispatched, so unrelated
 types and signed-64/smaller integers are unaffected. Signed-64 types stay correct as `BIGINT`/`INTEGER`.
 
+**Bounded text length (`max_length<N>`) (#493)**: `[[= storm::max_length<50>]] std::string name` bounds a
+text column's length, **DB-enforced on every write path** — PG emits `VARCHAR(N)`, SQLite emits
+`TEXT ... CHECK(length(col) <= N)` (both genuinely enforce; unlike Django/SQLAlchemy, whose `varchar(N)`
+SQLite silently ignores). Class-template annotation `MaxLength<N>` carrying `N` as an NTTP (an enum member
+can't be templated, same as `fk<Action>`), in the `field_attr.cppm` leaf module, re-exported to top-level
+`storm::`. Only a text field (`std::string`/`std::string_view`/`std::optional<those>`) accepts it — a
+non-text field is a **compile-time error** via `ModelMaxLengthValid<T>` (a `BaseStatement` constraint).
+Nullable+bounded works: the SQLite CHECK passes on NULL. Combines with `unique`/auto-`DEFAULT` (#413)/
+`indexed`; SQLite order: `<name> TEXT [NOT NULL] [DEFAULT v] [CHECK(...)] [UNIQUE]`. Detection helper
+`max_length_of(member) -> optional<size_t>` mirrors `fk_on_delete_action_of`; the buffer grows via the
+`ClauseSizer` sizer (`max_max_length_clause_len` folded into `regular_suffix`). No `min_length`/`check<>`
+(separate follow-ups) and no client-side validation — the DB enforces.
+
 **Entity concept (#472)**: `storm::meta::Entity<T>` is the compile-time structural gate for model
 types — true iff `T` is a reflectable class (shipped as `std::meta::is_class_type(^^T) && requires
 { nonstatic_data_members_of(^^T, …); identifier_of(^^T); }`). `QuerySet<T>` and `BaseStatement<T>`

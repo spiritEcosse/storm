@@ -69,6 +69,13 @@ export namespace storm::orm::statements {
         using storm::meta::fk_on_delete_action_of;
         using storm::meta::is_fk_field;
 
+        // Text-length bound annotation (#493) — lives in the storm_orm_field_attr leaf
+        // module so schema.cppm can emit VARCHAR(N)/CHECK without importing this one.
+        using storm::meta::is_text_member; // NOLINT(misc-unused-using-decls)
+        using storm::meta::max_length;     // NOLINT(misc-unused-using-decls) — model-declaration spelling
+        using storm::meta::max_length_of;  // NOLINT(misc-unused-using-decls)
+        using storm::meta::MaxLength;      // NOLINT(misc-unused-using-decls) — re-exported for storm.cppm
+
         // True iff `type` has at least one non-static data member annotated with
         // storm::primary/primary_autoincrement. The info-value core of the ModelWithPrimaryKey<T> concept
         // (below), factored out so it can also run on an info VALUE — needed by
@@ -298,6 +305,19 @@ export namespace storm::orm::statements {
             }
     );
 
+    // Concept: every max_length<N> annotation of T must sit on a text field (#493).
+    // max_length bounds a text column's length (VARCHAR(N) on PG, CHECK(length) on SQLite);
+    // on a non-text field it is meaningless, so we refuse it at the call site with a clear
+    // constraint violation instead of silently ignoring it (unlike Django/SQLAlchemy). Only
+    // std::string / std::string_view (optional-unwrapped) accept it. Members are read
+    // directly from nonstatic_data_members_of(^^T) (BMI-safe, #262), matching the sibling
+    // concepts above.
+    template <typename T>
+    concept ModelMaxLengthValid = std::ranges::all_of(
+            std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()),
+            [](std::meta::info m) consteval { return !meta::max_length_of(m).has_value() || meta::is_text_member(m); }
+    );
+
     // A field carrying auto_create/auto_update must be a system_clock::time_point (#209).
     // Referenced by a static_assert in bind_field_at_index so a wrong-typed timestamp field
     // fails to compile with a clear message rather than deep inside parameter binding.
@@ -440,7 +460,7 @@ export namespace storm::orm::statements {
     // Shared reflection utilities for all statement types
     template <typename T>
         requires storm::meta::Entity<T> && ModelWithPrimaryKey<T> && ModelStorageAnnotated<T> &&
-                 ModelFkPoliciesValid<T> && ModelAnnotationsValid<T>
+                 ModelFkPoliciesValid<T> && ModelAnnotationsValid<T> && ModelMaxLengthValid<T>
     class BaseStatement {
       public:
         // Compile-time accessor for table name (used in SQL generation)

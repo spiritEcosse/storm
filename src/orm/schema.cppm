@@ -368,6 +368,66 @@ export namespace storm::orm::schema {
             return sizer.len;
         }
 
+        // Emit the type portion for a max_length<N> text field (#493).
+        //   PostgreSQL: "VARCHAR(N)[ NOT NULL]" — a real bounded type.
+        //   SQLite:     "TEXT[ NOT NULL]" — the bound is a trailing CHECK, appended
+        //               later by append_max_length_check (so the DEFAULT clause can sit
+        //               between the type and the CHECK).
+        // Nullable fields omit NOT NULL; the SQLite CHECK passes on NULL either way.
+        template <Dialect D, bool Nullable, typename SqlT>
+        consteval void append_max_length_type(SqlT& col, std::size_t bound) {
+            if constexpr (D == Dialect::PostgreSQL) {
+                col.append("VARCHAR(");
+                col.append_uint(bound);
+                col.append(")");
+            } else {
+                col.append("TEXT");
+            }
+            if constexpr (!Nullable) {
+                col.append(" NOT NULL");
+            }
+        }
+
+        // Append the SQLite length CHECK for a max_length<N> text field:
+        //   " CHECK(length(<name>) <= N)". No-op on PostgreSQL (VARCHAR(N) already bounds
+        //   the column). Passes when the value is NULL (standard SQL), so nullable+bounded
+        //   works correctly.
+        template <Dialect D, typename SqlT>
+        consteval void append_max_length_check(SqlT& col, std::string_view name, std::size_t bound) {
+            if constexpr (D == Dialect::PostgreSQL) {
+                return;
+            } else {
+                col.append(" CHECK(length(");
+                col.append(name);
+                col.append(") <= ");
+                col.append_uint(bound);
+                col.append(")");
+            }
+        }
+
+        // Rendered length of the max_length clause(s) for one field (0 when the field
+        // carries no max_length annotation). Measured by rendering into the counting sink,
+        // so the column budget stays byte-exact regardless of dialect or bound magnitude:
+        //   PG:     len("VARCHAR(N)") - len("TEXT")   (the type grows by this much)
+        //   SQLite: len(" CHECK(length(<name>) <= N)") (a trailing clause)
+        template <Dialect D> consteval auto max_length_clause_len(std::meta::info member) -> std::size_t {
+            const auto bound = storm::meta::max_length_of(member);
+            if (!bound.has_value()) {
+                return 0;
+            }
+            ClauseSizer sizer;
+            if constexpr (D == Dialect::PostgreSQL) {
+                // "VARCHAR(N)" replaces "TEXT" (4 chars) — count only the net growth.
+                sizer.append("VARCHAR(");
+                sizer.append_uint(bound.value());
+                sizer.append(")");
+                return sizer.len >= 4 ? sizer.len - 4 : 0;
+            } else {
+                append_max_length_check<D>(sizer, std::meta::identifier_of(member), bound.value());
+                return sizer.len;
+            }
+        }
+
         // Map a C++ field type to its SQL column definition string for the given dialect.
         // Returns the column type portion (after the column name).
         // Two-axis dispatch:
@@ -441,6 +501,18 @@ export namespace storm::orm::schema {
             }(std::make_index_sequence<Base::field_count_>{});
         }
 
+        // Longest max_length<N> clause across the model's fields (#493), measured by
+        // rendering — PG's VARCHAR(N) net growth over TEXT, or SQLite's trailing
+        // CHECK(length(<name>) <= N). Zero for models with no max_length field, so their
+        // column budget is unchanged. Added to regular_suffix below.
+        template <Dialect D> static consteval auto max_max_length_clause_len() -> std::size_t {
+            return [&]<std::size_t... Is>(std::index_sequence<Is...> /*unused*/) {
+                std::size_t longest = 0;
+                ((longest = std::max(longest, detail::max_length_clause_len<D>(Base::all_members_[Is]))), ...);
+                return longest;
+            }(std::make_index_sequence<Base::field_count_>{});
+        }
+
         // Per-column byte budgets shared by the buffer sizer (col_def_buffer) and the
         // CREATE TABLE size estimator (calculate_column_defs_size). Both must agree on
         // every constant or the buffer drifts from the emitted SQL — keep them in one
@@ -457,9 +529,11 @@ export namespace storm::orm::schema {
             // SQLite PK: "id INTEGER PRIMARY KEY AUTOINCREMENT" = 36
             constexpr std::size_t pk_size = (D == PostgreSQL) ? 54 : 36;
             // " " + max type def ("DOUBLE PRECISION NOT NULL"=25 PG / "INTEGER NOT NULL"=16
-            // SQLite) + " DEFAULT <value>" (measured, #413) + " UNIQUE" (7)
-            constexpr std::size_t max_type_def   = (D == PostgreSQL) ? 25 : 16;
-            constexpr std::size_t regular_suffix = 1 + max_type_def + max_default_clause_len<D>() + 7;
+            // SQLite) + " DEFAULT <value>" (measured, #413) + max_length clause (measured,
+            // #493) + " UNIQUE" (7)
+            constexpr std::size_t max_type_def = (D == PostgreSQL) ? 25 : 16;
+            constexpr std::size_t regular_suffix =
+                    1 + max_type_def + max_default_clause_len<D>() + max_max_length_clause_len<D>() + 7;
             // FK suffix: "_id INTEGER NOT NULL" (20) / "_id BIGINT NOT NULL" (19),
             // plus the longest " REFERENCES <Related>(id)" clause across this model (#412).
             constexpr std::size_t fk_suffix = 3 + ((D == PostgreSQL) ? 16 : 20) + max_fk_references_len();
@@ -520,6 +594,32 @@ export namespace storm::orm::schema {
             }
         }
 
+        // Append a regular (non-PK, non-FK, non-full_unsigned) column definition, with the
+        // optional UNIQUE constraint. Handles the max_length<N> text bound (#493): PG swaps
+        // TEXT for VARCHAR(N); SQLite keeps TEXT and appends a trailing
+        // CHECK(length(<name>) <= N). SQLite emission order is
+        //   <name> TEXT [NOT NULL] [DEFAULT v] [CHECK(...)] [UNIQUE]
+        // — the DEFAULT sits between the type and the CHECK, matching #413. Extracted from
+        // build_column_def to keep the regular and unique branches from duplicating.
+        template <std::meta::info Member, Dialect D, bool Unique, typename SqlT>
+        static consteval void append_regular_column_def(SqlT& col) {
+            using FieldType = std::remove_cvref_t<typename[:std::meta::type_of(Member):]>;
+            col.append(std::meta::identifier_of(Member));
+            col.append(" ");
+            if constexpr (constexpr auto bound = storm::meta::max_length_of(Member); bound.has_value()) {
+                constexpr bool nullable = storm::orm::utilities::is_optional_v<FieldType>;
+                detail::append_max_length_type<D, nullable>(col, bound.value());
+                detail::append_default_clause<T, Member, D>(col);
+                detail::append_max_length_check<D>(col, std::meta::identifier_of(Member), bound.value());
+            } else {
+                col.append(detail::sql_col_def<FieldType, D>());
+                detail::append_default_clause<T, Member, D>(col);
+            }
+            if constexpr (Unique) {
+                col.append(" UNIQUE");
+            }
+        }
+
         // Build column definition for field at compile-time index
         template <std::size_t Index, Dialect D = Dialect::SQLite> static consteval auto build_column_def() {
             ConstexprString<col_def_buffer<D>()> col;
@@ -557,20 +657,11 @@ export namespace storm::orm::schema {
             }
             // Unique field — same as regular but with UNIQUE constraint
             else if constexpr (Base::is_unique_field(member)) {
-                using FieldType = std::remove_cvref_t<typename[:std::meta::type_of(member):]>;
-                col.append(std::meta::identifier_of(member));
-                col.append(" ");
-                col.append(detail::sql_col_def<FieldType, D>());
-                detail::append_default_clause<T, member, D>(col);
-                col.append(" UNIQUE");
+                append_regular_column_def<member, D, /*Unique=*/true>(col);
             }
             // Regular field
             else {
-                using FieldType = std::remove_cvref_t<typename[:std::meta::type_of(member):]>;
-                col.append(std::meta::identifier_of(member));
-                col.append(" ");
-                col.append(detail::sql_col_def<FieldType, D>());
-                detail::append_default_clause<T, member, D>(col);
+                append_regular_column_def<member, D, /*Unique=*/false>(col);
             }
             // Backstop (#361): col_def_buffer<D>() is sized to fit every column,
             // so this can only fire if the suffix budget above drifts. In a
