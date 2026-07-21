@@ -5,6 +5,7 @@
 // NOLINTBEGIN(misc-const-correctness)
 
 import storm;
+import storm_orm_statements_update_grammar;
 import std;
 
 using storm::QuerySet;
@@ -21,6 +22,18 @@ static_assert(
         "courses (m2m) must not count as a persisted column"
 );
 static_assert(storm::orm::statements::BaseStatement<Course>::field_count_ == 2);
+
+// Pre-computed single-row/bulk UPDATE SQL must not name relation containers (#485).
+constexpr std::string_view student_update_sql{
+        storm::orm::statements::UpdateGrammar<Student>::update_sql_array.data.data(),
+        storm::orm::statements::UpdateGrammar<Student>::update_sql_array.len
+};
+static_assert(!student_update_sql.contains("courses"), "m2m container leaked into UPDATE SET clause");
+constexpr std::string_view pupil_update_sql{
+        storm::orm::statements::UpdateGrammar<Pupil>::update_sql_array.data.data(),
+        storm::orm::statements::UpdateGrammar<Pupil>::update_sql_array.len
+};
+static_assert(!pupil_update_sql.contains("courses"), "m2m_through container leaked into UPDATE SET clause");
 
 // ============================================================================
 // Compile-time: M2MFieldOf concept
@@ -75,6 +88,56 @@ TYPED_TEST(M2MBaseTest, PlainCrudIgnoresM2MField) {
     EXPECT_EQ(rows->begin()->name, "Alice");
     EXPECT_EQ(rows->begin()->age, 20);
     EXPECT_TRUE(rows->begin()->courses.empty()); // plain select never populates m2m
+}
+
+// Single-row UPDATE must skip the m2m container (#485): the SET clause may only
+// name persisted columns, and the PK must bind into the last placeholder —
+// verified by round-tripping through a re-select.
+TYPED_TEST(M2MBaseTest, SingleRowUpdateIgnoresM2MField) {
+    QuerySet<Student, TypeParam> qs;
+    Student const                s{.name = "Alice", .age = 20};
+    auto                         ins = qs.insert(s).execute();
+    ASSERT_TRUE(ins.has_value()) << ins.error().message();
+
+    Student const updated{
+            .id   = static_cast<int>(ins.value()),
+            .name = "Alice Updated",
+            .age  = 21,
+            .courses{{.id = 99, .title = "ghost"}}
+    };
+    auto upd = qs.update(updated).execute();
+    ASSERT_TRUE(upd.has_value()) << upd.error().message();
+
+    auto rows = qs.select().execute();
+    ASSERT_TRUE(rows.has_value()) << rows.error().message();
+    ASSERT_EQ(rows->size(), 1U);
+    EXPECT_EQ(rows->begin()->id, static_cast<int>(ins.value()));
+    EXPECT_EQ(rows->begin()->name, "Alice Updated");
+    EXPECT_EQ(rows->begin()->age, 21);
+}
+
+// Bulk UPDATE goes through the same pre-computed SQL (#485).
+TYPED_TEST(M2MBaseTest, BulkUpdateIgnoresM2MField) {
+    QuerySet<Student, TypeParam> qs;
+    std::vector<Student> const   students = {{.name = "Alice", .age = 20}, {.name = "Bob", .age = 22}};
+    ASSERT_TRUE(qs.insert(std::span<const Student>(students)).execute().has_value());
+
+    std::vector<Student> const updated = {
+            {.id = 1, .name = "Alice2", .age = 30, .courses{{.id = 99, .title = "ghost"}}},
+            {.id = 2, .name = "Bob2", .age = 32},
+    };
+    auto upd = qs.update(std::span<const Student>(updated)).execute();
+    ASSERT_TRUE(upd.has_value()) << upd.error().message();
+
+    auto rows = qs.template order_by<^^Student::id>().select().execute();
+    ASSERT_TRUE(rows.has_value()) << rows.error().message();
+    ASSERT_EQ(rows->size(), 2U);
+    auto it = rows->begin();
+    EXPECT_EQ(it->name, "Alice2");
+    EXPECT_EQ(it->age, 30);
+    ++it;
+    EXPECT_EQ(it->name, "Bob2");
+    EXPECT_EQ(it->age, 32);
 }
 
 // ============================================================================
