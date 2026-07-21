@@ -35,9 +35,9 @@ using storm::test::MockSqlite3Config;
 
 // Struct with indexes — must be at namespace scope for Indexes<> specialization
 struct MockIndexedPerson {
-    [[= storm::FieldAttr::primary]] int id{};
-    std::string                         name;
-    int                                 department{};
+    [[= storm::primary]] int id{};
+    std::string              name;
+    int                      department{};
 };
 
 template <> struct storm::Indexes<MockIndexedPerson> {
@@ -48,24 +48,24 @@ namespace {
 
     // Test model for ORM operations
     struct MockPerson {
-        [[= storm::FieldAttr::primary]] std::int64_t id{};
-        std::string                                  name;
-        int                                          age{};
+        [[= storm::primary]] std::int64_t id{};
+        std::string                       name;
+        int                               age{};
     };
 
     // Test model with optional fields
     struct MockPersonOptional {
-        [[= storm::FieldAttr::primary]] std::int64_t id{};
-        std::optional<std::string>                   name;
-        std::optional<int>                           age;
+        [[= storm::primary]] std::int64_t id{};
+        std::optional<std::string>        name;
+        std::optional<int>                age;
     };
 
     // Test model with an auto_update timestamp (#209), used to cover the upsert
     // DO UPDATE auto_update-tail bind-error branch (#205).
     struct MockPersonAutoUpdate {
-        [[= storm::FieldAttr::primary]] std::int64_t                              id{};
-        std::string                                                               name;
-        [[= storm::FieldAttr::auto_update]] std::chrono::system_clock::time_point updated_at{};
+        [[= storm::primary]] std::int64_t                              id{};
+        std::string                                                    name;
+        [[= storm::auto_update]] std::chrono::system_clock::time_point updated_at{};
     };
 
     /**
@@ -705,9 +705,9 @@ namespace {
 
     // Test model with double field for bind_double coverage
     struct MockPersonWithDouble {
-        [[= storm::FieldAttr::primary]] std::int64_t id{};
-        std::string                                  name;
-        double                                       salary{};
+        [[= storm::primary]] std::int64_t id{};
+        std::string                       name;
+        double                            salary{};
     };
 
     TEST_F(ORMMockErrorTest, InsertFailsOnBindDoubleNomem) {
@@ -728,9 +728,9 @@ namespace {
 
     // Test model with blob field for bind_blob coverage
     struct MockPersonWithBlob {
-        [[= storm::FieldAttr::primary]] std::int64_t id{};
-        std::string                                  name;
-        std::vector<std::uint8_t>                    data;
+        [[= storm::primary]] std::int64_t id{};
+        std::string                       name;
+        std::vector<std::uint8_t>         data;
     };
 
     TEST_F(ORMMockErrorTest, InsertFailsOnBindBlobNomem) {
@@ -1370,15 +1370,15 @@ namespace {
     // ============================================================================
 
     struct MockUser {
-        [[= storm::FieldAttr::primary]] int id{};
-        std::string                         name;
-        int                                 age{};
+        [[= storm::primary]] int id{};
+        std::string              name;
+        int                      age{};
     };
 
     struct MockMessage {
-        [[= storm::FieldAttr::primary]] int id{};
-        [[= storm::fk<>]] MockUser          sender;
-        std::string                         text;
+        [[= storm::primary]] int   id{};
+        [[= storm::fk<>]] MockUser sender;
+        std::string                text;
     };
 
     class JoinMockErrorTest : public ::testing::Test {
@@ -3411,7 +3411,7 @@ namespace {
     // ============================================================================
 
     struct MockOptionalFKMessage {
-        [[= storm::FieldAttr::primary]] int       id{};
+        [[= storm::primary]] int                  id{};
         [[= storm::fk<>]] std::optional<MockUser> sender;
         std::string                               text;
     };
@@ -3608,12 +3608,12 @@ namespace {
     // ============================================================================
 
     struct MockCourse {
-        [[= storm::FieldAttr::primary]] std::int64_t id{};
-        std::string                                  title;
+        [[= storm::primary]] std::int64_t id{};
+        std::string                       title;
     };
 
     struct MockStudent {
-        [[= storm::FieldAttr::primary]] std::int64_t        id{};
+        [[= storm::primary]] std::int64_t                   id{};
         std::string                                         name;
         [[= storm::many_to_many<>]] std::vector<MockCourse> courses;
     };
@@ -3747,12 +3747,12 @@ namespace {
     // ============================================================================
 
     struct MockClub {
-        [[= storm::FieldAttr::primary]] std::int64_t id{};
-        std::string                                  name;
+        [[= storm::primary]] std::int64_t id{};
+        std::string                       name;
     };
 
     struct MockMember {
-        [[= storm::FieldAttr::primary]] std::int64_t        id{};
+        [[= storm::primary]] std::int64_t                   id{};
         std::string                                         name;
         [[= storm::many_to_many<>]] std::vector<MockCourse> courses;
         [[= storm::many_to_many<>]] std::vector<MockClub>   clubs;

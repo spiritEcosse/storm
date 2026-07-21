@@ -9,26 +9,26 @@
 namespace schema {
 
 struct Person {
-    [[= storm::FieldAttr::primary]] int id{};
-    [[= storm::FieldAttr::unique]] std::string name;
+    [[= storm::primary]] int id{};
+    [[= storm::unique]] std::string name;
     int age{};
     double salary{};
     bool is_active{};
     int years_experience{};
-    [[= storm::FieldAttr::indexed]] std::string department;
+    [[= storm::indexed]] std::string department;
     std::optional<int> score;
     std::optional<std::string> nickname;
     std::vector<std::uint8_t> avatar;
 };
 
 struct SimpleRecord {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string name;
     int value{};
 };
 
 struct Message {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string content;
     int value{};
     [[= storm::fk<>]] Person sender;
@@ -37,7 +37,7 @@ struct Message {
 enum class Color : int { Red = 0, Green = 1, Blue = 2 };
 
 struct ExtendedTypes {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::int64_t big_num{};
     double precise{};
     float approx{};
@@ -62,7 +62,7 @@ struct ExtendedTypes {
 };
 
 struct Task {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     [[= storm::fk<>]] Person assignee;
     [[= storm::fk<>]] Person reviewer;
     std::string description;

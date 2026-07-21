@@ -67,7 +67,7 @@ namespace {
     // unfair (#68). This byte-mirrors Storm's SQLite schema generator output for
     // Person: plain "id INTEGER PRIMARY KEY" (no AUTOINCREMENT — that became
     // opt-in in #379 and adds per-insert sqlite_sequence cost Storm no longer
-    // pays), "name TEXT NOT NULL UNIQUE" (FieldAttr::unique), "is_active INTEGER
+    // pays), "name TEXT NOT NULL UNIQUE" (storm::unique), "is_active INTEGER
     // NOT NULL DEFAULT 0" (bool default clause), nullable score/nickname/avatar.
     // The INSERT anchors keep their own narrow BenchPerson table (kCreateBenchPerson).
     constexpr auto kCreatePerson = "CREATE TABLE person ("

@@ -10,7 +10,7 @@
 #
 # What it does: 1. Auto-detects the header containing `namespace <NAMESPACE> {`
 # 2. Generates a schema binary that reflects over the namespace and discovers
-# all structs with [[= FieldAttr::primary]] 3. Creates `makemigrations` and
+# all structs with [[= storm::primary]] 3. Creates `makemigrations` and
 # `migrate` CMake targets
 #
 # Requires: Atlas CLI (https://atlasgo.io), storm library linked.

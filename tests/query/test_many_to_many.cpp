@@ -90,7 +90,7 @@ static_assert(storm::orm::statements::UpsertSettable<Student, ^^Student::name>);
 static_assert(!storm::orm::statements::UpdateGrammar<Student>::is_settable_member<^^Student::id>());
 
 // The conflict-target gate is already safe (#486 DoD): a relation member carries
-// no FieldAttr::unique annotation and cannot appear in a UniqueIndex, so
+// no storm::unique annotation and cannot appear in a UniqueIndex, so
 // ConflictTargetUnique rejects it without needing an is_relation_field check.
 static_assert(
         !storm::orm::statements::ConflictTargetUnique<Student, ^^Student::courses>,

@@ -21,25 +21,25 @@ namespace storm::benchmark {
 
     // Benchmark-specific models for JOIN tests (2 FK relationships)
     struct User {
-        [[= storm::meta::FieldAttr::primary]] int id;
-        std::string                               name;
-        int                                       age;
+        [[= storm::meta::primary]] int id;
+        std::string                    name;
+        int                            age;
     };
 
     struct FKMessage {
-        [[= storm::meta::FieldAttr::primary]] int id;
-        [[= storm::meta::fk<>]] User              sender;
-        [[= storm::meta::fk<>]] User              receiver;
-        std::string                               text;
+        [[= storm::meta::primary]] int id;
+        [[= storm::meta::fk<>]] User   sender;
+        [[= storm::meta::fk<>]] User   receiver;
+        std::string                    text;
     };
 
     // INSERT-benchmark model — no UNIQUE, no indexes; matches the raw SQLite
     // anchor schema exactly so bulk inserts need no per-iteration DELETE.
     struct BenchPerson {
-        [[= storm::meta::FieldAttr::primary]] int id;
-        std::string                               name;
-        int                                       age;
-        double                                    salary;
+        [[= storm::meta::primary]] int id;
+        std::string                    name;
+        int                            age;
+        double                         salary;
     };
 
 } // namespace storm::benchmark

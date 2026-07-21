@@ -11,7 +11,7 @@ using namespace storm::orm::where;  // brings f<>() into scope for WHERE filters
 
 // Define a model — reflection maps fields to columns automatically
 struct Person {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string name;
     int age;
     double salary;
@@ -100,10 +100,10 @@ qs.update(people).execute();
 
 ```cpp
 struct Article {
-    [[=storm::FieldAttr::primary]] int id;
+    [[=storm::primary]] int id;
     std::string title;
-    [[=storm::FieldAttr::auto_create]] std::chrono::system_clock::time_point created_at;
-    [[=storm::FieldAttr::auto_update]] std::chrono::system_clock::time_point updated_at;
+    [[=storm::auto_create]] std::chrono::system_clock::time_point created_at;
+    [[=storm::auto_update]] std::chrono::system_clock::time_point updated_at;
 };
 
 QuerySet<Article> qs;
@@ -198,7 +198,7 @@ auto pairs = qs.values<^^Person::name, ^^Person::age>().execute();
 
 ```cpp
 struct Message {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string content;
     [[= storm::fk<>]] Person sender;
 };

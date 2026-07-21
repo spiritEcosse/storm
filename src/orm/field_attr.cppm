@@ -6,34 +6,67 @@ export module storm_orm_field_attr;
 
 import std;
 
-// Dependency-free leaf module (#387): single source of truth for the FieldAttr
-// annotation enum, shared by statement modules and the public storm module.
+// Dependency-free leaf module (#387): single source of truth for the field
+// annotation objects, shared by statement modules and the public storm module.
 // Same pattern as storm_db_concept — no Storm imports, so any module may use it
 // without creating a cycle.
 export namespace storm::meta {
 
-    // Field annotation attributes read via C++26 reflection, e.g.
-    //   [[= storm::meta::FieldAttr::primary]] int id;
-    // NOTE: foreign keys are NOT a FieldAttr enumerator — they use the class-template
-    // annotation storm::meta::fk<RefAction> (see statements::meta::Fk in base.cppm),
-    // because the FK carries an optional ON DELETE policy (#431) and an enum member
-    // cannot be templated. Bare FK is spelled [[= storm::meta::fk<>]].
-    enum class FieldAttr : std::uint8_t {
-        primary,
-        primary_autoincrement,
-        indexed,
-        unique,
-        auto_create,
-        auto_update,
-        // 64-bit unsigned storage opt-ins (#436). A bare unsigned-64 field is a
-        // compile-time error; it must carry exactly one of these:
-        //   signed_storage — keep today's signed BIGINT/INTEGER (byte-identical, fast)
-        //                     for values always <= INT64_MAX.
-        //   full_unsigned  — order-preserving full-range storage: PG NUMERIC(20,0),
-        //                     SQLite zero-padded 20-char TEXT (lexicographic == numeric).
-        signed_storage,
-        full_unsigned
-    };
+    // Field annotation flags (#492) are free-standing class-type annotation objects,
+    // mirroring how the FK annotation fk<> already works — each flag is an empty tag
+    // struct plus an `inline constexpr` object, read via C++26 reflection, e.g.
+    //   [[= storm::primary]] int id;
+    //   [[= storm::unique]]  std::string email;
+    // They replace the former `enum class FieldAttr` (breaking, no dual-spelling): the
+    // free-standing spelling now reads uniformly next to fk<>/many_to_many<>. The
+    // per-member exclusivity the enum gave for free (a field could carry at most one
+    // enumerator) is recovered by the ModelAnnotationsValid<T> concept in base.cppm,
+    // which rejects conflicting combinations at compile time.
+    //
+    // NOTE: foreign keys use the templated annotation storm::meta::fk<RefAction> (below),
+    // because the FK carries an optional ON DELETE policy (#431).
+    struct Primary {};              // plain INTEGER PRIMARY KEY
+    struct PrimaryAutoincrement {}; // SQLite never-reuse rowid opt-in (#379)
+    struct Indexed {};              // CREATE INDEX on the column
+    struct Unique {};               // UNIQUE constraint on the column
+    struct AutoCreate {};           // stamp now() on INSERT only (#209)
+    struct AutoUpdate {};           // stamp now() on INSERT and UPDATE (#209)
+    // 64-bit unsigned storage opt-ins (#436). A bare unsigned-64 field is a
+    // compile-time error; it must carry exactly one of these:
+    //   signed_storage — keep today's signed BIGINT/INTEGER (byte-identical, fast)
+    //                    for values always <= INT64_MAX.
+    //   full_unsigned  — order-preserving full-range storage: PG NUMERIC(20,0),
+    //                    SQLite zero-padded 20-char TEXT (lexicographic == numeric).
+    struct SignedStorage {};
+    struct FullUnsigned {};
+
+    // NOLINTBEGIN(readability-identifier-length) — short names are the public annotation spellings
+    inline constexpr Primary              primary{};
+    inline constexpr PrimaryAutoincrement primary_autoincrement{};
+    inline constexpr Indexed              indexed{};
+    inline constexpr Unique               unique{};
+    inline constexpr AutoCreate           auto_create{};
+    inline constexpr AutoUpdate           auto_update{};
+    inline constexpr SignedStorage        signed_storage{};
+    inline constexpr FullUnsigned         full_unsigned{};
+    // NOLINTEND(readability-identifier-length)
+
+    // True when `member` carries an annotation of the tag type `Tag` (#492). The single
+    // primitive behind every flag predicate below — the same annotations_of scan
+    // is_fk_field uses, generalised over the tag type. Matches on exact type identity,
+    // so unrelated annotations (fk<>, many_to_many<>) never collide.
+    // A plain loop (not std::ranges::any_of): the any_of lambda form leaves the
+    // predicate body attributed as an uncovered consteval-only function under the
+    // coverage gate, whereas the loop is fully covered. NOLINT silences the
+    // readability-use-anyofallof suggestion, which would reintroduce that gap.
+    template <typename Tag> consteval auto has_annotation_type(std::meta::info member) -> bool {
+        for (const auto annotation : std::meta::annotations_of(member)) { // NOLINT(readability-use-anyofallof)
+            if (std::meta::type_of(annotation) == ^^Tag) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     // Referential action for a foreign key's ON DELETE policy (#431). Carried as the
     // template argument of the FK annotation `fk<RefAction>` (and of `many_to_many<RefAction>`
@@ -67,14 +100,19 @@ export namespace storm::meta {
     // (plain INTEGER PRIMARY KEY) or `primary_autoincrement` (the SQLite never-reuse
     // opt-in, #379). Every PK-detection site routes through here so the two variants
     // can never drift apart.
-    consteval auto is_primary_attr(FieldAttr attr) -> bool {
-        using enum FieldAttr;
-        return attr == primary || attr == primary_autoincrement;
+    consteval auto is_primary_member(std::meta::info member) -> bool {
+        return has_annotation_type<Primary>(member) || has_annotation_type<PrimaryAutoincrement>(member);
+    }
+
+    // True when `member` carries storm::primary_autoincrement (the SQLite never-reuse
+    // rowid opt-in, #379) — drives the AUTOINCREMENT keyword in schema.cppm.
+    consteval auto is_primary_autoincrement(std::meta::info member) -> bool {
+        return has_annotation_type<PrimaryAutoincrement>(member);
     }
 
     // Issue #478: ValidFieldInfo is the compile-time gate that a std::meta::info
     // NTTP names a real field — a non-static data member with an identifier — the
-    // exact precondition the field selector f<> and every FieldAttr predicate below
+    // exact precondition the field selector f<> and every flag predicate below
     // assume of their `member` argument. It gives that precondition a name so a bad
     // NTTP (a static member, a member function, or a whole type reflection) fails at
     // the named constraint instead of deep inside identifier_of/type_of. Unlike the
@@ -88,28 +126,24 @@ export namespace storm::meta {
     concept ValidFieldInfo = std::meta::is_nonstatic_data_member(MemberInfo) && std::meta::has_identifier(MemberInfo);
 
     // Per-attribute field predicates (#421): the single source of truth for the
-    // `annotation_of_type<FieldAttr>(member) == FieldAttr::X` idiom, so the same
-    // test cannot drift between statement modules. FK detection lives in is_fk_field
-    // below (an fk<...> class-template annotation, not a FieldAttr enumerator).
+    // per-flag annotation test, so the same check cannot drift between statement
+    // modules. Each scans annotations_of for its tag type (#492). FK detection lives
+    // in is_fk_field below (an fk<...> class-template annotation).
     consteval auto is_unique(std::meta::info member) -> bool {
-        auto attr = std::meta::annotation_of_type<FieldAttr>(member);
-        return attr.has_value() && attr.value() == FieldAttr::unique;
+        return has_annotation_type<Unique>(member);
     }
 
     consteval auto is_indexed(std::meta::info member) -> bool {
-        auto attr = std::meta::annotation_of_type<FieldAttr>(member);
-        return attr.has_value() && attr.value() == FieldAttr::indexed;
+        return has_annotation_type<Indexed>(member);
     }
 
     // auto_create stamps now() on INSERT only; auto_update on both INSERT and UPDATE (#209).
     consteval auto is_auto_create(std::meta::info member) -> bool {
-        auto attr = std::meta::annotation_of_type<FieldAttr>(member);
-        return attr.has_value() && attr.value() == FieldAttr::auto_create;
+        return has_annotation_type<AutoCreate>(member);
     }
 
     consteval auto is_auto_update(std::meta::info member) -> bool {
-        auto attr = std::meta::annotation_of_type<FieldAttr>(member);
-        return attr.has_value() && attr.value() == FieldAttr::auto_update;
+        return has_annotation_type<AutoUpdate>(member);
     }
 
     // A 64-bit unsigned source type — the set that needs an explicit storage
@@ -133,20 +167,18 @@ export namespace storm::meta {
         return t == ^^unsigned long || t == ^^unsigned long long;
     }
 
-    // True when `member` carries FieldAttr::full_unsigned (order-preserving storage).
+    // True when `member` carries storm::full_unsigned (order-preserving storage).
     consteval auto has_full_unsigned_attr(std::meta::info member) -> bool {
-        auto attr = std::meta::annotation_of_type<FieldAttr>(member);
-        return attr.has_value() && attr.value() == FieldAttr::full_unsigned;
+        return has_annotation_type<FullUnsigned>(member);
     }
 
-    // True when `member` carries FieldAttr::signed_storage (legacy signed storage).
+    // True when `member` carries storm::signed_storage (legacy signed storage).
     consteval auto has_signed_storage_attr(std::meta::info member) -> bool {
-        auto attr = std::meta::annotation_of_type<FieldAttr>(member);
-        return attr.has_value() && attr.value() == FieldAttr::signed_storage;
+        return has_annotation_type<SignedStorage>(member);
     }
 
     // Foreign-key annotation (#431). A class-template annotation carries the optional
-    // ON DELETE policy (RefAction); a FieldAttr enumerator cannot be templated, and an FK
+    // ON DELETE policy (RefAction); the flag annotations cannot carry a parameter, and an FK
     // needs the extra parameter. It lives in this leaf module so every statement module
     // (schema, join, field_names, distinct, base) can detect FK fields without importing
     // each other.

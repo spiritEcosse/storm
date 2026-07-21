@@ -71,14 +71,14 @@ TYPED_TEST(BatchInsertReturningTest, ReturnedIdsMatchInsertedRows) {
 // AUTOINCREMENT opt-in: ids still auto-assign on insert (#379)
 // =============================================================================
 //
-// SimpleRecord (above) uses plain FieldAttr::primary → plain INTEGER PRIMARY KEY,
+// SimpleRecord (above) uses plain storm::primary → plain INTEGER PRIMARY KEY,
 // and BasicBatchReturnsIds already proves ids auto-assign without AUTOINCREMENT.
 // AutoIncRecord opts into the never-reuse guarantee; this proves the opt-in path
 // also auto-assigns ids (the keyword adds a guarantee, it does not change that
 // you INSERT with id=0 and the DB fills it in).
 struct AutoIncRecord {
-    [[= storm::FieldAttr::primary_autoincrement]] int id{};
-    int                                               value{};
+    [[= storm::primary_autoincrement]] int id{};
+    int                                    value{};
 };
 
 template <typename ConnType> class AutoIncrementInsertTest : public StormTestFixture<AutoIncRecord, ConnType> {};

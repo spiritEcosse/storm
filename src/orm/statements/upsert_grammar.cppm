@@ -171,7 +171,7 @@ export namespace storm::orm::statements {
     }
 
     // A valid conflict target: every Target is a data member of T, AND either a
-    // single FieldAttr::unique field or a matching UniqueIndex<...>. INSERT
+    // single storm::unique field or a matching UniqueIndex<...>. INSERT
     // omits the primary key, so it cannot form a useful conflict target.
     template <typename T, std::meta::info... Target>
     concept ConflictTargetUnique = ((std::meta::is_nonstatic_data_member(Target)) && ...) &&

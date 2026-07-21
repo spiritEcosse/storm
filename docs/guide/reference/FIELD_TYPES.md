@@ -3,7 +3,7 @@
 Storm ORM supports all standard SQLite types through compile-time type dispatch in `BaseStatement::bind_value_by_type()` (src/orm/statements/base.cppm) and `SelectStatement::extract_column_inline_fast()` (src/orm/statements/select.cppm).
 
 > **Annotation spelling (#442).** All field annotations are re-exported into the top-level
-> `storm` namespace, so models spell them as `storm::FieldAttr::primary`, `storm::fk<>`,
+> `storm` namespace, so models spell them as `storm::primary`, `storm::fk<>`,
 > `storm::fk<storm::RefAction::Cascade>`, `storm::many_to_many<>`, `storm::reverse_fk<...>`.
 > The longer `storm::meta::` spelling (`storm::meta::fk<>`, …) still works unchanged — the
 > re-exports are purely additive. Examples in this document use the short `storm::` form.
@@ -30,8 +30,8 @@ Storm ORM supports all standard SQLite types through compile-time type dispatch 
 >
 > | Annotation | Column type | Range with correct ordering | Cost |
 > |---|---|---|---|
-> | `FieldAttr::signed_storage` | `INTEGER` (SQLite) / `BIGINT` (PG) | `0 .. INT64_MAX` (2⁶³−1) | none — same `bind_int64`/`extract_int64` hot path |
-> | `FieldAttr::full_unsigned` | zero-padded 20-char `TEXT` (SQLite) / `NUMERIC(20,0)` (PG) | `0 .. 2⁶⁴−1` (full range) | slower string bind/extract, wider column |
+> | `storm::signed_storage` | `INTEGER` (SQLite) / `BIGINT` (PG) | `0 .. INT64_MAX` (2⁶³−1) | none — same `bind_int64`/`extract_int64` hot path |
+> | `storm::full_unsigned` | zero-padded 20-char `TEXT` (SQLite) / `NUMERIC(20,0)` (PG) | `0 .. 2⁶⁴−1` (full range) | slower string bind/extract, wider column |
 >
 > **`signed_storage`** keeps today's behavior. It is byte-identical to a plain
 > signed 8-byte column and routes through the same `bind_int64`/`extract_int64`
@@ -56,16 +56,16 @@ Storm ORM supports all standard SQLite types through compile-time type dispatch 
 **Usage (64-bit unsigned):**
 ```cpp
 struct Account {
-    [[=storm::FieldAttr::primary]] int id;
-    [[=storm::FieldAttr::signed_storage]] std::uint64_t small_id;   // ≤ INT64_MAX
-    [[=storm::FieldAttr::full_unsigned]]  std::uint64_t full_range; // 0 .. 2⁶⁴−1
+    [[=storm::primary]] int id;
+    [[=storm::signed_storage]] std::uint64_t small_id;   // ≤ INT64_MAX
+    [[=storm::full_unsigned]]  std::uint64_t full_range; // 0 .. 2⁶⁴−1
 };
 ```
 
 **Usage:**
 ```cpp
 struct Example {
-    [[=storm::FieldAttr::primary]] int id;
+    [[=storm::primary]] int id;
     int64_t big_number;
     unsigned short count;
 };
@@ -81,7 +81,7 @@ struct Example {
 **Usage:**
 ```cpp
 struct Measurement {
-    [[=storm::FieldAttr::primary]] int id;
+    [[=storm::primary]] int id;
     double precision_value;
     float approximate_value;
 };
@@ -98,7 +98,7 @@ struct Measurement {
 **Usage:**
 ```cpp
 struct User {
-    [[=storm::FieldAttr::primary]] int id;
+    [[=storm::primary]] int id;
     bool is_active;
     bool is_admin;
 };
@@ -120,7 +120,7 @@ struct User {
 **Usage:**
 ```cpp
 struct Document {
-    [[=storm::FieldAttr::primary]] int id;
+    [[=storm::primary]] int id;
     std::string title;
     std::string content;
 };
@@ -154,7 +154,7 @@ Document doc3{0, std::string(title_view), "Content"};
 **Usage:**
 ```cpp
 struct Contact {
-    [[=storm::FieldAttr::primary]] int id;
+    [[=storm::primary]] int id;
     std::string name;
     std::optional<std::string> email;     // Can be NULL
     std::optional<int> age;               // Can be NULL
@@ -177,7 +177,7 @@ Contact c3{3, "Charlie", "charlie@example.com", std::nullopt, false}; // Mixed
 **Usage:**
 ```cpp
 struct FileData {
-    [[=storm::FieldAttr::primary]] int id;
+    [[=storm::primary]] int id;
     std::string filename;
     std::vector<uint8_t> data;
 };
@@ -199,10 +199,10 @@ the current time automatically, so you never set them by hand (#209):
 
 ```cpp
 struct User {
-    [[=storm::FieldAttr::primary]] int id;
+    [[=storm::primary]] int id;
     std::string name;
-    [[=storm::FieldAttr::auto_create]] std::chrono::system_clock::time_point created_at;
-    [[=storm::FieldAttr::auto_update]] std::chrono::system_clock::time_point updated_at;
+    [[=storm::auto_create]] std::chrono::system_clock::time_point created_at;
+    [[=storm::auto_update]] std::chrono::system_clock::time_point updated_at;
 };
 
 // INSERT — both stamped automatically; any value you set is ignored.
@@ -240,7 +240,7 @@ A container member annotated with `[[= storm::many_to_many<>]]` (or
 
 ```cpp
 struct Student {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string name;
     [[= storm::many_to_many<>]] std::vector<Course> courses;
 };
@@ -319,7 +319,7 @@ When creating tables, ensure column types match the C++ type mappings:
 
 ```sql
 CREATE TABLE Example (
-    id INTEGER PRIMARY KEY,  -- AUTOINCREMENT is opt-in (#379): FieldAttr::primary_autoincrement
+    id INTEGER PRIMARY KEY,  -- AUTOINCREMENT is opt-in (#379): storm::primary_autoincrement
     name TEXT NOT NULL,
     age INTEGER,
     salary REAL,

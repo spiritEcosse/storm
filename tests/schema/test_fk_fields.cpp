@@ -11,38 +11,38 @@ import std;
 
 // ── Local structs (used only in this file) ──────────────────────────────────
 struct NullableFKMessage {
-    [[= storm::FieldAttr::primary]] int     id{};
+    [[= storm::primary]] int                id{};
     [[= storm::fk<>]] std::optional<Person> sender;
     [[= storm::fk<>]] Person                receiver;
     std::string                             text;
 };
 struct Project {
-    [[= storm::FieldAttr::primary]] int id{};
-    [[= storm::fk<>]] Person            manager;
-    std::string                         title;
-    double                              budget{};
+    [[= storm::primary]] int id{};
+    [[= storm::fk<>]] Person manager;
+    std::string              title;
+    double                   budget{};
 };
 struct Measurement {
-    [[= storm::FieldAttr::primary]] int id{};
-    std::string                         sensor_name;
-    float                               temperature{};
-    long long                           timestamp{};
+    [[= storm::primary]] int id{};
+    std::string              sensor_name;
+    float                    temperature{};
+    long long                timestamp{};
 };
 struct Counter {
-    [[= storm::FieldAttr::primary]] int id{};
-    std::string                         name;
-    long                                count{};
+    [[= storm::primary]] int id{};
+    std::string              name;
+    long                     count{};
 };
 struct Reading {
-    [[= storm::FieldAttr::primary]] int id{};
-    [[= storm::fk<>]] Measurement       measurement;
-    std::string                         reading_type;
-    float                               value{};
+    [[= storm::primary]] int      id{};
+    [[= storm::fk<>]] Measurement measurement;
+    std::string                   reading_type;
+    float                         value{};
 };
 struct Summary {
-    [[= storm::FieldAttr::primary]] int id{};
-    [[= storm::fk<>]] Counter           counter;
-    std::string                         report_type;
+    [[= storm::primary]] int  id{};
+    [[= storm::fk<>]] Counter counter;
+    std::string               report_type;
 };
 
 using storm::QuerySet;

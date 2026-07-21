@@ -1805,7 +1805,7 @@ TEST(PgDialectTypesSchemaTest, DoubleFieldIsDoublePrecision) {
 
 // Test PG-dialect optional types that have no dedicated fields in ExtendedTypes
 struct PgOptionalSpecialTypes {
-    [[= storm::FieldAttr::primary]] int        id{};
+    [[= storm::primary]] int                   id{};
     std::optional<std::chrono::year_month_day> opt_date;
     std::optional<storm::UUID>                 opt_uuid;
     std::optional<bool>                        opt_bool;
@@ -1916,11 +1916,11 @@ TYPED_TEST(Uint64SignedStorageTest, OrderBySortsBySignedInterpretation) {
 
 // ===== 64-BIT UNSIGNED FULL-RANGE STORAGE TESTS (#436) =====
 //
-// FieldAttr::full_unsigned stores an unsigned-64 field order-preservingly:
+// storm::full_unsigned stores an unsigned-64 field order-preservingly:
 // PostgreSQL NUMERIC(20,0), SQLite zero-padded 20-char TEXT (lexicographic ==
 // numeric order). Unlike signed_storage (#419), values > INT64_MAX both round-trip
 // AND sort correctly, and external readers see the true unsigned value.
-// FieldAttr::signed_storage keeps today's signed BIGINT/INTEGER storage.
+// storm::signed_storage keeps today's signed BIGINT/INTEGER storage.
 
 // --- Compile-time refusal: a bare unsigned-64 field is rejected (#436) ---
 // ModelStorageAnnotated<T> is false for a model with an un-annotated uint64 field, so
@@ -1929,16 +1929,16 @@ TYPED_TEST(Uint64SignedStorageTest, OrderBySortsBySignedInterpretation) {
 // without needing a compile-fail harness.
 namespace {
     struct BareUint64Model {
-        [[= storm::FieldAttr::primary]] int id{};
-        std::uint64_t                       value{}; // bare — no storage annotation
+        [[= storm::primary]] int id{};
+        std::uint64_t            value{}; // bare — no storage annotation
     };
     struct SignedStorageModel {
-        [[= storm::FieldAttr::primary]] int                  id{};
-        [[= storm::FieldAttr::signed_storage]] std::uint64_t value{};
+        [[= storm::primary]] int                  id{};
+        [[= storm::signed_storage]] std::uint64_t value{};
     };
     struct FullUnsignedModel {
-        [[= storm::FieldAttr::primary]] int                 id{};
-        [[= storm::FieldAttr::full_unsigned]] std::uint64_t value{};
+        [[= storm::primary]] int                 id{};
+        [[= storm::full_unsigned]] std::uint64_t value{};
     };
     static_assert(
             !storm::orm::statements::ModelStorageAnnotated<BareUint64Model>,
@@ -1962,11 +1962,11 @@ namespace {
 // compile-fail harness.
 namespace {
     struct SetNullNonNullableFk {
-        [[= storm::FieldAttr::primary]] int               id{};
+        [[= storm::primary]] int                          id{};
         [[= storm::fk<storm::RefAction::SetNull>]] Person owner; // non-optional → invalid
     };
     struct CascadeNonNullableFk {
-        [[= storm::FieldAttr::primary]] int               id{};
+        [[= storm::primary]] int                          id{};
         [[= storm::fk<storm::RefAction::Cascade>]] Person owner;
     };
     static_assert(

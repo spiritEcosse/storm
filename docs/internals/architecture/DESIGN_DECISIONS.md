@@ -5,13 +5,13 @@ This document details the architectural decisions that make Storm ORM achieve ne
 ## 1. C++26 Reflection-Based ORM
 
 Uses compile-time reflection (`std::meta`) to automatically:
-- Find primary key fields marked with `[[=storm::FieldAttr::primary]]`
+- Find primary key fields marked with `[[=storm::primary]]`
 - Generate SQL statements from struct definitions
 - Bind struct fields to database columns
 
 ```cpp
 struct Person {
-    [[=storm::FieldAttr::primary]] int id;
+    [[=storm::primary]] int id;
     std::string name;
     int age;
 };
@@ -149,7 +149,7 @@ conn.execute("CREATE TABLE Person ("
 ```
 Since #379 Storm emits plain `INTEGER PRIMARY KEY` by default; `AUTOINCREMENT`
 (the SQLite never-reuse guarantee, ~358 ns/insert) is opt-in via
-`FieldAttr::primary_autoincrement`.
+`storm::primary_autoincrement`.
 
 ## 10. Statement-Level Caching Pattern
 
@@ -229,7 +229,7 @@ See [DISTINCT Analysis](../performance/DISTINCT_ANALYSIS.md) for detailed implem
 - **Index Sequence Optimization**: Uses `std::index_sequence` and fold expressions
 - **Pre-computed Metadata**: Field information cached in static constexpr variables
 - **Module Naming**: Uses underscores (`storm_db_sqlite`) due to compiler limitations
-- **Circular Dependencies**: Avoided by extracting shared declarations into dependency-free leaf modules (`storm_orm_field_attr` for `FieldAttr`/`is_primary_attr`, #387)
+- **Circular Dependencies**: Avoided by extracting shared declarations into dependency-free leaf modules (`storm_orm_field_attr` for the flag annotation objects / `is_primary_member`, #387/#492)
 - **Compiler Crashes**: std::mutex in modules causes segfaults
 - **std::function Linker Errors**: Avoid `std::function` with custom libc++ - use abstract base classes instead (see JOIN architecture)
 - **Primary Key Access**: Uses reflection splice operator `obj.[:primary_key_:]`

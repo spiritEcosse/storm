@@ -847,9 +847,9 @@ import std;
 
 // Local struct — UNIQUE constraint tests only
 struct UniqueTestPerson {
-    [[= storm::FieldAttr::primary]] int        id{};
-    [[= storm::FieldAttr::unique]] std::string email;
-    int                                        value{};
+    [[= storm::primary]] int        id{};
+    [[= storm::unique]] std::string email;
+    int                             value{};
 };
 
 class ORMErrorTest : public ::testing::Test {
@@ -863,7 +863,7 @@ class ORMErrorTest : public ::testing::Test {
         auto create_result = storm::orm::schema::SchemaStatement<Person>::create_table_if_not_exists(conn);
         ASSERT_TRUE(create_result.has_value()) << "Failed to create table";
 
-        // Create table with UNIQUE constraint via FieldAttr::unique on email field
+        // Create table with UNIQUE constraint via storm::unique on email field
         auto create_unique = storm::orm::schema::SchemaStatement<UniqueTestPerson>::create_table_if_not_exists(conn);
         ASSERT_TRUE(create_unique.has_value()) << "Failed to create UniqueTestPerson table";
     }

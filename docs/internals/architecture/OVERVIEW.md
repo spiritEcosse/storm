@@ -79,7 +79,7 @@ src/
 │   └── sqlite.cppm                 # SQLite implementation
 └── orm/
     ├── queryset.cppm               # QuerySet interface
-    ├── field_attr.cppm             # FieldAttr annotation enum (leaf module, #387)
+    ├── field_attr.cppm             # Free-standing flag annotation objects (leaf module, #387/#492)
     ├── relation_meta.cppm          # m2m/reverse-fk annotation types + is_relation_field (leaf module, #408)
     ├── utilities.cppm              # ConstexprString, SQLCache
     └── statements/

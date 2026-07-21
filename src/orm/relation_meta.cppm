@@ -70,7 +70,7 @@ export namespace storm::meta {
     //     the base, e.g. assignee vs reviewer).
     // The type form works when the owner is only forward-declared at the annotation
     // site (the cyclic Base⟷Owner case); the field form needs the owner complete.
-    // Like ManyToMany, it is a class-template annotation (FieldAttr is an enum, so a
+    // Like ManyToMany, it is a class-template annotation (the flag annotations carry no
     // templated enumerator is impossible).
     template <std::meta::info Target> struct ReverseFk {
         static constexpr std::meta::info target = Target;

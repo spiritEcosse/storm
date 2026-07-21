@@ -16,13 +16,13 @@
 #include <vector>
 
 struct Course {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string title;
 };
 
 // Phase 1: auto-generated junction table Student_Course (Student_id, Course_id).
 struct Student {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string name;
     int age{};
     [[= storm::many_to_many<>]] std::vector<Course> courses;
@@ -33,14 +33,14 @@ struct Student {
 struct Enrollment;
 
 struct Pupil {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string name;
     int age{};
     [[= storm::many_to_many_through<Enrollment>]] std::vector<Course> courses;
 };
 
 struct Enrollment {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     [[= storm::fk<>]] Pupil pupil;
     [[= storm::fk<>]] Course course;
     std::string grade;
@@ -48,30 +48,30 @@ struct Enrollment {
 
 // Container-coverage models (Phase 1 edge cases: plf::hive and shared_ptr elements).
 struct Track {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string title;
 };
 
 struct Playlist {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string name;
     [[= storm::many_to_many<>]] plf::hive<Track> tracks;
 };
 
 struct Album {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string name;
     [[= storm::many_to_many<>]] std::vector<std::shared_ptr<Track>> tracks;
 };
 
 // Multi-relation model (#392): two auto-junction m2m fields on one owner.
 struct Club {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string name;
 };
 
 struct Member {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string name;
     int age{};
     [[= storm::many_to_many<>]] std::vector<Course> courses;
@@ -81,18 +81,18 @@ struct Member {
 // Related model WITH an FK field (#392): the aggregate complete SQL must emit
 // the related FK column as "<field>_id".
 struct Topic {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string name;
 };
 
 struct Lesson {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string title;
     [[= storm::fk<>]] Topic topic;
 };
 
 struct Tutor {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string name;
     [[= storm::many_to_many<>]] std::vector<Lesson> lessons;
 };
@@ -100,12 +100,12 @@ struct Tutor {
 // Junction ON DELETE override (#431): many_to_many<RefAction::Restrict> on the m2m
 // field flips BOTH junction FK sides from the CASCADE default to RESTRICT.
 struct RestrictedClub {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string name;
 };
 
 struct RestrictedMember {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     std::string name;
     [[= storm::many_to_many<storm::RefAction::Restrict>]] std::vector<RestrictedClub> clubs;
 };

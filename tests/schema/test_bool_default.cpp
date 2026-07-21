@@ -20,11 +20,11 @@ using storm::orm::schema::Dialect;
 using storm::orm::schema::SchemaStatement;
 
 // Local models exercising both default values. Defined after `import storm;`
-// so the FieldAttr annotation binds to the imported enum.
+// so the storm:: annotation binds to the imported object.
 struct BoolDefaultModel {
-    [[= storm::FieldAttr::primary]] int id{};
-    bool                                flag_false{false};
-    bool                                flag_true{true};
+    [[= storm::primary]] int id{};
+    bool                     flag_false{false};
+    bool                     flag_true{true};
 };
 
 // ============================================================================

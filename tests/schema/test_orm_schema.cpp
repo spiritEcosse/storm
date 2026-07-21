@@ -24,7 +24,7 @@ using storm::QuerySet;
 // it. The table-level estimator sizes from identifier length, so the table
 // buffer would fit — the divergence was purely in the per-column buffer.
 struct LongFieldNameRecord {
-    [[= storm::FieldAttr::primary]] int id{};
+    [[= storm::primary]] int id{};
     int this_is_a_deliberately_very_long_column_identifier_that_exceeds_one_hundred_and_ten_characters_to_trigger_trunc{};
 };
 
@@ -39,8 +39,8 @@ inline constexpr std::string_view kLongFieldName = "this_is_a_deliberately_very_
 // 45 + 26 + 200 = 271 > 255 usable bytes, so a fixed 256-byte buffer silently
 // truncated the generated CREATE UNIQUE INDEX statement.
 struct LongIdxRecord {
-    [[= storm::FieldAttr::primary]] int id{};
-    [[= storm::FieldAttr::unique]] int
+    [[= storm::primary]] int id{};
+    [[= storm::unique]] int
             this_is_a_deliberately_very_long_unique_column_identifier_that_exceeds_one_hundred_characters_to_truncate{};
 };
 
@@ -96,7 +96,7 @@ TEST(SchemaUnitTest, MessageSqlMatchesHandWritten) {
     EXPECT_EQ(generated, expected) << "Generated SQL:\n" << generated << "\n\nExpected SQL:\n" << expected;
 }
 
-// Test: a plain FieldAttr::primary int PK generates `id INTEGER PRIMARY KEY`
+// Test: a plain storm::primary int PK generates `id INTEGER PRIMARY KEY`
 // WITHOUT AUTOINCREMENT by default (#379). Plain INTEGER PRIMARY KEY already
 // auto-assigns ids (it aliases rowid); AUTOINCREMENT only adds the never-reuse
 // guarantee at ~358 ns/insert, so it is now opt-in.
@@ -207,12 +207,12 @@ TEST(SchemaUnitTest, PersonSqlEndsWithClosingParen) {
 // ============================================================================
 
 // Model that opts into the SQLite never-reuse guarantee via
-// FieldAttr::primary_autoincrement. It is still a primary key for every other
+// storm::primary_autoincrement. It is still a primary key for every other
 // purpose (PK detection, INSERT skip, etc.) — the only difference is the
 // emitted DDL keyword.
 struct AuditRecord {
-    [[= storm::FieldAttr::primary_autoincrement]] int id{};
-    int                                               value{};
+    [[= storm::primary_autoincrement]] int id{};
+    int                                    value{};
 };
 
 // Test: primary_autoincrement PK emits `id INTEGER PRIMARY KEY AUTOINCREMENT`

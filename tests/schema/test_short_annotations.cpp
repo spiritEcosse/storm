@@ -18,7 +18,17 @@ import std;
 //      a structurally-identical model annotated the long way.
 
 // The short name and the long name must be the very same entity, not a copy.
-static_assert(std::is_same_v<storm::FieldAttr, storm::meta::FieldAttr>);
+// The flag annotation objects (#492) are re-exported as the same inline constexpr
+// objects; &short == &long proves they are one entity, not a copy. clang-tidy's
+// misc-redundant-expression sees the two operands as identical *after* name
+// resolution and flags them — but resolving `storm::x` and `storm::meta::x` to the
+// same address is exactly what the assert verifies, so the check is a false positive.
+// NOLINTBEGIN(misc-redundant-expression) — comparing the short and long spelling of the
+// SAME re-exported object is the point; tidy sees the operands as identical after name lookup.
+static_assert(&storm::primary == &storm::meta::primary);
+static_assert(&storm::unique == &storm::meta::unique);
+static_assert(&storm::primary_autoincrement == &storm::meta::primary_autoincrement);
+// NOLINTEND(misc-redundant-expression)
 static_assert(std::is_same_v<storm::RefAction, storm::meta::RefAction>);
 static_assert(std::is_same_v<decltype(storm::fk<>), decltype(storm::meta::fk<>)>);
 static_assert(std::is_same_v<
@@ -29,13 +39,13 @@ static_assert(std::is_same_v<
 // identical — the only remaining difference between the two DDLs is the child
 // table's own name prefix (Short vs Long).
 struct SharedParent {
-    [[= storm::meta::FieldAttr::primary]] int        id{};
-    [[= storm::meta::FieldAttr::unique]] std::string name;
+    [[= storm::meta::primary]] int        id{};
+    [[= storm::meta::unique]] std::string name;
 };
 
 // A model annotated entirely through the short `storm::` spelling.
 struct ShortChild {
-    [[= storm::FieldAttr::primary]] int                     id{};
+    [[= storm::primary]] int                                id{};
     [[= storm::fk<>]] SharedParent                          parent;
     [[= storm::fk<storm::RefAction::Cascade>]] SharedParent owner;
     std::string                                             label;
@@ -43,7 +53,7 @@ struct ShortChild {
 
 // A structurally-identical model annotated the long `storm::meta::` way.
 struct LongChild {
-    [[= storm::meta::FieldAttr::primary]] int                           id{};
+    [[= storm::meta::primary]] int                                      id{};
     [[= storm::meta::fk<>]] SharedParent                                parent;
     [[= storm::meta::fk<storm::meta::RefAction::Cascade>]] SharedParent owner;
     std::string                                                         label;
