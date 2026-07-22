@@ -327,17 +327,48 @@ still works (re-exports are additive). Internal reflection helpers (`is_fk_field
 **Free-standing flag annotations (#492)**: the column flags are free-standing tag-object
 annotations — `storm::primary`, `storm::primary_autoincrement`, `storm::indexed`,
 `storm::unique`, `storm::auto_create`, `storm::auto_update`, `storm::signed_storage`,
-`storm::full_unsigned` — replacing the former `enum class FieldAttr` (breaking, no
+`storm::full_unsigned` (plus `storm::primary_part`, #500) — replacing the former `enum class FieldAttr` (breaking, no
 dual-spelling). Each is an empty tag struct + `inline constexpr` object in the
 `storm_orm_field_attr` leaf (`storm::meta`), mirroring `fk<>`; detection scans
 `annotations_of(m)` for the tag type (`has_annotation_type<Tag>`), the same pattern as
 `is_fk_field`. The per-flag predicates (`is_unique`, `is_indexed`, `is_auto_create`,
 `is_auto_update`, `has_full_unsigned_attr`, `has_signed_storage_attr`) keep their
-names/signatures; PK detection routes through `is_primary_member(info)` (matches `primary`
-OR `primary_autoincrement`). The exclusivity the enum gave for free is restored by the
+names/signatures; PK detection routes through `is_primary_member(info)` (matches `primary`,
+`primary_autoincrement`, OR `primary_part`). The exclusivity the enum gave for free is restored by the
 `ModelAnnotationsValid<T>` concept (in `base.cppm`, ANDed into the `BaseStatement<T>`
 constraint list), which rejects per member: `primary` + `primary_autoincrement`, or
 `signed_storage` + `full_unsigned`. DDL is byte-identical — pure spelling change.
+
+**Composite primary keys (#500)**: `[[= storm::primary_part]]` on two or more members declares a
+multi-column PK — a free-standing tag object like `primary` (#492), re-exported to top-level
+`storm::`. Deliberately a SEPARATE tag rather than "two `primary` members means composite": reusing
+`primary` would silently turn a double-`primary` typo into a legal key. `is_primary_part_member`
+detects it; `is_primary_member` now matches it too, so `ModelWithPrimaryKey<T>` accepts composite
+models. `BaseStatement` gains `primary_key_members_` (the full PK list in DECLARATION order — the
+order the DDL clause emits) and `has_composite_pk_`, alongside the unchanged `primary_key_`/`pk_name_`
+(= the first element, so the ~13 files reading them are untouched). `schema.cppm` routes composite
+models past the single-PK branch (which hardcodes the column name `"id"` — a latent bug for single PKs
+too, still open as #506) and emits every part as a regular column plus one table-level
+`PRIMARY KEY (a, b)`, reusing the junction-table pattern; single-PK DDL is byte-identical.
+`needs_index` now excludes every PK member (the table-level key already indexes each part).
+New concept `ModelPrimaryKeyValid<T>` (ANDed into the `BaseStatement` constraint list next to
+`ModelAnnotationsValid`) rejects: `primary` + `primary_part`, `primary_autoincrement` +
+`primary_part`, exactly one `primary_part`, **two or more `primary`/`primary_autoincrement`
+members** (the double-`primary` typo — without this the widened machinery would silently accept it
+as composite), and a PK annotation on an m2m/reverse-FK container, on a `std::optional<T>`, or
+`primary_part` + `unique`. The `std::optional` and relation-container rejections are gated on
+`is_primary_member`, so they cover a **single** `primary` too — a deliberate widening (a nullable PK
+was accepted before #500 and is never correct: SQLite's legacy NULL quirk admits duplicate keys while
+PG rejects them). No in-tree model used that shape. The PK clause writes parts via the canonical column-name writer
+(`append_column_name`, #422), so an FK part emits `warehouse_id` — a composite key over FKs is the
+canonical association-table case, and naming the bare member would emit a PK over a nonexistent
+column. `calculate_column_defs_size` keeps FK columns on the FK-suffix budget for composite models
+(the regular suffix under-counts and `ConstexprString` truncates silently); `build_sql_impl` gained a
+whole-SQL `std::unreachable()` backstop, since the per-column one can't catch a sizing shortfall. Autoincrement on a composite key is **unrepresentable**,
+not just useless — SQLite rejects both spellings at parse time and PG's identity is single-column —
+hence the compile-time rejection. **Scope**: annotation + DDL only; INSERT/UPDATE/DELETE/JOIN by
+composite key and composite FKs are #501–#504, so a composite model reaching CRUD fails at a named
+concept. See [docs/guide/reference/FIELD_TYPES.md](docs/guide/reference/FIELD_TYPES.md).
 
 **Foreign keys (#431)**: `[[= storm::fk<>]]` marks an FK field (bare = `RESTRICT`,
 the SQL default — no `ON DELETE` clause emitted). The `ON DELETE` policy is the template

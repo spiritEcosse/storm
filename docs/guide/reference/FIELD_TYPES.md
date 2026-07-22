@@ -182,6 +182,83 @@ with no uniqueness constraint. Foreign-key fields (`fk<>`) are indexed automatic
 either tag. See [features/INDEXES.md](../features/INDEXES.md) for full coverage, including
 composite (multi-column) indexes via `storm::Index<>` / `storm::UniqueIndex<>`.
 
+## Primary Keys (`primary` / `primary_autoincrement` / `primary_part`)
+
+Every model needs a primary key — `ModelWithPrimaryKey<T>` is a `BaseStatement<T>` constraint,
+so a model without one fails to compile at a named concept.
+
+```cpp
+struct Person {
+    [[= storm::primary]] int id;                 // INTEGER PRIMARY KEY
+};
+
+struct Event {
+    [[= storm::primary_autoincrement]] int id;   // + AUTOINCREMENT (SQLite never-reuse, #379)
+};
+```
+
+### Composite (multi-column) primary keys (#500)
+
+Annotate two or more members with `primary_part` to make the key span several columns:
+
+```cpp
+struct OrderItem {
+    [[= storm::primary_part]] int order_id;
+    [[= storm::primary_part]] int product_id;
+    int quantity;
+};
+```
+
+The parts are emitted as ordinary columns plus one table-level clause, in **declaration
+order** (column order is significant for the index the key creates):
+
+```sql
+CREATE TABLE OrderItem (
+    order_id INTEGER NOT NULL DEFAULT 0,
+    product_id INTEGER NOT NULL DEFAULT 0,
+    quantity INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (order_id, product_id)
+)
+```
+
+- **Separate tag, by design**: `primary_part` is its own annotation rather than "two
+  `primary` members means composite". Reusing `primary` would silently turn an accidental
+  double-`primary` typo into a legal composite key; keeping them distinct leaves that an error.
+- **No autoincrement on a composite key** — and this is not merely useless, it is
+  *unrepresentable*. SQLite rejects both spellings at parse time (a column-level `PRIMARY KEY`
+  cannot coexist with a table-level `PRIMARY KEY (...)`, and `AUTOINCREMENT` is only
+  grammatical directly after `INTEGER PRIMARY KEY`); PostgreSQL's `GENERATED … AS IDENTITY`
+  is single-column too. So the caller always supplies the full key — no part is ever DB-generated.
+- **Both backends**: SQLite and PostgreSQL emit the same table-level clause (differing only
+  in the usual `INTEGER`/`BIGINT` column mapping).
+- **No separate index per part**: the table-level `PRIMARY KEY` already indexes each part.
+- **`DEFAULT 0` on the parts** is the ordinary auto-DEFAULT for NOT NULL columns (#413),
+  harmless here since the key is always caller-supplied.
+
+**Rejected at compile time** by `ModelPrimaryKeyValid<T>` (a `BaseStatement<T>` constraint):
+
+| Declaration | Why it's rejected |
+|---|---|
+| Two or more `primary` / `primary_autoincrement` members | The accidental double-`primary` typo — the case the separate tag exists to catch |
+| `primary` + `primary_part` | Two competing PK declarations — which one is the key? |
+| `primary_autoincrement` + `primary_part` | Unrepresentable in SQL on either backend (above) |
+| Exactly one `primary_part` | That is a plain PK — spell it `primary` |
+| A PK annotation on an m2m / reverse-FK container | Not a column — the key would name something no column definition emits |
+| A PK annotation on `std::optional<T>` | A nullable PK is not a key (SQLite's legacy NULL quirk even admits duplicates, diverging from PG). Applies to a **single** `primary` too — a deliberate widening in #500, since a nullable PK was never correct |
+| `primary_part` + `unique` | UNIQUE on one part allows at most one row per that part, defeating the composite key |
+
+FK members make good parts — `[[= storm::primary_part]] [[= storm::fk<>]] Warehouse warehouse`
+is the canonical association-table key, and the clause names the FK's actual column
+(`PRIMARY KEY (warehouse_id, sku)`).
+
+> `indexed` on a part is currently a no-op: the PK already indexes the parts, so the
+> per-column index is suppressed for every PK member, as it is for a single-column PK.
+
+> **Scope (#500)**: composite keys currently cover the annotation, the compile-time PK
+> machinery, and `CREATE TABLE` DDL. INSERT/UPDATE/DELETE/JOIN by composite key, and
+> composite foreign keys, land in #501–#504; until then a composite-PK model reaching a
+> CRUD path fails to compile at a named concept.
+
 ## Optional Types (NULL Support)
 
 | C++ Type | SQLite Type | Binding Method | Extraction Method |

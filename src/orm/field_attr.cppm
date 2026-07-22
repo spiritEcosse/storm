@@ -27,10 +27,18 @@ export namespace storm::meta {
     // because the FK carries an optional ON DELETE policy (#431).
     struct Primary {};              // plain INTEGER PRIMARY KEY
     struct PrimaryAutoincrement {}; // SQLite never-reuse rowid opt-in (#379)
-    struct Indexed {};              // CREATE INDEX on the column
-    struct Unique {};               // UNIQUE constraint on the column
-    struct AutoCreate {};           // stamp now() on INSERT only (#209)
-    struct AutoUpdate {};           // stamp now() on INSERT and UPDATE (#209)
+    // One column of a composite (multi-column) primary key (#500). Deliberately a
+    // SEPARATE tag from Primary rather than "two `primary` members means composite":
+    // reusing Primary would silently turn a double-`primary` typo into a legal
+    // composite key, whereas ModelAnnotationsValid keeps that an error. Two or more
+    // primary_part members produce a table-level PRIMARY KEY (a, b); exactly one is
+    // rejected (that is a plain `primary`), as is any mix with primary /
+    // primary_autoincrement — see ModelPrimaryKeyValid in base.cppm.
+    struct PrimaryPart {};
+    struct Indexed {};    // CREATE INDEX on the column
+    struct Unique {};     // UNIQUE constraint on the column
+    struct AutoCreate {}; // stamp now() on INSERT only (#209)
+    struct AutoUpdate {}; // stamp now() on INSERT and UPDATE (#209)
     // 64-bit unsigned storage opt-ins (#436). A bare unsigned-64 field is a
     // compile-time error; it must carry exactly one of these:
     //   signed_storage — keep today's signed BIGINT/INTEGER (byte-identical, fast)
@@ -43,6 +51,7 @@ export namespace storm::meta {
     // NOLINTBEGIN(readability-identifier-length) — short names are the public annotation spellings
     inline constexpr Primary              primary{};
     inline constexpr PrimaryAutoincrement primary_autoincrement{};
+    inline constexpr PrimaryPart          primary_part{};
     inline constexpr Indexed              indexed{};
     inline constexpr Unique               unique{};
     inline constexpr AutoCreate           auto_create{};
@@ -96,12 +105,21 @@ export namespace storm::meta {
         return {};
     }
 
-    // A field is "a primary key" for either annotation variant: plain `primary`
-    // (plain INTEGER PRIMARY KEY) or `primary_autoincrement` (the SQLite never-reuse
-    // opt-in, #379). Every PK-detection site routes through here so the two variants
-    // can never drift apart.
+    // True when `member` carries storm::primary_part — one column of a composite
+    // primary key (#500). Distinct from is_primary_member below: a plain `primary`
+    // member is NOT a primary part, so the schema generator can tell the
+    // column-level and table-level PRIMARY KEY paths apart.
+    consteval auto is_primary_part_member(std::meta::info member) -> bool {
+        return has_annotation_type<PrimaryPart>(member);
+    }
+
+    // A field is "a primary key" for any of the annotation variants: plain `primary`
+    // (plain INTEGER PRIMARY KEY), `primary_autoincrement` (the SQLite never-reuse
+    // opt-in, #379), or `primary_part` (one column of a composite key, #500). Every
+    // PK-detection site routes through here so the variants can never drift apart.
     consteval auto is_primary_member(std::meta::info member) -> bool {
-        return has_annotation_type<Primary>(member) || has_annotation_type<PrimaryAutoincrement>(member);
+        return has_annotation_type<Primary>(member) || has_annotation_type<PrimaryAutoincrement>(member) ||
+               is_primary_part_member(member);
     }
 
     // True when `member` carries storm::primary_autoincrement (the SQLite never-reuse
