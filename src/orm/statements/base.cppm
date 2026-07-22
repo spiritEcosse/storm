@@ -29,7 +29,8 @@ export namespace storm::orm::statements {
         // storm_orm_field_attr leaf module (#387, #492); re-exposed here so statement
         // modules keep using the meta:: qualifier.
         using storm::meta::is_primary_member;
-        using storm::meta::ref_action_sql; // NOLINT(misc-unused-using-decls) — used by storm_orm_schema
+        using storm::meta::is_primary_part_member; // NOLINT(misc-unused-using-decls) — #500 composite PK
+        using storm::meta::ref_action_sql;         // NOLINT(misc-unused-using-decls) — used by storm_orm_schema
         using storm::meta::RefAction;
 
         // Per-attribute predicates (#421) re-exposed from the leaf so statement modules
@@ -77,7 +78,8 @@ export namespace storm::orm::statements {
         using storm::meta::MaxLength;      // NOLINT(misc-unused-using-decls) — re-exported for storm.cppm
 
         // True iff `type` has at least one non-static data member annotated with
-        // storm::primary/primary_autoincrement. The info-value core of the ModelWithPrimaryKey<T> concept
+        // storm::primary/primary_autoincrement/primary_part (#500 — a composite key
+        // satisfies this like any other). The info-value core of the ModelWithPrimaryKey<T> concept
         // (below), factored out so it can also run on an info VALUE — needed by
         // valid_fk_target, whose target type is derived from a range-for loop variable
         // over nonstatic_data_members_of and so cannot be spliced into a type template
@@ -223,7 +225,10 @@ export namespace storm::orm::statements {
         template <typename TValue> constexpr bool is_shared_ptr_v = is_shared_ptr<TValue>::value;
     } // namespace meta
 
-    // Concept: T must have at least one field annotated with storm::primary (#492).
+    // Concept: T must have at least one field annotated with storm::primary,
+    // storm::primary_autoincrement, or storm::primary_part (#492, #500). A composite key
+    // (two or more primary_part members) satisfies it exactly like a single-column one;
+    // whether the PK DECLARATION is coherent is the separate ModelPrimaryKeyValid<T>.
     //
     // Because a primary key is itself a non-static data member, satisfying this concept
     // also guarantees `field_count_ >= 1`. That invariant is what makes the INSERT batch
@@ -304,6 +309,106 @@ export namespace storm::orm::statements {
                 return !primary_conflict && !storage_conflict;
             }
     );
+
+    // Counts of each primary-key annotation flavour on T (#500), computed in one pass
+    // so ModelPrimaryKeyValid can express its rules as plain arithmetic on the result.
+    // A struct rather than a pair: the three counts are read by name at every use.
+    struct PrimaryKeyCounts {
+        std::size_t primary{};       // storm::primary
+        std::size_t autoincrement{}; // storm::primary_autoincrement
+        std::size_t part{};          // storm::primary_part (composite)
+        std::size_t on_relation{};   // any PK annotation sitting on an m2m/reverse_fk member
+        std::size_t nullable{};      // any PK annotation sitting on a std::optional<T> member
+        std::size_t unique_part{};   // a primary_part member that also carries storm::unique
+    };
+
+    template <typename T> consteval auto count_primary_key_flavours() -> PrimaryKeyCounts {
+        PrimaryKeyCounts counts;
+        for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+            counts.primary += static_cast<std::size_t>(storm::meta::has_annotation_type<storm::meta::Primary>(m));
+            counts.autoincrement +=
+                    static_cast<std::size_t>(storm::meta::has_annotation_type<storm::meta::PrimaryAutoincrement>(m));
+            counts.part += static_cast<std::size_t>(storm::meta::is_primary_part_member(m));
+            if (storm::meta::is_primary_member(m)) {
+                // A PK on a relation container names something that is never a column,
+                // and a nullable PK column is not a key at all (SQLite's legacy NULL
+                // quirk even lets duplicate keys through, diverging from PG on identical
+                // DDL). Counted here so ModelPrimaryKeyValid can refuse both.
+                counts.on_relation += static_cast<std::size_t>(storm::meta::is_relation_field(m));
+                // UNIQUE on one part of a composite key defeats the key: it allows at
+                // most one row per that part alone, making the other parts pointless.
+                counts.unique_part +=
+                        static_cast<std::size_t>(storm::meta::is_primary_part_member(m) && storm::meta::is_unique(m));
+                counts.nullable += static_cast<std::size_t>(
+                        std::meta::has_template_arguments(std::meta::dealias(std::meta::type_of(m))) &&
+                        std::meta::template_of(std::meta::dealias(std::meta::type_of(m))) == ^^std::optional
+                );
+            }
+        }
+        return counts;
+    }
+
+    // Concept: T's primary-key declaration is coherent (#500). Composite support widens
+    // the PK from "exactly one member" to "one or more", which makes three new
+    // combinations expressible that must not be:
+    //
+    //   * primary + primary_part — two competing PK declarations; which one is the key?
+    //   * primary_autoincrement + primary_part — additionally UNREPRESENTABLE in SQL.
+    //     SQLite rejects both spellings at parse time: a column-level PRIMARY KEY cannot
+    //     coexist with a table-level PRIMARY KEY (...), and AUTOINCREMENT is only
+    //     grammatical directly after INTEGER PRIMARY KEY. PG is equivalent — GENERATED
+    //     AS IDENTITY is single-column, there is no multi-column identity. Because it
+    //     cannot be spelled at all, emitting the DDL and letting the backend object
+    //     would surface a runtime error about primary keys that never names the
+    //     annotation responsible; rejecting here gives a constraint violation at the
+    //     model definition instead.
+    //   * exactly one primary_part — that is a plain PK written the wrong way; tell the
+    //     user to spell it `primary` rather than silently accepting a 1-column
+    //     "composite" key that emits different DDL than the equivalent `primary`.
+    //   * two or more `primary` / `primary_autoincrement` members — the accidental
+    //     double-`primary` typo the separate primary_part tag exists to keep an error.
+    //   * a PK annotation on an m2m/reverse_fk container, or on a std::optional<T>, or
+    //     `unique` on a single part — none of which is a well-formed key column.
+    //
+    // Consequence carried into #502: since no part of a composite PK can be DB-generated,
+    // the caller always supplies the full key — those columns are always INSERTed and
+    // there is nothing to RETURNING.
+    //
+    // Zero primary_part members is the single-PK case, unconstrained here and validated
+    // by ModelWithPrimaryKey as before. Sits next to ModelAnnotationsValid in the
+    // BaseStatement constraint list; that concept keeps rejecting per-member conflicts
+    // (primary + primary_autoincrement on ONE member), this one whole-model PK coherence.
+    template <typename T>
+    concept ModelPrimaryKeyValid = []() consteval {
+        constexpr auto counts = count_primary_key_flavours<T>();
+        // A PK annotation on a member that is not a plain persisted column: an m2m /
+        // reverse_fk container (never emitted as a column, so the key would reference a
+        // name no column definition provides — the #485 class of leak) or a nullable
+        // std::optional<T> (a nullable PK is not a key, and SQLite vs PG disagree on it).
+        if (counts.on_relation > 0 || counts.nullable > 0) {
+            return false;
+        }
+        // UNIQUE on a single part contradicts the composite key it belongs to (see
+        // count_primary_key_flavours). Valid SQL, but never what the author meant.
+        if (counts.unique_part > 0) {
+            return false;
+        }
+        // Several column-level PK declarations: `primary` (or primary_autoincrement) on
+        // two different members. This is the accidental-double-`primary` typo the separate
+        // primary_part tag exists to keep an ERROR — without this clause the widened PK
+        // machinery would happily treat it as a composite key and silently emit different
+        // DDL than the same model produced before composite support existed.
+        if (counts.primary + counts.autoincrement > 1) {
+            return false;
+        }
+        if (counts.part == 0) {
+            return true; // single-PK model — unchanged rules
+        }
+        if (counts.primary > 0 || counts.autoincrement > 0) {
+            return false; // primary_part mixed with a column-level PK declaration
+        }
+        return counts.part >= 2; // exactly one part is a plain `primary`
+    }();
 
     // Concept: every max_length<N> annotation of T must sit on a text field (#493).
     // max_length bounds a text column's length (VARCHAR(N) on PG, CHECK(length) on SQLite);
@@ -460,7 +565,8 @@ export namespace storm::orm::statements {
     // Shared reflection utilities for all statement types
     template <typename T>
         requires storm::meta::Entity<T> && ModelWithPrimaryKey<T> && ModelStorageAnnotated<T> &&
-                 ModelFkPoliciesValid<T> && ModelAnnotationsValid<T> && ModelMaxLengthValid<T>
+                 ModelFkPoliciesValid<T> && ModelAnnotationsValid<T> && ModelMaxLengthValid<T> &&
+                 ModelPrimaryKeyValid<T>
     class BaseStatement {
       public:
         // Compile-time accessor for table name (used in SQL generation)
@@ -478,6 +584,48 @@ export namespace storm::orm::statements {
                 }
             }
             std::unreachable(); // never reached: ModelWithPrimaryKey<T> guarantees a primary key exists
+        }
+
+        // True when `member` is a primary-key COLUMN — a PK annotation on a member that is
+        // actually persisted. m2m / reverse_fk containers are relation members, never
+        // columns, so a PK annotation on one must not enter the key: it would put a name
+        // in PRIMARY KEY (...) that no column definition ever emits (the #485 class of
+        // leak). ModelPrimaryKeyValid rejects that model outright; this keeps the helpers
+        // below consistent with all_members_ regardless.
+        static consteval auto is_primary_key_column(std::meta::info member) -> bool {
+            return meta::is_primary_member(member) && !meta::is_relation_field(member);
+        }
+
+        // How many members make up the primary key (#500) — 1 for a single-PK model,
+        // N >= 2 for a composite one. Sizes the primary_key_members_ array below, so it
+        // must be a separate consteval function (an array bound needs the count before
+        // the elements are computed).
+        static consteval auto primary_key_count() -> std::size_t {
+            std::size_t count = 0;
+            for (const std::meta::info member :
+                 std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+                if (is_primary_key_column(member)) {
+                    ++count;
+                }
+            }
+            return count;
+        }
+
+        // Every primary-key member, in DECLARATION order — the order the table-level
+        // PRIMARY KEY (a, b) clause emits, since column order is semantically
+        // significant for the index it creates. For a single-PK model this is a
+        // 1-element array whose sole element is primary_key_, so the existing
+        // primary_key_ / pk_name_ statics (read by ~13 files) keep working unchanged.
+        static consteval auto find_primary_key_members_impl() -> std::array<std::meta::info, primary_key_count()> {
+            std::array<std::meta::info, primary_key_count()> members{};
+            std::size_t                                      index = 0;
+            for (const std::meta::info member :
+                 std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+                if (is_primary_key_column(member)) {
+                    members[index++] = member;
+                }
+            }
+            return members;
         }
 
         // FK field detection utilities — an fk<...> class-template annotation (#431).
@@ -512,8 +660,11 @@ export namespace storm::orm::statements {
 
         // Check if a field needs an index (indexed, unique, or fk — but not primary key).
         // FK is now an fk<...> class-template annotation (#431), checked separately.
+        // Every PK member is excluded, not just primary_key_: the table-level
+        // PRIMARY KEY (a, b) of a composite key (#500) already indexes each part, so a
+        // separate single-column CREATE INDEX on a part would be redundant.
         static consteval auto needs_index(std::meta::info member) -> bool {
-            if (member == primary_key_) {
+            if (meta::is_primary_member(member)) {
                 return false;
             }
             if (meta::is_fk_field(member)) {
@@ -640,6 +791,15 @@ export namespace storm::orm::statements {
         static constexpr auto primary_key_ = find_primary_key_impl();
         static constexpr auto pk_name_     = std::meta::identifier_of(primary_key_);
         static constexpr auto table_name_  = std::meta::identifier_of(^^T);
+
+        // Composite primary key (#500). primary_key_members_ is the full PK list in
+        // declaration order; primary_key_ / pk_name_ above stay the FIRST element, so
+        // every single-PK caller is untouched. has_composite_pk_ is the branch the
+        // schema generator takes to emit a table-level PRIMARY KEY (a, b) instead of a
+        // column-level one. CRUD paths do not consult these yet — a composite model
+        // reaching INSERT/UPDATE/DELETE/JOIN still fails at a named concept (#501-#504).
+        static constexpr auto primary_key_members_ = find_primary_key_members_impl();
+        static constexpr bool has_composite_pk_    = primary_key_members_.size() > 1;
 
       protected:
         // Index sequence utilities for compile-time field binding
