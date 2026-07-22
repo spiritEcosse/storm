@@ -151,6 +151,20 @@ auto results = QuerySet<Person>()
     .select();
 ```
 
+## IN
+
+The `in()` method takes a variadic list of values and matches any of them.
+
+```cpp
+// WHERE id IN (100, 200, 300)
+auto results = QuerySet<Person>()
+    .where(f<^^Person::id>().in(100, 200, 300))
+    .select();
+```
+
+Works on any comparable field type also supported by the comparison operators — int,
+`int64_t`, double, float, string, temporal (`year_month_day` / `time_point`), and UUID.
+
 ## COLLATE
 
 Collation for string comparisons (case-insensitive, etc).

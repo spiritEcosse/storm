@@ -12,6 +12,15 @@ Storm provides sanitizer-enabled CMake presets for catching memory, concurrency,
 
 > **Note**: ASAN, TSAN, and MSAN are mutually exclusive — they cannot be combined in a single build.
 
+> **MSAN is not run in CI.** Under `import std;` (#326), GTest's static `TEST()`
+> registration move-constructs `std::string` through the MSAN-instrumented std
+> module, and MSAN reports the SSO buffer as uninitialized — aborting the binary
+> before any test body runs. This is a false positive in clang-p2996's MSAN +
+> `import std;` combination, so the preset produces no signal; the matrix entry
+> was removed from `.github/workflows/ci.yml` (not merely `continue-on-error`).
+> It is kept as a local-only preset for future investigation. See
+> [MSAN_LIBC_FIX.md](MSAN_LIBC_FIX.md) and issue #326.
+
 ## Quick Start
 
 ```bash

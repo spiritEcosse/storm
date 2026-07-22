@@ -5,7 +5,8 @@
 **Partially applied, not yet working.** The fix is tracked in
 `docs/development/fix_msan_libc_string.patch` (apply to `../clang-p2996/libcxx/include/string`).
 
-The `ninja-msan` CI job is marked `continue-on-error: true` until this is resolved.
+The `ninja-msan` job is removed from the CI matrix entirely (not
+`continue-on-error`) until this is resolved — see `.github/workflows/ci.yml`.
 
 ## Root cause
 

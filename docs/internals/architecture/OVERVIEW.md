@@ -75,12 +75,22 @@ Extensive use of compile-time features:
 src/
 ├── storm.cppm                      # Main module
 ├── db/
-│   ├── concept.cppm                # Database concepts
-│   └── sqlite.cppm                 # SQLite implementation
+│   ├── concept.cppm                # Database concepts (incl. dialect-support concepts, #477)
+│   ├── pool.cppm                   # PoolConfig, connection pooling
+│   ├── sqlite.cppm                 # SQLite implementation
+│   ├── postgresql.cppm             # PostgreSQL implementation
+│   ├── postgresql_connection.cppm  # PostgreSQL connection management
+│   ├── postgresql_error.cppm       # PostgreSQL error mapping
+│   └── postgresql_statement.cppm   # PostgreSQL prepared statements
 └── orm/
     ├── queryset.cppm               # QuerySet interface
     ├── field_attr.cppm             # Free-standing flag annotation objects (leaf module, #387/#492)
     ├── relation_meta.cppm          # m2m/reverse-fk annotation types + is_relation_field (leaf module, #408)
+    ├── indexes.cppm                # Index, UniqueIndex, Indexes<T> trait
+    ├── schema.cppm                 # DDL/schema generation
+    ├── generator.cppm              # storm-schema CLI codegen support
+    ├── transaction.cppm            # TransactionGuard, storm::begin/transaction (#415)
+    ├── where.cppm                  # WHERE-clause expression builders
     ├── utilities.cppm              # ConstexprString, SQLCache
     └── statements/
         ├── base.cppm               # BaseStatement utilities
@@ -90,8 +100,13 @@ src/
         ├── select.cppm             # SelectStatement + JOIN
         ├── update.cppm             # UpdateStatement
         ├── update_grammar.cppm     # UpdateGrammar — UPDATE SQL builders (#434)
+        ├── upsert_grammar.cppm     # Upsert (ON CONFLICT) SQL builders (#205)
         ├── erase.cppm              # EraseStatement
-        └── join.cppm               # JoinStatement (SQL builder)
+        ├── join.cppm               # JoinStatement (SQL builder)
+        ├── aggregate.cppm          # COUNT/SUM/AVG/MIN/MAX (#475)
+        ├── distinct.cppm           # DISTINCT
+        ├── orderby.cppm            # ORDER BY
+        └── setop.cppm              # Set-op helpers (e.g. GROUP BY/HAVING support)
 ```
 
 ## Cross-Module Dependencies
@@ -99,12 +114,20 @@ src/
 ```
 storm (main module)
 ├── storm_db_concept
+├── storm_db_pool
 ├── storm_db_sqlite
+├── storm_db_postgresql{,_connection,_error,_statement}
 ├── storm_orm_field_attr
 ├── storm_orm_relation_meta
-├── storm_orm_statements_base
+├── storm_orm_indexes
+├── storm_orm_schema
+├── storm_orm_generator
+├── storm_orm_transaction
+├── storm_orm_where
 ├── storm_orm_utilities
-├── storm_orm_statements_{insert,update,erase,select,join}
+├── storm_orm_statements_base
+├── storm_orm_statements_{insert,update,update_grammar,upsert_grammar,erase,select,join}
+├── storm_orm_statements_{aggregate,distinct,orderby,setop,extract,field_names}
 └── storm_orm_queryset
 ```
 
@@ -198,7 +221,7 @@ concept DatabaseStatement = requires(T stmt) {
 ```
 
 **Benefits**:
-- Future PostgreSQL/MySQL support
+- PostgreSQL support shipped alongside SQLite (MySQL: future work)
 - No ORM code changes needed
 - Compile-time interface verification
 

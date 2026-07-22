@@ -4,6 +4,17 @@ Storm's pre-commit hook (`commit.sh`) runs format → clang-tidy → tests → c
 This page documents the **clang-tidy** stage in detail, because it has three
 modes with different scopes.
 
+## Self-healing on a fresh/stale worktree (#489)
+
+Before running clang-tidy, `commit.sh` configures and fully builds the release
+target set (BMIs + mock test binaries) — not just `--target storm` — so a fresh
+worktree doesn't fail with "module BMI not found" (clang-tidy on files that
+`import std;`/`import storm;` need the BMIs) or `storm_mock_tests_NOT_BUILT`
+later at the `ctest` stage. It similarly ensures `build/debug` is built before
+running `ctest`. Both guards are file-check-and-build: a no-op (fast) on an
+already-warm build directory, so this doesn't add cost on the common path — it
+only matters the first time you commit from a new worktree.
+
 ## The three clang-tidy modes
 
 | Mode | What it scans | Where it runs | Blocks on |

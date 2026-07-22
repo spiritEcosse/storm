@@ -22,8 +22,13 @@ struct Config {                 // storm::db::sqlite::Config
     JournalMode journal_mode             = JournalMode::Default; // #410: WAL opt-in
 };
 
-enum class JournalMode { Default, WAL };   // storm::db::sqlite::JournalMode
+enum class JournalMode { Default, WAL };   // storm::db::JournalMode
 ```
+
+`JournalMode` itself is deliberately declared **backend-neutral**, in `storm::db` (`src/db/concept.cppm`),
+so the generic `PoolConfig` can carry it without depending on the SQLite backend module. SQLite's
+`Config` and the examples below reach it via `using storm::db::JournalMode;` re-exposed from
+`storm::db::sqlite`.
 
 | Field | Default | Effect |
 |---|---|---|

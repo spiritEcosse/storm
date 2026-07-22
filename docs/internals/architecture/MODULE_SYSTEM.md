@@ -166,38 +166,56 @@ export class SelectStatement {
 };
 ```
 
-### Step 3: Adding PostgreSQL Support
+### Step 3: The PostgreSQL Backend
 
-To add PostgreSQL support, create a new backend module with the same interface:
+Storm ships a PostgreSQL backend alongside SQLite (`src/db/postgresql.cppm`,
+`postgresql_connection.cppm`, `postgresql_error.cppm`, `postgresql_statement.cppm`), following the
+same-interface pattern described above — `Statement` exposes the same template hot-path
+methods (`step_raw`, `extract_int`, ...), just backed by `PGresult`/`PQgetvalue` instead of
+`sqlite3_stmt`/`sqlite3_column_*`. A future third backend (e.g. MySQL) would follow the identical
+recipe: a new backend module with the same `Statement`/`Connection` interface, gated by the
+concepts in `src/db/concept.cppm`.
+
+### Dialect-Support Concepts (#477)
+
+Because two backends now genuinely differ in SQL dialect, `src/db/concept.cppm` declares named
+capability gates instead of ad-hoc `if constexpr (requires { ConnType::trait; })` probes at each
+call site:
 
 ```cpp
-// src/db/postgresql.cppm
-export module storm_db_postgresql;
+// The dialect switch itself — true for PG, false for SQLite. Used to pick
+// PG-specific SQL (NULLS FIRST/LAST ordering, LIMIT ALL, the schema Dialect enum).
+template <typename ConnType>
+concept SupportsPgDialect = requires {
+    { ConnType::uses_pg_dialect } -> std::convertible_to<bool>;
+};
 
-export class Statement {
-    PGresult* result_;
-    int current_row_ = 0;
+// Existence probe: both backends declare `supports_limit_all`; call sites still
+// read the bool VALUE to pick the spelling (PG: LIMIT ALL, SQLite: LIMIT -1).
+template <typename ConnType>
+concept SupportsLimitAll = requires {
+    { ConnType::supports_limit_all } -> std::convertible_to<bool>;
+};
 
-    template <typename = void>
-    [[nodiscard]] __attribute__((always_inline)) auto step_raw() noexcept -> int {
-        if (current_row_ < PQntuples(result_)) {
-            ++current_row_;
-            return ROW_AVAILABLE;
-        }
-        return NO_MORE_ROWS;
-    }
-
-    template <typename = void>
-    [[nodiscard]] __attribute__((always_inline)) auto extract_int(int col) const noexcept -> int {
-        return std::atoi(PQgetvalue(result_, current_row_ - 1, col));
-    }
-
-    // ... same interface as SQLite
-
-    static constexpr int ROW_AVAILABLE = 1;
-    static constexpr int NO_MORE_ROWS  = 0;
+// The surface storm::begin / TransactionGuard (#415) needs to run an RAII
+// transaction — a mis-typed connection fails at the begin() call site.
+template <typename ConnType>
+concept TransactionCapable = requires(ConnType& conn, std::string_view sql) {
+    typename ConnType::Error;
+    { conn.in_transaction() } -> std::convertible_to<bool>;
+    conn.enter_transaction();
+    conn.leave_transaction();
+    { conn.execute(sql) } -> std::same_as<std::expected<void, typename ConnType::Error>>;
 };
 ```
+
+`SupportsPgDialect` gates the `Dialect` enum selection in `schema.cppm` and `append_order_by`'s
+NULLS FIRST/LAST behavior in `base.cppm`. `SupportsLimitAll` gates `append_limit_offset`.
+`TransactionCapable` constrains `TransactionGuard` and `storm::begin`/`storm::transaction`. Each
+backend `static_assert`s these next to its `Connection` definition. Two candidate concepts were
+considered and dropped: `SupportsRightJoin` (`right_join()` was removed — no call site) and
+`SupportsReturning`/`SupportsStrictTables` (declared on the connections but never read by any
+call site).
 
 ## Performance Results
 
