@@ -10,6 +10,7 @@ export module storm_orm_statements_erase;
 import std;
 
 import storm_orm_statements_base;
+import storm_orm_statements_erase_grammar;
 import storm_orm_utilities;
 import storm_orm_transaction;
 import storm_orm_where;
@@ -30,108 +31,29 @@ export namespace storm::orm::statements {
         using Error      = typename ConnType::Error;
         using Statement  = typename ConnType::Statement;
 
-        // Common prefix size: "DELETE FROM <table> WHERE <pk_name>". Both the
-        // single-row and the bulk DELETE size calculators used to spell this
-        // out; their only difference is the tail (" = ?" vs " IN (").
-        static consteval auto delete_prefix_size() -> std::size_t {
-            using utilities::sql_len::DELETE_FROM;
-            using utilities::sql_len::WHERE;
-            return DELETE_FROM + Base::table_name_.size() + WHERE + Base::pk_name_.size();
-        }
+        // Compile-time DELETE SQL grammar (#501): every "how the SQL is spelled" helper —
+        // the prefix, the AND-joined key clause, the row-value IN list and the chunk
+        // arithmetic — lives in EraseGrammar<T>. Split out to keep this file under the
+        // size threshold, mirroring UpdateGrammar (#434).
+        using Grammar = EraseGrammar<T>;
 
-        // Compile-time single DELETE SQL size calculation
-        static consteval auto calculate_single_delete_sql_size() -> std::size_t {
-            return delete_prefix_size() + 4 + 1; // " = ?" + null terminator
-        }
+        // Rows per chunk. Each row costs one bound parameter per PK column, so a
+        // composite key fits proportionally fewer rows under the same variable ceiling
+        // (#501); single-PK models keep the historical 799.
+        static constexpr std::size_t MAX_CHUNK_ROWS = Grammar::MAX_CHUNK_ROWS;
 
-        // Append the shared "DELETE FROM <table> WHERE <pk_name>" prefix.
-        // The single-row builder appends "= ?" after; the bulk builder appends
-        // " IN (". Centralising the prefix removes the textual duplicate the
-        // hook flagged.
-        template <typename Buf> static consteval auto append_delete_prefix(Buf& buf) -> void {
-            buf.append("DELETE FROM ");
-            buf.append(Base::table_name_);
-            buf.append(" WHERE ");
-            buf.append(Base::pk_name_);
-        }
-
-        // Build single DELETE SQL at compile-time using ConstexprString
-        static consteval auto build_single_delete_sql_array() {
-            constexpr std::size_t     sql_size = calculate_single_delete_sql_size() + utilities::sql_len::LARGE_BUFFER;
-            ConstexprString<sql_size> result;
-            append_delete_prefix(result);
-            result.append(" = ?");
-            return result;
-        }
-
-        // Pre-computed single DELETE SQL generated at compile-time
-        static inline const std::string single_delete_sql_string = std::string(build_single_delete_sql_array());
-
-        // Compile-time all-rows DELETE SQL (no WHERE clause)
-        static consteval auto build_delete_all_sql_array() {
-            using utilities::sql_len::DELETE_FROM;
-            constexpr std::size_t sql_size = DELETE_FROM + Base::table_name_.size() + utilities::sql_len::LARGE_BUFFER;
-            ConstexprString<sql_size> result;
-            result.append("DELETE FROM ");
-            result.append(Base::table_name_);
-            return result;
-        }
+        // Pre-computed single DELETE SQL generated at compile-time.
+        // Single PK  → "DELETE FROM t WHERE id = ?"          (byte-identical to pre-#501)
+        // Composite  → "DELETE FROM t WHERE a = ? AND b = ?"
+        static inline const std::string single_delete_sql_string =
+                std::string(Grammar::build_single_delete_sql_array());
 
         // Pre-computed all-rows DELETE SQL
-        static inline const std::string delete_all_sql_string = std::string(build_delete_all_sql_array());
+        static inline const std::string delete_all_sql_string = std::string(Grammar::build_delete_all_sql_array());
 
       private:
-        // Compile-time bulk DELETE prefix calculation
-        static consteval auto calculate_bulk_delete_prefix_size() -> std::size_t {
-            return delete_prefix_size() + utilities::sql_len::IN_OPEN + 1; // " IN (" + null terminator
-        }
-
-        // Build bulk DELETE prefix at compile-time using ConstexprString
-        static consteval auto build_bulk_delete_prefix() {
-            constexpr std::size_t prefix_size = calculate_bulk_delete_prefix_size() + utilities::sql_len::LARGE_BUFFER;
-            ConstexprString<prefix_size> result;
-            append_delete_prefix(result);
-            result.append(" IN (");
-            return result;
-        }
-
-        // Pre-computed bulk DELETE prefix generated at compile-time
-        static inline const std::string bulk_delete_prefix = std::string(build_bulk_delete_prefix());
-        static constexpr std::size_t    bulk_delete_prefix_size =
-                calculate_bulk_delete_prefix_size() - 1; // Exclude null terminator
-
-        // Maximum chunk size for IN clause (80% of SQLite limit for safety)
-        // Defined here so it can be used in compile-time SQL generation
-        static constexpr std::size_t MAX_CHUNK_SIZE = (Base::MAX_DB_VARIABLES * 4) / 5; // 799
-
-        // Compile-time max bulk DELETE SQL size calculation
-        static consteval auto calculate_max_bulk_delete_sql_size() -> std::size_t {
-            // prefix + (MAX_CHUNK_SIZE placeholders) + (MAX_CHUNK_SIZE-1 commas) + closing paren + null
-            return bulk_delete_prefix_size + MAX_CHUNK_SIZE + (MAX_CHUNK_SIZE - 1) + 1 + 1;
-        }
-
-        // Build max bulk DELETE SQL at compile-time (799 placeholders)
-        static consteval auto build_max_bulk_delete_sql() {
-            constexpr std::size_t     sql_size = calculate_max_bulk_delete_sql_size() + 50; // Safety buffer
-            ConstexprString<sql_size> result;
-
-            // Reuse bulk delete prefix
-            result.append(build_bulk_delete_prefix());
-
-            // Append 799 placeholders with commas
-            for (std::size_t i = 0; i < MAX_CHUNK_SIZE; ++i) {
-                if (i > 0) {
-                    result.append(",");
-                }
-                result.append("?");
-            }
-            result.append(")");
-
-            return result;
-        }
-
-        // Pre-computed max bulk DELETE SQL (799 placeholders) generated at compile-time
-        static inline const std::string max_bulk_delete_sql = std::string(build_max_bulk_delete_sql());
+        // Pre-computed max-chunk bulk DELETE SQL generated at compile-time
+        static inline const std::string max_bulk_delete_sql = std::string(Grammar::build_max_bulk_delete_sql());
 
         // Generate single DELETE SQL string (compile-time computed, runtime accessible)
         static auto get_single_delete_sql() -> const std::string& {
@@ -153,24 +75,9 @@ export namespace storm::orm::statements {
                 return *cached; // Return by reference - no copy
             }
 
-            // Calculate exact size needed
-            const std::size_t total_size =
-                    bulk_delete_prefix_size + count + (count - 1) + 1; // prefix + ?s + commas + )
-
-            std::string sql;
-            sql.reserve(total_size);
-            sql = bulk_delete_prefix;
-
-            for (std::size_t i = 0; i < count; ++i) {
-                if (i > 0) {
-                    sql += ",";
-                }
-                sql += "?";
-            }
-            sql += ")";
-
-            // Cache the result and return reference to it
-            cache.insert(count, std::move(sql));
+            // Built by the same grammar the consteval max-chunk builder uses, so the
+            // runtime and compile-time SQL for a given count cannot drift apart.
+            cache.insert(count, Grammar::bulk_delete_sql_for(count));
             return *cache.find(count); // Guaranteed to exist after insert
         }
 
@@ -258,8 +165,9 @@ export namespace storm::orm::statements {
             if (!stmt_result) {
                 return std::unexpected(stmt_result.error());
             }
-            auto* stmt = *stmt_result;
-            if (auto bind_result = bind_pk_at(*stmt, obj, 1); !bind_result) {
+            auto* stmt        = *stmt_result;
+            int   param_index = 1;
+            if (auto bind_result = bind_pk_at(*stmt, obj, param_index); !bind_result) {
                 return std::unexpected(bind_result.error());
             }
             return stmt->expanded_sql();
@@ -285,10 +193,11 @@ export namespace storm::orm::statements {
             // hot binder hierarchy for no real safety gain.
             int param_index = 1;
             for (const auto& obj : objects) {
+                // bind_pk_at advances param_index past the whole key (N parameters for an
+                // N-column PK), so no manual stride here.
                 if (auto result = bind_pk_at(*stmt, obj, param_index); !result) {
                     return std::unexpected(result.error());
                 }
-                ++param_index;
             }
             return stmt->expanded_sql();
         }
@@ -304,7 +213,7 @@ export namespace storm::orm::statements {
             }
 
             // Strategy 2: Bulk IN clause (2-799 rows) - no transaction needed
-            if (objects.size() <= MAX_CHUNK_SIZE) {
+            if (objects.size() <= MAX_CHUNK_ROWS) {
                 return execute_bulk(objects);
             }
 
@@ -395,7 +304,8 @@ export namespace storm::orm::statements {
             auto* stmt = *stmt_result;
 
             // Bind PK and execute (statement already reset by ready_delete_statement)
-            if (auto bind_result = bind_pk_at(*stmt, obj, 1); !bind_result) {
+            int param_index = 1;
+            if (auto bind_result = bind_pk_at(*stmt, obj, param_index); !bind_result) {
                 return std::unexpected(bind_result.error());
             }
 
@@ -435,7 +345,7 @@ export namespace storm::orm::statements {
             Statement* max_bulk_stmt = *max_bulk_result;
 
             // Calculate remainder size upfront
-            const std::size_t remainder_size = objects.size() % MAX_CHUNK_SIZE;
+            const std::size_t remainder_size = objects.size() % MAX_CHUNK_ROWS;
             Statement*        remainder_stmt = nullptr;
 
             // Cache remainder statement if needed (only one hash lookup per batch)
@@ -450,12 +360,12 @@ export namespace storm::orm::statements {
 
             // Process full chunks using local pointer (no hash lookups in loop)
             std::size_t offset = 0;
-            while (offset + MAX_CHUNK_SIZE <= objects.size()) {
-                auto chunk = objects.subspan(offset, MAX_CHUNK_SIZE);
+            while (offset + MAX_CHUNK_ROWS <= objects.size()) {
+                auto chunk = objects.subspan(offset, MAX_CHUNK_ROWS);
                 if (auto result = bind_pks_and_execute(*max_bulk_stmt, chunk); !result) {
                     return std::unexpected(result.error());
                 }
-                offset += MAX_CHUNK_SIZE;
+                offset += MAX_CHUNK_ROWS;
             }
 
             // Process remainder with pre-cached statement
@@ -476,13 +386,13 @@ export namespace storm::orm::statements {
             // Reset before binding - required for cached statement reuse
             stmt.reset();
 
-            // Bind all primary key values
+            // Bind all primary key values. bind_pk_at advances param_index past each
+            // object's whole key — N parameters per row for an N-column PK (#501).
             int param_index = 1;
             for (const auto& obj : objects) {
                 if (auto result = bind_pk_at(stmt, obj, param_index); !result) {
                     return std::unexpected(result.error());
                 }
-                ++param_index;
             }
 
             // Execute once with all parameters bound
@@ -509,14 +419,17 @@ export namespace storm::orm::statements {
             return stmt;
         }
 
-        // Bind primary key value at specific parameter index
-        [[nodiscard]] __attribute__((always_inline)) auto bind_pk_at(Statement& stmt, const T& obj, int index) noexcept
+        // Bind the object's whole primary key starting at `index`, advancing it past the
+        // key (#501). A single-PK model binds one value and advances by one, exactly as
+        // before; a composite key binds every part in declaration order — the same order
+        // the WHERE clause and the row-value placeholder group name them in.
+        //
+        // `index` is an in/out reference precisely so the callers below cannot get the
+        // stride wrong: the old `++param_index` per object silently assumed one parameter
+        // per row, which is the bug this issue exists to fix.
+        [[nodiscard]] __attribute__((always_inline)) auto bind_pk_at(Statement& stmt, const T& obj, int& index) noexcept
                 -> std::expected<void, Error> {
-            // Get primary key value using pre-computed reflection
-            auto pk_value = obj.[:Base::primary_key_:];
-
-            // Use shared binding utility
-            return Base::template bind_value_by_type<ConnType>(stmt, index, pk_value);
+            return Base::template bind_pk_values<ConnType>(stmt, obj, index);
         }
 
       private:

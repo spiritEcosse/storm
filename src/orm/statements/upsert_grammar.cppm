@@ -48,11 +48,17 @@ export namespace storm::orm::statements {
             return result;
         }
 
-        // Each SET target must be a non-static data member of T, not the PK, and
-        // not a relation container (#486) — m2m / reverse_fk members are not
+        // Each SET target must be a non-static data member of T, not ANY part of the PK,
+        // and not a relation container (#486) — m2m / reverse_fk members are not
         // persisted columns, so "col=excluded.col" would reference a missing column.
+        //
+        // The PK test is is_pk_member, not `Member != primary_key_` (#501): the latter
+        // excludes only the FIRST part, leaving every other part of a composite key a
+        // legal DO UPDATE target. Unchanged for a single-PK model. (ON CONFLICT targeting
+        // a composite key is #503; keeping the key parts out of the SET list is the half
+        // that belongs here.)
         template <std::meta::info Member> static consteval auto is_settable_member() -> bool {
-            return std::meta::is_nonstatic_data_member(Member) && Member != Base::primary_key_ &&
+            return std::meta::is_nonstatic_data_member(Member) && !Base::is_pk_member(Member) &&
                    !meta::is_relation_field(Member);
         }
 

@@ -1,0 +1,217 @@
+#include <gtest/gtest.h>
+#include <meta>
+
+#include "test_db_helpers.h"
+
+import storm;
+import std;
+// UpdateGrammar / EraseGrammar are not re-exported by `storm` — same direct
+// import the m2m and reverse-FK SET-gate assertions use.
+import storm_orm_statements_update_grammar;
+import storm_orm_statements_erase_grammar;
+
+#include "test_models.h" // NOSONAR cpp:S954 — Person, the FK target of StockEntry
+
+// Must follow test_models.h: StockEntry's FK part names Person.
+#include "test_composite_pk_models.h" // NOSONAR cpp:S954
+
+// ── #501: composite PK — compile-time gates and generated SQL text ───────────
+// Step 2 of #90, on top of #500 (annotation + DDL). Widens the by-key WHERE
+// clause from "pk = ?" to "a = ? AND b = ?", with the bind arithmetic and the
+// consteval sizing that follow from it.
+//
+// Three distinct things change; this TU pins the two static ones, and
+// test_composite_pk_crud.cpp drives the third against live backends:
+//   (1) SQL TEXT — one column name becomes N, AND-joined; the bulk DELETE IN
+//       list becomes a row-value list "(a,b) IN ((?,?),(?,?))".
+//   (2) THE SET-TARGET GATE — is_settable_member must exclude EVERY PK member,
+//       not just the first, or a composite PK column becomes writable.
+//   (3) BIND ARITHMETIC — N values per key, bound after the SET values.
+//
+// INSERT stays out of scope (#502).
+
+// NOLINTBEGIN(readability-implicit-bool-conversion)
+
+namespace {
+
+    using storm::orm::statements::EraseGrammar;
+    using storm::orm::statements::UpdateGrammar;
+    using storm::orm::statements::UpsertGrammar;
+
+    // ── (2) SET-target gate: every PK member is excluded ──────────────────────
+    // update_grammar.cppm's is_settable_member() used `Member != primary_key_`,
+    // which excludes only the FIRST PK member. On a composite model that leaves
+    // every other part writable — `UPDATE ... SET product_id=? WHERE order_id=?
+    // AND product_id=?` would rewrite part of the very key it matches on.
+    //
+    // Asserted on the gate predicate directly rather than as `!requires` on the
+    // public update<>() call: that API is loosely constrained, so a bad member
+    // would hard-error instead of yielding false.
+
+    static_assert(
+            !UpdateGrammar<OrderLine>::is_settable_member<^^OrderLine::order_id>(),
+            "the FIRST part of a composite PK must not be a SET target"
+    );
+    static_assert(
+            !UpdateGrammar<OrderLine>::is_settable_member<^^OrderLine::product_id>(),
+            "EVERY part of a composite PK must be excluded from SET, not just the first"
+    );
+    static_assert(
+            UpdateGrammar<OrderLine>::is_settable_member<^^OrderLine::quantity>(),
+            "a non-key column is still a valid SET target"
+    );
+    static_assert(
+            !UpdateGrammar<Ledger>::is_settable_member<^^Ledger::period>(),
+            "the LAST part of a 3-part composite PK must be excluded from SET"
+    );
+    static_assert(
+            UpdateGrammar<Ledger>::is_settable_member<^^Ledger::balance>(),
+            "a non-key column of a 3-part-key model is a valid SET target"
+    );
+    // Single-PK behaviour unchanged.
+    static_assert(
+            !UpdateGrammar<Widget>::is_settable_member<^^Widget::id>(), "a single primary key is not a SET target"
+    );
+    static_assert(
+            UpdateGrammar<Widget>::is_settable_member<^^Widget::name>(), "a single-PK model's plain column is settable"
+    );
+
+    // The same widening is required in upsert_grammar.cppm, which carries its own
+    // copy of the gate (the issue's DoD names it explicitly). ON CONFLICT
+    // targeting a composite key is #503; excluding the key parts from the SET
+    // list is this issue's half of it.
+    static_assert(
+            !UpsertGrammar<OrderLine>::is_settable_member<^^OrderLine::product_id>(),
+            "upsert's SET gate must exclude every PK member too"
+    );
+    static_assert(
+            UpsertGrammar<OrderLine>::is_settable_member<^^OrderLine::quantity>(),
+            "upsert's SET gate still accepts a non-key column"
+    );
+
+    template <typename T> auto single_delete_sql() -> std::string {
+        return std::string(EraseGrammar<T>::build_single_delete_sql_array());
+    }
+
+    // Connection-free: the statement text is derived purely from reflection, so the
+    // shape can be asserted for any row count without a live database. Asserted through
+    // EraseGrammar rather than EraseStatement — the grammar is where the text is built,
+    // and EraseStatement is at the cpp:S1448 method ceiling.
+    template <typename T> auto bulk_delete_sql(std::size_t rows) -> std::string {
+        return EraseGrammar<T>::bulk_delete_sql_for(rows);
+    }
+
+} // namespace
+
+// ── (1) SQL text: DELETE ─────────────────────────────────────────────────────
+// The single-row DELETE WHERE clause is AND-joined across the key, in
+// DECLARATION order (the same order primary_key_members_ holds and the bind
+// loop follows).
+
+TEST(CompositePkDeleteSql, SingleRowWhereIsAndJoined) {
+    EXPECT_EQ(single_delete_sql<OrderLine>(), "DELETE FROM OrderLine WHERE order_id = ? AND product_id = ?");
+}
+
+TEST(CompositePkDeleteSql, ThreePartWhereIsAndJoinedInDeclarationOrder) {
+    EXPECT_EQ(single_delete_sql<Ledger>(), "DELETE FROM Ledger WHERE region = ? AND account = ? AND period = ?");
+}
+
+// The single-PK DELETE text must be byte-identical to before this issue.
+TEST(CompositePkDeleteSql, SinglePkTextIsByteIdentical) {
+    EXPECT_EQ(single_delete_sql<Widget>(), "DELETE FROM Widget WHERE id = ?");
+}
+
+// Bulk DELETE uses a row-value IN list for a composite key: the single-PK
+// "id IN (?,?,?)" becomes "(a,b) IN ((?,?),(?,?),(?,?))". Both SQLite (>= 3.15;
+// the project floor is 3.35) and PostgreSQL accept this form, and the execution
+// tests in test_composite_pk_crud.cpp prove it against live backends.
+TEST(CompositePkDeleteSql, BulkUsesRowValueInList) {
+    EXPECT_EQ(
+            bulk_delete_sql<OrderLine>(3), "DELETE FROM OrderLine WHERE (order_id, product_id) IN ((?,?),(?,?),(?,?))"
+    );
+}
+
+TEST(CompositePkDeleteSql, BulkThreePartRowValueInList) {
+    EXPECT_EQ(bulk_delete_sql<Ledger>(2), "DELETE FROM Ledger WHERE (region, account, period) IN ((?,?,?),(?,?,?))");
+}
+
+TEST(CompositePkDeleteSql, BulkSinglePkInListIsByteIdentical) {
+    EXPECT_EQ(bulk_delete_sql<Widget>(3), "DELETE FROM Widget WHERE id IN (?,?,?)");
+}
+
+// The grammar builds a genuine one-element IN list for count == 1; it is
+// EraseStatement::get_bulk_delete_sql that short-circuits a one-object batch to the
+// single-row form, so this pins the grammar's own shape rather than that fast path.
+TEST(CompositePkDeleteSql, BulkOfOneIsAOneElementList) {
+    EXPECT_EQ(bulk_delete_sql<OrderLine>(1), "DELETE FROM OrderLine WHERE (order_id, product_id) IN ((?,?))");
+    EXPECT_EQ(bulk_delete_sql<Widget>(1), "DELETE FROM Widget WHERE id IN (?)");
+}
+
+// An FK part's COLUMN is "<name>_id", so the key clause must name that. Emitting the
+// bare member would produce a WHERE over a column that does not exist, and the
+// statement would fail at prepare time on both backends. A composite key over FKs is
+// the canonical association-table case, not an exotic one — the same reason #500
+// asserts this for the DDL.
+TEST(CompositePkDeleteSql, FkKeyPartUsesColumnNameNotIdentifier) {
+    EXPECT_EQ(single_delete_sql<StockEntry>(), "DELETE FROM StockEntry WHERE warehouse_id = ? AND sku = ?");
+}
+
+TEST(CompositePkDeleteSql, FkKeyPartBulkUsesColumnName) {
+    EXPECT_EQ(bulk_delete_sql<StockEntry>(2), "DELETE FROM StockEntry WHERE (warehouse_id, sku) IN ((?,?),(?,?))");
+}
+
+// ── (1) SQL text: UPDATE ─────────────────────────────────────────────────────
+// SET excludes every key part; WHERE is AND-joined across all of them.
+
+TEST(CompositePkUpdateSql, SetExcludesEveryKeyPartAndWhereIsAndJoined) {
+    EXPECT_EQ(
+            UpdateGrammar<OrderLine>::update_sql_string,
+            "UPDATE OrderLine SET quantity=?, note=? WHERE order_id = ? AND product_id = ?"
+    );
+}
+
+TEST(CompositePkUpdateSql, ThreePartKeyUpdate) {
+    EXPECT_EQ(
+            UpdateGrammar<Ledger>::update_sql_string,
+            "UPDATE Ledger SET balance=? WHERE region = ? AND account = ? AND period = ?"
+    );
+}
+
+TEST(CompositePkUpdateSql, SinglePkTextIsByteIdentical) {
+    EXPECT_EQ(UpdateGrammar<Widget>::update_sql_string, "UPDATE Widget SET name=?, weight=? WHERE id = ?");
+}
+
+// FK key parts name their "_id" column in the UPDATE WHERE clause too, and stay out
+// of the SET list like any other key part.
+TEST(CompositePkUpdateSql, FkKeyPartUsesColumnNameNotIdentifier) {
+    EXPECT_EQ(
+            UpdateGrammar<StockEntry>::update_sql_string,
+            "UPDATE StockEntry SET qty=? WHERE warehouse_id = ? AND sku = ?"
+    );
+}
+
+static_assert(
+        !UpdateGrammar<StockEntry>::is_settable_member<^^StockEntry::warehouse>(),
+        "an FK part of a composite key is not a SET target"
+);
+
+// ── Chunking: the parameter budget shrinks by the key width ──────────────────
+// The 999-variable ceiling is spent N params per row for an N-part key, so the
+// effective chunk size is MAX_CHUNK_SIZE/N, not MAX_CHUNK_SIZE.
+
+namespace {
+    template <typename T> constexpr std::size_t chunk_rows = EraseGrammar<T>::MAX_CHUNK_ROWS;
+} // namespace
+
+TEST(CompositePkChunking, RowCapacityShrinksWithKeyWidth) {
+    EXPECT_EQ(chunk_rows<Widget>, 799U) << "single-PK chunking is unchanged";
+    EXPECT_EQ(chunk_rows<OrderLine>, 799U / 2) << "a 2-part key costs 2 parameters per row";
+    EXPECT_EQ(chunk_rows<Ledger>, 799U / 3) << "a 3-part key costs 3 parameters per row";
+}
+
+TEST(CompositePkChunking, RowCapacityStaysWithinTheParameterBudget) {
+    EXPECT_LE(chunk_rows<OrderLine> * 2U, 999U);
+    EXPECT_LE(chunk_rows<Ledger> * 3U, 999U);
+}
+
+// NOLINTEND(readability-implicit-bool-conversion)

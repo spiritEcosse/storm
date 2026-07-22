@@ -562,6 +562,47 @@ export namespace storm::orm::statements {
         }
     }
 
+    // ── Primary-key WHERE clause (#501) ──────────────────────────────────────────
+    // The by-key WHERE that UPDATE-by-object and DELETE-by-object share. For a single
+    // PK this emits exactly the "<pk> = ?" the two statements spelled inline before, so
+    // single-PK SQL stays byte-identical; for a composite key it AND-joins every part in
+    // declaration order — the same order pk_members binds in.
+    //
+    // Free function templates over the PK-member array rather than BaseStatement methods:
+    // SchemaStatement sits at the cpp:S1448 35-method ceiling and BaseStatement is the
+    // class both statements inherit, so anything added there is paid by every statement
+    // type. Taking the array as a parameter also lets erase.cppm and update_grammar.cppm
+    // call these without either one depending on the other.
+
+    // Byte length of "<a> = ? AND <b> = ?" for the given PK members. Exact — both callers
+    // size a ConstexprString with it, and ConstexprString truncates SILENTLY on overflow,
+    // so an under-count is a wrong-SQL bug with no diagnostic. Column names go through
+    // the canonical writer (#422) so an FK part is measured as "<name>_id".
+    template <std::size_t N>
+    consteval auto pk_where_clause_size(const std::array<std::meta::info, N>& pk_members) -> std::size_t {
+        constexpr std::size_t EQUALS_PLACEHOLDER = 4; // " = ?"
+        constexpr std::size_t AND_JOIN           = 5; // " AND "
+        std::size_t           size               = 0;
+        for (const std::meta::info member : pk_members) {
+            size += storm::meta::column_name_size(member) + EQUALS_PLACEHOLDER;
+        }
+        return size + (AND_JOIN * (N - 1));
+    }
+
+    // Append "<a> = ? AND <b> = ?" for the given PK members, in declaration order.
+    template <typename Buf, std::size_t N>
+    consteval auto append_pk_where_clause(Buf& buf, const std::array<std::meta::info, N>& pk_members) -> void {
+        bool first = true;
+        for (const std::meta::info member : pk_members) {
+            if (!first) {
+                buf.append(" AND ");
+            }
+            storm::meta::append_column_name(buf, member); // #422 — FK parts emit "<name>_id"
+            buf.append(" = ?");
+            first = false;
+        }
+    }
+
     // Shared reflection utilities for all statement types
     template <typename T>
         requires storm::meta::Entity<T> && ModelWithPrimaryKey<T> && ModelStorageAnnotated<T> &&
@@ -633,6 +674,26 @@ export namespace storm::orm::statements {
             return meta::is_fk_field(member);
         }
 
+      public:
+        // True when `member` is ANY part of the primary key (#501) — the widened form of
+        // the `member == primary_key_` test that the UPDATE and upsert SET-target gates
+        // used. On a composite model that old test excluded only the FIRST part, leaving
+        // every other part writable: `SET product_id=? WHERE order_id=? AND product_id=?`
+        // would rewrite part of the very key it matches on. Identical to the old test on a
+        // single-PK model (the array has one element). Public because UpdateGrammar and
+        // UpsertGrammar are separate types, not subclasses.
+        static consteval auto is_pk_member(std::meta::info member) -> bool {
+            // A CALLED consteval any_of lambda reports as uncovered against the 100%
+            // line-coverage gate; the plain loop does not.
+            for (const std::meta::info pk : primary_key_members_) { // NOLINT(readability-use-anyofallof)
+                if (pk == member) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+      protected:
         // Per-attribute predicates forward to the storm_orm_field_attr leaf (#421),
         // the single source of truth for each flag-annotation test.
         static consteval auto is_unique_field(std::meta::info member) -> bool {
@@ -801,6 +862,12 @@ export namespace storm::orm::statements {
         static constexpr auto primary_key_members_ = find_primary_key_members_impl();
         static constexpr bool has_composite_pk_    = primary_key_members_.size() > 1;
 
+        // How many columns the key spans, as a plain std::size_t (#501). Needed because
+        // primary_key_members_ is an array of std::meta::info — a consteval-only type
+        // that cannot be named at all in a runtime context, not even via .size(). The
+        // bind path advances param_index by this at runtime.
+        static constexpr std::size_t primary_key_column_count_ = primary_key_count();
+
       protected:
         // Index sequence utilities for compile-time field binding
         using field_indices_t = std::make_index_sequence<field_count_>;
@@ -830,13 +897,36 @@ export namespace storm::orm::statements {
             return result;
         }
 
+        // Does the caller's PK-skip policy exclude `member` from the bind order?
+        // SkipAllPK covers every part of a composite key (#501); plain SkipPK keeps the
+        // historical first-PK-only skip that INSERT relies on. The two coincide on a
+        // single-PK model.
+        template <bool SkipPK, bool SkipAllPK> static consteval auto skips_pk_column(std::meta::info member) -> bool {
+            if (!SkipPK) {
+                return false;
+            }
+            return SkipAllPK ? is_pk_member(member) : member == primary_key_;
+        }
+
         // Unified field binder: binds a single field at compile-time index.
         // SkipPK=true skips primary key fields (for INSERT/UPDATE non-PK binding).
         // IsUpdate=true marks the UPDATE path so auto_create fields bind the object's
         // stored value instead of now() (#209). `now` is read once per operation by the
         // caller and threaded in so every row in a batch shares the same timestamp.
         // Auto-increments param_index on successful bind.
-        template <typename ConnType, std::size_t Index, bool SkipPK = false, bool IsUpdate = false>
+        //
+        // SkipAllPK widens the skip from primary_key_ to EVERY primary-key member (#501),
+        // which is what UPDATE needs: its SET clause omits the whole composite key, so the
+        // bind order must too. Deliberately a SEPARATE flag rather than widening SkipPK
+        // itself — INSERT also passes SkipPK, and how a composite key is INSERTed is #502.
+        // Changing SkipPK here would silently alter the INSERT bind order as a side effect
+        // of a DELETE/UPDATE issue. No effect on single-PK models, where the two coincide.
+        template <
+                typename ConnType,
+                std::size_t Index,
+                bool        SkipPK    = false,
+                bool        IsUpdate  = false,
+                bool        SkipAllPK = false>
         [[nodiscard]] __attribute__((always_inline)) static constexpr auto bind_field_at_index(
                 typename ConnType::Statement*         stmt,
                 const T&                              obj,
@@ -854,8 +944,8 @@ export namespace storm::orm::statements {
                 );
             }
 
-            // Compile-time PK skip for INSERT/UPDATE non-PK paths
-            if constexpr (SkipPK && member == primary_key_) {
+            // Compile-time PK skip for INSERT/UPDATE non-PK paths.
+            if constexpr (skips_pk_column<SkipPK, SkipAllPK>(member)) {
                 return {};
             }
             // Auto-timestamp (#209): stamp now() for auto_update (always) and auto_create
@@ -972,9 +1062,13 @@ export namespace storm::orm::statements {
             return bind_bulk_objects_impl<true, ConnType, Statement, ContainerType, Is...>(stmt, objects, seq);
         }
 
-        // Common batch operation thresholds
+      public:
+        // Common batch operation thresholds. Public since #501: EraseGrammar derives the
+        // bulk-DELETE chunk size from it and is a separate type, not a subclass. It is a
+        // backend constant rather than model state, so exposing it leaks nothing.
         static constexpr std::size_t MAX_DB_VARIABLES = 999;
 
+      protected:
         // Adaptive threshold calculation based on batch size and field count
         // Returns the optimal threshold for deciding between bulk SQL and individual inserts
         static constexpr auto calculate_adaptive_threshold(std::size_t batch_size, std::size_t max_bulk_size)
@@ -1021,7 +1115,73 @@ export namespace storm::orm::statements {
             );
         }
 
-      protected:
+        // Bind every primary-key value of `obj`, in declaration order, starting at
+        // `param_index` and advancing it past the last part (#501). The bind order matches
+        // the column order append_pk_where_clause emits, which is what keeps the
+        // placeholders and the values aligned.
+        //
+        // The index sequence is over primary_key_members_ rather than a runtime loop
+        // because each part may be a DIFFERENT type (int + std::string is the canonical
+        // composite key), so the bind has to be dispatched per part at compile time. An FK
+        // part binds the referenced object's own PK value, matching how the "<name>_id"
+        // column is written.
+        // Each part's placeholder is `param_index + Is` — a compile-time offset from the
+        // start of the key, so no running counter is threaded through the fold. On a
+        // single-PK model this collapses to exactly one `bind(stmt, param_index, value)`
+        // call, identical to the hand-written bind it replaced.
+        template <typename ConnType, std::size_t... Is>
+        [[nodiscard]] __attribute__((always_inline)) static auto bind_pk_values_impl(
+                typename ConnType::Statement& stmt, const T& obj, int param_index, std::index_sequence<Is...> /*unused*/
+        ) noexcept -> std::expected<void, typename ConnType::Error> {
+            std::expected<void, typename ConnType::Error> result{};
+            ((result = bind_one_pk_part<ConnType, primary_key_members_[Is]>(
+                      stmt, obj, param_index + static_cast<int>(Is)
+              ),
+              result.has_value()) &&
+             ...);
+            return result;
+        }
+
+        // Bind one primary-key part at `index`. An FK part (the canonical
+        // association-table shape) stores the referenced row's key, so bind THAT, not the
+        // whole object — the same value the "<name>_id" column holds.
+        //
+        // Takes `index` BY VALUE and does not advance it: the caller computes each part's
+        // offset as a compile-time constant (see bind_pk_values_impl). Flat code, no
+        // lambda and no dead increment on the last part — this sits directly in the
+        // single-row UPDATE/DELETE hot path, where nested lambdas have cost ~3-4% before.
+        template <typename ConnType, std::meta::info Member>
+        [[nodiscard]] __attribute__((always_inline)) static auto
+        bind_one_pk_part(typename ConnType::Statement& stmt, const T& obj, int index) noexcept
+                -> std::expected<void, typename ConnType::Error> {
+            if constexpr (is_fk_field(Member)) {
+                using FKType = std::remove_cvref_t<decltype(obj.[:Member:])>;
+                return bind_value_by_type<ConnType>(stmt, index, obj.[:Member:].[:find_fk_primary_key<FKType>():]);
+            } else {
+                return bind_value_by_type<ConnType>(stmt, index, obj.[:Member:]);
+            }
+        }
+
+        // Bind the whole primary key of `obj` starting at `param_index`, advancing it past
+        // the key. The entry point erase.cppm and update.cppm call; single-PK models bind
+        // exactly one value, as before.
+        //
+        // The advance is a single add of a compile-time constant, applied once here rather
+        // than per-part inside the fold — on the single-PK path the caller never reads it
+        // back, so it folds away entirely.
+        template <typename ConnType>
+        [[nodiscard]] __attribute__((always_inline)) static auto
+        bind_pk_values(typename ConnType::Statement& stmt, const T& obj, int& param_index) noexcept
+                -> std::expected<void, typename ConnType::Error> {
+            auto result = bind_pk_values_impl<ConnType>(
+                    stmt, obj, param_index, std::make_index_sequence<primary_key_column_count_>{}
+            );
+            if (result.has_value()) {
+                param_index += static_cast<int>(primary_key_column_count_);
+            }
+            return result;
+        }
+
         // =====================================================================
         // COLUMN EXTRACTION HELPERS - Moved here from SelectStatement so that
         // constexpr access to all_members_[Index] happens in base.cppm context
