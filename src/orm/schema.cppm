@@ -405,6 +405,47 @@ export namespace storm::orm::schema {
             }
         }
 
+        // Append the table-level PRIMARY KEY (a, b) of a composite-PK model (#500), in
+        // declaration order — column order is semantically significant for the index the
+        // key creates. Emitted once, after every column, exactly like the junction-table
+        // DDL. No-op for a single-PK model, whose key is column-level.
+        //
+        // Parts are written with the canonical column-name writer (#422), not
+        // identifier_of: an FK part's column is "<name>_id", and naming the bare member
+        // would emit a PRIMARY KEY over a column that does not exist. A composite key
+        // whose parts are FKs is the canonical reason composite keys exist, so this path
+        // is load-bearing, not defensive.
+        //
+        // Free-standing (like the appenders above) rather than a SchemaStatement method:
+        // it needs only the PK member list, not the class, and the class is at its method
+        // ceiling (S1448).
+        template <typename SqlT, typename MembersT>
+        consteval void append_composite_pk_clause(SqlT& sql, const MembersT& members, bool is_composite) {
+            if (!is_composite) {
+                return;
+            }
+            sql.append(",\n    PRIMARY KEY (");
+            bool first_part = true;
+            for (const auto member : members) {
+                if (!first_part) {
+                    sql.append(", ");
+                }
+                storm::meta::append_column_name(sql, member);
+                first_part = false;
+            }
+            sql.append(")");
+        }
+
+        // Bytes append_composite_pk_clause writes, 0 for a single-PK model. Its byte-exact
+        // companion, measured the same way the max_length budget is: by rendering into the
+        // counting sink, so the two can never drift.
+        template <typename MembersT>
+        consteval auto composite_pk_clause_size(const MembersT& members, bool is_composite) -> std::size_t {
+            ClauseSizer sizer;
+            append_composite_pk_clause(sizer, members, is_composite);
+            return sizer.len;
+        }
+
         // Rendered length of the max_length clause(s) for one field (0 when the field
         // carries no max_length annotation). Measured by rendering into the counting sink,
         // so the column budget stays byte-exact regardless of dialect or bound magnitude:
@@ -722,51 +763,9 @@ export namespace storm::orm::schema {
             return size;
         }
 
-        // Bytes the trailing table-level PRIMARY KEY (a, b) clause of a composite-PK
-        // model adds (#500), 0 for a single-PK model: ",\n    PRIMARY KEY (" + parts +
-        // ", " separators + ")". Same shape as the junction-table clause at
-        // build_junction_sql, which is the pattern this reuses.
-        static consteval auto composite_pk_clause_size() -> std::size_t {
-            if (!Base::has_composite_pk_) {
-                return 0;
-            }
-            std::size_t size = 20; // ",\n    PRIMARY KEY (" (19) + ")" (1)
-            for (const auto member : Base::primary_key_members_) {
-                // column_name_size, not identifier_of: an FK part's COLUMN is "<name>_id"
-                // (#422). Over-counts the ", " separators by one (N vs N-1), which is
-                // deliberate slack.
-                size += statements::meta::column_name_size(member) + 2;
-            }
-            return size;
-        }
-
-        // Append the table-level PRIMARY KEY (a, b) of a composite-PK model (#500), in
-        // declaration order — column order is semantically significant for the index the
-        // key creates. Emitted once, after every column, exactly like the junction-table
-        // DDL. No-op for a single-PK model, whose key is column-level.
-        //
-        // Parts are written with the canonical column-name writer (#422), not
-        // identifier_of: an FK part's column is "<name>_id", and naming the bare member
-        // would emit a PRIMARY KEY over a column that does not exist. A composite key
-        // whose parts are FKs is the canonical reason composite keys exist, so this path
-        // is load-bearing, not defensive.
-        template <typename SqlT> static consteval void append_composite_pk_clause(SqlT& sql) {
-            if constexpr (Base::has_composite_pk_) {
-                sql.append(",\n    PRIMARY KEY (");
-                bool first_part = true;
-                for (const auto member : Base::primary_key_members_) {
-                    if (!first_part) {
-                        sql.append(", ");
-                    }
-                    statements::meta::append_column_name(sql, member);
-                    first_part = false;
-                }
-                sql.append(")");
-            }
-        }
-
         template <Dialect D = Dialect::SQLite> static consteval auto calculate_create_table_sql_size() -> std::size_t {
-            return 13 + Base::table_name_.size() + 3 + calculate_column_defs_size<D>() + composite_pk_clause_size() + 2;
+            return 13 + Base::table_name_.size() + 3 + calculate_column_defs_size<D>() +
+                   detail::composite_pk_clause_size(Base::primary_key_members_, Base::has_composite_pk_) + 2;
         }
 
         // Build the full CREATE TABLE SQL at compile-time using index sequence fold
@@ -790,7 +789,7 @@ export namespace storm::orm::schema {
              }()),
              ...);
 
-            append_composite_pk_clause(sql);
+            detail::append_composite_pk_clause(sql, Base::primary_key_members_, Base::has_composite_pk_);
             sql.append("\n)");
             // Whole-SQL backstop, mirroring the per-column one in build_column_def (#361).
             // The per-column check cannot catch a shortfall in calculate_column_defs_size
