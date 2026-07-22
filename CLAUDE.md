@@ -366,9 +366,35 @@ column. `calculate_column_defs_size` keeps FK columns on the FK-suffix budget fo
 (the regular suffix under-counts and `ConstexprString` truncates silently); `build_sql_impl` gained a
 whole-SQL `std::unreachable()` backstop, since the per-column one can't catch a sizing shortfall. Autoincrement on a composite key is **unrepresentable**,
 not just useless — SQLite rejects both spellings at parse time and PG's identity is single-column —
-hence the compile-time rejection. **Scope**: annotation + DDL only; INSERT/UPDATE/DELETE/JOIN by
-composite key and composite FKs are #501–#504, so a composite model reaching CRUD fails at a named
-concept. See [docs/guide/reference/FIELD_TYPES.md](docs/guide/reference/FIELD_TYPES.md).
+hence the compile-time rejection. **Scope**: annotation + DDL only; UPDATE/DELETE by composite key
+land in #501 (below), INSERT/JOIN and composite FKs in #502–#504.
+See [docs/guide/reference/FIELD_TYPES.md](docs/guide/reference/FIELD_TYPES.md).
+
+**Composite PK — UPDATE and DELETE (#501)**: the by-key `WHERE pk = ?` widens to
+`WHERE a = ? AND b = ?`, AND-joined in declaration order. Three things changed, each with its own
+failure mode. (1) **SQL text**: the clause writer/sizer pair `append_pk_where_clause` /
+`pk_where_clause_size` are free functions in `base.cppm` (NOT `BaseStatement` methods — that class is
+inherited by every statement type, and `SchemaStatement` already sits at the S1448 ceiling), taking
+the PK-member array as a parameter so `erase.cppm` and `update_grammar.cppm` share them without
+depending on each other. Parts go through `append_column_name` (#422), so an FK part emits
+`warehouse_id`. (2) **Bind arithmetic**: `bind_pk_values` binds all N parts via an index sequence
+(each part may be a DIFFERENT type — `int` + `std::string` is the canonical shape, so the dispatch is
+per-part at compile time) and threads `param_index` by REFERENCE, which is what removes the old
+`++param_index`-per-row stride assumption. In UPDATE the key follows the SET values, so it starts at
+N_set+1. (3) **SET-target gate**: `is_settable_member` in BOTH `update_grammar.cppm` and
+`upsert_grammar.cppm` now tests `Base::is_pk_member(M)` instead of `M != primary_key_` — the old test
+excluded only the FIRST part, leaving `SET b=? WHERE a=? AND b=?` (rewriting the key it matches on)
+legal. `bind_field_at_index` gained a **separate** `SkipAllPK` flag rather than widening `SkipPK`:
+INSERT passes `SkipPK` too, and composite INSERT is #502 — widening it would silently change INSERT's
+bind order as a side effect. Bulk DELETE uses a **row-value IN list**, `(a, b) IN ((?,?),(?,?))`
+(PG always, SQLite ≥ 3.15 vs the project's 3.35 floor); the per-column form `a IN (…) AND b IN (…)`
+is WRONG — it matches the parts' cross product and deletes unlisted keys. Chunking is now
+`MAX_CHUNK_ROWS = 799/N` since each row costs N parameters. The consteval DELETE grammar moved to a
+new `erase_grammar.cppm` leaf (mirroring `update_grammar.cppm`, #434) to keep `erase.cppm` under the
+file-size limit; its `append_row_placeholder_list` is shared by the consteval max-chunk builder AND
+the runtime per-count builder, so the two cannot drift into disagreeing placeholder counts.
+Single-PK SQL is byte-identical (regression-asserted), and single-PK UPDATE/DELETE benchmarks are
+within noise (≤1.4% deltas at cv 1.1–2.9%).
 
 **Foreign keys (#431)**: `[[= storm::fk<>]]` marks an FK field (bare = `RESTRICT`,
 the SQL default — no `ON DELETE` clause emitted). The `ON DELETE` policy is the template

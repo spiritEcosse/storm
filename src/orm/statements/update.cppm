@@ -282,7 +282,10 @@ export namespace storm::orm::statements {
             return reset_bind_execute(stmt, obj);
         }
 
-        // Helper to unroll inline binding for all fields (skips PK, then binds PK last)
+        // Helper to unroll inline binding for all fields (skips PK, then binds PK last).
+        // The SET values occupy placeholders 1..N_set and the key follows, so for a
+        // composite key the WHERE parameters start at N_set+1 and run N_pk wide (#501) —
+        // bind_pk_values threads param_index through, so the offset is never recomputed.
         template <std::size_t... Is>
         [[nodiscard]] __attribute__((always_inline)) static auto
         inline_bind_all_fields(Statement* stmt, const T& obj, std::index_sequence<Is...> /*unused*/) noexcept
@@ -290,11 +293,21 @@ export namespace storm::orm::statements {
             int param_index = 1;
 
             // Bind all non-PK fields at compile time using unified binder.
-            // IsUpdate=true: auto_update stamps now(); auto_create binds the object's
-            // stored value (preserving created_at). One now() read shared across fields (#209).
+            // SkipAllPK=true skips EVERY primary-key member, matching the SET clause
+            // build_field_assignments emits (#501). IsUpdate=true: auto_update stamps
+            // now(); auto_create binds the object's stored value (preserving created_at).
+            // One now() read shared across fields (#209).
+            // Named rather than three bare `true`s at the call site — they are three
+            // different policies and their order is not guessable from the call.
+            constexpr bool SKIP_PK     = true; // the key is bound separately, after the SET values
+            constexpr bool IS_UPDATE   = true; // auto_create keeps its stored value
+            constexpr bool SKIP_ALL_PK = true; // every part of a composite key, not just the first
+
             std::expected<void, Error> result{};
             const auto                 now = Base::batch_now();
-            ((result = Base::template bind_field_at_index<ConnType, Is, true, true>(stmt, obj, param_index, now),
+            ((result = Base::template bind_field_at_index<ConnType, Is, SKIP_PK, IS_UPDATE, SKIP_ALL_PK>(
+                      stmt, obj, param_index, now
+              ),
               result.has_value()) &&
              ...);
 
@@ -302,9 +315,9 @@ export namespace storm::orm::statements {
                 return result;
             }
 
-            // Bind primary key last (PK is never a FK field by design)
-            auto pk_value = obj.[:Base::primary_key_:];
-            return Base::template bind_value_by_type<ConnType>(*stmt, param_index, pk_value);
+            // Bind the whole primary key last — one value per PK column, in declaration
+            // order, matching the AND-joined WHERE clause.
+            return Base::template bind_pk_values<ConnType>(*stmt, obj, param_index);
         }
 
         // Ultra-optimized single UPDATE - pre-cached statement, fully inlined binding.

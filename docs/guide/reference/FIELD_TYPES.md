@@ -254,10 +254,35 @@ is the canonical association-table key, and the clause names the FK's actual col
 > `indexed` on a part is currently a no-op: the PK already indexes the parts, so the
 > per-column index is suppressed for every PK member, as it is for a single-column PK.
 
-> **Scope (#500)**: composite keys currently cover the annotation, the compile-time PK
-> machinery, and `CREATE TABLE` DDL. INSERT/UPDATE/DELETE/JOIN by composite key, and
-> composite foreign keys, land in #501–#504; until then a composite-PK model reaching a
-> CRUD path fails to compile at a named concept.
+### UPDATE and DELETE by composite key (#501)
+
+`update(obj)` and `erase(obj)` match on the **whole** key: the `WHERE pk = ?` of a
+single-PK model becomes `WHERE a = ? AND b = ?`, with every part bound in declaration
+order. A row matching only *some* parts is not touched.
+
+```cpp
+qs.erase(OrderItem{.order_id = 1, .product_id = 20}).execute();
+// DELETE FROM OrderItem WHERE order_id = ? AND product_id = ?
+
+qs.update(OrderItem{.order_id = 1, .product_id = 20, .quantity = 7}).execute();
+// UPDATE OrderItem SET quantity=? WHERE order_id = ? AND product_id = ?
+```
+
+- **No key part is ever a SET target.** The UPDATE (and upsert `DO UPDATE`) SET clause
+  excludes *every* PK member, so a statement can never rewrite part of the key it matches on.
+- **Batch DELETE uses a row-value `IN` list** — `WHERE (a, b) IN ((?,?),(?,?))`. This is
+  standard SQL (PostgreSQL always; SQLite since 3.15, well under this project's 3.35 floor).
+  The per-column form `a IN (…) AND b IN (…)` would match the *cross product* of the parts
+  and delete keys that were never listed, so it is not used.
+- **Batch chunking shrinks with key width.** Each row costs one bound parameter per PK
+  column, so an N-part key fits `799 / N` rows per chunk instead of 799. Single-PK models
+  keep the historical 799.
+- **Single-PK SQL is byte-identical** to what Storm emitted before composite support.
+
+> **Scope**: composite keys now cover the annotation, the compile-time PK machinery,
+> `CREATE TABLE` DDL (#500), and UPDATE/DELETE by key (#501). INSERT by composite key
+> (#502), upsert `ON CONFLICT` targets (#503), and composite foreign keys / JOIN (#504)
+> are still open.
 
 ## Optional Types (NULL Support)
 

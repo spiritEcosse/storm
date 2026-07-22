@@ -27,13 +27,16 @@ export namespace storm::orm::statements {
             // containers are not columns, so they must not appear in the SET clause.
             // Base::all_members_ already excludes them and matches the bind order used
             // by inline_bind_all_fields.
-            auto pk = Base::primary_key_;
-
+            //
+            // EVERY primary-key member is skipped, not just primary_key_ (#501): on a
+            // composite model the old `member != primary_key_` test left the other parts
+            // in the SET list, so the statement would rewrite part of the key it matches
+            // on. Identical to the old test for a single-PK model.
             ConstexprString<utilities::buffer_size::SQL_MEDIUM> result;
             bool                                                first = true;
 
             for (const auto& member : Base::all_members_) {
-                if (member != pk) {
+                if (!Base::is_pk_member(member)) {
                     if (!first) {
                         result.append(", ");
                     }
@@ -61,11 +64,16 @@ export namespace storm::orm::statements {
             std::unreachable(); // guarded by is_settable_member() at the call site
         }
 
-        // Each SET target must be a non-static data member of T, not the primary key,
-        // and not a relation container (#486) — m2m / reverse_fk members are not
-        // persisted columns, so setting them would emit a non-existent column.
+        // Each SET target must be a non-static data member of T, not ANY part of the
+        // primary key, and not a relation container (#486) — m2m / reverse_fk members are
+        // not persisted columns, so setting them would emit a non-existent column.
+        //
+        // The PK test is is_pk_member, not `Member != primary_key_` (#501): the latter
+        // excludes only the FIRST part, so on a composite model every other part stayed a
+        // legal SET target and `SET b=? WHERE a=? AND b=?` would rewrite the key being
+        // matched on. Unchanged for a single-PK model.
         template <std::meta::info Member> static consteval auto is_settable_member() -> bool {
-            return std::meta::is_nonstatic_data_member(Member) && Member != Base::primary_key_ &&
+            return std::meta::is_nonstatic_data_member(Member) && !Base::is_pk_member(Member) &&
                    !meta::is_relation_field(Member);
         }
 
@@ -84,6 +92,13 @@ export namespace storm::orm::statements {
         }
 
         // Is `member` an auto_update field NOT already present in the explicit pack?
+        //
+        // Unlike is_settable_member above, this does NOT exclude primary-key members, so
+        // an auto_update PK would be appended to the SET clause and stamped now() —
+        // rewriting the key the statement matches on. Pre-existing and narrow (it needs a
+        // time_point PK carrying auto_update, a shape no in-tree model has); tracked as
+        // #511, which also has to decide between silently excluding it and rejecting the
+        // model outright. Left alone here rather than widened as a side effect of #501.
         template <std::meta::info... Members>
         static consteval auto is_unlisted_auto_update(std::meta::info member) -> bool {
             return is_auto_update_field(member) && ((member != Members) && ...);
@@ -120,7 +135,10 @@ export namespace storm::orm::statements {
             return result;
         }
 
-        // Compile-time UPDATE SQL size calculation
+        // Compile-time UPDATE SQL size calculation. The key clause is "<a> = ? AND <b> = ?"
+        // — one column per PK part (#501), which for a single PK is the same " <pk> = ?"
+        // this used to hardcode. Exact: ConstexprString truncates SILENTLY on overflow, so
+        // an under-count would emit wrong SQL with no diagnostic.
         static consteval auto calculate_update_sql_size() -> std::size_t {
             using utilities::sql_len::SET;
             using utilities::sql_len::UPDATE;
@@ -131,13 +149,14 @@ export namespace storm::orm::statements {
             size += SET; // " SET "
             size += field_assignments_.len;
             size += WHERE; // " WHERE "
-            size += Base::pk_name_.size();
-            size += 4; // " = ?"
+            size += pk_where_clause_size(Base::primary_key_members_);
             size += 1; // null terminator
             return size;
         }
 
-        // Build UPDATE SQL at compile-time using ConstexprString
+        // Build UPDATE SQL at compile-time using ConstexprString.
+        // Single PK  → "UPDATE t SET a=?, b=? WHERE id = ?"   (byte-identical to pre-#501)
+        // Composite  → "UPDATE t SET c=? WHERE a = ? AND b = ?"
         static consteval auto build_update_sql_array() {
             constexpr std::size_t     sql_size = calculate_update_sql_size() + utilities::sql_len::LARGE_BUFFER;
             ConstexprString<sql_size> result;
@@ -147,8 +166,7 @@ export namespace storm::orm::statements {
             result.append(" SET ");
             result.append(std::string_view(field_assignments_.data.data(), field_assignments_.len));
             result.append(" WHERE ");
-            result.append(Base::pk_name_);
-            result.append(" = ?");
+            append_pk_where_clause(result, Base::primary_key_members_);
 
             return result;
         }
