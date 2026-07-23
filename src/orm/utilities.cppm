@@ -639,6 +639,58 @@ export namespace storm::orm::utilities {
     // Specialized type aliases for common use cases
     using BulkSQLCache = SQLCache<std::size_t, buffer_size::CACHE_DEFAULT>;
 
+    // ============================================================================
+    // Stitch Key (#504)
+    // ============================================================================
+
+    // The m2m/reverse-FK two-query eager-load stitches Q2 rows to their Q1 owner
+    // through a hash map keyed on the owner's primary key. A single-column PK key
+    // was a bare std::int64_t; a composite PK needs a multi-value key that still
+    // crosses the M2MRelation type-erased vtable (ErasedStatementPtr — no T in
+    // scope there), so it can't be a template parameter. StitchKey is a
+    // fixed-size inline byte buffer built by appending one part at a time:
+    // append_int64 for integral PK parts (8 bytes, matching today's exact
+    // single-PK layout so that case is byte-identical), append_string for text
+    // parts (hashed to 8 bytes — the stitch only needs equality for map lookup,
+    // never the original text back, so storing a hash instead of the bytes
+    // avoids capping composite key width by string length). CAPACITY=32 covers
+    // every composite PK in the codebase today (max 3 parts before #504 ships)
+    // with room to spare; a 4th+ part or two string parts still fits (4 x 8 = 32).
+    class StitchKey {
+      public:
+        static constexpr std::size_t CAPACITY = 32;
+
+        void append_int64(std::int64_t v) noexcept {
+            append_bytes(&v, sizeof(v));
+        }
+
+        void append_string(std::string_view v) noexcept {
+            const std::size_t h = std::hash<std::string_view>{}(v);
+            append_bytes(&h, sizeof(h));
+        }
+
+        friend auto operator==(const StitchKey& lhs, const StitchKey& rhs) noexcept -> bool {
+            return lhs.len_ == rhs.len_ &&
+                   std::ranges::equal(std::span{lhs.bytes_.data(), lhs.len_}, std::span{rhs.bytes_.data(), rhs.len_});
+        }
+
+        [[nodiscard]] auto data() const noexcept -> const std::byte* {
+            return bytes_.data();
+        }
+        [[nodiscard]] auto size() const noexcept -> std::size_t {
+            return len_;
+        }
+
+      private:
+        void append_bytes(const void* src, std::size_t n) noexcept {
+            std::memcpy(bytes_.data() + len_, src, n);
+            len_ += n;
+        }
+
+        std::array<std::byte, CAPACITY> bytes_{};
+        std::size_t                     len_ = 0;
+    };
+
 } // namespace storm::orm::utilities
 
 // Hash specialization for UUID to enable unordered_map<UUID, T*>
@@ -649,3 +701,14 @@ template <> struct std::hash<storm::orm::utilities::UUID> {
     }
 };
 // LCOV_EXCL_STOP
+
+// std::hash<StitchKey> must live in namespace std (import std; provides no macro
+// or ADL escape hatch for specializing it inside storm::). Hashes the occupied
+// byte range only (mirrors operator=='s a.len_-bounded comparison).
+export template <> struct std::hash<storm::orm::utilities::StitchKey> {
+    auto operator()(const storm::orm::utilities::StitchKey& k) const noexcept -> std::size_t {
+        return std::hash<std::string_view>{}(
+                std::string_view{reinterpret_cast<const char*>(k.data()), k.size()} // NOLINT
+        );
+    }
+};
