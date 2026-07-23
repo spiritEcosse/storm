@@ -2,9 +2,10 @@
 
 Storm supports single-row `INSERT ... ON CONFLICT` through the insert proxy.
 Choose an explicit unique conflict target, then select either `DO UPDATE` or
-`DO NOTHING`. The target is checked at compile time: it must be a unique field
-or exactly match a declared `UniqueIndex`. Primary keys are omitted from inserts
-and therefore cannot be conflict targets.
+`DO NOTHING`. The target is checked at compile time: it must be a unique field,
+exactly match a declared `UniqueIndex`, or exactly match a composite primary key
+(#503, see below). A single-column primary key is omitted from inserts and
+therefore cannot be a conflict target.
 
 ## DO UPDATE
 
@@ -60,3 +61,26 @@ existing row's ID when a conflict is skipped. Use `DO UPDATE` when the ID is
 needed on every call.
 
 Bulk insert spans are not supported by the upsert chain.
+
+## Composite primary key targets (#503)
+
+On a model with a composite primary key ([`primary_part`](../reference/FIELD_TYPES.md)),
+the conflict target may be the **full** key column set, in declaration order — a
+partial (strict-subset) target is a compile-time error, since one column of a
+composite key is not unique on its own. A composite key is never DB-generated
+(#502), so there is nothing to `RETURNING`:
+
+```cpp
+auto result = qs.insert(order_item)
+    .on_conflict<^^OrderItem::order_id, ^^OrderItem::product_id>()
+    .update<^^OrderItem::quantity>()
+    .execute();  // std::expected<void, storm::db::Error> — no RETURNING
+```
+
+| Operation | Single-column PK / unique target | Composite-PK target |
+| --- | --- | --- |
+| `.update<...>()` | `std::expected<int64_t, Error>` | `std::expected<void, Error>` |
+| `.nothing()` | `std::expected<std::optional<int64_t>, Error>` | `std::expected<void, Error>` |
+
+For a composite target, `.nothing()` cannot report whether the row was inserted
+or the conflict was skipped — that signal is unavailable, not silently wrong.

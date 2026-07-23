@@ -111,23 +111,30 @@ export namespace storm::orm::statements {
             return result;
         }
 
-        // Full "INSERT ... ON CONFLICT (...) DO NOTHING RETURNING <pk>" statement.
+        // Full "INSERT ... ON CONFLICT (...) DO NOTHING [RETURNING <pk>]" statement.
+        // A composite key is never DB-generated (#502/#503): every part is caller
+        // data, so there is nothing for RETURNING to echo back — the clause is
+        // omitted entirely on a composite model. Single-PK text is unchanged.
         template <std::meta::info... Target> static auto nothing_sql() -> const std::string& {
             static const std::string sql = [] {
                 std::string out(build_insert_prefix());
                 out += " ON CONFLICT ";
                 out += std::string(build_conflict_target<Target...>());
-                out += " DO NOTHING RETURNING ";
-                out += std::string(Base::pk_name_);
+                out += " DO NOTHING";
+                if constexpr (!Base::has_composite_pk_) {
+                    out += " RETURNING ";
+                    out += std::string(Base::pk_name_);
+                }
                 return out;
             }();
             return sql;
         }
 
-        // Full "INSERT ... ON CONFLICT (...) DO UPDATE SET <set_clause> RETURNING <pk>"
+        // Full "INSERT ... ON CONFLICT (...) DO UPDATE SET <set_clause> [RETURNING <pk>]"
         // statement. The SET clause is passed in as a precomputed value (built by
         // build_excluded_set_clause<SetCols...>()) because Target... and SetCols...
-        // cannot share one template parameter list.
+        // cannot share one template parameter list. RETURNING is omitted on a
+        // composite model — same reasoning as nothing_sql() above.
         template <std::meta::info... Target, std::size_t N>
         static auto update_sql(const ConstexprString<N>& set_clause) -> std::string {
             std::string out(build_insert_prefix());
@@ -135,8 +142,10 @@ export namespace storm::orm::statements {
             out += std::string(build_conflict_target<Target...>());
             out += " DO UPDATE SET ";
             out += std::string(set_clause);
-            out += " RETURNING ";
-            out += std::string(Base::pk_name_);
+            if constexpr (!Base::has_composite_pk_) {
+                out += " RETURNING ";
+                out += std::string(Base::pk_name_);
+            }
             return out;
         }
     };
@@ -176,13 +185,32 @@ export namespace storm::orm::statements {
         return matched;
     }
 
+    // True if T has a COMPOSITE primary key and the Target... column set exactly
+    // matches it, in declaration order (#503). A composite PK is a unique
+    // constraint over its N columns, so the full set is a valid conflict target —
+    // but a STRICT SUBSET is not unique on its own (order-sensitive match, same as
+    // target_matches_unique_index, so a partial or reordered target is correctly
+    // rejected). Gated on has_composite_pk_ so a single-column PK is NOT matched
+    // here: INSERT omits it from the statement entirely, so it can never conflict
+    // — that exclusion predates this issue and must stay unchanged.
+    template <typename T, std::meta::info... Target> consteval auto target_matches_primary_key() -> bool {
+        if constexpr (!BaseStatement<T>::has_composite_pk_) {
+            return false;
+        } else {
+            constexpr std::array targets{Target...};
+            return fields_equal_ordered(BaseStatement<T>::primary_key_members_, targets);
+        }
+    }
+
     // A valid conflict target: every Target is a data member of T, AND either a
-    // single storm::unique field or a matching UniqueIndex<...>. INSERT
-    // omits the primary key, so it cannot form a useful conflict target.
+    // single storm::unique field, a matching UniqueIndex<...>, or the full
+    // composite-PK column set (#503). INSERT omits a single-column PK, so it alone
+    // cannot form a useful conflict target — that case is unaffected here.
     template <typename T, std::meta::info... Target>
-    concept ConflictTargetUnique = ((std::meta::is_nonstatic_data_member(Target)) && ...) &&
-                                   ((sizeof...(Target) == 1 && (storm::meta::is_unique(Target) && ...)) ||
-                                    target_matches_unique_index<T, Target...>());
+    concept ConflictTargetUnique =
+            ((std::meta::is_nonstatic_data_member(Target)) && ...) &&
+            ((sizeof...(Target) == 1 && (storm::meta::is_unique(Target) && ...)) ||
+             target_matches_unique_index<T, Target...>() || target_matches_primary_key<T, Target...>());
 
     // A valid SET target: a non-static data member of T that is not the PK.
     template <typename T, std::meta::info... SetCols>

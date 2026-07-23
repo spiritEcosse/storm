@@ -79,7 +79,10 @@ export namespace storm::orm::statements {
             using Error = typename ConnType::Error;
             InsertStatement<T, ConnType> stmt;
             const T&                     obj;
-            [[nodiscard]] auto           execute() -> std::expected<std::int64_t, Error> {
+            // A composite key is never DB-generated (#502/#503): DO UPDATE always
+            // touches a row, but there is no generated value to RETURN, so the
+            // proxy resolves to void on a composite model instead of the id.
+            [[nodiscard]] auto execute() {
                 return stmt.template upsert_update_runner<Target...>().template run<SetCols...>(obj);
             }
             [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
@@ -101,7 +104,12 @@ export namespace storm::orm::statements {
             using Error = typename ConnType::Error;
             InsertStatement<T, ConnType> stmt;
             const T&                     obj;
-            [[nodiscard]] auto execute() -> std::expected<std::optional<std::int64_t>, Error> { // NOSONAR(cpp:S1659)
+            // A composite key is never DB-generated (#502/#503): RETURNING is
+            // omitted, so there is no id to report and no way to tell "inserted"
+            // from "skipped" — the proxy resolves to void on a composite model
+            // (documented as unavailable, per the issue's DoD) instead of
+            // optional<int64_t>.
+            [[nodiscard]] auto execute() { // NOSONAR(cpp:S1659)
                 return stmt.template execute_upsert_nothing<Target...>(obj);
             }
             [[nodiscard]] auto to_sql() -> std::expected<std::string, Error> {
@@ -553,25 +561,54 @@ export namespace storm::orm::statements {
             return Base::has_composite_pk_ ? Base::field_count_ : Base::field_count_ - 1;
         }
 
-        // Upsert DO NOTHING — RETURNING yields the new id, or no row when skipped.
-        template <std::meta::info... Target>
-        [[nodiscard]] auto execute_upsert_nothing(const T& obj) -> std::expected<std::optional<std::int64_t>, Error> {
-            const std::string& sql      = Grammar::template nothing_sql<Target...>();
-            auto               prepared = prepare_and_bind(sql, obj);
-            if (!prepared) {
-                return std::unexpected(prepared.error());
-            }
-            Statement*                  stmt = *prepared;
-            const int                   rc   = stmt->step_raw();
-            std::optional<std::int64_t> out;
-            if (rc == Statement::ROW_AVAILABLE) {
-                out = stmt->extract_int64(0);
-            }
+        // Step a prepared statement to completion and collapse it to void: a plain
+        // NO_MORE_ROWS is success, anything else is an Error. Shared by the
+        // composite-PK branches of execute_upsert_nothing and UpsertUpdateRunner::run
+        // — a composite key never has RETURNING to extract, so both just need
+        // "did it execute", not a row.
+        [[nodiscard]] static auto finish_void_step(Statement* stmt) -> std::expected<void, Error> {
+            const int rc = stmt->step_raw();
             stmt->reset();
-            if (rc == Statement::ROW_AVAILABLE || rc == Statement::NO_MORE_ROWS) {
-                return out; // value() set when a row came back, nullopt when skipped
+            if (rc == Statement::NO_MORE_ROWS) {
+                return {};
             }
             return std::unexpected(Error{rc, stmt->get_error_message()});
+        }
+
+        // Upsert DO NOTHING — RETURNING yields the new id, or no row when skipped.
+        //
+        // A composite key is never DB-generated (#503): nothing_sql() omits
+        // RETURNING for a composite model, so there is no row to distinguish
+        // "inserted" from "skipped" — that signal is unavailable there (documented
+        // in the issue's DoD), and this resolves to std::expected<void, Error>.
+        template <std::meta::info... Target> [[nodiscard]] auto execute_upsert_nothing(const T& obj) {
+            const std::string& sql      = Grammar::template nothing_sql<Target...>();
+            auto               prepared = prepare_and_bind(sql, obj);
+            if constexpr (Base::has_composite_pk_) {
+                if (!prepared) {
+                    return std::expected<void, Error>(std::unexpected(prepared.error()));
+                }
+                return finish_void_step(*prepared);
+            } else {
+                if (!prepared) {
+                    return std::expected<std::optional<std::int64_t>, Error>(std::unexpected(prepared.error()));
+                }
+                Statement*                  stmt = *prepared;
+                const int                   rc   = stmt->step_raw();
+                std::optional<std::int64_t> out;
+                if (rc == Statement::ROW_AVAILABLE) {
+                    out = stmt->extract_int64(0);
+                }
+                stmt->reset();
+                if (rc == Statement::ROW_AVAILABLE || rc == Statement::NO_MORE_ROWS) {
+                    return std::expected<std::optional<std::int64_t>, Error>(
+                            out
+                    ); // value() set when a row came back, nullopt when skipped
+                }
+                return std::expected<std::optional<std::int64_t>, Error>(
+                        std::unexpected(Error{rc, stmt->get_error_message()})
+                );
+            }
         }
 
         // Upsert DO UPDATE — always touches a row, so RETURNING always yields the id.
@@ -587,34 +624,50 @@ export namespace storm::orm::statements {
         // (this function's pack) + SetCols (the nested run<>() pack) mirrors the proven
         // ConflictTarget<Target...>::update<SetCols...>() shape and resolves both packs
         // unambiguously.
+        // A composite key is never DB-generated (#503): update_sql() omits RETURNING
+        // for a composite model, so run() resolves to std::expected<void, Error>
+        // there instead of the generated id.
         template <std::meta::info... Target> struct UpsertUpdateRunner {
-            InsertStatement* self;
-            template <std::meta::info... SetCols>
-            [[nodiscard]] auto run(const T& obj) -> std::expected<std::int64_t, Error> {
+            InsertStatement*                                         self;
+            template <std::meta::info... SetCols> [[nodiscard]] auto run(const T& obj) {
                 const std::string sql = Grammar::template update_sql<Target...>(
                         Grammar::template build_excluded_set_clause<SetCols...>()
                 );
                 auto stmt_result = self->conn_->prepare_cached(sql);
-                if (!stmt_result) {
-                    return std::unexpected(stmt_result.error());
-                }
-                Statement* stmt = *stmt_result;
-                // (1) bind VALUES params (non-PK fields, same as plain INSERT).
-                if (auto bind_result = self->bind_all_fields(*stmt, obj); !bind_result) {
-                    return std::unexpected(bind_result.error());
-                }
-                // (2) bind the trailing auto_update now() params (excluded.col targets bind nothing).
-                if (auto bind_result = self->template bind_upsert_auto_updates<SetCols...>(stmt); !bind_result) {
-                    return std::unexpected(bind_result.error());
-                }
-                const int rc = stmt->step_raw();
-                if (rc == Statement::ROW_AVAILABLE) {
-                    std::int64_t id = stmt->extract_int64(0);
+                if constexpr (Base::has_composite_pk_) {
+                    if (!stmt_result) {
+                        return std::expected<void, Error>(std::unexpected(stmt_result.error()));
+                    }
+                    Statement* stmt = *stmt_result;
+                    if (auto bind_result = self->bind_all_fields(*stmt, obj); !bind_result) {
+                        return std::expected<void, Error>(std::unexpected(bind_result.error()));
+                    }
+                    if (auto bind_result = self->template bind_upsert_auto_updates<SetCols...>(stmt); !bind_result) {
+                        return std::expected<void, Error>(std::unexpected(bind_result.error()));
+                    }
+                    return InsertStatement::finish_void_step(stmt);
+                } else {
+                    if (!stmt_result) {
+                        return std::expected<std::int64_t, Error>(std::unexpected(stmt_result.error()));
+                    }
+                    Statement* stmt = *stmt_result;
+                    // (1) bind VALUES params (non-PK fields, same as plain INSERT).
+                    if (auto bind_result = self->bind_all_fields(*stmt, obj); !bind_result) {
+                        return std::expected<std::int64_t, Error>(std::unexpected(bind_result.error()));
+                    }
+                    // (2) bind the trailing auto_update now() params (excluded.col targets bind nothing).
+                    if (auto bind_result = self->template bind_upsert_auto_updates<SetCols...>(stmt); !bind_result) {
+                        return std::expected<std::int64_t, Error>(std::unexpected(bind_result.error()));
+                    }
+                    const int rc = stmt->step_raw();
+                    if (rc == Statement::ROW_AVAILABLE) {
+                        std::int64_t id = stmt->extract_int64(0);
+                        stmt->reset();
+                        return std::expected<std::int64_t, Error>(id);
+                    }
                     stmt->reset();
-                    return id;
+                    return std::expected<std::int64_t, Error>(std::unexpected(Error{rc, stmt->get_error_message()}));
                 }
-                stmt->reset();
-                return std::unexpected(Error{rc, stmt->get_error_message()});
             }
         };
 

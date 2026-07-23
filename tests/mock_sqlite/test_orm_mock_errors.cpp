@@ -68,6 +68,26 @@ namespace {
         [[= storm::auto_update]] std::chrono::system_clock::time_point updated_at{};
     };
 
+    // Composite-PK model, used to cover the composite branches of
+    // execute_upsert_nothing()/UpsertUpdateRunner::run() (#503) — the plain
+    // single-PK mocks above only ever hit the single-PK else-branch.
+    struct MockOrderLine {
+        [[= storm::primary_part]] int order_id{};
+        [[= storm::primary_part]] int product_id{};
+        int                           quantity{};
+    };
+
+    // Composite-PK + auto_update, mirroring MockPersonAutoUpdate above — isolates
+    // the composite branch's bind_upsert_auto_updates() error path (#503) from
+    // bind_all_fields()'. `quantity` is a settable non-key column so SetCols can
+    // list it while leaving `updated_at` unlisted, forcing the auto_update tail.
+    struct MockOrderLineAutoUpdate {
+        [[= storm::primary_part]] int                                  order_id{};
+        [[= storm::primary_part]] int                                  product_id{};
+        int                                                            quantity{};
+        [[= storm::auto_update]] std::chrono::system_clock::time_point updated_at{};
+    };
+
     /**
      * @brief Test fixture for ORM mock error tests
      *
@@ -258,6 +278,110 @@ namespace {
 
         auto result = stmt.template upsert_update_runner<^^MockPersonAutoUpdate::id>()
                               .template run<^^MockPersonAutoUpdate::name>(person);
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+    }
+
+    // Composite-PK upsert (#503): nothing_sql()/update_sql() omit RETURNING for a
+    // composite model, so execute_upsert_nothing()/UpsertUpdateRunner::run() take
+    // the has_composite_pk_ branch instead — covered here since MockPerson (above)
+    // is single-PK and never exercises it.
+
+    TEST_F(ORMMockErrorTest, CompositeUpsertNothingFailsOnPrepareError) {
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        (void)QuerySet<MockOrderLine>::set_default_connection(":memory:");
+        auto conn = QuerySet<MockOrderLine>::get_default_connection();
+        storm::orm::statements::InsertStatement<MockOrderLine, storm::db::sqlite::Connection> stmt{conn};
+        MockOrderLine const line{.order_id = 1, .product_id = 10, .quantity = 5};
+
+        auto result =
+                stmt.template execute_upsert_nothing<^^MockOrderLine::order_id, ^^MockOrderLine::product_id>(line);
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_ERROR);
+    }
+
+    TEST_F(ORMMockErrorTest, CompositeUpsertNothingFailsOnStepError) {
+        MockSqlite3Config::step_returns(SQLITE_IOERR);
+
+        (void)QuerySet<MockOrderLine>::set_default_connection(":memory:");
+        auto conn = QuerySet<MockOrderLine>::get_default_connection();
+        storm::orm::statements::InsertStatement<MockOrderLine, storm::db::sqlite::Connection> stmt{conn};
+        MockOrderLine const line{.order_id = 1, .product_id = 10, .quantity = 5};
+
+        auto result =
+                stmt.template execute_upsert_nothing<^^MockOrderLine::order_id, ^^MockOrderLine::product_id>(line);
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_IOERR);
+    }
+
+    TEST_F(ORMMockErrorTest, CompositeUpsertUpdateFailsOnPrepareError) {
+        MockSqlite3Config::prepare_returns(SQLITE_ERROR);
+
+        (void)QuerySet<MockOrderLine>::set_default_connection(":memory:");
+        auto conn = QuerySet<MockOrderLine>::get_default_connection();
+        storm::orm::statements::InsertStatement<MockOrderLine, storm::db::sqlite::Connection> stmt{conn};
+        MockOrderLine const line{.order_id = 1, .product_id = 10, .quantity = 5};
+
+        auto result = stmt.template upsert_update_runner<^^MockOrderLine::order_id, ^^MockOrderLine::product_id>()
+                              .template run<^^MockOrderLine::quantity>(line);
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_ERROR);
+    }
+
+    TEST_F(ORMMockErrorTest, CompositeUpsertUpdateFailsOnBindError) {
+        // Fail bind_int (used for every field of MockOrderLine) so bind_all_fields() errors out.
+        MockSqlite3Config::bind_int_returns(SQLITE_NOMEM);
+
+        (void)QuerySet<MockOrderLine>::set_default_connection(":memory:");
+        auto conn = QuerySet<MockOrderLine>::get_default_connection();
+        storm::orm::statements::InsertStatement<MockOrderLine, storm::db::sqlite::Connection> stmt{conn};
+        MockOrderLine const line{.order_id = 1, .product_id = 10, .quantity = 5};
+
+        auto result = stmt.template upsert_update_runner<^^MockOrderLine::order_id, ^^MockOrderLine::product_id>()
+                              .template run<^^MockOrderLine::quantity>(line);
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+    }
+
+    TEST_F(ORMMockErrorTest, CompositeUpsertUpdateFailsOnStepError) {
+        MockSqlite3Config::step_returns(SQLITE_IOERR);
+
+        (void)QuerySet<MockOrderLine>::set_default_connection(":memory:");
+        auto conn = QuerySet<MockOrderLine>::get_default_connection();
+        storm::orm::statements::InsertStatement<MockOrderLine, storm::db::sqlite::Connection> stmt{conn};
+        MockOrderLine const line{.order_id = 1, .product_id = 10, .quantity = 5};
+
+        auto result = stmt.template upsert_update_runner<^^MockOrderLine::order_id, ^^MockOrderLine::product_id>()
+                              .template run<^^MockOrderLine::quantity>(line);
+
+        ASSERT_FALSE(result.has_value());
+        EXPECT_EQ(result.error().code(), SQLITE_IOERR);
+    }
+
+    TEST_F(ORMMockErrorTest, CompositeUpsertUpdateFailsOnAutoUpdateBindError) {
+        // For MockOrderLineAutoUpdate{order_id, product_id, quantity, updated_at}, the
+        // composite DO UPDATE binds ALL fields as VALUES (#502): order_id/product_id/quantity
+        // via bind_int, then updated_at via bind_text (tp_to_string) -> text #1. SetCols =
+        // quantity leaves updated_at unlisted, so the auto_update tail (#209) re-binds it ->
+        // text #2. Fail only text #2 to isolate bind_upsert_auto_updates' error branch from
+        // bind_all_fields'.
+        MockSqlite3Config::bind_text_fails_on_call(2, SQLITE_NOMEM);
+
+        (void)QuerySet<MockOrderLineAutoUpdate>::set_default_connection(":memory:");
+        auto conn = QuerySet<MockOrderLineAutoUpdate>::get_default_connection();
+        storm::orm::statements::InsertStatement<MockOrderLineAutoUpdate, storm::db::sqlite::Connection> stmt{conn};
+        MockOrderLineAutoUpdate const line{.order_id = 1, .product_id = 10, .quantity = 5};
+
+        auto result = stmt.template upsert_update_runner<
+                                  ^^MockOrderLineAutoUpdate::order_id,
+                                  ^^MockOrderLineAutoUpdate::product_id>()
+                              .template run<^^MockOrderLineAutoUpdate::quantity>(line);
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
