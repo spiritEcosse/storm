@@ -316,9 +316,41 @@ qs.insert(oi).execute();   // → std::expected<void, Error>
 
 **Single-PK models remain unchanged** — they still return `int64_t` and emit `RETURNING id`.
 
+### UPSERT by composite key (#503)
+
+The `on_conflict<...>()` target may be the **full** composite-PK column set, in
+declaration order — a composite PK is itself a unique constraint over its N columns.
+A **partial** target (a strict subset) is rejected at compile time: one column of a
+composite key is not unique on its own.
+
+```cpp
+qs.insert(oi).on_conflict<^^OrderItem::order_id, ^^OrderItem::product_id>()
+   .update<^^OrderItem::quantity>().execute();
+// SQL: INSERT INTO OrderItem (order_id, product_id, quantity) VALUES (?, ?, ?)
+//      ON CONFLICT (order_id, product_id) DO UPDATE SET quantity=excluded.quantity
+//      -- no RETURNING clause
+
+qs.insert(oi).on_conflict<^^OrderItem::order_id>()
+   // COMPILE ERROR: order_id alone is not unique — it's one part of a 2-part key
+```
+
+Same reasoning as plain INSERT (#502): a composite key is never DB-generated, so
+there is nothing for `RETURNING` to echo back.
+
+- **No `RETURNING` clause is emitted** for a composite target — both `DO UPDATE` and
+  `DO NOTHING` resolve to `std::expected<void, Error>` instead of the single-PK
+  `int64_t` / `std::optional<int64_t>`.
+- **`DO NOTHING`'s "was it skipped?" signal is unavailable** for a composite target
+  (documented here rather than reconstructed some other way — there is no row to
+  report on since `RETURNING` is omitted).
+- **`DO UPDATE SET` still cannot target any key part** — the SET-target gate excludes
+  every PK member, same as plain UPDATE (#501).
+- **Single-PK upsert SQL is byte-identical** to before — `RETURNING id` is still
+  emitted, and the return types are unchanged.
+
 > **Scope**: composite keys now cover the annotation (#500), compile-time PK machinery,
-> `CREATE TABLE` DDL, UPDATE/DELETE by key (#501), and INSERT by key (#502). Upsert
-> `ON CONFLICT` targets (#503) and composite foreign keys / JOIN (#504) are still open.
+> `CREATE TABLE` DDL, UPDATE/DELETE by key (#501), INSERT by key (#502), and upsert
+> `ON CONFLICT` targets (#503). Composite foreign keys / JOIN (#504) is still open.
 
 ## Optional Types (NULL Support)
 

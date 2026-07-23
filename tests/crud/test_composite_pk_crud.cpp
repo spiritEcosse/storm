@@ -735,4 +735,140 @@ TYPED_TEST(StockEntryInsertTest, DuplicateFkKeyIsAnError) {
     EXPECT_EQ(this->row_count(), 1);
 }
 
+// ── (#503) UPSERT by composite key ───────────────────────────────────────────
+// on_conflict<> targeting the FULL composite-PK column set. A composite key is
+// never DB-generated (#502), so there is nothing to RETURN: both DO NOTHING and
+// DO UPDATE resolve to std::expected<void, Error> on a composite model, unlike
+// the std::optional<int64_t>/int64_t single-PK proxies.
+
+namespace {
+    template <typename ConnType> class OrderLineUpsertTest : public CompositePkFixture<OrderLine, ConnType> {};
+} // namespace
+
+TYPED_TEST_SUITE(OrderLineUpsertTest, DatabaseTypes);
+
+TYPED_TEST(OrderLineUpsertTest, DoNothingSkipsOnConflict) {
+    storm::QuerySet<OrderLine, TypeParam> qs;
+    const OrderLine                       first{.order_id = 1, .product_id = 10, .quantity = 5, .note = "a"};
+    auto                                  inserted =
+            qs.insert(first).template on_conflict<^^OrderLine::order_id, ^^OrderLine::product_id>().nothing().execute();
+    static_assert(
+            std::is_same_v<decltype(inserted), std::expected<void, typename TypeParam::Error>>,
+            "a composite key has nothing to RETURN, even for DO NOTHING"
+    );
+    ASSERT_TRUE(inserted.has_value());
+    EXPECT_EQ(this->row_count(), 1);
+
+    const OrderLine conflicting{.order_id = 1, .product_id = 10, .quantity = 99, .note = "b"};
+    auto            skipped = qs.insert(conflicting)
+                           .template on_conflict<^^OrderLine::order_id, ^^OrderLine::product_id>()
+                           .nothing()
+                           .execute();
+    ASSERT_TRUE(skipped.has_value());
+    EXPECT_EQ(this->row_count(), 1) << "the conflicting insert must be skipped, not applied";
+
+    using storm::orm::where::f;
+    auto row = this->find_one(f<^^OrderLine::order_id>() == 1 && f<^^OrderLine::product_id>() == 10);
+    ASSERT_TRUE(row.has_value());
+    EXPECT_EQ(row->quantity, 5) << "DO NOTHING must not overwrite the existing row";
+}
+
+TYPED_TEST(OrderLineUpsertTest, DoUpdateOverwritesListedColumn) {
+    storm::QuerySet<OrderLine, TypeParam> qs;
+    const OrderLine                       first{.order_id = 2, .product_id = 20, .quantity = 5, .note = "a"};
+    auto                                  seeded = qs.insert(first)
+                          .template on_conflict<^^OrderLine::order_id, ^^OrderLine::product_id>()
+                          .template update<^^OrderLine::quantity>()
+                          .execute();
+    ASSERT_TRUE(seeded.has_value());
+
+    const OrderLine conflicting{.order_id = 2, .product_id = 20, .quantity = 99, .note = "b"};
+    auto            updated = qs.insert(conflicting)
+                           .template on_conflict<^^OrderLine::order_id, ^^OrderLine::product_id>()
+                           .template update<^^OrderLine::quantity>()
+                           .execute();
+    static_assert(
+            std::is_same_v<decltype(updated), std::expected<void, typename TypeParam::Error>>,
+            "a composite key has nothing to RETURN for DO UPDATE either"
+    );
+    ASSERT_TRUE(updated.has_value());
+    EXPECT_EQ(this->row_count(), 1);
+
+    using storm::orm::where::f;
+    auto row = this->find_one(f<^^OrderLine::order_id>() == 2 && f<^^OrderLine::product_id>() == 20);
+    ASSERT_TRUE(row.has_value());
+    EXPECT_EQ(row->quantity, 99) << "the listed column is overwritten by the conflicting insert";
+    EXPECT_EQ(row->note, "a") << "an unlisted column is preserved from the original row";
+}
+
+// A key that shares only ONE part is not a conflict at all — both rows land.
+TYPED_TEST(OrderLineUpsertTest, PartialKeyMatchIsNotAConflict) {
+    storm::QuerySet<OrderLine, TypeParam> qs;
+    const OrderLine                       first{.order_id = 3, .product_id = 30, .quantity = 1, .note = "a"};
+    auto                                  first_result =
+            qs.insert(first).template on_conflict<^^OrderLine::order_id, ^^OrderLine::product_id>().nothing().execute();
+    ASSERT_TRUE(first_result.has_value());
+
+    const OrderLine same_order{.order_id = 3, .product_id = 31, .quantity = 2, .note = "b"};
+    auto            second_result = qs.insert(same_order)
+                                 .template on_conflict<^^OrderLine::order_id, ^^OrderLine::product_id>()
+                                 .nothing()
+                                 .execute();
+    ASSERT_TRUE(second_result.has_value());
+    EXPECT_EQ(this->row_count(), 2) << "sharing only order_id is not a full-key conflict";
+}
+
+// Mixed-type key parts (int + std::string) — proves the conflict target and the
+// bound VALUES both dispatch per part type, not just for an all-int key.
+namespace {
+    template <typename ConnType> class InventoryUpsertTest : public CompositePkFixture<Inventory, ConnType> {};
+} // namespace
+
+TYPED_TEST_SUITE(InventoryUpsertTest, DatabaseTypes);
+
+TYPED_TEST(InventoryUpsertTest, DoUpdateOverwritesListedColumnWithTextKeyPart) {
+    storm::QuerySet<Inventory, TypeParam> qs;
+    const Inventory                       first{.warehouse = 1, .sku = "apple", .on_hand = 5};
+    auto                                  seeded = qs.insert(first)
+                          .template on_conflict<^^Inventory::warehouse, ^^Inventory::sku>()
+                          .template update<^^Inventory::on_hand>()
+                          .execute();
+    ASSERT_TRUE(seeded.has_value());
+
+    const Inventory conflicting{.warehouse = 1, .sku = "apple", .on_hand = 900};
+    auto            updated = qs.insert(conflicting)
+                           .template on_conflict<^^Inventory::warehouse, ^^Inventory::sku>()
+                           .template update<^^Inventory::on_hand>()
+                           .execute();
+    static_assert(
+            std::is_same_v<decltype(updated), std::expected<void, typename TypeParam::Error>>,
+            "a composite key has nothing to RETURN, even with a text key part"
+    );
+    ASSERT_TRUE(updated.has_value());
+    EXPECT_EQ(this->row_count(), 1);
+
+    using storm::orm::where::f;
+    auto row = this->find_one(f<^^Inventory::warehouse>() == 1 && f<^^Inventory::sku>() == std::string("apple"));
+    ASSERT_TRUE(row.has_value());
+    EXPECT_EQ(row->on_hand, 900) << "the listed column is overwritten by the conflicting insert";
+}
+
+TYPED_TEST(InventoryUpsertTest, DoNothingSkipsOnConflictWithTextKeyPart) {
+    storm::QuerySet<Inventory, TypeParam> qs;
+    const Inventory                       first{.warehouse = 2, .sku = "pear", .on_hand = 3};
+    auto                                  inserted =
+            qs.insert(first).template on_conflict<^^Inventory::warehouse, ^^Inventory::sku>().nothing().execute();
+    ASSERT_TRUE(inserted.has_value());
+
+    const Inventory conflicting{.warehouse = 2, .sku = "pear", .on_hand = 999};
+    auto            skipped =
+            qs.insert(conflicting).template on_conflict<^^Inventory::warehouse, ^^Inventory::sku>().nothing().execute();
+    ASSERT_TRUE(skipped.has_value());
+
+    using storm::orm::where::f;
+    auto row = this->find_one(f<^^Inventory::warehouse>() == 2 && f<^^Inventory::sku>() == std::string("pear"));
+    ASSERT_TRUE(row.has_value());
+    EXPECT_EQ(row->on_hand, 3) << "DO NOTHING must not overwrite the existing row";
+}
+
 // NOLINTEND(readability-implicit-bool-conversion)

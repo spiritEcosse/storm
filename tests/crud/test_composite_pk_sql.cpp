@@ -297,4 +297,84 @@ namespace {
 
 } // namespace
 
+// ── (#503) UPSERT — ON CONFLICT target and RETURNING ────────────────────────
+// Step 4 of #90, on top of #500/#501/#502. Two things change: (1)
+// ConflictTargetUnique must accept the FULL composite-PK column set as a
+// conflict target (a strict subset stays a compile error — the interesting
+// negative case), and (2) RETURNING follows #502's decision: a composite key
+// is never DB-generated, so there is nothing to RETURN.
+
+namespace {
+
+    using storm::orm::statements::ConflictTargetUnique;
+    using storm::orm::statements::UpsertGrammar;
+
+} // namespace
+
+// ── ConflictTargetUnique: composite PK as a conflict target ─────────────────
+
+static_assert(
+        ConflictTargetUnique<OrderLine, ^^OrderLine::order_id, ^^OrderLine::product_id>,
+        "the full composite-PK column set, in declaration order, is a valid conflict target"
+);
+static_assert(
+        ConflictTargetUnique<Ledger, ^^Ledger::region, ^^Ledger::account, ^^Ledger::period>,
+        "a 3-part composite PK is a valid conflict target too"
+);
+static_assert(
+        ConflictTargetUnique<StockEntry, ^^StockEntry::warehouse, ^^StockEntry::sku>,
+        "an FK-part composite PK is a valid conflict target"
+);
+
+// The interesting negative case: a STRICT SUBSET of the composite PK is not
+// unique on its own and must be rejected at this named gate.
+static_assert(
+        !ConflictTargetUnique<OrderLine, ^^OrderLine::order_id>,
+        "a single column of a composite PK is not unique on its own"
+);
+static_assert(
+        !ConflictTargetUnique<Ledger, ^^Ledger::region, ^^Ledger::account>,
+        "a 2-of-3 subset of a composite PK is still not a unique constraint"
+);
+// Single-PK behaviour is unchanged: the PK itself is never a valid INSERT
+// conflict target (INSERT omits it for a single-PK model).
+static_assert(!ConflictTargetUnique<Widget, ^^Widget::id>, "single-PK ConflictTargetUnique behaviour is unchanged");
+
+// ── RETURNING: composite models emit none ────────────────────────────────────
+
+TEST(CompositePkUpsertSql, NothingSqlHasNoReturning) {
+    const std::string& sql = UpsertGrammar<OrderLine>::nothing_sql<^^OrderLine::order_id, ^^OrderLine::product_id>();
+    EXPECT_NE(sql.find("ON CONFLICT (order_id, product_id) DO NOTHING"), std::string::npos) << sql;
+    EXPECT_EQ(sql.find("RETURNING"), std::string::npos) << "a composite key has nothing to RETURN: " << sql;
+}
+
+TEST(CompositePkUpsertSql, UpdateSqlHasNoReturning) {
+    const std::string sql = UpsertGrammar<OrderLine>::update_sql<^^OrderLine::order_id, ^^OrderLine::product_id>(
+            UpsertGrammar<OrderLine>::build_excluded_set_clause<^^OrderLine::quantity>()
+    );
+    EXPECT_NE(
+            sql.find("ON CONFLICT (order_id, product_id) DO UPDATE SET quantity=excluded.quantity"), std::string::npos
+    ) << sql;
+    EXPECT_EQ(sql.find("RETURNING"), std::string::npos) << "a composite key has nothing to RETURN: " << sql;
+}
+
+// An FK part's COLUMN is "<name>_id" in the conflict target too — same reason
+// #500/#501/#502 assert this for DDL/WHERE/INSERT.
+TEST(CompositePkUpsertSql, FkKeyPartConflictTargetUsesColumnName) {
+    const std::string target =
+            std::string(UpsertGrammar<StockEntry>::build_conflict_target<^^StockEntry::warehouse, ^^StockEntry::sku>());
+    EXPECT_EQ(target, "(warehouse_id, sku)");
+}
+
+// Single-PK upsert SQL must stay byte-identical: RETURNING <pk> is still emitted.
+TEST(CompositePkUpsertSql, SinglePkStillEmitsReturning) {
+    const std::string& nothing = UpsertGrammar<Widget>::nothing_sql<^^Widget::name>();
+    EXPECT_TRUE(nothing.ends_with("RETURNING id")) << nothing;
+
+    const std::string update = UpsertGrammar<Widget>::update_sql<^^Widget::name>(
+            UpsertGrammar<Widget>::build_excluded_set_clause<^^Widget::weight>()
+    );
+    EXPECT_TRUE(update.ends_with("RETURNING id")) << update;
+}
+
 // NOLINTEND(readability-implicit-bool-conversion)
