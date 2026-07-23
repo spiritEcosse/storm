@@ -7,6 +7,7 @@ export module storm_orm_statements_join;
 
 import std;
 
+import storm_orm_field_attr;
 import storm_orm_statements_base;
 import storm_orm_statements_extract;
 import storm_orm_statements_orderby;
@@ -359,9 +360,6 @@ export namespace storm::orm::statements {
 
         static constexpr auto column_offsets_ = calculate_column_offsets();
 
-        // FK names derived per-info — independent of FK declaration order in T (#388)
-        static constexpr std::array<std::string_view, fk_count_> fk_field_names_{std::meta::identifier_of(FKFields)...};
-
         // LCOV_EXCL_START - compile-time only (called from consteval functions)
         static constexpr auto get_join_keyword() -> std::string_view {
             if constexpr (Type == JoinType::Inner) {
@@ -372,23 +370,60 @@ export namespace storm::orm::statements {
         }
         // LCOV_EXCL_STOP
 
+        // Byte size of the AND-joined ON clause body for FK index Is:
+        // "<part1> = t1.<fk>_<part1> AND <part2> = t1.<fk>_<part2> ..." (target-side
+        // identifiers are the target's OWN PK column names — never suffixed; only the
+        // local side goes through the composite naming convention, #504). N == 1
+        // collapses to EXACTLY "<pk> = t1.<fk>_id" — byte-identical to the pre-#504
+        // single-column clause.
+        template <std::size_t Is> static consteval auto fk_on_clause_body_size() -> std::size_t {
+            using utilities::sql_len::AND;
+            constexpr auto target_pk = Base::template find_fk_primary_key_members<FK_type<Is>>();
+            std::size_t    total     = 0;
+            for (std::size_t p = 0; p < target_pk.size(); ++p) {
+                if (p > 0) {
+                    total += AND;
+                }
+                total += std::meta::identifier_of(target_pk[p]).size();
+                total += 6; // " = t1."
+                total += storm::meta::fk_column_name_size_for_part(FKFields...[Is], target_pk, p);
+            }
+            return total;
+        }
+
         // Compile-time SQL generation with ConstexprString
         static consteval auto calculate_join_sql_size() -> std::size_t {
             using utilities::numeric::digits_of;
-            using utilities::sql_len::ON_EQUALS;
             using utilities::sql_len::SMALL_BUFFER;
             std::size_t total = 0;
 
-            // Per FK: <keyword><table> t<alias> ON t<alias>.<pk> = t1.<fk>_id
+            // Per FK: <keyword><table> t<alias> ON t<alias>.<on-clause-body>
             // The alias t<Is+2> appears twice — reserve its exact digit width both times.
             [&]<std::size_t... Is>(std::index_sequence<Is...> /*unused*/) {
                 ((total += get_join_keyword().size() + FKBase_at<Is>::table_name_.size() + 2 + digits_of(Is + 2) + 5 +
-                           digits_of(Is + 2) + 1 + FKBase_at<Is>::pk_name_.size() + ON_EQUALS +
-                           fk_field_names_[Is].size() + 3),
+                           digits_of(Is + 2) + 1 + fk_on_clause_body_size<Is>()),
                  ...);
             }(std::make_index_sequence<fk_count_>{});
 
             return total + SMALL_BUFFER;
+        }
+
+        // Appends "<part1> = t1.<fk>_<part1> AND <part2> = t1.<fk>_<part2> ..." for FK
+        // index Is — the target alias prefix ("t<alias>.") is already written by the
+        // caller before the first part; each subsequent part re-writes its own
+        // "t<alias>." prefix after the AND.
+        template <std::size_t Is, typename Result> static consteval void append_fk_on_clause_body(Result& result) {
+            constexpr auto target_pk = Base::template find_fk_primary_key_members<FK_type<Is>>();
+            for (std::size_t p = 0; p < target_pk.size(); ++p) {
+                if (p > 0) {
+                    result.append(" AND t");
+                    result.append_uint(Is + 2);
+                    result.append(".");
+                }
+                result.append(std::meta::identifier_of(target_pk[p]));
+                result.append(" = t1.");
+                storm::meta::append_fk_column_name_for_part(result, FKFields...[Is], target_pk, p);
+            }
         }
 
         static consteval auto build_join_sql_array() {
@@ -403,10 +438,7 @@ export namespace storm::orm::statements {
                   result.append(" ON t"),
                   result.append_uint(Is + 2),
                   result.append("."),
-                  result.append(FKBase_at<Is>::pk_name_),
-                  result.append(" = t1."),
-                  result.append(fk_field_names_[Is]),
-                  result.append("_id")),
+                  append_fk_on_clause_body<Is>(result)),
                  ...);
             }(std::make_index_sequence<fk_count_>{});
 

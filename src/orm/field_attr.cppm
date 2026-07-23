@@ -386,6 +386,41 @@ export namespace storm::meta {
         }
     }
 
+    // Per-part siblings of fk_column_names_size/append_fk_column_names (#504), for callers
+    // that emit each local-side FK column name separately rather than as one comma-joined
+    // list — e.g. the JOIN ON clause, which AND-joins "t<alias>.<part> = t1.<fk>_<part>"
+    // per target PK part instead of listing all local names together. N == 1 degenerates to
+    // "<member>_id" (byte-identical to column_name_size/append_column_name), same as the
+    // list form; part_index is unused in that branch (a single-column FK has exactly one
+    // part, index 0).
+    template <std::size_t N>
+    consteval auto fk_column_name_size_for_part(
+            std::meta::info fk_member, const std::array<std::meta::info, N>& target_pk_members, std::size_t part_index
+    ) -> std::size_t {
+        if constexpr (N == 1) {
+            return column_name_size(fk_member); // "<member>_id" — byte-identical to today
+        } else {
+            return std::meta::identifier_of(fk_member).size() + 1 +
+                   std::meta::identifier_of(target_pk_members[part_index]).size();
+        }
+    }
+
+    template <typename Buf, std::size_t N>
+    consteval auto append_fk_column_name_for_part(
+            Buf&                                  buf,
+            std::meta::info                       fk_member,
+            const std::array<std::meta::info, N>& target_pk_members,
+            std::size_t                           part_index
+    ) -> void {
+        if constexpr (N == 1) {
+            append_column_name(buf, fk_member); // "<member>_id" — byte-identical to today
+        } else {
+            buf.append(std::meta::identifier_of(fk_member));
+            buf.append("_");
+            buf.append(std::meta::identifier_of(target_pk_members[part_index]));
+        }
+    }
+
     // The ON DELETE RefAction of an fk<...> FK, or std::nullopt when the field is not an FK
     // or carries the default RESTRICT (caller emits no clause then, keeping the
     // plain-REFERENCES DDL byte-identical).

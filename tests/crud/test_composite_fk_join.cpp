@@ -111,6 +111,54 @@ TEST(CompositeFkSchemaTest, NonOptionalCompositeFkColumnsHaveExactlyOneNotNull) 
     EXPECT_EQ(sql.find("NOT NULL NOT NULL"), std::string::npos) << sql;
 }
 
+// ── OptionalShipment plain (non-JOIN) bind/extract round trip ──────────────
+// OptionalShipment::line is std::optional<OrderLineWithShipments> (a NULLABLE
+// composite FK) — before this test, OptionalShipment was only ever exercised
+// via create_table_sql<>() (pure DDL text, no bind/extract). These tests are
+// the first to actually INSERT and plain-SELECT it, covering
+// bind_fk_field_at_index's composite-optional branches (bind_null_run's
+// has-no-value path, bind_fk_parts's has-a-value path) and
+// extract_column_fast/extract_optional_fk_parts's composite-optional branches
+// (both the NULL and the has-a-value path) on the PLAIN SELECT path — distinct
+// from tests/query/test_composite_fk_join.cpp's JOIN-path coverage of the same
+// model, which never touches extract_column_fast.
+namespace {
+    template <typename ConnType>
+    class OptionalShipmentTest : public StormTestFixture<OptionalShipment, ConnType, OrderLineWithShipments> {};
+} // namespace
+
+TYPED_TEST_SUITE(OptionalShipmentTest, DatabaseTypes);
+
+TYPED_TEST(OptionalShipmentTest, PlainSelectRoundTripsNonNullCompositeFk) {
+    storm::QuerySet<OrderLineWithShipments, TypeParam> line_qs;
+    const OrderLineWithShipments line{.order_id = 5, .product_id = 12, .quantity = 3, .note = "first"};
+    ASSERT_TRUE(line_qs.insert(line).execute().has_value());
+
+    storm::QuerySet<OptionalShipment, TypeParam> ship_qs;
+    ASSERT_TRUE(ship_qs.insert(OptionalShipment{.line = line, .carrier = "UPS"}).execute().has_value());
+
+    auto rows = ship_qs.select().execute();
+    ASSERT_TRUE(rows.has_value());
+    ASSERT_EQ(rows.value().size(), 1U);
+    const OptionalShipment& loaded = *rows.value().begin();
+    ASSERT_TRUE(loaded.line.has_value());
+    EXPECT_EQ(loaded.line->order_id, 5);
+    EXPECT_EQ(loaded.line->product_id, 12);
+    EXPECT_EQ(loaded.carrier, "UPS");
+}
+
+TYPED_TEST(OptionalShipmentTest, PlainSelectRoundTripsNullCompositeFk) {
+    storm::QuerySet<OptionalShipment, TypeParam> ship_qs;
+    ASSERT_TRUE(ship_qs.insert(OptionalShipment{.line = std::nullopt, .carrier = "FedEx"}).execute().has_value());
+
+    auto rows = ship_qs.select().execute();
+    ASSERT_TRUE(rows.has_value());
+    ASSERT_EQ(rows.value().size(), 1U);
+    const OptionalShipment& loaded = *rows.value().begin();
+    EXPECT_FALSE(loaded.line.has_value());
+    EXPECT_EQ(loaded.carrier, "FedEx");
+}
+
 // ── Review fix: composite-FK member before an optional single-column FK ────
 // MixedFkOrder::composite (2 SQL columns) precedes MixedFkOrder::single (an
 // optional single-column FK to Person). Before the fix, the optional
