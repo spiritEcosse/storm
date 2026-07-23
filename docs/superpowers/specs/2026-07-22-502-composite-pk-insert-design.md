@@ -20,6 +20,8 @@ Recorded on the issue before implementation, per its Definition of done.
 Composite-PK `insert().execute()` returns `std::expected<void, Error>` and emits no
 `RETURNING` clause, routing down the faster `ReturnId::No` path that already exists
 (`queryset.cppm:87`). Single-PK models are untouched: `int64_t` + `RETURNING id`.
+An explicit `insert<ReturnId::Yes>(...)` on a composite model is a compile-time error —
+see the `ReturnId` table below.
 
 Rejected alternatives:
 
@@ -29,6 +31,33 @@ Rejected alternatives:
   type vary by model shape — that ripples into generic callers and the `ReturnId::No`
   variant, and makes the DB produce a result row the insert path must step and extract.
 - **C — keep `int64_t`, return the first PK column.** Silently lossy.
+
+### `ReturnId` on a composite model
+
+`ReturnId` is live public API, not an internal detail: `ReturnId::Yes` is the **default**
+for single insert (`insert.cppm:362`) and is explicitly used in ~14 places in
+`tests/crud/test_insert_returning.cpp`; `ReturnId::No` has its own test file
+(`tests/crud/test_insert_no_return.cpp`). Both are reachable for single and bulk inserts,
+so "composite returns void" is not a complete rule on its own — the explicit forms need
+defining too.
+
+| Call on a **composite** model | Result |
+|---|---|
+| `insert(obj)` (plain) | `expected<void, Error>`, no `RETURNING` |
+| `insert<ReturnId::No>(obj)` | Same — accepted unchanged |
+| `insert<ReturnId::Yes>(obj)` | **Compile-time error** |
+
+`ReturnId::Yes` means "give me the DB-generated key", which for a composite PK does not
+exist. Left unconstrained it would compile and emit `RETURNING <first_part>` — since
+`build_insert_sql_array_impl<true>` appends `Base::pk_name_`, the first part only. That is
+exactly rejected option C (silently lossy), reached through a back door. A `requires`
+constraint rejects it at the call site instead, per CLAUDE.md rule 11 (`requires`, not
+`throw`) and mirroring how #500 rejected `primary_autoincrement` + `primary_part` as
+unrepresentable.
+
+The rejection is deliberately **asymmetric**: only the affirmative request for a key is
+refused. `ReturnId::No` remains valid on every model shape, so generic code that opts out
+of the id keeps compiling across all models.
 
 ### The caveat was checked and does not fire
 
@@ -99,6 +128,19 @@ models force `WithReturning=false`, and the `RETURNING`-suffix constants
 (`returning_suffix_array`, line 232, which appends `Base::pk_name_`) are simply not
 instantiated for them.
 
+### 7. The `ReturnId::Yes` constraint
+
+A named concept gates the affirmative request, constraining the `ReturnId`-templated
+`query()` overloads (`insert.cppm:362,381`) and the matching `QuerySet::insert`
+overloads (`queryset.cppm:89,103`) so the error fires at the **call site** rather than
+deep inside SQL construction. Constraining both layers matters: `QuerySet::insert` is the
+public entry point, and an unconstrained wrapper would report the failure from inside
+`query()` instead.
+
+Gating on the concept — not on `has_composite_pk_` inline — follows the #472/#477/#478
+precedent of naming compile-time preconditions, and keeps the diagnostic readable.
+`ReturnId::No` is left unconstrained on purpose.
+
 ## Testing
 
 Written **before** implementation and confirmed failing first (CLAUDE.md rule 9).
@@ -116,7 +158,15 @@ reused unchanged: `OrderLine` (2 int parts), `Inventory` (int + string), `Ledger
 | Duplicate composite key | Surfaced as `Error`, not a crash or silent success |
 | Mixed-type parts | `Inventory`, `Ledger` — bind dispatches per part type |
 | FK part | `StockEntry` — column named `warehouse_id`, binds the referenced key |
-| Single-PK regression | INSERT SQL **byte-identical**; `RETURNING id` path unchanged |
+| `ReturnId::No`, composite | Accepted; `expected<void>`, no `RETURNING`; row lands |
+| `ReturnId::Yes`, composite | **Rejected at compile time** — asserted on the gate predicate, not via a real call (see below) |
+| Single-PK regression | INSERT SQL **byte-identical**; `RETURNING id` path unchanged; `ReturnId::Yes`/`No` both still work |
+
+The negative-compile case is asserted as `static_assert(!ReturnIdSupported<OrderLine, Yes>)`
+on the gate predicate itself, plus the positive controls
+(`ReturnIdSupported<Widget, Yes>`, `ReturnIdSupported<OrderLine, No>`). A test cannot
+contain the ill-formed call it is asserting about, so the assertion targets the concept —
+the established pattern in this tree for negative-compile coverage.
 
 Cross-backend via `TYPED_TEST` over `DatabaseTypes` (SQLite + PostgreSQL).
 
