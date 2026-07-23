@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.30)
 
 # Gate for CMake's experimental `import std;` support. Must be set BEFORE
 # project(). The UUID is CMake-version-specific — see issue #326. Verified for
-# CMake 4.3.3. Bump UUID if the minimum-supported CMake changes.
-set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "451f2fe2-a8a2-47c3-bc32-94786d8fc91b")
+# CMake 4.4.0. Bump UUID if the minimum-supported CMake changes.
+set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "f35a9ac6-8463-4d38-8eec-5d6008153e7d")
 
 # Pin the import-std descriptor to clang-p2996's libc++.modules.json before
 # project(). Without this, CMake's auto-detection picks up the host GCC's
@@ -65,6 +65,16 @@ add_compile_options("-fmodules-cache-path=${CMAKE_BINARY_DIR}/module-cache")
 # above is no longer consumed; -Werror would otherwise promote the resulting
 # -Wunused-command-line-argument to a hard error.
 add_compile_options(-Wno-unused-command-line-argument)
+
+# CMake 4.4.0 (issue #521): the CMake-synthesized std-module target now picks
+# up compile options from consuming targets (release notes: "targets which
+# provide C++ modules may now be consumed by targets with different compile
+# features and options"). That leaks storm's -Werror onto libc++'s std.cppm,
+# which declares `export module std;` and trips -Wreserved-module-identifier
+# (Clang reserves the `std` module name for the standard library itself, but
+# doesn't exempt libc++'s own module from the warning). Suppress globally,
+# same pattern as -Wno-unused-command-line-argument above.
+add_compile_options(-Wno-reserved-module-identifier)
 
 include(cmake/libcxx.cmake)
 
