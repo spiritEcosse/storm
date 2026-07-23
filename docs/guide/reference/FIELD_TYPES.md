@@ -279,10 +279,46 @@ qs.update(OrderItem{.order_id = 1, .product_id = 20, .quantity = 7}).execute();
   keep the historical 799.
 - **Single-PK SQL is byte-identical** to what Storm emitted before composite support.
 
-> **Scope**: composite keys now cover the annotation, the compile-time PK machinery,
-> `CREATE TABLE` DDL (#500), and UPDATE/DELETE by key (#501). INSERT by composite key
-> (#502), upsert `ON CONFLICT` targets (#503), and composite foreign keys / JOIN (#504)
-> are still open.
+### INSERT by composite key (#502)
+
+A composite key is never DB-generated — `AUTOINCREMENT` (SQLite) and `GENERATED ... AS IDENTITY`
+(PostgreSQL) are single-column features. So `insert().execute()` on a composite model returns
+`std::expected<void, Error>` with **no `RETURNING` clause** (nothing to return). Every key part is
+caller-supplied and appears in the INSERT column list in **declaration order**.
+
+```cpp
+struct OrderItem {
+    [[= storm::primary_part]] int order_id;
+    [[= storm::primary_part]] int product_id;
+    int quantity;
+};
+
+OrderItem oi{.order_id = 7, .product_id = 42, .quantity = 3};  // caller supplies both PK parts
+qs.insert(oi).execute();   // → std::expected<void, Error>
+// SQL: INSERT INTO OrderItem (order_id, product_id, quantity) VALUES (?, ?, ?)
+```
+
+**Return type and constraints:**
+
+- **`insert().execute()` returns `std::expected<void, Error>`** — no row ID to return since the
+  key is caller data.
+- **No `RETURNING` clause is emitted** — the single-PK `RETURNING id` fast path detects the
+  composite key at compile time and routes through `ReturnId::No` instead.
+- **`insert<ReturnId::Yes>` is a compile-time error** — the `ReturnIdSupported<T, R>` concept
+  rejects it (would emit `RETURNING <first part>` — silently lossy and wrong). The diagnostic
+  fires at the user's call site.
+- **`insert<ReturnId::No>` is accepted and identical** to the plain call. Generic code that
+  explicitly spells out the return type stays portable across model shapes.
+- **Duplicate key surfaces as `Error`** — SQLite/PostgreSQL UNIQUE constraint violations return
+  an error code in the result; the caller can check `!result` or use `and_then()` to handle it.
+- **Chunking unchanged** — the auto batch size already divides by field count, which becomes
+  exactly right once the key columns count toward the parameter budget.
+
+**Single-PK models remain unchanged** — they still return `int64_t` and emit `RETURNING id`.
+
+> **Scope**: composite keys now cover the annotation (#500), compile-time PK machinery,
+> `CREATE TABLE` DDL, UPDATE/DELETE by key (#501), and INSERT by key (#502). Upsert
+> `ON CONFLICT` targets (#503) and composite foreign keys / JOIN (#504) are still open.
 
 ## Optional Types (NULL Support)
 

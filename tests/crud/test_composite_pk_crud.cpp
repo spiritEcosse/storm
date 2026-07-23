@@ -17,8 +17,9 @@ import std;
 // bind arithmetic behave against real SQLite and PostgreSQL: a full-key match
 // hits exactly one row, and a partial-key match hits none.
 //
-// INSERT by composite key is #502, so every fixture seeds through raw SQL — the
-// same approach #500's execution test used.
+// The UPDATE/DELETE fixtures seed through raw SQL (as when they were written,
+// pre-#502) so those tests stay independent of the INSERT path they don't
+// test. The INSERT suites below (#502) use qs.insert() itself.
 
 // NOLINTBEGIN(readability-implicit-bool-conversion)
 
@@ -340,12 +341,17 @@ namespace {
             CompositePkFixture<StockEntry, ConnType>::on_setup(conn);
         }
 
-        auto on_after_setup(const std::shared_ptr<ConnType>& /*conn*/) -> void override {
+        // Shared by the UPDATE/DELETE fixture and the INSERT fixture (#502).
+        static auto seed_persons() -> void {
             storm::QuerySet<Person, ConnType> people;
             for (int i = 1; i <= 2; ++i) {
                 const Person person{.id = i, .name = std::format("W{}", i), .age = 30};
                 ASSERT_TRUE(people.insert(person).execute().has_value());
             }
+        }
+
+        auto on_after_setup(const std::shared_ptr<ConnType>& /*conn*/) -> void override {
+            StockEntryTest::seed_persons();
             this->seed("INSERT INTO StockEntry (warehouse_id, sku, qty) VALUES (1, 10, 5), (1, 20, 7), (2, 10, 9)");
         }
 
@@ -524,6 +530,209 @@ TYPED_TEST(SinglePkRegressionTest, BatchDeleteStillWorks) {
     EXPECT_EQ(this->age_of(1), -1);
     EXPECT_EQ(this->age_of(3), -1);
     EXPECT_EQ(this->age_of(2), 22);
+}
+
+// ── (#502) INSERT by composite key ───────────────────────────────────────────
+// Every key part is caller data: the INSERT carries all columns in declaration
+// order, .execute() returns std::expected<void, Error> (a composite key is
+// never DB-generated, so there is nothing to RETURN), and a duplicate full key
+// surfaces the PRIMARY KEY violation as an Error.
+
+namespace {
+    // Insert tests need an EMPTY table, so they use the base fixture directly.
+    template <typename ConnType> class OrderLineInsertTest : public CompositePkFixture<OrderLine, ConnType> {};
+    template <typename ConnType> class InventoryInsertTest : public CompositePkFixture<Inventory, ConnType> {};
+    template <typename ConnType> class LedgerInsertTest : public CompositePkFixture<Ledger, ConnType> {};
+} // namespace
+
+TYPED_TEST_SUITE(OrderLineInsertTest, DatabaseTypes);
+TYPED_TEST_SUITE(InventoryInsertTest, DatabaseTypes);
+TYPED_TEST_SUITE(LedgerInsertTest, DatabaseTypes);
+
+TYPED_TEST(OrderLineInsertTest, SingleInsertLandsEveryKeyPart) {
+    storm::QuerySet<OrderLine, TypeParam> qs;
+    const OrderLine                       row{.order_id = 7, .product_id = 42, .quantity = 3, .note = "a"};
+    auto                                  result = qs.insert(row).execute();
+    static_assert(
+            std::is_same_v<decltype(result), std::expected<void, typename TypeParam::Error>>,
+            "composite insert has nothing to return — the caller supplied the whole key"
+    );
+    ASSERT_TRUE(result.has_value());
+
+    EXPECT_EQ(this->row_count(), 1);
+    using storm::orm::where::f;
+    auto found = this->find_one(f<^^OrderLine::order_id>() == 7 && f<^^OrderLine::product_id>() == 42);
+    ASSERT_TRUE(found.has_value()) << "the full key landed";
+    EXPECT_EQ(found->quantity, 3);
+    EXPECT_EQ(found->note, "a");
+}
+
+// The core failure this issue prevents: pre-#502 the column list dropped the
+// FIRST key part while the bind loop skipped it too, so every later value
+// shifted one column left — order_id would have received product_id's value.
+TYPED_TEST(OrderLineInsertTest, FirstKeyPartIsNotDefaultedOrShifted) {
+    storm::QuerySet<OrderLine, TypeParam> qs;
+    const OrderLine                       row{.order_id = 5, .product_id = 6, .quantity = 9, .note = "x"};
+    ASSERT_TRUE(qs.insert(row).execute().has_value());
+
+    using storm::orm::where::f;
+    EXPECT_FALSE(this->find_one(f<^^OrderLine::order_id>() == 6).has_value())
+            << "product_id's value must not land in order_id";
+    auto found = this->find_one(f<^^OrderLine::order_id>() == 5 && f<^^OrderLine::product_id>() == 6);
+    ASSERT_TRUE(found.has_value());
+    EXPECT_EQ(found->quantity, 9) << "every non-key value landed in its own column";
+}
+
+// Redundant but accepted (generic code may spell it out): identical to plain insert().
+TYPED_TEST(OrderLineInsertTest, ExplicitReturnIdNoIsAcceptedAndIdentical) {
+    using storm::orm::statements::ReturnId;
+    storm::QuerySet<OrderLine, TypeParam> qs;
+    const OrderLine                       row{.order_id = 1, .product_id = 2, .quantity = 1, .note = "n"};
+    auto                                  result = qs.template insert<ReturnId::No>(row).execute();
+    static_assert(std::is_same_v<decltype(result), std::expected<void, typename TypeParam::Error>>);
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(this->row_count(), 1);
+}
+
+TYPED_TEST(OrderLineInsertTest, DuplicateFullKeyIsAnError) {
+    storm::QuerySet<OrderLine, TypeParam> qs;
+    ASSERT_TRUE(
+            qs.insert(OrderLine{.order_id = 1, .product_id = 10, .quantity = 5, .note = "a"}).execute().has_value()
+    );
+
+    auto result = qs.insert(OrderLine{.order_id = 1, .product_id = 10, .quantity = 99, .note = "b"}).execute();
+    EXPECT_FALSE(result.has_value()) << "a duplicate composite key violates the PRIMARY KEY constraint";
+    EXPECT_EQ(this->row_count(), 1) << "the duplicate did not land";
+}
+
+// Sharing one part is NOT a duplicate — only the full key is unique.
+TYPED_TEST(OrderLineInsertTest, SharedSinglePartIsNotADuplicate) {
+    storm::QuerySet<OrderLine, TypeParam> qs;
+    ASSERT_TRUE(
+            qs.insert(OrderLine{.order_id = 1, .product_id = 10, .quantity = 1, .note = "a"}).execute().has_value()
+    );
+    EXPECT_TRUE(
+            qs.insert(OrderLine{.order_id = 1, .product_id = 20, .quantity = 2, .note = "b"}).execute().has_value()
+    );
+    EXPECT_TRUE(
+            qs.insert(OrderLine{.order_id = 2, .product_id = 10, .quantity = 3, .note = "c"}).execute().has_value()
+    );
+    EXPECT_EQ(this->row_count(), 3);
+}
+
+TYPED_TEST(OrderLineInsertTest, BatchInsertLandsEveryRow) {
+    storm::QuerySet<OrderLine, TypeParam> qs;
+    const std::vector<OrderLine>          rows{
+                     {.order_id = 1, .product_id = 10, .quantity = 5, .note = "a"},
+                     {.order_id = 1, .product_id = 20, .quantity = 7, .note = "b"},
+                     {.order_id = 2, .product_id = 10, .quantity = 9, .note = "c"},
+    };
+    ASSERT_TRUE(qs.insert(std::span<const OrderLine>(rows)).execute().has_value());
+    EXPECT_EQ(this->row_count(), 3);
+
+    using storm::orm::where::f;
+    auto row = this->find_one(f<^^OrderLine::order_id>() == 2 && f<^^OrderLine::product_id>() == 10);
+    ASSERT_TRUE(row.has_value());
+    EXPECT_EQ(row->quantity, 9);
+}
+
+TYPED_TEST(OrderLineInsertTest, EmptyBatchIsANoOp) {
+    storm::QuerySet<OrderLine, TypeParam> qs;
+    const std::vector<OrderLine>          empty;
+    EXPECT_TRUE(qs.insert(std::span<const OrderLine>(empty)).execute().has_value());
+    EXPECT_EQ(this->row_count(), 0);
+}
+
+// The 999-parameter ceiling divides by ALL fields now that the key columns are
+// in the statement: OrderLine binds 4 params/row, so one bulk statement caps at
+// 999/4 == 249 rows and 250 forces the chunked path (one max chunk + remainder).
+TYPED_TEST(OrderLineInsertTest, BatchAtTheChunkBoundary) {
+    constexpr int          ROWS = 250;
+    std::vector<OrderLine> rows;
+    rows.reserve(ROWS);
+    for (int i = 0; i < ROWS; ++i) {
+        rows.push_back({.order_id = i, .product_id = i * 2, .quantity = i, .note = "n"});
+    }
+    storm::QuerySet<OrderLine, TypeParam> qs;
+    ASSERT_TRUE(qs.insert(std::span<const OrderLine>(rows)).execute().has_value());
+    EXPECT_EQ(this->row_count(), ROWS);
+
+    using storm::orm::where::f;
+    auto last =
+            this->find_one(f<^^OrderLine::order_id>() == ROWS - 1 && f<^^OrderLine::product_id>() == (ROWS - 1) * 2);
+    ASSERT_TRUE(last.has_value()) << "the row past the chunk boundary landed with its full key";
+    EXPECT_EQ(last->quantity, ROWS - 1);
+}
+
+// ── Mixed-type key parts (int + std::string) ─────────────────────────────────
+
+TYPED_TEST(InventoryInsertTest, TextKeyPartBindsPerType) {
+    storm::QuerySet<Inventory, TypeParam> qs;
+    ASSERT_TRUE(qs.insert(Inventory{.warehouse = 1, .sku = "apple", .on_hand = 5}).execute().has_value());
+    ASSERT_TRUE(qs.insert(Inventory{.warehouse = 1, .sku = "pear", .on_hand = 7}).execute().has_value());
+
+    using storm::orm::where::f;
+    auto row = this->find_one(f<^^Inventory::warehouse>() == 1 && f<^^Inventory::sku>() == std::string("apple"));
+    ASSERT_TRUE(row.has_value());
+    EXPECT_EQ(row->on_hand, 5);
+}
+
+TYPED_TEST(InventoryInsertTest, DuplicateTextKeyIsAnError) {
+    storm::QuerySet<Inventory, TypeParam> qs;
+    ASSERT_TRUE(qs.insert(Inventory{.warehouse = 1, .sku = "apple", .on_hand = 5}).execute().has_value());
+    EXPECT_FALSE(qs.insert(Inventory{.warehouse = 1, .sku = "apple", .on_hand = 9}).execute().has_value());
+    EXPECT_EQ(this->row_count(), 1);
+}
+
+// ── Three-part key ───────────────────────────────────────────────────────────
+
+TYPED_TEST(LedgerInsertTest, ThreePartKeyInsert) {
+    storm::QuerySet<Ledger, TypeParam> qs;
+    ASSERT_TRUE(
+            qs.insert(Ledger{.region = 1, .account = "cash", .period = 202601, .balance = 10.5}).execute().has_value()
+    );
+    // Differs in exactly ONE part each — none is a duplicate of the first row.
+    EXPECT_TRUE(
+            qs.insert(Ledger{.region = 2, .account = "cash", .period = 202601, .balance = 1.0}).execute().has_value()
+    );
+    EXPECT_TRUE(
+            qs.insert(Ledger{.region = 1, .account = "debt", .period = 202601, .balance = 2.0}).execute().has_value()
+    );
+    EXPECT_TRUE(
+            qs.insert(Ledger{.region = 1, .account = "cash", .period = 202602, .balance = 3.0}).execute().has_value()
+    );
+    EXPECT_EQ(this->row_count(), 4);
+}
+
+// ── FK key parts: the association-table shape ────────────────────────────────
+// An FK part binds the REFERENCED row's key into the "<name>_id" column.
+
+namespace {
+    // Inherits StockEntryTest's Person-table setup and qty_of matcher; overrides
+    // the seeding so the StockEntry table starts EMPTY for the INSERT tests.
+    template <typename ConnType> class StockEntryInsertTest : public StockEntryTest<ConnType> {
+      public:
+        auto on_after_setup(const std::shared_ptr<ConnType>& /*conn*/) -> void override {
+            StockEntryTest<ConnType>::seed_persons();
+        }
+    };
+} // namespace
+
+TYPED_TEST_SUITE(StockEntryInsertTest, DatabaseTypes);
+
+TYPED_TEST(StockEntryInsertTest, FkKeyPartBindsTheReferencedKey) {
+    storm::QuerySet<StockEntry, TypeParam> qs;
+    ASSERT_TRUE(qs.insert(StockEntry{.warehouse = {.id = 2}, .sku = 10, .qty = 5}).execute().has_value());
+
+    EXPECT_EQ(this->qty_of(2, 10), 5) << "warehouse_id bound the referenced key, not a defaulted value";
+    EXPECT_EQ(this->qty_of(1, 10), -1) << "no row for the other warehouse";
+}
+
+TYPED_TEST(StockEntryInsertTest, DuplicateFkKeyIsAnError) {
+    storm::QuerySet<StockEntry, TypeParam> qs;
+    ASSERT_TRUE(qs.insert(StockEntry{.warehouse = {.id = 1}, .sku = 10, .qty = 5}).execute().has_value());
+    EXPECT_FALSE(qs.insert(StockEntry{.warehouse = {.id = 1}, .sku = 10, .qty = 9}).execute().has_value());
+    EXPECT_EQ(this->row_count(), 1);
 }
 
 // NOLINTEND(readability-implicit-bool-conversion)

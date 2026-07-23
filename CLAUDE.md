@@ -396,6 +396,29 @@ the runtime per-count builder, so the two cannot drift into disagreeing placehol
 Single-PK SQL is byte-identical (regression-asserted), and single-PK UPDATE/DELETE benchmarks are
 within noise (≤1.4% deltas at cv 1.1–2.9%).
 
+**Composite PK — INSERT (#502)**: a composite key is never DB-generated — `AUTOINCREMENT` (SQLite)
+and `GENERATED ... AS IDENTITY` (PG) are single-integer-column features, so every key part is
+caller data. That inverts the single-PK rule twice. (1) **The key columns join the INSERT**: the
+`SkipPrimaryKey` skip in `FieldNameGrammar::for_each_field_name` and the plain-`SkipPK` branch of
+`skips_pk_column` are both gated on `!has_composite_pk_`, so a composite model emits and binds ALL
+fields in declaration order (one shared consteval iterator feeds the column list, its sizer, and
+the placeholders — they cannot drift). (2) **There is nothing to RETURN**: `insert().execute()` on
+a composite model returns `std::expected<void, Error>` with no `RETURNING` emitted, riding the
+pre-existing `ReturnId::No` fast path. The plain call resolves there via `default_return_id<T>()`
+(consteval: `No` for composite, `Yes` for single-PK), so the call site is IDENTICAL across model
+shapes; an explicit `insert<ReturnId::Yes>` on a composite model is a **compile-time error** via
+the `ReturnIdSupported<T, R>` concept (unconstrained it would emit `RETURNING <first part>` —
+silently lossy), constraining BOTH `QuerySet::insert` and `InsertStatement::query` so the
+diagnostic fires at the user's call site. `ReturnId::No` stays valid on every model shape (generic
+code that spells it out keeps compiling). The #413 auto-`DEFAULT` caveat was checked and does not
+fire: that `DEFAULT` is recovered from a C++ default-member-initializer — a compile-time constant
+already in the caller's object, not a DB-generated value. `placeholders_count()` widened to
+`field_count_` for composite models (feeds the upsert `auto_update` tail offset — #503's path);
+chunking needed NO change (the auto batch size already divides by ALL fields, which becomes exactly
+right once the key columns are bound). Single-PK INSERT SQL is byte-identical
+(regression-asserted) and the `RETURNING id` path is unchanged. Upsert/`ON CONFLICT` is #503,
+JOIN #504.
+
 **Foreign keys (#431)**: `[[= storm::fk<>]]` marks an FK field (bare = `RESTRICT`,
 the SQL default — no `ON DELETE` clause emitted). The `ON DELETE` policy is the template
 arg: `fk<RefAction::Cascade>` / `fk<RefAction::SetNull>` / `fk<RefAction::Restrict>` /
@@ -618,6 +641,11 @@ qs.update_all<^^Person::department>(Person{.department="Global"}).execute(); // 
 // Conflict target must be a unique field / UniqueIndex (compile-time checked).
 qs.insert(p).on_conflict<^^Person::name>().update<^^Person::age>().execute(); // std::expected<int64_t, Error>
 qs.insert(p).on_conflict<^^Person::name>().nothing().execute();                // std::expected<std::optional<int64_t>, Error>
+
+// Composite-PK INSERT (#502) — every key part is caller data (a composite key is
+// never DB-generated), so there is nothing to return: no RETURNING is emitted.
+qs.insert(order_line).execute();               // → std::expected<void, Error>
+// insert<ReturnId::Yes> on a composite model is a compile-time error (ReturnIdSupported).
 
 // Public transaction API (#415) — storm::begin(conn) returns an RAII
 // storm::TransactionGuard<ConnType> (both re-exported from `storm`). BEGIN on
