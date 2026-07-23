@@ -336,6 +336,56 @@ export namespace storm::meta {
         return std::meta::identifier_of(member).size() + (is_fk_field(member) ? fk_id_suffix_size : 0);
     }
 
+    // Composite-aware sibling of append_column_name/column_name_size (#422, widened
+    // #504). A single-column FK target degenerates to EXACTLY append_column_name's
+    // output ("<member>_id") — kept as a hardcoded special case (not derived from
+    // the N>=2 branch) so the single-PK byte-identical guarantee can never drift.
+    // A composite target spells the target part's own identifier into each column
+    // name ("<member>_<part>"), since eliding it (as the single-column "_id" does)
+    // would collide multiple parts into the same name.
+    template <std::size_t N>
+    consteval auto fk_column_names_size(
+            std::meta::info                       fk_member,
+            const std::array<std::meta::info, N>& target_pk_members,
+            std::string_view                      separator
+    ) -> std::size_t {
+        if constexpr (N == 1) {
+            return column_name_size(fk_member); // "<member>_id" — byte-identical to today
+        } else {
+            const auto  member_name = std::meta::identifier_of(fk_member);
+            std::size_t total       = 0;
+            for (std::size_t i = 0; i < N; ++i) {
+                if (i > 0) {
+                    total += separator.size();
+                }
+                total += member_name.size() + 1 + std::meta::identifier_of(target_pk_members[i]).size();
+            }
+            return total;
+        }
+    }
+
+    template <typename Buf, std::size_t N>
+    consteval auto append_fk_column_names(
+            Buf&                                  buf,
+            std::meta::info                       fk_member,
+            const std::array<std::meta::info, N>& target_pk_members,
+            std::string_view                      separator
+    ) -> void {
+        if constexpr (N == 1) {
+            append_column_name(buf, fk_member); // "<member>_id" — byte-identical to today
+        } else {
+            const auto member_name = std::meta::identifier_of(fk_member);
+            for (std::size_t i = 0; i < N; ++i) {
+                if (i > 0) {
+                    buf.append(separator);
+                }
+                buf.append(member_name);
+                buf.append("_");
+                buf.append(std::meta::identifier_of(target_pk_members[i]));
+            }
+        }
+    }
+
     // The ON DELETE RefAction of an fk<...> FK, or std::nullopt when the field is not an FK
     // or carries the default RESTRICT (caller emits no clause then, keeping the
     // plain-REFERENCES DDL byte-identical).

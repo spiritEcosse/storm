@@ -83,3 +83,62 @@ TEST(CompositeFkResolutionTest, FindFkPrimaryKeyMembersReturnsTwoPartsForOrderLi
 TEST(CompositeFkResolutionTest, FkPrimaryKeyCountMatchesTargetPrimaryKeyColumnCount) {
     EXPECT_EQ(OrderLineBase::primary_key_column_count_, 2);
 }
+
+// ── #504 (Task 3): composite-aware column-name writer for FK members ──
+// fk_column_names_size / append_fk_column_names are the composite-aware
+// sibling of append_column_name / column_name_size (#422). A single-column
+// FK target must degenerate to EXACTLY what append_column_name emits today
+// ("<member>_id") — the byte-identical guarantee. A composite target spells
+// one column per target PK part: "<member>_<part>", AND-joined by the
+// caller-supplied separator.
+
+TEST(FkColumnNamesTest, SingleColumnTargetMatchesLegacyAppendColumnName) {
+    // Message::sender (fk<> Person, single-column PK) must emit exactly what
+    // append_column_name emits today: "sender_id".
+    //
+    // fk_column_names_size/append_fk_column_names are consteval (like every other
+    // writer in field_attr.cppm) and write into any buffer exposing
+    // .append(std::string_view) — the same contract append_column_name uses. Every
+    // real call site (field_names.cppm, join.cppm, ...) drives that buffer as a
+    // storm::orm::utilities::ConstexprString<N> built inside a consteval function, so
+    // the test mirrors that: build the ConstexprString at compile time, then compare
+    // its runtime .view() to the expected string.
+    using MessageBase            = storm::orm::statements::BaseStatement<Message>;
+    constexpr auto sender_member = []() consteval {
+        for (auto m : std::meta::nonstatic_data_members_of(^^Message, std::meta::access_context::unchecked())) {
+            if (std::meta::identifier_of(m) == "sender") {
+                return m;
+            }
+        }
+        std::unreachable();
+    }();
+    constexpr auto target_pk = MessageBase::find_fk_primary_key_members<Person>();
+    constexpr auto size      = storm::meta::fk_column_names_size(sender_member, target_pk, ", ");
+    constexpr auto result    = []() consteval {
+        storm::orm::utilities::ConstexprString<size + 1> buf;
+        storm::meta::append_fk_column_names(buf, sender_member, target_pk, ", ");
+        return buf;
+    }();
+    EXPECT_EQ(result.view(), "sender_id");
+}
+
+TEST(FkColumnNamesTest, CompositeTargetEmitsOneColumnPerPart) {
+    // A hypothetical FK member `line` of type OrderLine (2-part composite PK:
+    // order_id, product_id) must emit "line_order_id, line_product_id".
+    // (Uses a hand-rolled member array since no in-tree model has this FK yet —
+    // this test validates the writer in isolation before Task 4 wires up a real model.)
+    // fk_member is a placeholder info — the writer only reads the FK member's own
+    // identifier, so any member reflection with identifier "line" would do; here we
+    // reuse OrderLine::order_id's info as a stand-in reflection value and rely on
+    // the test asserting the TARGET side (order_id/product_id) is correctly spelled
+    // to prove the per-part loop is right; Task 4 covers the member-identifier prefix
+    // end to end against a real composite-FK-holding model.
+    constexpr auto target_pk = storm::orm::statements::BaseStatement<OrderLine>::primary_key_members_;
+    constexpr auto size      = storm::meta::fk_column_names_size(target_pk[0], target_pk, ", ");
+    constexpr auto result    = []() consteval {
+        storm::orm::utilities::ConstexprString<size + 1> buf;
+        storm::meta::append_fk_column_names(buf, target_pk[0], target_pk, ", ");
+        return buf;
+    }();
+    EXPECT_EQ(result.view(), "order_id_order_id, order_id_product_id");
+}
