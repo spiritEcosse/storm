@@ -66,14 +66,14 @@ add_compile_options("-fmodules-cache-path=${CMAKE_BINARY_DIR}/module-cache")
 # -Wunused-command-line-argument to a hard error.
 add_compile_options(-Wno-unused-command-line-argument)
 
-# CMake 4.4.0 (issue #521): the CMake-synthesized std-module target now picks
-# up compile options from consuming targets (release notes: "targets which
-# provide C++ modules may now be consumed by targets with different compile
-# features and options"). That leaks storm's -Werror onto libc++'s std.cppm,
-# which declares `export module std;` and trips -Wreserved-module-identifier
-# (Clang reserves the `std` module name for the standard library itself, but
-# doesn't exempt libc++'s own module from the warning). Suppress globally,
-# same pattern as -Wno-unused-command-line-argument above.
+# CMake 4.4.0 (issue #521): the CMake-synthesized std-module target now picks up
+# compile options from consuming targets (release notes: "targets which provide
+# C++ modules may now be consumed by targets with different compile features and
+# options"). That leaks storm's -Werror onto libc++'s std.cppm, which declares
+# `export module std;` and trips -Wreserved-module-identifier (Clang reserves
+# the `std` module name for the standard library itself, but doesn't exempt
+# libc++'s own module from the warning). Suppress globally, same pattern as
+# -Wno-unused-command-line-argument above.
 add_compile_options(-Wno-reserved-module-identifier)
 
 include(cmake/libcxx.cmake)
