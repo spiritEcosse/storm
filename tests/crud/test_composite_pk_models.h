@@ -57,4 +57,41 @@ struct StockEntry {
     int qty{};
 };
 
+// #504 — FK targeting a composite PK. Shipment references OrderLine's 2-part
+// key (order_id, product_id) via the SAME fk<> annotation as any single-column
+// FK; the composite-ness lives entirely in OrderLine's own declaration.
+struct Shipment {
+    [[= storm::primary_autoincrement]] int id{};
+    [[= storm::fk<>]] OrderLine line;
+    std::string carrier;
+};
+
+// #504 — reverse-FK destination with a composite-PK owner: "all OrderLines,
+// each with the Shipments that reference them". A separate struct (not added
+// to OrderLine itself) so existing OrderLine-shape assertions in the #501/#502
+// test suites stay untouched.
+struct OrderLineWithShipments {
+    [[= storm::primary_part]] int order_id{};
+    [[= storm::primary_part]] int product_id{};
+    int quantity{};
+    std::string note;
+    [[= storm::reverse_fk<^^Shipment>]] std::vector<Shipment> shipments;
+};
+
+// #504 — many-to-many with a composite-PK side. LedgerTag is the plain
+// single-PK related model; LedgerWithTags is Ledger's 3-part composite key
+// (region, account, period) PLUS an m2m container, proving m2m eager-load
+// stitching works when the OWNER side has a composite key.
+struct LedgerTag {
+    [[= storm::primary_autoincrement]] int id{};
+    std::string label;
+};
+struct LedgerWithTags {
+    [[= storm::primary_part]] int region{};
+    [[= storm::primary_part]] std::string account;
+    [[= storm::primary_part]] std::int64_t period{};
+    double balance{};
+    [[= storm::many_to_many<>]] std::vector<LedgerTag> tags;
+};
+
 #endif // STORM_TESTS_TEST_COMPOSITE_PK_MODELS_H
