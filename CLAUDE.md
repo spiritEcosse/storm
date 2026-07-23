@@ -348,8 +348,7 @@ detects it; `is_primary_member` now matches it too, so `ModelWithPrimaryKey<T>` 
 models. `BaseStatement` gains `primary_key_members_` (the full PK list in DECLARATION order — the
 order the DDL clause emits) and `has_composite_pk_`, alongside the unchanged `primary_key_`/`pk_name_`
 (= the first element, so the ~13 files reading them are untouched). `schema.cppm` routes composite
-models past the single-PK branch (which hardcodes the column name `"id"` — a latent bug for single PKs
-too, still open as #506) and emits every part as a regular column plus one table-level
+models past the single-PK branch and emits every part as a regular column plus one table-level
 `PRIMARY KEY (a, b)`, reusing the junction-table pattern; single-PK DDL is byte-identical.
 `needs_index` now excludes every PK member (the table-level key already indexes each part).
 New concept `ModelPrimaryKeyValid<T>` (ANDed into the `BaseStatement` constraint list next to
@@ -431,6 +430,20 @@ must have a primary key: the `ValidForeignKey<FieldType>` concept (#474) constra
 FK whose target lacks a PK fails at the call site (single-level — never recurses into the
 target's own FKs). `ON UPDATE` is not emitted (identity PKs never change). See
 [docs/guide/features/REFERENTIAL_INTEGRITY.md](docs/guide/features/REFERENTIAL_INTEGRITY.md).
+
+**PK/FK column naming uses the real identifier, not a literal `"id"` (#506)**: the single-PK
+`CREATE TABLE` branch (`append_single_pk_column_def`) emits `Base::pk_name_` (the PK member's
+actual identifier) ahead of the type/constraint suffix, and the per-field FK `REFERENCES
+<Related>(<pk>)` clause (`append_fk_column_def`) emits `find_fk_primary_key<FieldType>()`'s
+identifier — the same helper `bind_value_by_type` already used for the FK bind splice, so DDL and
+DML are guaranteed to name the same column. Previously both hardcoded the literal `"id"`, so a
+model whose PK member was not named `id` got DDL and queries that disagreed at runtime ("no such
+column"). Composite-PK models are unaffected (routed around this branch, #500). The consteval size
+budgets (`column_size_budget`'s `pk_size`, `fk_references_len`) were widened to measure the real
+identifier length instead of assuming the fixed 2-char `"id"`; `id`-named models (the ~50 existing
+ones) stay byte-identical. The m2m auto-junction `FOREIGN KEY ... REFERENCES <Model>(id)` clause
+still hardcodes `"id"` for both sides — same bug class, out of #506's scope, tracked separately as
+#519.
 
 **Many-to-many (#203)**: `[[= storm::many_to_many<>]]` (auto junction `<Owner>_<Related>`,
 one junction table per field) or `[[= storm::many_to_many_through<Model>]]` on a container
