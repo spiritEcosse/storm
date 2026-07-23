@@ -93,6 +93,86 @@ TYPED_TEST(CompositeFkJoinTest, SchemaEmitsTwoColumnsForCompositeFk) {
     EXPECT_NE(sql.find("line_product_id"), std::string::npos) << sql;
 }
 
+// ── Review fix: nullable composite-FK DDL must not force NOT NULL ───────────
+// OptionalShipment::line is std::optional<OrderLineWithShipments> — the
+// generated columns (line_order_id, line_product_id) must NOT carry NOT NULL,
+// since the FK member itself is nullable. Also proves the non-optional case
+// (Shipment above) never emitted a doubled "NOT NULL NOT NULL" suffix.
+TEST(CompositeFkSchemaTest, NullableCompositeFkColumnsOmitNotNull) {
+    const std::string& sql = storm::create_table_sql<OptionalShipment>();
+    EXPECT_NE(sql.find("line_order_id INTEGER,"), std::string::npos) << sql;
+    EXPECT_NE(sql.find("line_product_id INTEGER,"), std::string::npos) << sql;
+    EXPECT_EQ(sql.find("line_order_id INTEGER NOT NULL"), std::string::npos) << sql;
+    EXPECT_EQ(sql.find("line_product_id INTEGER NOT NULL"), std::string::npos) << sql;
+}
+
+TEST(CompositeFkSchemaTest, NonOptionalCompositeFkColumnsHaveExactlyOneNotNull) {
+    const std::string& sql = storm::create_table_sql<Shipment>();
+    EXPECT_EQ(sql.find("NOT NULL NOT NULL"), std::string::npos) << sql;
+}
+
+// ── Review fix: composite-FK member before an optional single-column FK ────
+// MixedFkOrder::composite (2 SQL columns) precedes MixedFkOrder::single (an
+// optional single-column FK to Person). Before the fix, the optional
+// single-column-FK extraction branch read column position = member index
+// instead of the threaded col_idx, so `single` would read from the wrong
+// column (composite's second column) once a composite-FK member preceded it.
+namespace {
+    template <typename ConnType>
+    class MixedFkOrderTest : public StormTestFixture<MixedFkOrder, ConnType, OrderLineWithShipments, Person> {};
+
+    // Shared setup: insert and return an OrderLineWithShipments row used as
+    // MixedFkOrder::composite's target in both tests below.
+    template <typename ConnType>
+    auto insert_mixed_fk_order_line(int order_id, int product_id, std::string note) -> OrderLineWithShipments {
+        storm::QuerySet<OrderLineWithShipments, ConnType> line_qs;
+        const OrderLineWithShipments                      line{
+                                     .order_id = order_id, .product_id = product_id, .quantity = 1, .note = std::move(note)
+        };
+        EXPECT_TRUE(line_qs.insert(line).execute().has_value());
+        return line;
+    }
+
+    // Shared verification: insert `order`, select it back, and return the
+    // sole loaded row for the caller to assert on.
+    template <typename ConnType> auto insert_and_reload_mixed_fk_order(const MixedFkOrder& order) -> MixedFkOrder {
+        storm::QuerySet<MixedFkOrder, ConnType> order_qs;
+        EXPECT_TRUE(order_qs.insert(order).execute().has_value());
+
+        auto rows = order_qs.select().execute();
+        EXPECT_TRUE(rows.has_value());
+        EXPECT_EQ(rows.value().size(), 1U);
+        return *rows.value().begin();
+    }
+} // namespace
+
+TYPED_TEST_SUITE(MixedFkOrderTest, DatabaseTypes);
+
+TYPED_TEST(MixedFkOrderTest, ExtractsOptionalSingleColumnFkAfterPrecedingCompositeFk) {
+    const OrderLineWithShipments line = insert_mixed_fk_order_line<TypeParam>(7, 42, "n");
+
+    storm::QuerySet<Person, TypeParam> person_qs;
+    const Person                       owner{.name = "Carol", .age = 40};
+    ASSERT_TRUE(person_qs.insert(owner).execute().has_value());
+
+    const MixedFkOrder order{.composite = line, .single = Person{.id = 1}};
+    const MixedFkOrder loaded = insert_and_reload_mixed_fk_order<TypeParam>(order);
+    EXPECT_EQ(loaded.composite.order_id, 7);
+    EXPECT_EQ(loaded.composite.product_id, 42);
+    ASSERT_TRUE(loaded.single.has_value());
+    EXPECT_EQ(loaded.single->id, 1);
+}
+
+TYPED_TEST(MixedFkOrderTest, ExtractsNullOptionalSingleColumnFkAfterPrecedingCompositeFk) {
+    const OrderLineWithShipments line = insert_mixed_fk_order_line<TypeParam>(8, 43, "n2");
+
+    const MixedFkOrder order{.composite = line, .single = std::nullopt};
+    const MixedFkOrder loaded = insert_and_reload_mixed_fk_order<TypeParam>(order);
+    EXPECT_EQ(loaded.composite.order_id, 8);
+    EXPECT_EQ(loaded.composite.product_id, 43);
+    EXPECT_FALSE(loaded.single.has_value());
+}
+
 // ── Single-column FK regression ──────────────────────────────────────────────
 // Message::sender (test_models.h) is the long-standing single-column FK fixture.
 // Its bind/extract behaviour must be byte-for-byte unchanged by the composite

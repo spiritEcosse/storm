@@ -107,4 +107,28 @@ struct LedgerWithTags {
     [[= storm::many_to_many<>]] std::vector<LedgerTag> tags;
 };
 
+// #504 review fix — a NULLABLE composite-FK member. Proves the composite-FK
+// DDL column emission gates NOT NULL on the FK MEMBER's own optionality
+// (std::optional<OrderLineWithShipments>), not on the target's PK-part type
+// (which is never optional — a PK can't be nullable), and that it emits the
+// suffix exactly once, not doubled.
+struct OptionalShipment {
+    [[= storm::primary_autoincrement]] int id{};
+    [[= storm::fk<>]] std::optional<OrderLineWithShipments> line;
+    std::string carrier;
+};
+
+// #504 review fix — a composite-FK member declared BEFORE an optional
+// single-column-FK member in the same struct. Exercises extract_column_fast's
+// col_idx threading: `composite` consumes 2 SQL columns
+// (composite_order_id, composite_product_id), so `single` (an optional FK
+// targeting single-PK Person) must read from col_idx 3, not from its member
+// index (2). Before the fix, extract_optional_fk_column read column 2
+// (composite_product_id) instead.
+struct MixedFkOrder {
+    [[= storm::primary_autoincrement]] int id{};
+    [[= storm::fk<>]] OrderLineWithShipments composite;
+    [[= storm::fk<>]] std::optional<Person> single;
+};
+
 #endif // STORM_TESTS_TEST_COMPOSITE_PK_MODELS_H

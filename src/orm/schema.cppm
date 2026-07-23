@@ -504,24 +504,34 @@ export namespace storm::orm::schema {
         // NULL]" (omits NOT NULL for a nullable FK member, matching append_fk_column_def's
         // own [nullable] dispatch). `PartMember` is the TARGET's own primary-key-part
         // reflection (e.g. OrderLineWithShipments::order_id) — its OWN declared type drives
-        // the SQL type via the same sql_col_def dispatch a regular column uses. Single-level
-        // only, matching the FKFieldOf/ValidForeignKey precedent (#412): a part that is
-        // ITSELF an FK field is not resolved recursively — it falls through to sql_col_def on
-        // its declared C++ type (that shape does not occur in the current fixtures).
-        // `FkMember` is the FK member's own reflection (source of the "<name>_" prefix and the
-        // [nullable] flag).
+        // the SQL storage CLASS (Integer/Text/...) via the same storage_class_of dispatch
+        // sql_col_def uses internally. Single-level only, matching the FKFieldOf/
+        // ValidForeignKey precedent (#412): a part that is ITSELF an FK field is not
+        // resolved recursively — it falls through to its declared C++ type's storage class
+        // (that shape does not occur in the current fixtures).
+        // `FkMember` is the FK member's own reflection (source of the "<name>_" prefix).
+        //
+        // Nullability is NOT delegated to sql_col_def<PartType, D>(): that dispatch reads
+        // is_optional_v<PartType>, and PartType is the TARGET's own PK-part type — a
+        // primary-key part is NEVER std::optional (PKs can't be nullable), so that call
+        // would always return the NOT-NULL variant regardless of whether the FK MEMBER
+        // itself is nullable. The single decision point for nullability must be
+        // FkFieldType's own optionality (mirrors append_fk_column_def's fk_nullable flag,
+        // which reads storm::orm::utilities::is_optional_v<FieldType> where FieldType is
+        // the FK member's type, not the target's) — so this calls sql_type_for directly
+        // with that flag, rather than sql_col_def.
         template <std::meta::info FkMember, std::meta::info PartMember, Dialect D, typename SqlT>
         consteval void append_composite_fk_part_column(SqlT& col) {
-            using FkFieldType = std::remove_cvref_t<typename[:std::meta::type_of(FkMember):]>;
-            using PartType    = std::remove_cvref_t<typename[:std::meta::type_of(PartMember):]>;
+            using FkFieldType          = std::remove_cvref_t<typename[:std::meta::type_of(FkMember):]>;
+            using PartType             = std::remove_cvref_t<typename[:std::meta::type_of(PartMember):]>;
+            constexpr StorageClass cls = storage_class_of<PartType>();
+            constexpr bool         nullable =
+                    utilities::is_optional_v<FkFieldType> || cls == StorageClass::Blob || cls == StorageClass::Fallback;
             col.append(std::meta::identifier_of(FkMember));
             col.append("_");
             col.append(std::meta::identifier_of(PartMember));
             col.append(" ");
-            col.append(sql_col_def<PartType, D>());
-            if constexpr (!utilities::is_optional_v<FkFieldType>) {
-                col.append(" NOT NULL");
-            }
+            col.append(sql_type_for<cls, D, nullable>());
         }
 
         // The target's PK member list, as a template-argument-usable constexpr value

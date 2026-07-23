@@ -1395,18 +1395,24 @@ export namespace storm::orm::statements {
 
         // Extract optional FK column: set nullopt when NULL, otherwise extract inner PK.
         // Single-column target only (fk_primary_key_count<FieldType>() == 1) — the
-        // pre-#504 code, unchanged; the composite case is extract_optional_fk_parts below.
+        // pre-#504 code, widened only to read from col_idx (the ACTUAL SQL column
+        // position) rather than Index (the member's position in all_members_): the two
+        // diverge once any earlier member is a composite-FK member consuming N>1 columns
+        // (#504). Index still drives the MEMBER lookup (member = all_members_[Index]) —
+        // that part is correct and unchanged; only the column POSITION moves to the
+        // threaded col_idx parameter, matching extract_fk_parts/extract_optional_fk_parts.
         template <std::size_t Index, typename Statement, typename FieldType>
-        __attribute__((always_inline)) static void extract_optional_fk_column(Statement* stmt, T& obj) noexcept {
+        __attribute__((always_inline)) static void
+        extract_optional_fk_column(Statement* stmt, T& obj, int col_idx) noexcept {
             constexpr auto member       = all_members_[Index];
             using InnerFKType           = utilities::optional_inner_type_t<FieldType>;
             constexpr auto fk_pk_member = find_fk_primary_key<FieldType>();
             using PKType                = std::remove_cvref_t<decltype(std::declval<InnerFKType>().[:fk_pk_member:])>;
-            if (stmt->is_null(Index)) {
+            if (stmt->is_null(col_idx)) {
                 obj.[:member:] = std::nullopt;
             } else {
                 InnerFKType fk_inner{};
-                fk_inner.[:fk_pk_member:] = ColumnExtractor::extract_column_value<PKType>(stmt, Index);
+                fk_inner.[:fk_pk_member:] = ColumnExtractor::extract_column_value<PKType>(stmt, col_idx);
                 obj.[:member:]            = std::move(fk_inner);
             }
         }
@@ -1474,7 +1480,7 @@ export namespace storm::orm::statements {
                 if constexpr (is_fk_field(member)) {
                     if constexpr (utilities::is_optional_v<FieldType>) {
                         if constexpr (fk_primary_key_count<FieldType>() == 1) {
-                            extract_optional_fk_column<Index, Statement, FieldType>(stmt, obj);
+                            extract_optional_fk_column<Index, Statement, FieldType>(stmt, obj, col_idx);
                             ++col_idx;
                         } else {
                             extract_optional_fk_parts<Statement, FieldType>(stmt, obj.[:member:], col_idx);
