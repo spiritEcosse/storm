@@ -2,6 +2,7 @@ module;
 
 // Boilerplate-pattern duplicates accepted (see #264 finding).
 
+#include <cassert>
 #include <meta>
 #include <uuid.h>
 
@@ -654,8 +655,9 @@ export namespace storm::orm::utilities {
     // parts (hashed to 8 bytes — the stitch only needs equality for map lookup,
     // never the original text back, so storing a hash instead of the bytes
     // avoids capping composite key width by string length). CAPACITY=32 covers
-    // every composite PK in the codebase today (max 3 parts before #504 ships)
-    // with room to spare; a 4th+ part or two string parts still fits (4 x 8 = 32).
+    // every composite PK in the codebase today (max 3 parts before #504 ships);
+    // a 4th part (int64 or string-hash) still fits exactly (4 x 8 = 32) but is a
+    // hard ceiling with zero slack — a 5th part overflows.
     class StitchKey {
       public:
         static constexpr std::size_t CAPACITY = 32;
@@ -683,6 +685,7 @@ export namespace storm::orm::utilities {
 
       private:
         void append_bytes(const void* src, std::size_t n) noexcept {
+            assert(len_ + n <= CAPACITY && "StitchKey: append exceeds fixed CAPACITY");
             std::memcpy(bytes_.data() + len_, src, n);
             len_ += n;
         }
