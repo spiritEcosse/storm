@@ -57,25 +57,38 @@ struct StockEntry {
     int qty{};
 };
 
-// #504 — FK targeting a composite PK. Shipment references OrderLine's 2-part
-// key (order_id, product_id) via the SAME fk<> annotation as any single-column
-// FK; the composite-ness lives entirely in OrderLine's own declaration.
-struct Shipment {
-    [[= storm::primary_autoincrement]] int id{};
-    [[= storm::fk<>]] OrderLine line;
-    std::string carrier;
-};
+// #504 — Base⟷Owner reference cycle between OrderLineWithShipments and
+// Shipment, broken the same way tests/query/test_reverse_fk_models.h breaks
+// RfPerson⟷RfTask: forward-declare the owner so the container member below
+// tolerates an incomplete value_type, then define it fully afterward (by
+// which point OrderLineWithShipments is complete, so Shipment::line can be a
+// by-value member).
+struct Shipment; // forward declaration breaks the Base⟷Owner cycle
 
 // #504 — reverse-FK destination with a composite-PK owner: "all OrderLines,
-// each with the Shipments that reference them". A separate struct (not added
-// to OrderLine itself) so existing OrderLine-shape assertions in the #501/#502
-// test suites stay untouched.
+// each with the Shipments that reference them". A separate struct from
+// OrderLine (not added to it directly) so existing OrderLine-shape assertions
+// in the #501/#502 test suites stay untouched.
 struct OrderLineWithShipments {
     [[= storm::primary_part]] int order_id{};
     [[= storm::primary_part]] int product_id{};
     int quantity{};
     std::string note;
     [[= storm::reverse_fk<^^Shipment>]] std::vector<Shipment> shipments;
+};
+
+// #504 — FK targeting a composite PK. Shipment references
+// OrderLineWithShipments's 2-part key (order_id, product_id) via the SAME
+// fk<> annotation as any single-column FK — the composite-ness lives entirely
+// in the target's own declaration. Doubles as the reverse-FK owner for
+// OrderLineWithShipments::shipments above: reverse_fk<^^Shipment> requires
+// Shipment to carry exactly one fk<> member whose type is
+// OrderLineWithShipments, which is why this targets that type and not the
+// plain OrderLine (which nothing references back to).
+struct Shipment {
+    [[= storm::primary_autoincrement]] int id{};
+    [[= storm::fk<>]] OrderLineWithShipments line;
+    std::string carrier;
 };
 
 // #504 — many-to-many with a composite-PK side. LedgerTag is the plain
