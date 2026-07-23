@@ -828,6 +828,26 @@ export namespace storm::orm::statements {
             std::unreachable(); // never reached: requires ModelWithPrimaryKey<...> guarantees a primary key exists
         }
 
+        // Widened form of find_fk_primary_key (#504): returns the FK target's FULL
+        // primary-key member list — 1 element for a single-column target (matching
+        // find_fk_primary_key exactly), N for a composite target. Existing single-FK
+        // call sites keep using find_fk_primary_key unchanged (byte-identical splice
+        // shape); this is used only by the new composite-FK bind/extract/JOIN paths.
+        template <typename FKType>
+            requires ValidForeignKey<FKType>
+        static consteval auto fk_primary_key_count() -> std::size_t {
+            using InnerType = utilities::optional_inner_type_t<FKType>;
+            return BaseStatement<InnerType>::primary_key_column_count_;
+        }
+
+        template <typename FKType>
+            requires ValidForeignKey<FKType>
+        static consteval auto find_fk_primary_key_members()
+                -> std::array<std::meta::info, fk_primary_key_count<FKType>()> {
+            using InnerType = utilities::optional_inner_type_t<FKType>;
+            return BaseStatement<InnerType>::primary_key_members_;
+        }
+
       protected:
         // Number of PERSISTED fields. Relation container members (many-to-many #203,
         // reverse_fk #398) map to a separate query, not to a column, so they are
