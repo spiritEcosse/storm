@@ -649,3 +649,46 @@ aggregates sum/min/max several columns, e.g. `SUM(a + b)`) and is the `requires`
 `QuerySet::sum/avg/min/max`. A string/BLOB/enum/UUID/temporal/`bool` field is a **compile error**
 at the aggregate call site, not a silent coercion. `count()` / `count_distinct()` are unconstrained
 — `COUNT` is type-agnostic and accepts any column.
+
+## Primary Key Type Validation (`PrimaryKeyType`) (#505)
+
+`storm::orm::statements::PrimaryKeyType<T>` is the compile-time gate on the type of `T`'s
+primary-key member (the field annotated `storm::primary` / `storm::primary_autoincrement`).
+**Supported primary-key types: `short`, `int`, `long`, `long long`**, and their fixed-width
+spellings (`std::int16_t`, `std::int32_t`, `std::int64_t`, …). A `uint64_t` (or
+`unsigned long` / `unsigned long long`) primary key is
+accepted only when explicitly annotated `storm::signed_storage`; `storm::full_unsigned` is
+rejected even though it is a storage annotation, because it stores as zero-padded `TEXT`,
+which would silently misread through every hardcoded-`int64` primary-key extraction site
+(`select.cppm`, `join.cppm`, `insert.cppm`).
+
+Rejected, each for a specific reason:
+- **`bool`** — integral, so a naive `std::is_integral_v` check would admit it, but a
+  two-valued primary key is nonsense. Same carve-out `NumericAggregateable` makes (#475).
+- **`char` / `signed char`** — a 1-byte identity is a pathological primary key; not in the
+  accepted width list.
+- **Unsigned types without `storm::signed_storage`** — a bare `uint64_t` primary key is
+  already a compile error via `ModelStorageAnnotated` (#436); this concept additionally
+  rejects `full_unsigned` specifically as a primary-key type (see above).
+- **`std::optional<T>`** — a nullable primary key is meaningless; rejected outright, unlike
+  `ValidForeignKey`/`is_unsigned64_member`, which unwrap `std::optional` before checking.
+- **Text and `storm::UUID`** — not supported as a primary key today. This is a "not yet, not
+  a never": `storm::UUID` already works as an ordinary column everywhere (DDL, extraction,
+  WHERE/`IN`) except as a primary key, where the same hardcoded-`int64` sites block it.
+  Tracked as a follow-up (#507) to route those sites through the type-generic
+  `bind_value_by_type` path `erase.cppm` already uses.
+
+```cpp
+template <typename T>
+concept PrimaryKeyType = /* T's primary-key member's type is in the allowed set above */;
+```
+
+`PrimaryKeyType<T>` is ANDed into `BaseStatement<T>`'s constraint list alongside
+`ModelWithPrimaryKey<T>`. `QuerySet<T>` itself only requires `Entity<T>` (it must stay
+usable without a primary key), so a model with an unsupported primary-key type — `bool`,
+`std::optional<int>`, a bare `unsigned int`, `std::string`, `storm::UUID` — compiles as a
+bare `QuerySet<T>` but fails at the first call that instantiates a statement
+(`select()`, `insert()`, `join()`, …), naming `T` and `PrimaryKeyType` in the "constraints
+not satisfied" diagnostic trail. This replaces the previous behavior of failing
+inconsistently — sometimes at runtime with no mention of the primary key at all, sometimes
+at compile time deep inside `select.cppm` / `join.cppm` / `insert.cppm`.
