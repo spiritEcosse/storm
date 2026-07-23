@@ -49,3 +49,6 @@ crashes/
 
 # Lock files from local tooling (e.g. .claude/scheduled_tasks.lock)
 *.lock
+
+# Superpowers skill scratch specs/plans/results — superseded by GitHub issues (local-only)
+docs/superpowers/
