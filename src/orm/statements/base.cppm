@@ -268,7 +268,7 @@ export namespace storm::orm::statements {
 
     // Concept: T's SINGLE primary-key member (storm::primary / primary_autoincrement) has
     // a type admitted as a primary key (#505). Scoped to the single-column case only —
-    // a composite key (one or more storm::primary_part members, #500) is exempted
+    // a composite key (two or more storm::primary_part members, #500) is exempted
     // entirely and returns true unconditionally, for two reasons: (1) issue #505 was
     // decided before composite PKs existed in this codebase, so the accepted-type set
     // was never scoped against composite parts; (2) an FK-typed composite part (e.g.
