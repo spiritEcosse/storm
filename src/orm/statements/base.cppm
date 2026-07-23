@@ -855,10 +855,10 @@ export namespace storm::orm::statements {
 
         // Composite primary key (#500). primary_key_members_ is the full PK list in
         // declaration order; primary_key_ / pk_name_ above stay the FIRST element, so
-        // every single-PK caller is untouched. has_composite_pk_ is the branch the
-        // schema generator takes to emit a table-level PRIMARY KEY (a, b) instead of a
-        // column-level one. CRUD paths do not consult these yet — a composite model
-        // reaching INSERT/UPDATE/DELETE/JOIN still fails at a named concept (#501-#504).
+        // every single-PK caller is untouched. has_composite_pk_ branches the schema
+        // generator (table-level PRIMARY KEY (a, b), #500), the by-key WHERE clause
+        // (#501), and the INSERT column/bind policy (#502). JOIN on a composite
+        // model is still out of scope (#504).
         static constexpr auto primary_key_members_ = find_primary_key_members_impl();
         static constexpr bool has_composite_pk_    = primary_key_members_.size() > 1;
 
@@ -898,14 +898,20 @@ export namespace storm::orm::statements {
         }
 
         // Does the caller's PK-skip policy exclude `member` from the bind order?
-        // SkipAllPK covers every part of a composite key (#501); plain SkipPK keeps the
-        // historical first-PK-only skip that INSERT relies on. The two coincide on a
+        // SkipAllPK covers every part of a composite key (#501) — the UPDATE policy,
+        // whose SET clause omits the whole key. Plain SkipPK is the INSERT policy: it
+        // skips the DB-generated key, which only a single-column PK can be — a
+        // composite key has no auto-generation mechanism, so every part is caller
+        // data and nothing is skipped (#502). The two policies coincide on a
         // single-PK model.
         template <bool SkipPK, bool SkipAllPK> static consteval auto skips_pk_column(std::meta::info member) -> bool {
             if (!SkipPK) {
                 return false;
             }
-            return SkipAllPK ? is_pk_member(member) : member == primary_key_;
+            if (SkipAllPK) {
+                return is_pk_member(member);
+            }
+            return !has_composite_pk_ && member == primary_key_;
         }
 
         // Unified field binder: binds a single field at compile-time index.
@@ -917,10 +923,9 @@ export namespace storm::orm::statements {
         //
         // SkipAllPK widens the skip from primary_key_ to EVERY primary-key member (#501),
         // which is what UPDATE needs: its SET clause omits the whole composite key, so the
-        // bind order must too. Deliberately a SEPARATE flag rather than widening SkipPK
-        // itself — INSERT also passes SkipPK, and how a composite key is INSERTed is #502.
-        // Changing SkipPK here would silently alter the INSERT bind order as a side effect
-        // of a DELETE/UPDATE issue. No effect on single-PK models, where the two coincide.
+        // bind order must too. INSERT keeps plain SkipPK, which since #502 skips NOTHING
+        // on a composite model (see skips_pk_column: every key part is caller data).
+        // No effect on single-PK models, where the two flags coincide.
         template <
                 typename ConnType,
                 std::size_t Index,

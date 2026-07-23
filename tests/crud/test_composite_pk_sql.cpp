@@ -28,7 +28,9 @@ import storm_orm_statements_erase_grammar;
 //       not just the first, or a composite PK column becomes writable.
 //   (3) BIND ARITHMETIC — N values per key, bound after the SET values.
 //
-// INSERT stays out of scope (#502).
+// INSERT joined in #502: a composite key is never DB-generated, so every part
+// is caller data — all key columns appear in the INSERT, and no RETURNING is
+// emitted (there is no generated value to return).
 
 // NOLINTBEGIN(readability-implicit-bool-conversion)
 
@@ -213,5 +215,86 @@ TEST(CompositePkChunking, RowCapacityStaysWithinTheParameterBudget) {
     EXPECT_LE(chunk_rows<OrderLine> * 2U, 999U);
     EXPECT_LE(chunk_rows<Ledger> * 3U, 999U);
 }
+
+// ── (#502) SQL text: INSERT ──────────────────────────────────────────────────
+// A composite PK has no auto-generation mechanism (AUTOINCREMENT and
+// GENERATED ... AS IDENTITY are single-integer-column features), so every part
+// is caller data: all key columns join the column list and placeholder list in
+// DECLARATION order, and no RETURNING clause is emitted.
+
+namespace {
+
+    // VoidQuery::sql()/SingleQuery::sql() are static: the text derives purely
+    // from reflection, so no live connection is involved (same rationale as the
+    // EraseGrammar asserts above).
+    template <typename T> auto insert_void_sql() -> std::string {
+        return storm::orm::statements::InsertStatement<T, storm::db::sqlite::Connection>::VoidQuery::sql();
+    }
+    template <typename T> auto insert_returning_sql() -> std::string {
+        return storm::orm::statements::InsertStatement<T, storm::db::sqlite::Connection>::SingleQuery::sql();
+    }
+
+} // namespace
+
+TEST(CompositePkInsertSql, EveryKeyPartJoinsTheColumnList) {
+    EXPECT_EQ(
+            insert_void_sql<OrderLine>(),
+            "INSERT INTO OrderLine (order_id, product_id, quantity, note) VALUES (?, ?, ?, ?)"
+    );
+}
+
+TEST(CompositePkInsertSql, ThreePartKeyInDeclarationOrder) {
+    EXPECT_EQ(insert_void_sql<Ledger>(), "INSERT INTO Ledger (region, account, period, balance) VALUES (?, ?, ?, ?)");
+}
+
+// An FK part's COLUMN is "<name>_id" — emitting the bare member would INSERT
+// into a column that does not exist. Same reason #500 asserts this for DDL.
+TEST(CompositePkInsertSql, FkKeyPartUsesColumnNameNotIdentifier) {
+    EXPECT_EQ(insert_void_sql<StockEntry>(), "INSERT INTO StockEntry (warehouse_id, sku, qty) VALUES (?, ?, ?)");
+}
+
+TEST(CompositePkInsertSql, MixedTypeKeyParts) {
+    EXPECT_EQ(insert_void_sql<Inventory>(), "INSERT INTO Inventory (warehouse, sku, on_hand) VALUES (?, ?, ?)");
+}
+
+// Single-PK INSERT text must be byte-identical to before this issue, on both
+// the void and the RETURNING variants.
+TEST(CompositePkInsertSql, SinglePkTextIsByteIdentical) {
+    EXPECT_EQ(insert_void_sql<Widget>(), "INSERT INTO Widget (name, weight) VALUES (?, ?)");
+    EXPECT_EQ(insert_returning_sql<Widget>(), "INSERT INTO Widget (name, weight) VALUES (?, ?) RETURNING id");
+}
+
+// ── (#502) ReturnId gate ─────────────────────────────────────────────────────
+// ReturnId::Yes means "return the DB-generated key", which a composite model
+// does not have. Unconstrained it would compile and emit "RETURNING <first
+// part>" — the issue's rejected option C (silently lossy) through a back door.
+// Asserted on the gate predicate, not via an ill-formed insert<Yes>() call —
+// the established negative-compile pattern (a TU cannot contain the ill-formed
+// call it asserts about).
+
+namespace {
+
+    using storm::orm::statements::default_return_id;
+    using storm::orm::statements::ReturnId;
+    using storm::orm::statements::ReturnIdSupported;
+
+    static_assert(!ReturnIdSupported<OrderLine, ReturnId::Yes>, "a composite model has no DB-generated key to return");
+    static_assert(ReturnIdSupported<OrderLine, ReturnId::No>, "opting OUT of the id is valid on every model shape");
+    static_assert(ReturnIdSupported<Widget, ReturnId::Yes>, "single-PK models keep the RETURNING path");
+    static_assert(ReturnIdSupported<Widget, ReturnId::No>, "single-PK models keep the explicit void path");
+    static_assert(!ReturnIdSupported<Ledger, ReturnId::Yes>, "the gate is not arity-limited (3-part key)");
+    static_assert(!ReturnIdSupported<StockEntry, ReturnId::Yes>, "an FK-part composite key is gated too");
+
+    // Plain insert() picks its default from the model shape: void for composite
+    // (nothing to return), id for single-PK (unchanged).
+    static_assert(
+            default_return_id<OrderLine>() == ReturnId::No,
+            "plain insert() on a composite model resolves to the void path"
+    );
+    static_assert(
+            default_return_id<Widget>() == ReturnId::Yes, "plain insert() on a single-PK model still returns the id"
+    );
+
+} // namespace
 
 // NOLINTEND(readability-implicit-bool-conversion)

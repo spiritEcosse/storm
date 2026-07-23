@@ -31,6 +31,25 @@ export namespace storm::orm::statements {
         std::optional<std::size_t> batch_size = std::nullopt; // nullopt = automatic (999/field_count)
     };
 
+    // A composite PK is never DB-generated (#502): AUTOINCREMENT and
+    // GENERATED ... AS IDENTITY are single-integer-column features, so every key
+    // part is caller-supplied and RETURNING could only echo the input back. Plain
+    // insert() therefore defaults to the void/no-RETURNING path on a composite
+    // model, and keeps returning the generated id on a single-PK model.
+    template <typename T> consteval auto default_return_id() -> ReturnId {
+        return BaseStatement<T>::has_composite_pk_ ? ReturnId::No : ReturnId::Yes;
+    }
+
+    // An explicit ReturnId::Yes on a composite model is rejected at the call
+    // site: unconstrained it would emit "RETURNING <first part>" — silently
+    // lossy. ReturnId::No stays valid on every model shape, so generic code that
+    // spells it out keeps compiling. (Named concept per the #472/#477/#478
+    // precedent; the #413 auto-DEFAULT caveat was checked and does not fire —
+    // that DEFAULT is recovered from a C++ default-member-initializer, a value
+    // already in the caller's object.)
+    template <typename T, ReturnId R>
+    concept ReturnIdSupported = (R == ReturnId::No) || !BaseStatement<T>::has_composite_pk_;
+
     template <typename T, storm::db::DatabaseConnection ConnType> class InsertStatement;
 
     // Upsert proxy chain (#205): lifted OUT of InsertStatement so their sql()/execute()/to_sql()
@@ -359,7 +378,9 @@ export namespace storm::orm::statements {
             }
         };
 
-        template <ReturnId R = ReturnId::Yes> [[nodiscard]] auto query(const T& obj [[clang::lifetimebound]]) {
+        template <ReturnId R = default_return_id<T>()>
+            requires ReturnIdSupported<T, R>
+        [[nodiscard]] auto query(const T& obj [[clang::lifetimebound]]) {
             if constexpr (R == ReturnId::Yes) {
                 return SingleQuery{{}, std::move(*this), obj};
             } else {
@@ -379,6 +400,7 @@ export namespace storm::orm::statements {
             return {std::move(*this), objects, opts};
         }
         template <ReturnId R>
+            requires ReturnIdSupported<T, R>
         [[nodiscard]] auto
         query(std::span<const T> objects [[clang::lifetimebound]], std::optional<InsertOptions> opts = std::nullopt) {
             if constexpr (R == ReturnId::Yes) {
@@ -523,11 +545,12 @@ export namespace storm::orm::statements {
             return std::unexpected(Error{rc, stmt->get_error_message()});
         }
 
-        // Non-PK field count — the number of VALUES placeholders in a plain INSERT.
-        // Used by the DO UPDATE upsert path to find where the auto_update now() tail
-        // starts binding (right after the VALUES params).
+        // The number of VALUES placeholders in a plain INSERT: every field except a
+        // DB-generated single-column PK; a composite key is caller data, so all
+        // fields (#502). Used by the DO UPDATE upsert path to find where the
+        // auto_update now() tail starts binding (right after the VALUES params).
         static consteval auto placeholders_count() -> std::size_t {
-            return Base::field_count_ - 1;
+            return Base::has_composite_pk_ ? Base::field_count_ : Base::field_count_ - 1;
         }
 
         // Upsert DO NOTHING — RETURNING yields the new id, or no row when skipped.

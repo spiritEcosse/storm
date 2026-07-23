@@ -28,7 +28,12 @@ export namespace storm::orm::statements {
             bool first = true;
             for (std::size_t i = 0; i < Base::field_count_; ++i) {
                 if constexpr (SkipPrimaryKey) {
-                    if (Base::all_members_[i] == Base::primary_key_) {
+                    // Only a DB-generated key is omitted from INSERT, and only a
+                    // single-column PK can be DB-generated. A composite key has no
+                    // auto-generation mechanism — every part is caller data (#502) —
+                    // so nothing is skipped. Plain `if` on has_composite_pk_: the
+                    // loop variable makes `if constexpr` on all_members_[i] ill-formed.
+                    if (!Base::has_composite_pk_ && Base::all_members_[i] == Base::primary_key_) {
                         continue;
                     }
                 }
@@ -80,15 +85,16 @@ export namespace storm::orm::statements {
             return build_field_names_list_impl<false>();
         }
 
-        // Build comma-separated list of NON-PRIMARY KEY fields (for INSERT statements)
-        // Excludes primary key to allow auto-increment
+        // Build the INSERT column list: excludes a DB-generated single-column PK
+        // (auto-increment); a composite key is caller data, so all fields (#502).
         static consteval auto build_non_pk_field_names_list() {
             return build_field_names_list_impl<true>();
         }
 
-        // "?, ?, ..." placeholders for the SQL VALUES clause, one per non-PK field
-        // (skips the primary key for auto-increment). Shared by InsertStatement's
-        // VALUES clause and UpsertGrammar's re-derived INSERT prefix (#205).
+        // "?, ?, ..." placeholders for the SQL VALUES clause, one per INSERTed field
+        // (a DB-generated single-column PK is skipped; a composite key is not, #502).
+        // Shared by InsertStatement's VALUES clause and UpsertGrammar's re-derived
+        // INSERT prefix (#205).
         static consteval auto build_placeholders() {
             ConstexprString<utilities::buffer_size::SQL_SMALL> result;
             for_each_field_name<true>([&](std::size_t /*i*/, bool needs_comma) {
