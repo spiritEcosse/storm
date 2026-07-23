@@ -142,3 +142,18 @@ TEST(FkColumnNamesTest, CompositeTargetEmitsOneColumnPerPart) {
     }();
     EXPECT_EQ(result.view(), "order_id_order_id, order_id_product_id");
 }
+
+// ── #504 (Task 5): ValidForeignKey composite-arity finding (no code change) ──
+// fk<> annotates ONE member whose TYPE is the whole related object — there are
+// no separate "local FK columns" to mismatch in count against the target's PK
+// arity (unlike SQLAlchemy's ForeignKeyConstraint, which lists local columns
+// explicitly). So ValidForeignKey<OrderLine> just needs OrderLine to have A
+// primary key (single or composite) — already true via ModelWithPrimaryKey
+// (#500 widened is_primary_member for primary_part). No new concept code
+// needed; this test is a permanent regression guard on that reasoning.
+
+TEST(CompositeFkArityTest, ValidForeignKeyAcceptsCompositePkTargetWithNoArityMismatchPossible) {
+    static_assert(storm::orm::statements::ValidForeignKey<OrderLine>);
+    static_assert(storm::orm::statements::ValidForeignKey<std::optional<OrderLine>>);
+    SUCCEED();
+}
