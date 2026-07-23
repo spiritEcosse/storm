@@ -41,11 +41,21 @@ for single insert (`insert.cppm:362`) and is explicitly used in ~14 places in
 so "composite returns void" is not a complete rule on its own — the explicit forms need
 defining too.
 
-| Call on a **composite** model | Result |
-|---|---|
-| `insert(obj)` (plain) | `expected<void, Error>`, no `RETURNING` |
-| `insert<ReturnId::No>(obj)` | Same — accepted unchanged |
-| `insert<ReturnId::Yes>(obj)` | **Compile-time error** |
+| Call on a **composite** model | Needed? | Result |
+|---|---|---|
+| `insert(obj)` (plain) | **the form to write** | `expected<void, Error>`, no `RETURNING` |
+| `insert<ReturnId::No>(obj)` | redundant, accepted | identical to the above |
+| `insert<ReturnId::Yes>(obj)` | — | **compile-time error** |
+
+A caller never needs to write `ReturnId::No` for a composite model: the plain overload
+already resolves to the void/no-`RETURNING` form. `ReturnId::Yes` is only the *default*
+where a DB-generated key exists. This keeps the composite call site **identical** to the
+single-PK one — `qs.insert(x).execute()` in both cases — with only the return type
+differing, which is exactly what rejecting `ReturnId::Yes` protects: a caller cannot
+silently receive a wrong-but-plausible id.
+
+`ReturnId::No` is accepted rather than rejected only so generic code that spells it out
+keeps compiling across every model shape.
 
 `ReturnId::Yes` means "give me the DB-generated key", which for a composite PK does not
 exist. Left unconstrained it would compile and emit `RETURNING <first_part>` — since
