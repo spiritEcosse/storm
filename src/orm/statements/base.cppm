@@ -237,6 +237,76 @@ export namespace storm::orm::statements {
     template <typename T>
     concept ModelWithPrimaryKey = meta::has_primary_key(^^T);
 
+    namespace meta {
+        // True iff `member`'s (dealiased) type is a signed integral type admitted as a
+        // primary key (#505) — DECIDED 2026-07-22: short/int/long/long long and their
+        // fixed-width spellings (std::int16_t, std::int32_t, std::int64_t, ...); NOT
+        // char/signed char (a 1-byte identity is pathological) or bool (integral, but
+        // a two-valued PK is nonsense — same carve-out NumericAggregateable makes,
+        // #475). std::optional<T> is rejected outright — a nullable primary key is
+        // meaningless, so unlike is_unsigned64_member this does NOT unwrap optional
+        // first. A bare 64-bit unsigned type is rejected unless
+        // annotated storm::signed_storage: that annotation routes through the same
+        // bind_int64/extract_int64 path every hardcoded-int64 PK site already uses
+        // (select.cppm, join.cppm, insert.cppm); storm::full_unsigned stores as
+        // zero-padded TEXT and would silently misread through those same sites, so it
+        // stays rejected even though it is an explicit storage annotation.
+        consteval auto is_primary_key_typed_member(std::meta::info member) -> bool {
+            const std::meta::info t = std::meta::dealias(std::meta::type_of(member));
+            if (t == ^^bool) {
+                return false;
+            }
+            if (t == ^^short || t == ^^int || t == ^^long || t == ^^long long) {
+                return true;
+            }
+            if (t == ^^unsigned long || t == ^^unsigned long long) {
+                return meta::has_signed_storage_attr(member);
+            }
+            return false;
+        }
+    } // namespace meta
+
+    // Concept: T's SINGLE primary-key member (storm::primary / primary_autoincrement) has
+    // a type admitted as a primary key (#505). Scoped to the single-column case only —
+    // a composite key (one or more storm::primary_part members, #500) is exempted
+    // entirely and returns true unconditionally, for two reasons: (1) issue #505 was
+    // decided before composite PKs existed in this codebase, so the accepted-type set
+    // was never scoped against composite parts; (2) an FK-typed composite part (e.g.
+    // StockEntry::warehouse in tests/crud/test_composite_pk_models.h) binds via the
+    // REFERENCED row's key (meta::is_fk_field routing in bind_one_pk_part), not its own
+    // declared type, so "the member's type" is not even the right question for that part
+    // — and a plain non-FK TEXT part (e.g. Inventory::sku, same file) is an already-shipped,
+    // already-tested composite-key shape. Composite-PK type constraints are their own
+    // unscoped follow-up, not a silent widening of this concept's contract.
+    //
+    // ANDed alongside ModelWithPrimaryKey on BaseStatement's constraint list — a model
+    // with NO primary key already fails that sibling concept, so the loop here always
+    // finds a match when both concepts are evaluated together on a single-PK model.
+    // Checked directly on the member from nonstatic_data_members_of(^^T) (BMI-safe,
+    // #262), matching the sibling model-policy concepts (ModelStorageAnnotated,
+    // ModelFkPoliciesValid, ...).
+    //
+    // A failing BaseStatement<T> instantiation names both T and PrimaryKeyType in the
+    // "constraints not satisfied" / "because 'T' does not satisfy 'PrimaryKeyType'"
+    // diagnostic trail (matching every sibling concept here — none of them name the
+    // specific member either). A static_assert with a dynamic message naming the PK
+    // member was tried and rejected: static_assert failure inside a concept's consteval
+    // lambda is a hard compile error during constraint checking, not a SFINAE-friendly
+    // false, so it would break every negative `!PrimaryKeyType<Bad>` usage (including
+    // the tests) instead of merely gating BaseStatement.
+    template <typename T>
+    concept PrimaryKeyType = []() consteval {
+        for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
+            if (meta::is_primary_part_member(m)) {
+                return true; // composite key: type constraint out of scope for #505
+            }
+            if (meta::is_primary_member(m)) {
+                return meta::is_primary_key_typed_member(m);
+            }
+        }
+        return true; // no PK member: ModelWithPrimaryKey<T> is the concept that rejects this
+    }();
+
     // A field type is a valid FK target iff its referenced entity (optional-unwrapped)
     // has a primary key. Names the boundary find_fk_primary_key relies on and that
     // FKFieldOf did not previously enforce at the call site (#474). Single-level: it
@@ -605,7 +675,7 @@ export namespace storm::orm::statements {
 
     // Shared reflection utilities for all statement types
     template <typename T>
-        requires storm::meta::Entity<T> && ModelWithPrimaryKey<T> && ModelStorageAnnotated<T> &&
+        requires storm::meta::Entity<T> && ModelWithPrimaryKey<T> && PrimaryKeyType<T> && ModelStorageAnnotated<T> &&
                  ModelFkPoliciesValid<T> && ModelAnnotationsValid<T> && ModelMaxLengthValid<T> &&
                  ModelPrimaryKeyValid<T>
     class BaseStatement {
