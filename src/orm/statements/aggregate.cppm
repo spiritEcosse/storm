@@ -107,14 +107,14 @@ export namespace storm::orm::statements {
     };
 
     // Common parameter bundle for AggregateStatement and GroupByBuilder
-    template <typename ConnType> struct AggregateParams {
-        std::shared_ptr<ConnType>           conn;
-        orm::where::ExpressionVariantPtr    where_expr;
-        std::optional<JoinStatementWrapper> join_stmt;
-        std::optional<int>                  limit;
-        std::optional<int>                  offset;
-        std::optional<OrderByWrapper>       order_by_wrapper;
-        orm::where::ExpressionVariantPtr    having_expr;
+    template <typename T, typename ConnType> struct AggregateParams {
+        std::shared_ptr<ConnType>                                     conn;
+        orm::where::ExpressionVariantPtr                              where_expr;
+        std::optional<JoinStatementWrapper<detail::pk_key_type_t<T>>> join_stmt;
+        std::optional<int>                                            limit;
+        std::optional<int>                                            offset;
+        std::optional<OrderByWrapper>                                 order_by_wrapper;
+        orm::where::ExpressionVariantPtr                              having_expr;
     };
 
     // ============================================================================
@@ -252,7 +252,7 @@ export namespace storm::orm::statements {
       public:
         using ResultType = std::conditional_t<HasGroupBy, plf::hive<GroupedTuple>, decltype(deduce_simple_type())>;
 
-        explicit AggregateStatement(AggregateParams<ConnType> p)
+        explicit AggregateStatement(AggregateParams<T, ConnType> p)
             : conn_(std::move(p.conn))
             , where_expr_(std::move(p.where_expr))
             , join_stmt_(std::move(p.join_stmt))
@@ -265,7 +265,7 @@ export namespace storm::orm::statements {
         [[nodiscard]] auto having(orm::where::ExpressionVariantPtr expr)
             requires HasGroupBy
         {
-            AggregateParams<ConnType> params{
+            AggregateParams<T, ConnType> params{
                     conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_, std::move(expr)
             };
             return AggregateStatement<T, ConnType, GroupFields, Ops...>{std::move(params)};
@@ -704,17 +704,17 @@ export namespace storm::orm::statements {
             };
         }
 
-        auto make_params() -> AggregateParams<ConnType> {
+        auto make_params() -> AggregateParams<T, ConnType> {
             return {conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_, having_expr_};
         }
 
-        std::shared_ptr<ConnType>           conn_;
-        orm::where::ExpressionVariantPtr    where_expr_;
-        std::optional<JoinStatementWrapper> join_stmt_;
-        std::optional<int>                  limit_;
-        std::optional<int>                  offset_;
-        std::optional<OrderByWrapper>       order_by_wrapper_;
-        orm::where::ExpressionVariantPtr    having_expr_;
+        std::shared_ptr<ConnType>                                     conn_;
+        orm::where::ExpressionVariantPtr                              where_expr_;
+        std::optional<JoinStatementWrapper<detail::pk_key_type_t<T>>> join_stmt_;
+        std::optional<int>                                            limit_;
+        std::optional<int>                                            offset_;
+        std::optional<OrderByWrapper>                                 order_by_wrapper_;
+        orm::where::ExpressionVariantPtr                              having_expr_;
     };
 
     // ============================================================================
@@ -730,7 +730,7 @@ export namespace storm::orm::statements {
         using GBFields = GroupByFields<GroupFieldInfos...>;
 
       public:
-        explicit GroupByBuilder(AggregateParams<ConnType> p) : params_(std::move(p)) {}
+        explicit GroupByBuilder(AggregateParams<T, ConnType> p) : params_(std::move(p)) {}
 
         // HAVING clause - stores expression and returns new GroupByBuilder
         [[nodiscard]] auto having(orm::where::ExpressionVariantPtr expr) {
@@ -781,7 +781,7 @@ export namespace storm::orm::statements {
             return AggregateStatement<T, ConnType, GBFields, AggregateOp<AType, FieldInfos...>>{params_};
         }
 
-        AggregateParams<ConnType> params_;
+        AggregateParams<T, ConnType> params_;
     };
 
 } // namespace storm::orm::statements

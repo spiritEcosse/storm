@@ -262,6 +262,9 @@ export namespace storm::orm::statements {
             if (t == ^^unsigned long || t == ^^unsigned long long) {
                 return meta::has_signed_storage_attr(member);
             }
+            if (t == ^^storm::orm::utilities::UUID) {
+                return true;
+            }
             return false;
         }
     } // namespace meta
@@ -932,6 +935,16 @@ export namespace storm::orm::statements {
         static constexpr auto primary_key_members_ = find_primary_key_members_impl();
         static constexpr bool has_composite_pk_    = primary_key_members_.size() > 1;
 
+        // UUID primary key support (#507): true iff the single PK member has UUID type
+        static consteval auto has_uuid_pk_() -> bool {
+            if constexpr (has_composite_pk_ || primary_key_count() == 0) {
+                return false; // composite or no PK
+            } else {
+                constexpr auto pk_type = std::meta::type_of(primary_key_);
+                return std::meta::dealias(pk_type) == std::meta::dealias(^^storm::orm::utilities::UUID);
+            }
+        }
+
         // How many columns the key spans, as a plain std::size_t (#501). Needed because
         // primary_key_members_ is an array of std::meta::info — a consteval-only type
         // that cannot be named at all in a runtime context, not even via .size(). The
@@ -1053,9 +1066,28 @@ export namespace storm::orm::statements {
                     return bind_one<ConnType>(stmt, param_index, std::format("{:020}", obj.[:member:]));
                 }
             } else {
+                return bind_optional_or_uuid_pk_field<ConnType, Index>(stmt, obj, param_index);
+            }
+        }
+
+        // Bind optional or UUID PK fields. Gates UUID PKs to reject empty.
+        // LCOV_EXCL_START — compile-time template instantiation for UUID PKs
+        template <typename ConnType, std::size_t Index>
+        [[nodiscard]] __attribute__((always_inline)) static constexpr auto
+        bind_optional_or_uuid_pk_field(typename ConnType::Statement* stmt, const T& obj, int& param_index) noexcept
+                -> std::expected<void, typename ConnType::Error> {
+            constexpr auto member = all_members_[Index];
+            if constexpr (is_pk_member(member) &&
+                          std::meta::dealias(std::meta::type_of(member)) == ^^storm::orm::utilities::UUID) {
+                // UUID PK: reject empty, no auto-generation. Non-PK UUID columns auto-generate via bind_uuid.
+                return utilities::bind_uuid_pk<typename ConnType::Statement, typename ConnType::Error>(
+                        stmt, param_index, obj.[:member:]
+                );
+            } else {
                 return bind_one<ConnType>(stmt, param_index, obj.[:member:]);
             }
         }
+        // LCOV_EXCL_STOP
 
         // Bind one value at param_index and advance it on success. Shared tail used by the
         // plain-field and auto-timestamp branches of bind_field_at_index.

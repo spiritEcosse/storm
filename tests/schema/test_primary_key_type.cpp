@@ -126,7 +126,8 @@ static_assert(
         "uint64_t PK annotated full_unsigned must be rejected"
 );
 static_assert(!storm::orm::statements::PrimaryKeyType<PkText>, "std::string PK must be rejected");
-static_assert(!storm::orm::statements::PrimaryKeyType<PkUuid>, "storm::UUID PK must be rejected");
+// UUID PKs are now supported (#507) — caller must provide the UUID explicitly
+static_assert(storm::orm::statements::PrimaryKeyType<PkUuid>, "storm::UUID primary keys should be accepted");
 
 // ============================================================================
 // Positive path — accepted PK types remain queryable end to end

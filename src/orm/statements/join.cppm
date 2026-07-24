@@ -36,20 +36,29 @@ export namespace storm::orm::statements {
             const std::optional<int>&
     ) -> std::string;
 
+    // Helper to resolve the primary key type for a model (#507).
+    // Returns int64_t for integer PKs, UUID for UUID PKs.
+    namespace detail {
+        template <typename T>
+        using pk_key_type_t =
+                std::conditional_t<BaseStatement<T>::has_uuid_pk_(), storm::orm::utilities::UUID, std::int64_t>;
+    } // namespace detail
+
     // One eager-loaded m2m relation (#392): its Q2 builder plus the stitch
     // fn-pointers. extract_q2_owner_pk_fn keys the stitch into the shared Q1
     // pk→entity map; append_related_q2_fn fills the entity's container;
     // container_empty_fn + is_left drive the per-relation INNER drop.
-    struct M2MRelation {
+    // Templated on PkKeyType (#507) to support int64_t and UUID keys.
+    template <typename PkKeyType> struct M2MRelation {
         M2MClauseSqlFn build_q2_sql_fn                                            = nullptr;
-        auto (*extract_q2_owner_pk_fn)(ErasedStatementPtr) -> std::int64_t        = nullptr;
+        auto (*extract_q2_owner_pk_fn)(ErasedStatementPtr) -> PkKeyType           = nullptr;
         auto (*append_related_q2_fn)(ErasedStatementPtr, ErasedObjectPtr) -> void = nullptr;
         auto (*container_empty_fn)(ErasedObjectPtr) -> bool                       = nullptr;
         // LEFT keeps zero-relation entities; INNER drops them after the stitch.
         bool is_left = false;
     };
 
-    struct JoinStatementWrapper {
+    template <typename PkKeyType> struct JoinStatementWrapper {
         auto (*get_complete_sql_fn)() -> const std::string&;
         // Per-row extractor for FK joins. nullptr for m2m wrappers (the two-query
         // m2m path extracts base rows via Base::extract_all_columns, never this).
@@ -60,9 +69,9 @@ export namespace storm::orm::statements {
         // on the base model + clauses, so ONE Q1 serves every relation. Each
         // eager-loaded m2m relation contributes one M2MRelation descriptor; the
         // stitch loop runs each Q2 in turn against the shared pk→entity map.
-        // Empty for plain FK joins.
-        M2MClauseSqlFn           build_q1_sql_fn = nullptr;
-        std::vector<M2MRelation> m2m_relations;
+        // Empty for plain FK joins. Templated on PkKeyType (#507).
+        M2MClauseSqlFn                      build_q1_sql_fn = nullptr;
+        std::vector<M2MRelation<PkKeyType>> m2m_relations;
 
         [[nodiscard]] auto is_m2m() const -> bool {
             return !m2m_relations.empty();
@@ -291,9 +300,15 @@ export namespace storm::orm::statements {
             );
         }
 
-        // Q2 row owner pk (column 0) — keys the stitch into the Q1 hash map.
-        static auto extract_q2_owner_pk(typename ConnType::Statement* stmt) noexcept -> std::int64_t {
-            return stmt->extract_int64(0);
+        // Q2 row owner pk (column 0) — keys the stitch into the Q1 hash map (#507).
+        // Templated on PkKeyType to support both int64_t and UUID keys.
+        template <typename PkKeyType>
+        static auto extract_q2_owner_pk(typename ConnType::Statement* stmt) noexcept -> PkKeyType {
+            if constexpr (std::same_as<PkKeyType, utilities::UUID>) {
+                return utilities::UUID{stmt->extract_text(0)};
+            } else {
+                return stmt->extract_int64(0);
+            }
         }
     };
 
@@ -620,10 +635,11 @@ export namespace storm::orm::statements {
 
     template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, std::meta::info... FKFields>
         requires(sizeof...(FKFields) >= 1 && (FKFieldOf<T, FKFields> && ...))
-    [[nodiscard]] auto make_join_wrapper() -> JoinStatementWrapper {
-        using JS = JoinStatement<T, ConnType, Type, FKFields...>;
+    [[nodiscard]] auto make_join_wrapper() -> JoinStatementWrapper<detail::pk_key_type_t<T>> {
+        using JS        = JoinStatement<T, ConnType, Type, FKFields...>;
+        using PkKeyType = detail::pk_key_type_t<T>;
 
-        return JoinStatementWrapper{
+        return JoinStatementWrapper<PkKeyType>{
                 +[]() -> const std::string& { return JS::get_complete_sql(); },
                 +[](ErasedStatementPtr stmt, ErasedObjectPtr obj) -> void {
                     JS::extract_joined_row(static_cast<typename ConnType::Statement*>(stmt), *static_cast<T*>(obj));
@@ -1145,16 +1161,19 @@ export namespace storm::orm::statements {
     // join statement JS exposing build_q2_sql / extract_q2_owner_pk / append_related_q2
     // / container_empty. Shared by the m2m (#392) and reverse-FK (#398) factories.
     template <typename T, storm::db::DatabaseConnection ConnType, typename JS>
-    [[nodiscard]] auto make_relation_descriptor(bool is_left) -> M2MRelation {
-        return M2MRelation{
+    [[nodiscard]] auto make_relation_descriptor(bool is_left) -> M2MRelation<detail::pk_key_type_t<T>> {
+        using PkKeyType = detail::pk_key_type_t<T>;
+        return M2MRelation<PkKeyType>{
                 .build_q2_sql_fn = +[](const orm::where::ExpressionVariantPtr& where_expr,
                                        const std::optional<OrderByWrapper>&    order_by,
                                        const std::optional<int>&               limit,
                                        const std::optional<int>&               offset) -> std::string {
                     return JS::build_q2_sql(where_expr, order_by, limit, offset);
                 },
-                .extract_q2_owner_pk_fn = +[](ErasedStatementPtr stmt) -> std::int64_t {
-                    return JS::extract_q2_owner_pk(static_cast<typename ConnType::Statement*>(stmt));
+                .extract_q2_owner_pk_fn = +[](ErasedStatementPtr stmt) -> PkKeyType {
+                    return JS::template extract_q2_owner_pk<PkKeyType>(
+                            static_cast<typename ConnType::Statement*>(stmt)
+                    );
                 },
                 .append_related_q2_fn = +[](ErasedStatementPtr stmt, ErasedObjectPtr obj) -> void {
                     JS::append_related_q2(static_cast<typename ConnType::Statement*>(stmt), *static_cast<T*>(obj));
@@ -1171,7 +1190,7 @@ export namespace storm::orm::statements {
     // container on T (select path); aggregate/filter chains never build a wrapper.
     template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, std::meta::info FkField>
         requires ReverseFKSelector<T, FkField>
-    [[nodiscard]] auto make_reverse_fk_relation() -> M2MRelation {
+    [[nodiscard]] auto make_reverse_fk_relation() -> M2MRelation<detail::pk_key_type_t<T>> {
         using JS = ReverseFKJoinStatement<T, ConnType, Type, FkField>;
         static_assert(JS::has_destination_, "reverse-FK select() needs a reverse_fk<...> container on the base model");
         return make_relation_descriptor<T, ConnType, JS>(Type == JoinType::Left);
@@ -1228,7 +1247,7 @@ export namespace storm::orm::statements {
     // One M2MRelation descriptor (#392) — Q2 builder + stitch fns for one field.
     template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, std::meta::info M2MField>
         requires M2MFieldOf<T, M2MField>
-    [[nodiscard]] auto make_m2m_relation() -> M2MRelation {
+    [[nodiscard]] auto make_m2m_relation() -> M2MRelation<detail::pk_key_type_t<T>> {
         using JS = M2MJoinStatement<T, ConnType, Type, M2MField>;
         return make_relation_descriptor<T, ConnType, JS>(Type == JoinType::Left);
     }
@@ -1253,9 +1272,9 @@ export namespace storm::orm::statements {
 
     template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, std::meta::info... M2MFields>
         requires(sizeof...(M2MFields) >= 1 && (M2MFieldOf<T, M2MFields> && ...))
-    [[nodiscard]] auto make_m2m_join_wrapper() -> JoinStatementWrapper {
+    [[nodiscard]] auto make_m2m_join_wrapper() -> JoinStatementWrapper<detail::pk_key_type_t<T>> {
         using First = M2MJoinStatement<T, ConnType, Type, M2MFields...[0]>;
-        JoinStatementWrapper wrapper{
+        JoinStatementWrapper<detail::pk_key_type_t<T>> wrapper{
                 .get_complete_sql_fn = +[]() -> const std::string& {
                     static const std::string str = build_m2m_complete_sql<T, ConnType, Type, M2MFields...>();
                     return str;
@@ -1279,10 +1298,10 @@ export namespace storm::orm::statements {
     //     destination exists; a pure cross-model selector (aggregate chain) has none.
     template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, std::meta::info... Selectors>
         requires(sizeof...(Selectors) >= 1 && (ReverseFKJoinable<T, Selectors> && ...))
-    [[nodiscard]] auto make_reverse_fk_join_wrapper() -> JoinStatementWrapper {
+    [[nodiscard]] auto make_reverse_fk_join_wrapper() -> JoinStatementWrapper<detail::pk_key_type_t<T>> {
         // The FK fields the join keys on (annotated containers resolved to their target).
         using First = ReverseFKJoinStatement<T, ConnType, Type, resolve_reverse_fk_selector<T, Selectors...[0]>()>;
-        JoinStatementWrapper wrapper{
+        JoinStatementWrapper<detail::pk_key_type_t<T>> wrapper{
                 .get_complete_sql_fn = +[]() -> const std::string& { return First::get_complete_sql(); },
                 .build_q1_sql_fn     = make_q1_sql_fn<First>()
         };
@@ -1299,7 +1318,7 @@ export namespace storm::orm::statements {
     // Push a reverse-FK M2MRelation onto the wrapper iff a destination container exists
     // for FkField on T (select path). Compile-time gate via has_destination_.
     template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, std::meta::info FkField>
-    auto add_reverse_fk_relation_if_destination(JoinStatementWrapper& wrapper) -> void {
+    auto add_reverse_fk_relation_if_destination(JoinStatementWrapper<detail::pk_key_type_t<T>>& wrapper) -> void {
         if constexpr (ReverseFKJoinStatement<T, ConnType, Type, FkField>::has_destination_) {
             wrapper.m2m_relations.push_back(make_reverse_fk_relation<T, ConnType, Type, FkField>());
         }
