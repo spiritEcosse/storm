@@ -175,12 +175,12 @@ export namespace storm::orm::statements {
                 plf::hive<FieldTypesTuple>>;
 
         explicit ProjectionStatement(
-                std::shared_ptr<ConnType>                                               conn,
-                orm::where::ExpressionVariantPtr                                        where_expr       = nullptr,
+                std::shared_ptr<ConnType>                                            conn,
+                orm::where::ExpressionVariantPtr                                     where_expr       = nullptr,
                 const std::optional<JoinStatementWrapper<detail::pk_key_type_t<T>>>& join_stmt        = std::nullopt,
-                const std::optional<int>&                                               limit            = std::nullopt,
-                const std::optional<int>&                                               offset           = std::nullopt,
-                const std::optional<OrderByWrapper>&                                    order_by_wrapper = std::nullopt
+                const std::optional<int>&                                            limit            = std::nullopt,
+                const std::optional<int>&                                            offset           = std::nullopt,
+                const std::optional<OrderByWrapper>&                                 order_by_wrapper = std::nullopt
         )
             : conn_(std::move(conn))
             , where_expr_(std::move(where_expr))
@@ -294,12 +294,12 @@ export namespace storm::orm::statements {
         // MEMBERS
         // =====================================================================
 
-        std::shared_ptr<ConnType>           conn_;
-        orm::where::ExpressionVariantPtr    where_expr_;
+        std::shared_ptr<ConnType>                                     conn_;
+        orm::where::ExpressionVariantPtr                              where_expr_;
         std::optional<JoinStatementWrapper<detail::pk_key_type_t<T>>> join_stmt_;
-        std::optional<int>                  limit_;
-        std::optional<int>                  offset_;
-        std::optional<OrderByWrapper>       order_by_wrapper_;
+        std::optional<int>                                            limit_;
+        std::optional<int>                                            offset_;
+        std::optional<OrderByWrapper>                                 order_by_wrapper_;
     };
 
     // Type aliases for backward compatibility and convenience

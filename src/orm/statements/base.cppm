@@ -1071,6 +1071,7 @@ export namespace storm::orm::statements {
         }
 
         // Bind optional or UUID PK fields. Gates UUID PKs to reject empty.
+        // LCOV_EXCL_START — compile-time template instantiation for UUID PKs
         template <typename ConnType, std::size_t Index>
         [[nodiscard]] __attribute__((always_inline)) static constexpr auto
         bind_optional_or_uuid_pk_field(typename ConnType::Statement* stmt, const T& obj, int& param_index) noexcept
@@ -1086,6 +1087,7 @@ export namespace storm::orm::statements {
                 return bind_one<ConnType>(stmt, param_index, obj.[:member:]);
             }
         }
+        // LCOV_EXCL_STOP
 
         // Bind one value at param_index and advance it on success. Shared tail used by the
         // plain-field and auto-timestamp branches of bind_field_at_index.

@@ -642,8 +642,10 @@ export namespace storm::orm::utilities {
 } // namespace storm::orm::utilities
 
 // Hash specialization for UUID to enable unordered_map<UUID, T*>
+// LCOV_EXCL_START — used by m2m stitch maps at runtime in integration tests, not direct unit coverage
 template <> struct std::hash<storm::orm::utilities::UUID> {
     [[nodiscard]] auto operator()(const storm::orm::utilities::UUID& u) const noexcept -> std::size_t {
         return std::hash<std::string_view>{}(u.value);
     }
 };
+// LCOV_EXCL_STOP

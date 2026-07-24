@@ -636,7 +636,7 @@ export namespace storm::orm::statements {
     template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, std::meta::info... FKFields>
         requires(sizeof...(FKFields) >= 1 && (FKFieldOf<T, FKFields> && ...))
     [[nodiscard]] auto make_join_wrapper() -> JoinStatementWrapper<detail::pk_key_type_t<T>> {
-        using JS = JoinStatement<T, ConnType, Type, FKFields...>;
+        using JS        = JoinStatement<T, ConnType, Type, FKFields...>;
         using PkKeyType = detail::pk_key_type_t<T>;
 
         return JoinStatementWrapper<PkKeyType>{

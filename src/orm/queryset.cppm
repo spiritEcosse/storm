@@ -585,11 +585,12 @@ export namespace storm {
 
         std::shared_ptr<ConnType> conn_;
 
-        mutable std::optional<orm::statements::JoinStatementWrapper<orm::statements::detail::pk_key_type_t<T>>> join_stmt_;
-        mutable orm::where::ExpressionVariantPtr                     where_expr_;
-        mutable std::optional<int>                                   limit_value_;
-        mutable std::optional<int>                                   offset_value_;
-        mutable std::optional<orm::statements::OrderByWrapper>       order_by_wrapper_;
+        mutable std::optional<orm::statements::JoinStatementWrapper<orm::statements::detail::pk_key_type_t<T>>>
+                                                               join_stmt_;
+        mutable orm::where::ExpressionVariantPtr               where_expr_;
+        mutable std::optional<int>                             limit_value_;
+        mutable std::optional<int>                             offset_value_;
+        mutable std::optional<orm::statements::OrderByWrapper> order_by_wrapper_;
     };
 
 } // namespace storm

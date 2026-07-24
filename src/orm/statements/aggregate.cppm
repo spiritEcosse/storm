@@ -108,13 +108,13 @@ export namespace storm::orm::statements {
 
     // Common parameter bundle for AggregateStatement and GroupByBuilder
     template <typename T, typename ConnType> struct AggregateParams {
-        std::shared_ptr<ConnType>                                               conn;
-        orm::where::ExpressionVariantPtr                                        where_expr;
-        std::optional<JoinStatementWrapper<detail::pk_key_type_t<T>>>           join_stmt;
-        std::optional<int>                                                      limit;
-        std::optional<int>                                                      offset;
-        std::optional<OrderByWrapper>                                           order_by_wrapper;
-        orm::where::ExpressionVariantPtr                                        having_expr;
+        std::shared_ptr<ConnType>                                     conn;
+        orm::where::ExpressionVariantPtr                              where_expr;
+        std::optional<JoinStatementWrapper<detail::pk_key_type_t<T>>> join_stmt;
+        std::optional<int>                                            limit;
+        std::optional<int>                                            offset;
+        std::optional<OrderByWrapper>                                 order_by_wrapper;
+        orm::where::ExpressionVariantPtr                              having_expr;
     };
 
     // ============================================================================
@@ -708,13 +708,13 @@ export namespace storm::orm::statements {
             return {conn_, where_expr_, join_stmt_, limit_, offset_, order_by_wrapper_, having_expr_};
         }
 
-        std::shared_ptr<ConnType>                                               conn_;
-        orm::where::ExpressionVariantPtr                                        where_expr_;
-        std::optional<JoinStatementWrapper<detail::pk_key_type_t<T>>>           join_stmt_;
-        std::optional<int>                                                      limit_;
-        std::optional<int>                  offset_;
-        std::optional<OrderByWrapper>       order_by_wrapper_;
-        orm::where::ExpressionVariantPtr    having_expr_;
+        std::shared_ptr<ConnType>                                     conn_;
+        orm::where::ExpressionVariantPtr                              where_expr_;
+        std::optional<JoinStatementWrapper<detail::pk_key_type_t<T>>> join_stmt_;
+        std::optional<int>                                            limit_;
+        std::optional<int>                                            offset_;
+        std::optional<OrderByWrapper>                                 order_by_wrapper_;
+        orm::where::ExpressionVariantPtr                              having_expr_;
     };
 
     // ============================================================================

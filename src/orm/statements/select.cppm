@@ -238,11 +238,11 @@ export namespace storm::orm::statements {
         };
 
         auto
-        query(std::optional<JoinStatementWrapper<PkKeyType>>     jw,
-              const orm::where::ExpressionVariantPtr& we,
-              const std::optional<int>&               lv,
-              const std::optional<int>&               ov,
-              const std::optional<OrderByWrapper>&    ob) -> Query {
+        query(std::optional<JoinStatementWrapper<PkKeyType>> jw,
+              const orm::where::ExpressionVariantPtr&        we,
+              const std::optional<int>&                      lv,
+              const std::optional<int>&                      ov,
+              const std::optional<OrderByWrapper>&           ob) -> Query {
             return {std::move(*this), std::move(jw), we, lv, ov, ob};
         }
 
