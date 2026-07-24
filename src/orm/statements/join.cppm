@@ -1291,10 +1291,10 @@ export namespace storm::orm::statements {
     //     destination exists; a pure cross-model selector (aggregate chain) has none.
     template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, std::meta::info... Selectors>
         requires(sizeof...(Selectors) >= 1 && (ReverseFKJoinable<T, Selectors> && ...))
-    [[nodiscard]] auto make_reverse_fk_join_wrapper() -> JoinStatementWrapper {
+    [[nodiscard]] auto make_reverse_fk_join_wrapper() -> JoinStatementWrapper<detail::pk_key_type_t<T>> {
         // The FK fields the join keys on (annotated containers resolved to their target).
         using First = ReverseFKJoinStatement<T, ConnType, Type, resolve_reverse_fk_selector<T, Selectors...[0]>()>;
-        JoinStatementWrapper wrapper{
+        JoinStatementWrapper<detail::pk_key_type_t<T>> wrapper{
                 .get_complete_sql_fn = +[]() -> const std::string& { return First::get_complete_sql(); },
                 .build_q1_sql_fn     = make_q1_sql_fn<First>()
         };
@@ -1311,7 +1311,7 @@ export namespace storm::orm::statements {
     // Push a reverse-FK M2MRelation onto the wrapper iff a destination container exists
     // for FkField on T (select path). Compile-time gate via has_destination_.
     template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, std::meta::info FkField>
-    auto add_reverse_fk_relation_if_destination(JoinStatementWrapper& wrapper) -> void {
+    auto add_reverse_fk_relation_if_destination(JoinStatementWrapper<detail::pk_key_type_t<T>>& wrapper) -> void {
         if constexpr (ReverseFKJoinStatement<T, ConnType, Type, FkField>::has_destination_) {
             wrapper.m2m_relations.push_back(make_reverse_fk_relation<T, ConnType, Type, FkField>());
         }

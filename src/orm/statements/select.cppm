@@ -238,7 +238,7 @@ export namespace storm::orm::statements {
         };
 
         auto
-        query(std::optional<JoinStatementWrapper>     jw,
+        query(std::optional<JoinStatementWrapper<PkKeyType>>     jw,
               const orm::where::ExpressionVariantPtr& we,
               const std::optional<int>&               lv,
               const std::optional<int>&               ov,
@@ -717,7 +717,7 @@ export namespace storm::orm::statements {
         }
 
         // Q1: prepare the base subquery, bind WHERE, extract all entities.
-        [[nodiscard]] auto run_q1(const JoinStatementWrapper& wrapper, const QueryClauses& c) noexcept
+        [[nodiscard]] auto run_q1(const JoinStatementWrapper<PkKeyType>& wrapper, const QueryClauses& c) noexcept
                 -> std::expected<plf::hive<T>, Error> {
             auto stmt = prepare_clause_sql(wrapper.build_q1_sql_fn, c);
             if (!stmt) {

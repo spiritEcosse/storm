@@ -935,6 +935,16 @@ export namespace storm::orm::statements {
         static constexpr auto primary_key_members_ = find_primary_key_members_impl();
         static constexpr bool has_composite_pk_    = primary_key_members_.size() > 1;
 
+        // UUID primary key support (#507): true iff the single PK member has UUID type
+        static consteval auto has_uuid_pk_() -> bool {
+            if constexpr (has_composite_pk_ || primary_key_count() == 0) {
+                return false; // composite or no PK
+            } else {
+                constexpr auto pk_type = std::meta::type_of(primary_key_);
+                return std::meta::dealias(pk_type) == std::meta::dealias(^^storm::orm::utilities::UUID);
+            }
+        }
+
         // How many columns the key spans, as a plain std::size_t (#501). Needed because
         // primary_key_members_ is an array of std::meta::info — a consteval-only type
         // that cannot be named at all in a runtime context, not even via .size(). The
