@@ -352,6 +352,127 @@ there is nothing for `RETURNING` to echo back.
 > `CREATE TABLE` DDL, UPDATE/DELETE by key (#501), INSERT by key (#502), and upsert
 > `ON CONFLICT` targets (#503). Composite foreign keys / JOIN (#504) is still open.
 
+### UUID Primary Keys (#507)
+
+Storm supports `storm::UUID` as a primary key. UUID PKs are **always client-generated** — Storm does not auto-generate them at the database level (unlike integer `AUTOINCREMENT`/`IDENTITY`).
+
+```cpp
+struct User {
+    [[= storm::primary]] storm::UUID id;  // Caller must set this before insert()
+    std::string name;
+};
+
+// Usage
+User user{.id = storm::UUID::generate(), .name = "Alice"};  // generate() call is required
+QuerySet<User> qs;
+qs.insert(user).execute();  // Returns std::expected<void, Error> (no ID returned)
+```
+
+**Key differences from integer PKs:**
+
+- **`.insert().execute()` returns `std::expected<void, Error>`** (no RETURNING), matching composite PKs (#502). The caller already supplied the UUID, so there is nothing to return.
+- **The caller must call `storm::UUID::generate()`** and assign it before insert — binding an empty UUID PK is an **error**.
+- **On PostgreSQL**, emits `id UUID PRIMARY KEY`. **On SQLite**, emits `id TEXT PRIMARY KEY`.
+- **FK columns referencing a UUID-PK model** emit `UUID` (PG) / `TEXT` (SQLite) — **not** INTEGER/BIGINT. The column type matches the referenced primary key type.
+- **Foreign keys, m2m, and reverse-FK eager loading** work identically to integer PKs, with **no performance impact** — integer PKs are byte-identical (zero codegen overhead).
+- **SELECT / UPDATE / DELETE by UUID PK** work identically to integer PKs. The WHERE clause binds the UUID value the same way as non-PK UUID columns.
+- **Thread safety**: Same as integer PKs — per-thread `QuerySet` instances with thread-local connections.
+
+**Example with foreign keys:**
+
+```cpp
+struct Message {
+    [[= storm::primary]] storm::UUID id;
+    [[= storm::fk<>]] User sender;        // FK to UUID-PK User — sender_id column is TEXT/UUID
+    std::string text;
+};
+
+// Insert a message referencing a UUID-PK user
+User user{.id = storm::UUID::generate(), .name = "Alice"};
+QuerySet<User>().insert(user).execute();
+
+Message msg{.id = storm::UUID::generate(), .sender = user, .text = "Hello"};
+QuerySet<Message>().insert(msg).execute();  // sender_id bound as TEXT/UUID, not INTEGER
+```
+
+**Example with m2m and UUID-PK owner:**
+
+```cpp
+struct Course {
+    [[= storm::primary]] int id;
+    std::string title;
+};
+
+struct Student {
+    [[= storm::primary]] storm::UUID id;     // UUID PK
+    std::string name;
+    [[= storm::many_to_many<>]] std::vector<Course> courses;  // m2m joins through junction
+};
+
+// Eager-load m2m with UUID-PK owner — stitch map keys on UUID, not int64_t
+auto students = QuerySet<Student>()
+    .join<^^Student::courses>()
+    .select();
+
+for (const auto& student : students) {
+    for (const auto& course : student.courses) {
+        std::cout << student.name << " takes " << course.title << "\n";
+    }
+}
+```
+
+### Gotchas: UUID Primary Keys
+
+**Q: My UUID PK insert fails with "Primary key UUID must be explicitly set"**
+
+A: UUID PKs require explicit generation. This is intentional — Storm doesn't auto-generate UUIDs like it does AUTOINCREMENT integers, so you must call `storm::UUID::generate()` at the call site:
+
+```cpp
+// ❌ Wrong — empty UUID not allowed for PKs
+User user{.name = "Alice"};
+QuerySet<User>().insert(user).execute();  // Error: empty PK UUID
+
+// ✅ Correct — explicitly set the UUID
+User user{.id = storm::UUID::generate(), .name = "Alice"};
+QuerySet<User>().insert(user).execute();  // OK
+```
+
+This ensures the caller is aware of (and can control) the generated key. For non-PK UUID columns, empty values are auto-generated (same as any non-PK field), so the error is PK-specific.
+
+**Q: Can I use composite keys with UUID?**
+
+A: Yes. Mix UUID and integer parts:
+
+```cpp
+struct OrderLine {
+    [[= storm::primary_part]] storm::UUID order_id;
+    [[= storm::primary_part]] int product_id;
+    int quantity;
+};
+
+// Caller supplies both parts
+OrderLine line{.order_id = storm::UUID::generate(), .product_id = 42, .quantity = 1};
+QuerySet<OrderLine>().insert(line).execute();  // → std::expected<void, Error>
+```
+
+Composite keys follow the same rules as integer composites (#500): every part is caller-supplied, `AUTOINCREMENT`/`IDENTITY` is not emitted, and INSERT returns `void`.
+
+**Q: Can I upsert on a UUID PK?**
+
+A: Yes. Use `on_conflict<^^Model::id>()` with the UUID PK member:
+
+```cpp
+User user{.id = storm::UUID::generate(), .name = "Alice"};
+QuerySet<User>()
+    .insert(user)
+    .on_conflict<^^User::id>()
+    .update<^^User::name>()
+    .execute();
+// On conflict, update the name; insert if no conflict
+```
+
+Return type follows composite-key upsert rules (#503): `std::expected<void, Error>` (no RETURNING).
+
 ## Optional Types (NULL Support)
 
 | C++ Type | SQLite Type | Binding Method | Extraction Method |
@@ -654,9 +775,9 @@ at the aggregate call site, not a silent coercion. `count()` / `count_distinct()
 
 `storm::orm::statements::PrimaryKeyType<T>` is the compile-time gate on the type of `T`'s
 primary-key member (the field annotated `storm::primary` / `storm::primary_autoincrement`).
-**Supported primary-key types: `short`, `int`, `long`, `long long`**, and their fixed-width
-spellings (`std::int16_t`, `std::int32_t`, `std::int64_t`, …). A `uint64_t` (or
-`unsigned long` / `unsigned long long`) primary key is
+**Supported primary-key types: `short`, `int`, `long`, `long long`**, their fixed-width
+spellings (`std::int16_t`, `std::int32_t`, `std::int64_t`, …), and **`storm::UUID`** (#507).
+A `uint64_t` (or `unsigned long` / `unsigned long long`) primary key is
 accepted only when explicitly annotated `storm::signed_storage`; `storm::full_unsigned` is
 rejected even though it is a storage annotation, because it stores as zero-padded `TEXT`,
 which would silently misread through every hardcoded-`int64` primary-key extraction site
@@ -672,11 +793,16 @@ Rejected, each for a specific reason:
   rejects `full_unsigned` specifically as a primary-key type (see above).
 - **`std::optional<T>`** — a nullable primary key is meaningless; rejected outright, unlike
   `ValidForeignKey`/`is_unsigned64_member`, which unwrap `std::optional` before checking.
-- **Text and `storm::UUID`** — not supported as a primary key today. This is a "not yet, not
-  a never": `storm::UUID` already works as an ordinary column everywhere (DDL, extraction,
-  WHERE/`IN`) except as a primary key, where the same hardcoded-`int64` sites block it.
-  Tracked as a follow-up (#507) to route those sites through the type-generic
-  `bind_value_by_type` path `erase.cppm` already uses.
+- **Text types** (`std::string`, `std::string_view`) — not supported as a primary key today.
+  Tracked as a future enhancement.
+
+**UUID Primary Keys** (#507):
+`storm::UUID` is now a fully supported primary-key type. UUIDs are **client-generated** (not
+DB-generated like `AUTOINCREMENT`), so `insert().execute()` returns `std::expected<void, Error>`
+with no RETURNING clause (see "UUID Primary Keys" section above). Empty UUID PK values are rejected
+at bind time with an error — the caller must explicitly call `storm::UUID::generate()` before
+insert. FK columns, m2m, and reverse-FK joins work identically to integer PKs with full type safety
+and zero codegen overhead.
 
 ```cpp
 template <typename T>
@@ -686,7 +812,7 @@ concept PrimaryKeyType = /* T's primary-key member's type is in the allowed set 
 `PrimaryKeyType<T>` is ANDed into `BaseStatement<T>`'s constraint list alongside
 `ModelWithPrimaryKey<T>`. `QuerySet<T>` itself only requires `Entity<T>` (it must stay
 usable without a primary key), so a model with an unsupported primary-key type — `bool`,
-`std::optional<int>`, a bare `unsigned int`, `std::string`, `storm::UUID` — compiles as a
+`std::optional<int>`, a bare `unsigned int`, `std::string` — compiles as a
 bare `QuerySet<T>` but fails at the first call that instantiates a statement
 (`select()`, `insert()`, `join()`, …), naming `T` and `PrimaryKeyType` in the "constraints
 not satisfied" diagnostic trail. This replaces the previous behavior of failing

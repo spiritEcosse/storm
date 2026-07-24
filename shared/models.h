@@ -102,6 +102,13 @@ struct TimestampedRecord {
     [[= storm::auto_update]] std::chrono::system_clock::time_point updated_at{};
 };
 
+// UUID primary key model — tests DDL generation for UUID PKs (#507).
+// UUID PKs are client-generated (not DB-generated like AUTOINCREMENT).
+struct UuidPkModel {
+    [[= storm::primary]] storm::UUID id = storm::UUID::generate();
+    std::string name;
+};
+
 // =============================================================================
 // Section 3: FK-dependent structs (must come after section 1)
 // =============================================================================
@@ -132,6 +139,13 @@ struct RestrictChild {
     [[= storm::primary]] int id{};
     [[= storm::fk<storm::RefAction::Restrict>]] Person owner;
     std::string label;
+};
+
+// Foreign key to UUID-PK model — tests DDL generation for FK columns referencing UUID PKs (#507).
+struct UuidPkRef {
+    [[= storm::primary]] int id{};
+    [[= storm::fk<>]] UuidPkModel owner;
+    std::string value;
 };
 
 // =============================================================================

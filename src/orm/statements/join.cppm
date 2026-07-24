@@ -36,20 +36,29 @@ export namespace storm::orm::statements {
             const std::optional<int>&
     ) -> std::string;
 
+    // Helper to resolve the primary key type for a model (#507).
+    // Returns int64_t for integer PKs, UUID for UUID PKs.
+    namespace detail {
+        template <typename T>
+        using pk_key_type_t =
+                std::conditional_t<BaseStatement<T>::has_uuid_pk_(), storm::orm::utilities::UUID, std::int64_t>;
+    } // namespace detail
+
     // One eager-loaded m2m relation (#392): its Q2 builder plus the stitch
     // fn-pointers. extract_q2_owner_pk_fn keys the stitch into the shared Q1
     // pk→entity map; append_related_q2_fn fills the entity's container;
     // container_empty_fn + is_left drive the per-relation INNER drop.
-    struct M2MRelation {
+    // Templated on PkKeyType (#507) to support int64_t and UUID keys.
+    template <typename PkKeyType> struct M2MRelation {
         M2MClauseSqlFn build_q2_sql_fn                                            = nullptr;
-        auto (*extract_q2_owner_pk_fn)(ErasedStatementPtr) -> std::int64_t        = nullptr;
+        auto (*extract_q2_owner_pk_fn)(ErasedStatementPtr) -> PkKeyType           = nullptr;
         auto (*append_related_q2_fn)(ErasedStatementPtr, ErasedObjectPtr) -> void = nullptr;
         auto (*container_empty_fn)(ErasedObjectPtr) -> bool                       = nullptr;
         // LEFT keeps zero-relation entities; INNER drops them after the stitch.
         bool is_left = false;
     };
 
-    struct JoinStatementWrapper {
+    template <typename PkKeyType> struct JoinStatementWrapper {
         auto (*get_complete_sql_fn)() -> const std::string&;
         // Per-row extractor for FK joins. nullptr for m2m wrappers (the two-query
         // m2m path extracts base rows via Base::extract_all_columns, never this).
@@ -60,9 +69,9 @@ export namespace storm::orm::statements {
         // on the base model + clauses, so ONE Q1 serves every relation. Each
         // eager-loaded m2m relation contributes one M2MRelation descriptor; the
         // stitch loop runs each Q2 in turn against the shared pk→entity map.
-        // Empty for plain FK joins.
-        M2MClauseSqlFn           build_q1_sql_fn = nullptr;
-        std::vector<M2MRelation> m2m_relations;
+        // Empty for plain FK joins. Templated on PkKeyType (#507).
+        M2MClauseSqlFn                      build_q1_sql_fn = nullptr;
+        std::vector<M2MRelation<PkKeyType>> m2m_relations;
 
         [[nodiscard]] auto is_m2m() const -> bool {
             return !m2m_relations.empty();

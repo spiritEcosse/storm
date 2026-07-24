@@ -32,6 +32,7 @@ export namespace storm::orm::statements {
         using Base      = BaseStatement<T>;
         using Error     = typename ConnType::Error;
         using Statement = typename ConnType::Statement;
+        using PkKeyType = detail::pk_key_type_t<T>; // Primary key type for m2m stitch maps (#507)
 
         // Compile-time SQL size calculation for SELECT statement
         static consteval auto calculate_select_sql_size() -> std::size_t {
@@ -81,12 +82,14 @@ export namespace storm::orm::statements {
         // Shared by to_sql(), prepare_statement() (dynamic path), and rows_generator().
         // Marked always_inline so the hot path retains the same codegen as the
         // previously-inlined builder (see #264 Phase 2 finding on call-overhead).
+        // Templated on PkKeyType (#507) to support int64_t and UUID PKs.
+        template <typename PkKeyType>
         [[nodiscard]] __attribute__((always_inline)) static auto build_sql(
-                const std::optional<JoinStatementWrapper>& join_wrapper,
-                const orm::where::ExpressionVariantPtr&    where_expr,
-                const std::optional<int>&                  limit,
-                const std::optional<int>&                  offset,
-                const std::optional<OrderByWrapper>&       order_by_wrapper
+                const std::optional<JoinStatementWrapper<PkKeyType>>& join_wrapper,
+                const orm::where::ExpressionVariantPtr&               where_expr,
+                const std::optional<int>&                             limit,
+                const std::optional<int>&                             offset,
+                const std::optional<OrderByWrapper>&                  order_by_wrapper
         ) -> std::string {
             // M2M joins (#391, #392): the eager load is 1 + N queries — Q1 selects
             // the base entities once, each relation's Q2 selects (owner_pk,

@@ -262,6 +262,9 @@ export namespace storm::orm::statements {
             if (t == ^^unsigned long || t == ^^unsigned long long) {
                 return meta::has_signed_storage_attr(member);
             }
+            if (t == ^^storm::orm::utilities::UUID) {
+                return true;
+            }
             return false;
         }
     } // namespace meta

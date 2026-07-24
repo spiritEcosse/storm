@@ -375,18 +375,38 @@ export namespace storm::orm::utilities {
         }
     }
 
+    // Helper: validate UUID format. Returns error if invalid, otherwise binds the text.
+    template <typename StmtType, typename ErrorType>
+    [[nodiscard]] auto validate_and_bind_uuid_text(StmtType& stmt, int param_index, std::string_view uuid_value)
+            -> std::expected<void, ErrorType> {
+        if (!UUID::is_valid(uuid_value)) {
+            return std::unexpected(ErrorType{-1, std::format("Invalid UUID format: '{}'", uuid_value)});
+        }
+        return stmt.bind_text(param_index, uuid_value);
+    }
+
     // UUID bind: auto-generate if empty, validate if provided. Pulled out so the top-level
     // dispatcher only sees one branch for this slow-path case.
     template <typename StmtType, typename ErrorType>
     [[nodiscard]] auto bind_uuid(StmtType& stmt, int param_index, const UUID& value) -> std::expected<void, ErrorType> {
         if (value.value.empty()) {
             auto generated = UUID::generate();
-            return stmt.bind_text(param_index, std::string_view{generated.value});
+            return validate_and_bind_uuid_text<StmtType, ErrorType>(stmt, param_index, generated.value);
         }
-        if (!UUID::is_valid(value.value)) {
-            return std::unexpected(ErrorType{-1, std::format("Invalid UUID format: '{}'", value.value)});
+        return validate_and_bind_uuid_text<StmtType, ErrorType>(stmt, param_index, value.value);
+    }
+
+    // UUID PK bind: reject empty (no auto-generation for primary keys).
+    // PK UUIDs must be caller-supplied via UUID::generate() — they are never DB-generated.
+    template <typename StmtType, typename ErrorType>
+    [[nodiscard]] auto bind_uuid_pk(StmtType& stmt, int param_index, const UUID& value)
+            -> std::expected<void, ErrorType> {
+        if (value.value.empty()) {
+            return std::unexpected(
+                    ErrorType{-1, "Primary key UUID must be explicitly set; auto-generation not allowed for PKs"}
+            );
         }
-        return stmt.bind_text(param_index, std::string_view{value.value});
+        return validate_and_bind_uuid_text<StmtType, ErrorType>(stmt, param_index, value.value);
     }
 
     // Forward declaration so bind_optional_value can recurse into bind_parameter_value.
@@ -627,8 +647,7 @@ export namespace storm::orm::utilities {
 } // namespace storm::orm::utilities
 
 // Hash specialization for UUID to enable unordered_map<UUID, T*>
-template <>
-struct std::hash<storm::orm::utilities::UUID> {
+template <> struct std::hash<storm::orm::utilities::UUID> {
     [[nodiscard]] auto operator()(const storm::orm::utilities::UUID& u) const noexcept -> std::size_t {
         return std::hash<std::string_view>{}(u.value);
     }
