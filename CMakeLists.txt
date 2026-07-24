@@ -67,9 +67,9 @@ add_compile_options("-fmodules-cache-path=${CMAKE_BINARY_DIR}/module-cache")
 add_compile_options(-Wno-unused-command-line-argument)
 
 # CMake 4.4.0 (#521/#522) leaks target-scoped -Werror onto the CMake-synthesized
-# std-module target that builds libc++'s own std.cppm (export module std;), where
-# Clang's always-on -Wreserved-module-identifier becomes a hard error. Suppress it
-# globally, same pattern as -Wno-unused-command-line-argument above.
+# std-module target that builds libc++'s own std.cppm (export module std;),
+# where Clang's always-on -Wreserved-module-identifier becomes a hard error.
+# Suppress it globally, same pattern as -Wno-unused-command-line-argument above.
 add_compile_options(-Wno-reserved-module-identifier)
 
 include(cmake/libcxx.cmake)

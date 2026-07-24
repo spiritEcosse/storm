@@ -1056,6 +1056,23 @@ export namespace storm::orm::statements {
                     return bind_one<ConnType>(stmt, param_index, std::format("{:020}", obj.[:member:]));
                 }
             } else {
+                return bind_optional_or_uuid_pk_field<ConnType, Index>(stmt, obj, param_index);
+            }
+        }
+
+        // Bind optional or UUID PK fields. Gates UUID PKs to reject empty.
+        template <typename ConnType, std::size_t Index>
+        [[nodiscard]] __attribute__((always_inline)) static constexpr auto
+        bind_optional_or_uuid_pk_field(typename ConnType::Statement* stmt, const T& obj, int& param_index) noexcept
+                -> std::expected<void, typename ConnType::Error> {
+            constexpr auto member = all_members_[Index];
+            if constexpr (is_pk_member(member) &&
+                          std::meta::dealias(std::meta::type_of(member)) == ^^storm::orm::utilities::UUID) {
+                // UUID PK: reject empty, no auto-generation. Non-PK UUID columns auto-generate via bind_uuid.
+                return utilities::bind_uuid_pk<typename ConnType::Statement, typename ConnType::Error>(
+                        stmt, param_index, obj.[:member:]
+                );
+            } else {
                 return bind_one<ConnType>(stmt, param_index, obj.[:member:]);
             }
         }

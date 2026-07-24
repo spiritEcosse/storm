@@ -117,13 +117,13 @@ export namespace storm::orm::statements {
 
         // Returns the SQL that would be executed by select()
         [[nodiscard]] auto
-        to_sql(std::optional<JoinStatementWrapper>     join_wrapper     = std::nullopt,
-               const orm::where::ExpressionVariantPtr& where_expr       = nullptr,
-               const std::optional<int>&               limit            = std::nullopt,
-               const std::optional<int>&               offset           = std::nullopt,
-               const std::optional<OrderByWrapper>&    order_by_wrapper = std::nullopt)
+        to_sql(std::optional<JoinStatementWrapper<PkKeyType>> join_wrapper     = std::nullopt,
+               const orm::where::ExpressionVariantPtr&        where_expr       = nullptr,
+               const std::optional<int>&                      limit            = std::nullopt,
+               const std::optional<int>&                      offset           = std::nullopt,
+               const std::optional<OrderByWrapper>&           order_by_wrapper = std::nullopt)
                 -> std::expected<std::string, Error> {
-            std::string sql = build_sql(join_wrapper, where_expr, limit, offset, order_by_wrapper);
+            std::string sql = build_sql<PkKeyType>(join_wrapper, where_expr, limit, offset, order_by_wrapper);
 
             auto stmt_result = conn_->prepare_cached(sql);
             if (!stmt_result) {
@@ -142,10 +142,10 @@ export namespace storm::orm::statements {
 
         // Returns the SQL that would be executed by first() (with LIMIT 1)
         [[nodiscard]] auto to_sql_first(
-                std::optional<JoinStatementWrapper>     join_wrapper     = std::nullopt,
-                const orm::where::ExpressionVariantPtr& where_expr       = nullptr,
-                const std::optional<int>&               offset           = std::nullopt,
-                const std::optional<OrderByWrapper>&    order_by_wrapper = std::nullopt
+                std::optional<JoinStatementWrapper<PkKeyType>> join_wrapper     = std::nullopt,
+                const orm::where::ExpressionVariantPtr&        where_expr       = nullptr,
+                const std::optional<int>&                      offset           = std::nullopt,
+                const std::optional<OrderByWrapper>&           order_by_wrapper = std::nullopt
         ) -> std::expected<std::string, Error> {
             std::optional<int> const limit_one = 1;
             return to_sql(std::move(join_wrapper), where_expr, limit_one, offset, order_by_wrapper);
@@ -153,10 +153,10 @@ export namespace storm::orm::statements {
 
         // Returns the SQL that would be executed by get() (with LIMIT 2)
         [[nodiscard]] auto to_sql_get(
-                std::optional<JoinStatementWrapper>     join_wrapper     = std::nullopt,
-                const orm::where::ExpressionVariantPtr& where_expr       = nullptr,
-                const std::optional<int>&               offset           = std::nullopt,
-                const std::optional<OrderByWrapper>&    order_by_wrapper = std::nullopt
+                std::optional<JoinStatementWrapper<PkKeyType>> join_wrapper     = std::nullopt,
+                const orm::where::ExpressionVariantPtr&        where_expr       = nullptr,
+                const std::optional<int>&                      offset           = std::nullopt,
+                const std::optional<OrderByWrapper>&           order_by_wrapper = std::nullopt
         ) -> std::expected<std::string, Error> {
             std::optional<int> const limit_two = 2;
             return to_sql(std::move(join_wrapper), where_expr, limit_two, offset, order_by_wrapper);
@@ -167,12 +167,12 @@ export namespace storm::orm::statements {
         // derived Query/FirstQuery/GetQuery don't each spell the field list out — that
         // five-line forwarding block used to repeat four times.
         struct QueryBase {
-            SelectStatement                     stmt;
-            std::optional<JoinStatementWrapper> join_wrapper;
-            orm::where::ExpressionVariantPtr    where_expr;
-            std::optional<int>                  limit_value;
-            std::optional<int>                  offset_value;
-            std::optional<OrderByWrapper>       order_by_wrapper;
+            SelectStatement                                stmt;
+            std::optional<JoinStatementWrapper<PkKeyType>> join_wrapper;
+            orm::where::ExpressionVariantPtr               where_expr;
+            std::optional<int>                             limit_value;
+            std::optional<int>                             offset_value;
+            std::optional<OrderByWrapper>                  order_by_wrapper;
 
             template <typename Fn> __attribute__((always_inline)) auto forward(Fn&& callback) -> decltype(auto) {
                 return std::forward<Fn>(callback)(
@@ -251,30 +251,30 @@ export namespace storm::orm::statements {
         // collapses them into one factory parametrised on Proxy.
         template <typename Proxy>
         __attribute__((always_inline)) auto make_first_or_get(
-                std::optional<JoinStatementWrapper>     jw,
-                const orm::where::ExpressionVariantPtr& we,
-                const std::optional<int>&               lv,
-                const std::optional<int>&               ov,
-                const std::optional<OrderByWrapper>&    ob,
-                bool                                    fast
+                std::optional<JoinStatementWrapper<PkKeyType>> jw,
+                const orm::where::ExpressionVariantPtr&        we,
+                const std::optional<int>&                      lv,
+                const std::optional<int>&                      ov,
+                const std::optional<OrderByWrapper>&           ob,
+                bool                                           fast
         ) -> Proxy {
             return {{std::move(*this), std::move(jw), we, lv, ov, ob}, fast};
         }
 
         // clang-format off
-        auto query_first(std::optional<JoinStatementWrapper> jw, const orm::where::ExpressionVariantPtr& we, const std::optional<int>& lv, const std::optional<int>& ov, const std::optional<OrderByWrapper>& ob, bool fast) -> FirstQuery { return make_first_or_get<FirstQuery>(std::move(jw), we, lv, ov, ob, fast); }
-        auto query_get  (std::optional<JoinStatementWrapper> jw, const orm::where::ExpressionVariantPtr& we, const std::optional<int>& lv, const std::optional<int>& ov, const std::optional<OrderByWrapper>& ob, bool fast) -> GetQuery   { return make_first_or_get<GetQuery>  (std::move(jw), we, lv, ov, ob, fast); }
+        auto query_first(std::optional<JoinStatementWrapper<PkKeyType>> jw, const orm::where::ExpressionVariantPtr& we, const std::optional<int>& lv, const std::optional<int>& ov, const std::optional<OrderByWrapper>& ob, bool fast) -> FirstQuery { return make_first_or_get<FirstQuery>(std::move(jw), we, lv, ov, ob, fast); }
+        auto query_get  (std::optional<JoinStatementWrapper<PkKeyType>> jw, const orm::where::ExpressionVariantPtr& we, const std::optional<int>& lv, const std::optional<int>& ov, const std::optional<OrderByWrapper>& ob, bool fast) -> GetQuery   { return make_first_or_get<GetQuery>  (std::move(jw), we, lv, ov, ob, fast); }
         // clang-format on
 
         // Unified SELECT execution - handles all combinations of JOIN and WHERE
         // NOTE: The if/else branch is OUTSIDE the loop intentionally - checking inside would
         // add overhead per row (10k checks vs 1 check). Keep separate execute_query_loop calls.
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto
-        execute(std::optional<JoinStatementWrapper>     join_wrapper     = std::nullopt,
-                const orm::where::ExpressionVariantPtr& where_expr       = nullptr,
-                const std::optional<int>&               limit            = std::nullopt,
-                const std::optional<int>&               offset           = std::nullopt,
-                const std::optional<OrderByWrapper>&    order_by_wrapper = std::nullopt)
+        execute(std::optional<JoinStatementWrapper<PkKeyType>> join_wrapper     = std::nullopt,
+                const orm::where::ExpressionVariantPtr&        where_expr       = nullptr,
+                const std::optional<int>&                      limit            = std::nullopt,
+                const std::optional<int>&                      offset           = std::nullopt,
+                const std::optional<OrderByWrapper>&           order_by_wrapper = std::nullopt)
                 -> std::expected<plf::hive<T>, Error> {
             QueryClauses const clauses{join_wrapper, where_expr, limit, offset, order_by_wrapper};
             // M2M eager loads use the two-query predicate-pushdown path (#391):
@@ -308,11 +308,11 @@ export namespace storm::orm::statements {
         // The `limit` parameter is accepted for API symmetry with execute()/execute_get()
         // and is intentionally overridden to 1; `[[maybe_unused]]` marks it as such.
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_one(
-                std::optional<JoinStatementWrapper>        join_wrapper     = std::nullopt,
-                const orm::where::ExpressionVariantPtr&    where_expr       = nullptr,
-                [[maybe_unused]] const std::optional<int>& limit            = std::nullopt,
-                const std::optional<int>&                  offset           = std::nullopt,
-                const std::optional<OrderByWrapper>&       order_by_wrapper = std::nullopt
+                std::optional<JoinStatementWrapper<PkKeyType>> join_wrapper     = std::nullopt,
+                const orm::where::ExpressionVariantPtr&        where_expr       = nullptr,
+                [[maybe_unused]] const std::optional<int>&     limit            = std::nullopt,
+                const std::optional<int>&                      offset           = std::nullopt,
+                const std::optional<OrderByWrapper>&           order_by_wrapper = std::nullopt
         ) -> std::expected<std::optional<T>, Error> {
             return execute_one_or_get<false>(join_wrapper, where_expr, offset, order_by_wrapper);
         }
@@ -331,11 +331,11 @@ export namespace storm::orm::statements {
 
         // get() with modifiers — applies LIMIT 2 (limit parameter ignored, see execute_one).
         [[nodiscard]] __attribute__((hot)) __attribute__((flatten)) auto execute_get(
-                std::optional<JoinStatementWrapper>        join_wrapper     = std::nullopt,
-                const orm::where::ExpressionVariantPtr&    where_expr       = nullptr,
-                [[maybe_unused]] const std::optional<int>& limit            = std::nullopt,
-                const std::optional<int>&                  offset           = std::nullopt,
-                const std::optional<OrderByWrapper>&       order_by_wrapper = std::nullopt
+                std::optional<JoinStatementWrapper<PkKeyType>> join_wrapper     = std::nullopt,
+                const orm::where::ExpressionVariantPtr&        where_expr       = nullptr,
+                [[maybe_unused]] const std::optional<int>&     limit            = std::nullopt,
+                const std::optional<int>&                      offset           = std::nullopt,
+                const std::optional<OrderByWrapper>&           order_by_wrapper = std::nullopt
         ) -> std::expected<T, Error> {
             return execute_one_or_get<true>(join_wrapper, where_expr, offset, order_by_wrapper);
         }
@@ -344,12 +344,12 @@ export namespace storm::orm::statements {
         // Uses a DEDICATED (non-cached) statement to avoid conflicts with cached queries
         // The statement lives in the coroutine frame and is finalized on generator destruction
         auto rows_generator(
-                std::shared_ptr<ConnType>           conn,
-                std::optional<JoinStatementWrapper> join_wrapper     = std::nullopt,
-                orm::where::ExpressionVariantPtr    where_expr       = nullptr,
-                std::optional<int>                  limit            = std::nullopt,
-                std::optional<int>                  offset           = std::nullopt,
-                std::optional<OrderByWrapper>       order_by_wrapper = std::nullopt
+                std::shared_ptr<ConnType>                      conn,
+                std::optional<JoinStatementWrapper<PkKeyType>> join_wrapper     = std::nullopt,
+                orm::where::ExpressionVariantPtr               where_expr       = nullptr,
+                std::optional<int>                             limit            = std::nullopt,
+                std::optional<int>                             offset           = std::nullopt,
+                std::optional<OrderByWrapper>                  order_by_wrapper = std::nullopt
         ) -> storm::generator<std::expected<T, Error>&&> {
             // M2M (#391): the two-query predicate-pushdown load needs the full base
             // set before Q2 can run, so true streaming is impossible — materialize
@@ -398,16 +398,16 @@ export namespace storm::orm::statements {
         // SelectStatement on the passed connection to reuse execute_m2m_2query.
         static auto rows_m2m_materialized(
                 std::shared_ptr<ConnType>        conn,
-                JoinStatementWrapper             join_wrapper,
+                JoinStatementWrapper<PkKeyType>  join_wrapper,
                 orm::where::ExpressionVariantPtr where_expr,
                 std::optional<int>               limit,
                 std::optional<int>               offset,
                 std::optional<OrderByWrapper>    order_by_wrapper
         ) -> storm::generator<std::expected<T, Error>&&> {
-            SelectStatement                     self{std::move(conn)};
-            std::optional<JoinStatementWrapper> wrapper_opt{join_wrapper};
-            QueryClauses const                  clauses{wrapper_opt, where_expr, limit, offset, order_by_wrapper};
-            auto                                rows = self.execute_m2m_2query(clauses);
+            SelectStatement                                self{std::move(conn)};
+            std::optional<JoinStatementWrapper<PkKeyType>> wrapper_opt{join_wrapper};
+            QueryClauses const clauses{wrapper_opt, where_expr, limit, offset, order_by_wrapper};
+            auto               rows = self.execute_m2m_2query(clauses);
             if (!rows) {
                 co_yield std::unexpected(std::move(rows.error()));
                 co_return;
@@ -421,7 +421,9 @@ export namespace storm::orm::statements {
         // the join and non-join cases. co_yield must stay in the coroutine
         // body (not in a lambda), so we branch only on the per-row extract.
         static auto rows_plain_loop(
-                std::shared_ptr<ConnType> /*conn*/, Statement stmt, std::optional<JoinStatementWrapper> join_wrapper
+                std::shared_ptr<ConnType> /*conn*/,
+                Statement                                      stmt,
+                std::optional<JoinStatementWrapper<PkKeyType>> join_wrapper
         ) -> storm::generator<std::expected<T, Error>&&> {
             int step_result = 0;
             while ((step_result = stmt.step_raw()) == Statement::ROW_AVAILABLE) {
@@ -486,11 +488,11 @@ export namespace storm::orm::statements {
         // inline helper. Pulling the boolean expressions out of prepare_statement
         // keeps its cyclomatic complexity to one branch per dispatch arm.
         [[nodiscard]] __attribute__((always_inline)) static auto is_simple_select(
-                const std::optional<JoinStatementWrapper>& join_wrapper,
-                const orm::where::ExpressionVariantPtr&    where_expr,
-                const std::optional<int>&                  limit,
-                const std::optional<int>&                  offset,
-                const std::optional<OrderByWrapper>&       order_by_wrapper
+                const std::optional<JoinStatementWrapper<PkKeyType>>& join_wrapper,
+                const orm::where::ExpressionVariantPtr&               where_expr,
+                const std::optional<int>&                             limit,
+                const std::optional<int>&                             offset,
+                const std::optional<OrderByWrapper>&                  order_by_wrapper
         ) -> bool {
             const bool has_modifiers = order_by_wrapper.has_value() || limit.has_value() || offset.has_value();
             const bool has_filters   = where_expr || join_wrapper.has_value();
@@ -498,18 +500,20 @@ export namespace storm::orm::statements {
         }
 
         [[nodiscard]] __attribute__((always_inline)) auto prepare_statement(
-                const std::optional<JoinStatementWrapper>& join_wrapper,
-                const orm::where::ExpressionVariantPtr&    where_expr,
-                const std::optional<int>&                  limit,
-                const std::optional<int>&                  offset,
-                const std::optional<OrderByWrapper>&       order_by_wrapper
+                const std::optional<JoinStatementWrapper<PkKeyType>>& join_wrapper,
+                const orm::where::ExpressionVariantPtr&               where_expr,
+                const std::optional<int>&                             limit,
+                const std::optional<int>&                             offset,
+                const std::optional<OrderByWrapper>&                  order_by_wrapper
         ) -> std::expected<Statement*, Error> {
             if (is_simple_select(join_wrapper, where_expr, limit, offset, order_by_wrapper)) {
                 return prepare_simple_path();
             }
             // NOTE: Do NOT add sql.reserve() here - benchmarks show ~2% regression due to
             // extra function call overhead outweighing reallocation savings for typical SQL sizes
-            return prepare_and_bind(build_sql(join_wrapper, where_expr, limit, offset, order_by_wrapper), where_expr);
+            return prepare_and_bind(
+                    build_sql<PkKeyType>(join_wrapper, where_expr, limit, offset, order_by_wrapper), where_expr
+            );
         }
 
         // =====================================================================
@@ -549,13 +553,13 @@ export namespace storm::orm::statements {
         }
 
         // Bundles the five query clauses threaded from QuerySet through the proxies
-        // (reference semantics — call-scoped only).
+        // (reference semantics — call-scoped only). Templated on PkKeyType (#507).
         struct QueryClauses {
-            const std::optional<JoinStatementWrapper>& join_wrapper;
-            const orm::where::ExpressionVariantPtr&    where_expr;
-            const std::optional<int>&                  limit;
-            const std::optional<int>&                  offset;
-            const std::optional<OrderByWrapper>&       order_by_wrapper;
+            const std::optional<JoinStatementWrapper<PkKeyType>>& join_wrapper;
+            const orm::where::ExpressionVariantPtr&               where_expr;
+            const std::optional<int>&                             limit;
+            const std::optional<int>&                             offset;
+            const std::optional<OrderByWrapper>&                  order_by_wrapper;
         };
 
         // Prepare the statement (cached, WHERE bound), then dispatch to the FK-join
@@ -587,10 +591,10 @@ export namespace storm::orm::statements {
         // bounds base entities, never the related collection (#203).
         template <bool ExactOne>
         [[nodiscard]] auto execute_one_or_get(
-                const std::optional<JoinStatementWrapper>& join_wrapper,
-                const orm::where::ExpressionVariantPtr&    where_expr,
-                const std::optional<int>&                  offset,
-                const std::optional<OrderByWrapper>&       order_by_wrapper
+                const std::optional<JoinStatementWrapper<PkKeyType>>& join_wrapper,
+                const orm::where::ExpressionVariantPtr&               where_expr,
+                const std::optional<int>&                             offset,
+                const std::optional<OrderByWrapper>&                  order_by_wrapper
         ) -> std::expected<std::conditional_t<ExactOne, T, std::optional<T>>, Error> {
             std::optional<int> const limit_value = ExactOne ? 2 : 1;
             QueryClauses const       clauses{join_wrapper, where_expr, limit_value, offset, order_by_wrapper};
@@ -659,17 +663,25 @@ export namespace storm::orm::statements {
             if (!q1) {
                 return std::unexpected(q1.error());
             }
-            plf::hive<T>                         results = std::move(*q1);
-            std::unordered_map<std::int64_t, T*> by_pk;
+            plf::hive<T> results = std::move(*q1);
+
+            // Build stitch map keyed on PkKeyType (int64_t or UUID) — #507
+            std::unordered_map<PkKeyType, T*> by_pk;
             by_pk.reserve(results.size());
             for (T& obj : results) {
-                by_pk.emplace(static_cast<std::int64_t>(obj.[:Base::primary_key_:]), &obj);
+                PkKeyType key;
+                if constexpr (std::is_same_v<PkKeyType, std::int64_t>) {
+                    key = static_cast<std::int64_t>(obj.[:Base::primary_key_:]);
+                } else if constexpr (std::is_same_v<PkKeyType, storm::orm::utilities::UUID>) {
+                    key = obj.[:Base::primary_key_:]; // UUID member, no cast needed
+                }
+                by_pk.emplace(key, &obj);
             }
 
             // Q2 per relation (#392) — related rows, stitched into their owner's
             // container through the shared map.
             for (const auto& rel : wrapper.m2m_relations) {
-                if (auto stitched = run_q2_stitch(rel, c, by_pk); !stitched) {
+                if (auto stitched = run_q2_stitch<PkKeyType>(rel, c, by_pk); !stitched) {
                     return std::unexpected(stitched.error());
                 }
             }
@@ -716,8 +728,10 @@ export namespace storm::orm::statements {
 
         // Q2: prepare one relation's junction⋈related query, bind the SAME WHERE
         // (its IN-subquery), step rows, append each related object to its owner.
+        // Template on PkKeyType to support both int64_t and UUID keys (#507).
+        template <typename KeyType>
         [[nodiscard]] auto run_q2_stitch(
-                const M2MRelation& rel, const QueryClauses& c, std::unordered_map<std::int64_t, T*>& by_pk
+                const M2MRelation<KeyType>& rel, const QueryClauses& c, std::unordered_map<KeyType, T*>& by_pk
         ) noexcept -> std::expected<void, Error> {
             auto prep = prepare_clause_sql(rel.build_q2_sql_fn, c);
             if (!prep) {
@@ -726,7 +740,7 @@ export namespace storm::orm::statements {
             Statement* stmt        = *prep;
             int        step_result = 0;
             while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE) {
-                const std::int64_t owner = rel.extract_q2_owner_pk_fn(stmt);
+                const KeyType owner = rel.extract_q2_owner_pk_fn(stmt);
                 if (auto it = by_pk.find(owner); it != by_pk.end()) {
                     rel.append_related_q2_fn(stmt, it->second);
                 }
@@ -743,10 +757,11 @@ export namespace storm::orm::statements {
         // INNER-join semantics (#392): remove entities whose container stayed
         // empty in ANY inner relation; LEFT relations never drop. When every
         // relation is LEFT the predicate is constant-false and nothing drops.
-        static auto drop_empty_relations(plf::hive<T>& results, const JoinStatementWrapper& wrapper) noexcept -> void {
+        static auto drop_empty_relations(plf::hive<T>& results, const JoinStatementWrapper<PkKeyType>& wrapper) noexcept
+                -> void {
             for (auto it = results.begin(); it != results.end();) {
                 T&         obj  = *it;
-                const bool drop = std::ranges::any_of(wrapper.m2m_relations, [&obj](const M2MRelation& rel) {
+                const bool drop = std::ranges::any_of(wrapper.m2m_relations, [&obj](const M2MRelation<PkKeyType>& rel) {
                     return !rel.is_left && rel.container_empty_fn(&obj);
                 });
                 if (drop) {
