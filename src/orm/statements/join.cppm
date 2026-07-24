@@ -271,17 +271,32 @@ export namespace storm::orm::statements {
     // shared by both Q2-prefix builders (the leading "<col>_id"/"<col>" WHERE clause
     // and trailing ")" + base clauses are appended by the caller). Base supplies the
     // pk + table name. ConstexprString size is per-instantiation, hence the `auto&`.
-    // A composite base PK emits a PLAIN comma-joined column list "<a>, <b>, ..."
-    // (row-value-IN-subquery form: SQLite/PG match row arity by SELECT-list column
-    // COUNT, not by literal tuple syntax — parenthesizing the list here would make
-    // it one parenthesized scalar expression instead of N columns, which SQLite
-    // evaluates as "sub-select returns 1 columns", a real bug caught during this
-    // task's own testing, not a hypothetical). The caller wraps the OUTER
-    // comparison side in "(...)" for a composite base (matching #501's bulk-DELETE
-    // row-value-IN precedent there); single-column stays the exact pre-#504 form.
-    template <typename Base> consteval auto append_in_subquery_open(auto& result) -> void {
+    //
+    // WidenForCompositePk is supplied by the CALLER, not re-derived from
+    // Base::has_composite_pk_ — the two Q2-prefix builders want genuinely
+    // different arities for the SAME composite Base. Reverse-FK's LHS
+    // ("t2.<fk>_id" or the widened row-value form) always matches Base's real
+    // PK arity, so it passes Base::has_composite_pk_ through unchanged. m2m's
+    // LHS ("t2.<owner>_id") is frozen at exactly 1 column regardless of
+    // Base's own PK arity — the junction has exactly one physical owner-key
+    // column today (Task 9's scope, #504, widens it) — so it always passes
+    // false; letting this helper re-derive the flag from Base itself
+    // previously widened the RHS to N columns against a frozen 1-column LHS,
+    // an arity mismatch SQLite rejects at runtime ("sub-select returns 3
+    // columns - expected 1") — caught in review, not by a test (the
+    // .sql()-only test asserted the broken shape as correct). A composite
+    // base PK emits a PLAIN comma-joined column list "<a>, <b>, ..."
+    // (row-value-IN-subquery form: SQLite/PG match row arity by SELECT-list
+    // column COUNT, not by literal tuple syntax — parenthesizing the list
+    // here would make it one parenthesized scalar expression instead of N
+    // columns, which SQLite evaluates as "sub-select returns 1 columns", a
+    // real bug caught during this task's own testing, not a hypothetical).
+    // The caller wraps the OUTER comparison side in "(...)" when its OWN LHS
+    // is multi-column (matching #501's bulk-DELETE row-value-IN precedent
+    // there); single-column stays the exact pre-#504 form.
+    template <typename Base, bool WidenForCompositePk> consteval auto append_in_subquery_open(auto& result) -> void {
         result.append(" IN (SELECT ");
-        if constexpr (Base::has_composite_pk_) {
+        if constexpr (WidenForCompositePk) {
             append_pk_part_list<Base>(result);
         } else {
             result.append(Base::pk_name_);
@@ -291,9 +306,9 @@ export namespace storm::orm::statements {
     }
 
     // Byte size of what append_in_subquery_open emits: " IN (SELECT <pk> FROM <Base>"
-    // (or " IN (SELECT <a>, <b>, ... FROM <Base>" for a composite base).
-    template <typename Base> consteval auto in_subquery_open_size() -> std::size_t {
-        std::size_t pk_part = Base::has_composite_pk_ ? pk_part_list_size<Base>() : Base::pk_name_.size();
+    // (or " IN (SELECT <a>, <b>, ... FROM <Base>" when WidenForCompositePk).
+    template <typename Base, bool WidenForCompositePk> consteval auto in_subquery_open_size() -> std::size_t {
+        std::size_t pk_part = WidenForCompositePk ? pk_part_list_size<Base>() : Base::pk_name_.size();
         return 12 + pk_part + 6 + Base::table_name_.size();
     }
 
@@ -994,9 +1009,24 @@ export namespace storm::orm::statements {
     // Junction descriptor: auto mode (Through = void) uses <Base>_<Related> with
     // <Base>_id / <Related>_id columns; through mode uses the through model's
     // table with its FK field names (<field>_id).
+    //
+    // NOT YET SUPPORTED: a composite-PK owner (T). The junction table has
+    // exactly ONE physical owner-key column ("<Base>_id") — widening it to N
+    // columns matching a composite Base PK is Task 9's scope (schema.cppm's
+    // junction DDL), not this one's. Until then there is no valid single
+    // column to select as "the base's identity": Base::pk_name_ for a
+    // composite-PK model is merely the FIRST declared part (e.g. "region" for
+    // LedgerWithTags, which has no "id" column at all), so falling back to it
+    // would silently compare an unrelated column instead of failing loudly.
+    // M2MOwnerPkSupported<T> turns that into a compile-time rejection instead
+    // of the silently-invalid-SQL shape it used to produce (found in review).
     // =========================================================================
+    template <typename T>
+    concept M2MOwnerPkSupported = !BaseStatement<T>::has_composite_pk_;
+
     template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, std::meta::info M2MField>
-        requires M2MFieldOf<T, M2MField> && (Type == JoinType::Inner || Type == JoinType::Left)
+        requires M2MFieldOf<T, M2MField> && M2MOwnerPkSupported<T> &&
+                         (Type == JoinType::Inner || Type == JoinType::Left)
     class M2MJoinStatement
         : private BaseStatement<T>,
           public TwoQueryJoinBase<M2MJoinStatement<T, ConnType, Type, M2MField>, BaseStatement<T>, ConnType, Type> {
@@ -1250,7 +1280,12 @@ export namespace storm::orm::statements {
             total += relation_columns_size<RelatedBase>("t3.");
             total += 6 + junction_table_name().size() + 13 + RelatedBase::table_name_.size() + 10 +
                      related_col_name().size() + 9 + RelatedBase::pk_name_.size(); // FROM…ON…
-            total += 10 + owner_col_name().size() + in_subquery_open_size<Base>(); // WHERE t2.<owner>_id IN (…
+            // false: the junction's owner-key LHS is frozen at exactly 1 column
+            // (M2MOwnerPkSupported<T> rejects a composite Base at compile time,
+            // so Base::has_composite_pk_ is always false here — but the count is
+            // still passed explicitly rather than re-derived, so this call site's
+            // intent does not depend on that gate to stay correct).
+            total += 10 + owner_col_name().size() + in_subquery_open_size<Base, false>(); // WHERE t2.<owner>_id IN(…
             return total + utilities::sql_len::SMALL_BUFFER;
         }
 
@@ -1268,7 +1303,7 @@ export namespace storm::orm::statements {
             result.append(" WHERE t2.");
             result.append(owner_col_name());
             result.append("_id");
-            append_in_subquery_open<Base>(result);
+            append_in_subquery_open<Base, false>(result); // frozen 1-column LHS — see size fn above
             return result;
         }
 
@@ -1479,11 +1514,15 @@ export namespace storm::orm::statements {
         //                  WHERE t2.<fk>_id IN (SELECT <base.pk> FROM <Base>" ----
         // A composite Base PK widens BOTH sides of the WHERE to the row-value form
         // (#504 Task 8, matching #501's bulk-DELETE row-value-IN precedent): the
-        // outer comparison becomes "(t2.<part1>, t2.<part2>) IN (SELECT (<a>, <b>)
-        // FROM <Base> …)" — the per-column form "t2.a IN (…) AND t2.b IN (…)" would
-        // match the cross product of parts, not the intended row pairs (#501's exact
-        // bug class). N=1 collapses to the pre-#504 bare "t2.<fk>_id IN (SELECT
-        // <pk> FROM <Base> …)".
+        // outer comparison becomes "(t2.<part1>, t2.<part2>) IN (SELECT <a>, <b>
+        // FROM <Base> …)" — the inner SELECT list is a PLAIN, unparenthesized
+        // comma list (SQLite/PG match subquery row arity by SELECT-list column
+        // COUNT, not by literal tuple syntax; parenthesizing it would make it one
+        // scalar expression instead of N columns — a real bug this task's own
+        // testing caught). The per-column form "t2.a IN (…) AND t2.b IN (…)"
+        // would match the cross product of parts, not the intended row pairs
+        // (#501's exact bug class). N=1 collapses to the pre-#504 bare
+        // "t2.<fk>_id IN (SELECT <pk> FROM <Base> …)".
         static consteval auto calculate_q2_prefix_size() -> std::size_t {
             std::size_t total = q2_select_head_multi_owner_size(FkField, fk_target_pk_);
             total += relation_columns_size<OwnerBase>("t2.");
@@ -1494,7 +1533,11 @@ export namespace storm::orm::statements {
             } else {
                 total += owner_fk_col_list_size(FkField, fk_target_pk_); // "t2.<fk>_id"
             }
-            total += in_subquery_open_size<Base>();
+            // true: this site's LHS is already widened to Base's real PK arity
+            // above (the row-value form when Base::has_composite_pk_), so the
+            // RHS subquery must match it column-for-column — pass the SAME flag
+            // through explicitly rather than letting the helper re-derive it.
+            total += in_subquery_open_size<Base, Base::has_composite_pk_>();
             return total + utilities::sql_len::SMALL_BUFFER;
         }
 
@@ -1511,7 +1554,7 @@ export namespace storm::orm::statements {
             } else {
                 append_owner_fk_col_list(result, FkField, fk_target_pk_);
             }
-            append_in_subquery_open<Base>(result);
+            append_in_subquery_open<Base, Base::has_composite_pk_>(result); // LHS/RHS in lockstep — see size fn
             return result;
         }
 

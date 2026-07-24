@@ -282,66 +282,36 @@ TYPED_TEST(CompositeReverseFkOwnerTest, FanOutTenShipmentsAllStitchToSameComposi
 // there, but PostgreSQL does validate and rejects it outright ("column id does
 // not exist") — CONFIRMED during this task's own testing (not a hypothetical):
 // create_table_if_not_exists<LedgerWithTags> genuinely cannot run on
-// PostgreSQL today. This is a pre-existing Task-9-scoped bug, not something
-// Task 8 introduced or can fix without touching schema.cppm (explicitly out
-// of scope here) — hence no StormTestFixture (which would call
-// create_table_if_not_exists and fail on PG); .sql() below is pure text
-// generation and needs only a bare connection, not real tables. Task 8
-// deliberately does NOT touch the m2m junction-side column list — doing so
-// would reference columns the junction schema doesn't have. What IS verified
-// below (without needing the junction DDL, and without hitting the PG bug) is
-// that the m2m path's Q2 SQL shape is UNCHANGED (single "t2.<Base>_id" column,
-// on both a single-PK and a composite-PK owner) — i.e. this task did not
-// silently half-widen the m2m path into broken SQL. Full end-to-end m2m
-// stitch coverage over a composite owner is deferred to whenever Task 9 lands
-// the junction DDL (and, on PostgreSQL, the schema-creation fix too).
-template <typename ConnType> class CompositeM2MOwnerSqlShapeTest : public ::testing::Test {
-  protected:
-    auto SetUp() -> void override {
-        if (!storm::test::backend_available<ConnType>()) {
-            GTEST_SKIP() << "Backend unavailable";
-            return;
-        }
-        auto result = storm::QuerySet<LedgerWithTags, ConnType>::set_default_connection(
-                storm::test::get_connection_string<ConnType>()
-        );
-        ASSERT_TRUE(result.has_value());
-    }
-    auto TearDown() -> void override {
-        storm::QuerySet<LedgerWithTags, ConnType>::clear_default_connection();
-    }
-};
-TYPED_TEST_SUITE(CompositeM2MOwnerSqlShapeTest, DatabaseTypes);
-
-TYPED_TEST(CompositeM2MOwnerSqlShapeTest, Q2SqlStaysSingleColumnPendingTask9JunctionWidening) {
-    storm::QuerySet<LedgerWithTags, TypeParam> ledger_qs;
-    auto                                       sql = ledger_qs.template join<^^LedgerWithTags::tags>().select().sql();
-    // Q2 SELECT head: still exactly one owner-key column (the junction's only
-    // "<Base>_id" column) — NOT all 3 PK parts. Widening this requires Task 9's
-    // junction DDL (a composite owner side needs 3 junction columns, not 1).
-    EXPECT_TRUE(sql.contains("SELECT t2.LedgerWithTags_id, t3.id, t3.label")) << sql;
-    EXPECT_TRUE(sql.contains("WHERE t2.LedgerWithTags_id IN (SELECT region, account, period FROM LedgerWithTags"))
-            << sql;
-}
-
-// Review-fix regression guard: TwoQueryJoinBase::extract_q2_owner_pk originally
-// read Base::primary_key_members_.size() columns unconditionally — correct for
-// reverse-FK (the owning table carries a REAL N-column FK), but WRONG for m2m,
-// whose junction is always exactly 1 physical owner-key column regardless of
-// Base's own PK arity. For LedgerWithTags (3-part PK) that bug would read 3
-// columns from a Q2 row that only has 1 owner column + 2 related columns
-// (t3.id, t3.label) — reading straight into the RELATED entity's own data, a
-// genuine cross-entity misread caught during this task's own self-review
-// (not a hypothetical). M2MJoinStatement::owner_key_column_count_ must stay 1
-// for every model, composite-PK owner or not.
+// PostgreSQL today. This is a pre-existing Task-9-scoped bug.
+//
+// Review-fix (this file used to assert the m2m Q2 SQL shape stayed "unchanged"
+// on a composite owner, i.e. exactly 1 owner-key column on the LHS): that SQL
+// was actually INVALID — the shared append_in_subquery_open helper widened
+// the RHS subquery to Base::has_composite_pk_'s column count (3 for
+// LedgerWithTags) while the LHS stayed frozen at 1, producing
+// "WHERE t2.LedgerWithTags_id IN (SELECT region, account, period FROM
+// LedgerWithTags)" — a 1-vs-3-column arity mismatch SQLite rejects at runtime
+// ("sub-select returns 3 columns - expected 1"). There is no valid
+// single-column substitute either: LedgerWithTags has no "id" column (or any
+// other single-column identity) to compare the junction's lone
+// "LedgerWithTags_id" against — Base::pk_name_ resolves to merely the FIRST
+// declared part ("region"), which would silently compare an unrelated column
+// instead of failing loudly. m2m-over-a-composite-PK-owner is therefore
+// UNREPRESENTABLE in valid SQL until Task 9 widens the junction to carry N
+// owner-key columns — so join<^^LedgerWithTags::tags>() (and any m2m join
+// whose owner has a composite PK) is now a COMPILE-TIME rejection
+// (M2MOwnerPkSupported<T>, gating M2MJoinStatement's class template) instead
+// of the silently-invalid SQL shape asserted here previously. Once Task 9
+// lands the junction widening, this static_assert flips along with a real
+// end-to-end round-trip test.
 static_assert(
-        stmt::M2MJoinStatement<
-                LedgerWithTags,
-                storm::db::sqlite::Connection,
-                stmt::JoinType::Inner,
-                ^^LedgerWithTags::tags>::owner_key_column_count_ == 1,
-        "m2m owner-key column count must stay 1 (the junction's single physical column) even for a "
-        "composite-PK owner — Task 9 owns widening the junction itself"
+        !stmt::M2MOwnerPkSupported<LedgerWithTags>,
+        "m2m over a composite-PK owner has no valid SQL today (junction has 1 physical owner-key "
+        "column, LedgerWithTags has no single-column identity) — rejected at compile time pending "
+        "Task 9's junction-DDL widening"
+);
+static_assert(
+        stmt::M2MOwnerPkSupported<Student>, "a single-PK owner is unaffected — the pre-existing m2m path stays legal"
 );
 static_assert(
         stmt::ReverseFKJoinStatement<
