@@ -107,6 +107,40 @@ struct LedgerWithTags {
     [[= storm::many_to_many<>]] std::vector<LedgerTag> tags;
 };
 
+// #504 Task 7 fix — FK target with a 3-part composite PK. Ledger already
+// exists (above) as a plain composite-PK model but was never used as an FK
+// target anywhere, so no test exercised the JOIN ON-clause AND-chain past
+// N=2 parts. LedgerEntryRef is a single such FK (3 parts, deficit 6 bytes
+// under the pre-fix sizer) — kept as the minimal round-trip/JOIN-execution
+// fixture. It is NOT wide enough on its own to overflow the stacked
+// SMALL_BUFFER slack (calculate_complete_sql_size / calculate_join_sql_size /
+// calculate_select_fields_size each add their own 10-byte pad, so ~30 bytes of
+// slack absorb a single 6-byte deficit) — see LedgerEntryRefWide below for the
+// fixture that actually forces a measurable, non-slack-absorbed deficit.
+struct LedgerEntryRef {
+    [[= storm::primary_autoincrement]] int id{};
+    [[= storm::fk<>]] Ledger ledger;
+    std::string note;
+};
+
+// #504 Task 7 fix — SIX composite-FK fields to Ledger (3 parts each), mirroring
+// the WideJoin idiom (9 single-column FKs) but for composite targets. Each FK's
+// ON-clause body has 2 "after-first" parts, so each contributes a 6-byte
+// deficit under the pre-fix sizer (total 36 bytes) — enough to exceed the ~30
+// bytes of stacked SMALL_BUFFER slack across calculate_complete_sql_size /
+// calculate_join_sql_size / calculate_select_fields_size, where a single
+// 3-part FK (LedgerEntryRef above) does not. This is the fixture that actually
+// forces ConstexprString::append to silently truncate under the pre-fix sizer.
+struct LedgerEntryRefWide {
+    [[= storm::primary_autoincrement]] int id{};
+    [[= storm::fk<>]] Ledger ledger1;
+    [[= storm::fk<>]] Ledger ledger2;
+    [[= storm::fk<>]] Ledger ledger3;
+    [[= storm::fk<>]] Ledger ledger4;
+    [[= storm::fk<>]] Ledger ledger5;
+    [[= storm::fk<>]] Ledger ledger6;
+};
+
 // #504 review fix — a NULLABLE composite-FK member. Proves the composite-FK
 // DDL column emission gates NOT NULL on the FK MEMBER's own optionality
 // (std::optional<OrderLineWithShipments>), not on the target's PK-part type

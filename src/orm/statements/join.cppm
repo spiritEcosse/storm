@@ -377,12 +377,16 @@ export namespace storm::orm::statements {
         // collapses to EXACTLY "<pk> = t1.<fk>_id" — byte-identical to the pre-#504
         // single-column clause.
         template <std::size_t Is> static consteval auto fk_on_clause_body_size() -> std::size_t {
+            using utilities::numeric::digits_of;
             using utilities::sql_len::AND;
             constexpr auto target_pk = Base::template find_fk_primary_key_members<FK_type<Is>>();
             std::size_t    total     = 0;
             for (std::size_t p = 0; p < target_pk.size(); ++p) {
                 if (p > 0) {
-                    total += AND;
+                    // append_fk_on_clause_body writes " AND t<alias>." here, not just
+                    // " AND " — reserve the exact bytes: AND (" AND ") + "t" + the
+                    // alias's digit width + ".".
+                    total += AND + 1 + digits_of(Is + 2) + 1;
                 }
                 total += std::meta::identifier_of(target_pk[p]).size();
                 total += 6; // " = t1."

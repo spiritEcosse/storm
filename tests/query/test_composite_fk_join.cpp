@@ -124,3 +124,76 @@ TEST(CompositeFkJoinSqlTest, SinglePkJoinSqlStaysByteIdentical) {
     EXPECT_NE(sql.find("ON t2.id = t1.sender_id"), std::string::npos) << sql;
     EXPECT_EQ(sql.find(" AND "), std::string::npos) << sql; // no AND for a single-column key
 }
+
+// ── Review fix: fk_on_clause_body_size undercounted parts after the first ──
+// The sizer reserved only " AND " (5 bytes) per composite-FK part after the
+// first, but append_fk_on_clause_body actually writes " AND t<alias>." (7 +
+// digits_of(alias) bytes) — a 2-3 byte-per-part deficit that ConstexprString
+// silently swallows by truncating the tail of the buffer (ConstexprString::
+// append drops bytes past capacity with no diagnostic). A `.contains(...)`
+// substring check on a handful of expected fragments would still pass even
+// with the tail chopped off, so both tests below assert EXACT equality
+// against the full, hand-computed SQL string instead — the only check exact
+// enough to catch a deficit regardless of whether SMALL_BUFFER's slack
+// happens to absorb it for a given arity.
+//
+// LedgerEntryRef -> Ledger is a 3-part composite FK target (region, account,
+// period): the ON clause has TWO "after-first" parts, a 6-byte deficit under
+// the pre-fix sizer. Verified NOT sufficient on its own to overflow the
+// stacked SMALL_BUFFER slack (calculate_complete_sql_size /
+// calculate_join_sql_size / calculate_select_fields_size each pad by 10 bytes,
+// ~30 bytes total) — this test still passed under the pre-fix sizer. Kept as
+// the exact-length guard for the common 3-part case; LedgerEntryRefWide below
+// is the fixture that actually forces a real truncation.
+TEST(CompositeFkJoinSqlTest, ThreePartCompositeFkJoinSqlIsExact) {
+    using JS = stmt::JoinStatement<
+            LedgerEntryRef,
+            storm::db::sqlite::Connection,
+            stmt::JoinType::Inner,
+            ^^LedgerEntryRef::ledger>;
+    const std::string& sql = JS::get_complete_sql();
+    EXPECT_EQ(
+            sql,
+            "SELECT t1.id, t1.note, t2.region, t2.account, t2.period, t2.balance "
+            "FROM LedgerEntryRef t1"
+            " INNER JOIN Ledger t2 ON t2.region = t1.ledger_region"
+            " AND t2.account = t1.ledger_account"
+            " AND t2.period = t1.ledger_period"
+    );
+}
+
+// LedgerEntryRefWide joins the SAME 3-part Ledger target through SIX separate
+// FK fields (ledger1..ledger6) — each FK's ON-clause body independently
+// contributes the 6-byte deficit, for a combined 36 bytes, which DOES exceed
+// the ~30-byte stacked slack. Confirmed to fail (truncated/wrong-length SQL)
+// against the pre-fix sizer during development of this fix, and to pass here
+// only because the sizer now reserves the writer's exact byte count.
+TEST(CompositeFkJoinSqlTest, SixCompositeFkJoinsToSameTargetSqlIsExact) {
+    using JS = stmt::JoinStatement<
+            LedgerEntryRefWide,
+            storm::db::sqlite::Connection,
+            stmt::JoinType::Inner,
+            ^^LedgerEntryRefWide::ledger1,
+            ^^LedgerEntryRefWide::ledger2,
+            ^^LedgerEntryRefWide::ledger3,
+            ^^LedgerEntryRefWide::ledger4,
+            ^^LedgerEntryRefWide::ledger5,
+            ^^LedgerEntryRefWide::ledger6>;
+    const std::string& sql = JS::get_complete_sql();
+
+    std::string expected = "SELECT t1.id";
+    for (int i = 2; i <= 7; ++i) {
+        expected += std::format(", t{0}.region, t{0}.account, t{0}.period, t{0}.balance", i);
+    }
+    expected += " FROM LedgerEntryRefWide t1";
+    for (int i = 2, ledger_n = 1; i <= 7; ++i, ++ledger_n) {
+        expected += std::format(
+                " INNER JOIN Ledger t{0} ON t{0}.region = t1.ledger{1}_region"
+                " AND t{0}.account = t1.ledger{1}_account"
+                " AND t{0}.period = t1.ledger{1}_period",
+                i,
+                ledger_n
+        );
+    }
+    EXPECT_EQ(sql, expected);
+}
