@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <meta>
+#include <plf_hive/plf_hive.h> // NOSONAR cpp:S954 — must precede `import std;` (see test_m2m_models.h)
 
 #include "test_db_helpers.h"
 
@@ -10,6 +11,7 @@ import std;
 
 // Must follow test_models.h: OrderLineWithShipments/Shipment name storm:: annotations.
 #include "crud/test_composite_pk_models.h" // NOSONAR cpp:S954
+#include "test_m2m_models.h"               // NOSONAR cpp:S954 — Student/Course (single-PK m2m regression baseline)
 
 // ── #504 Task 7: regular FK JoinStatement — multi-column AND-joined ON clause ──
 // Shipment::line is a plain (non-m2m, non-reverse-FK) FK member whose target
@@ -168,6 +170,230 @@ TEST(CompositeFkJoinSqlTest, ThreePartCompositeFkJoinSqlIsExact) {
 // the ~30-byte stacked slack. Confirmed to fail (truncated/wrong-length SQL)
 // against the pre-fix sizer during development of this fix, and to pass here
 // only because the sizer now reserves the writer's exact byte count.
+// ── #504 Task 8: StitchKey-based m2m/reverse-FK stitch for a COMPOSITE owner ──
+//
+// The two-query eager-load path (m2m #391, reverse-FK #398) stitches Q2 rows to
+// their Q1 owner through a hash map keyed on the owner's primary key. Before
+// this task the key was a bare std::int64_t built from ONLY the first PK part
+// (Base::primary_key_), which for LedgerWithTags/OrderLineWithShipments (both
+// composite: 3 and 2 parts respectively) collides whenever two owners share
+// their first part but differ in a later one — exactly what the tests below
+// construct on purpose.
+
+// ---- Reverse-FK composite-owner case (no junction table needed) -----------
+// OrderLineWithShipments' PK is (order_id, product_id); Shipment::line is the
+// FK back-reference (reverse_fk<^^Shipment>::shipments). Two lines share
+// order_id=1 but differ in product_id — proves the stitch keys on BOTH parts.
+template <typename ConnType>
+class CompositeReverseFkOwnerTest : public StormTestFixture<OrderLineWithShipments, ConnType, Shipment> {
+  protected:
+    // Insert a lone OrderLineWithShipments with no Shipment pointing at it —
+    // shared setup for the empty-relation INNER/LEFT pair below.
+    static auto insert_solo_line(storm::QuerySet<OrderLineWithShipments, ConnType>& line_qs) -> void {
+        ASSERT_TRUE(
+                line_qs.insert(OrderLineWithShipments{.order_id = 9, .product_id = 1, .quantity = 1, .note = "solo"})
+                        .execute()
+                        .has_value()
+        );
+    }
+};
+TYPED_TEST_SUITE(CompositeReverseFkOwnerTest, DatabaseTypes);
+
+TYPED_TEST(CompositeReverseFkOwnerTest, ReverseFkStitchesCorrectlyWithCompositeOwnerKey) {
+    storm::QuerySet<OrderLineWithShipments, TypeParam> line_qs;
+    const OrderLineWithShipments line_a{.order_id = 1, .product_id = 10, .quantity = 5, .note = "a"};
+    const OrderLineWithShipments line_b{.order_id = 1, .product_id = 20, .quantity = 7, .note = "b"};
+    ASSERT_TRUE(line_qs.insert(line_a).execute().has_value());
+    ASSERT_TRUE(line_qs.insert(line_b).execute().has_value());
+
+    storm::QuerySet<Shipment, TypeParam> ship_qs;
+    ASSERT_TRUE(ship_qs.insert(Shipment{.line = line_a, .carrier = "DHL"}).execute().has_value());
+
+    auto results = line_qs.template join<^^OrderLineWithShipments::shipments>().select().execute();
+    ASSERT_TRUE(results.has_value()) << results.error().message();
+
+    bool found_a = false;
+    for (const auto& line : *results) {
+        if (line.product_id == 10) {
+            ASSERT_EQ(line.shipments.size(), 1U);
+            EXPECT_EQ(line.shipments[0].carrier, "DHL");
+            found_a = true;
+        }
+        if (line.product_id == 20) {
+            FAIL() << "product_id=20 shares order_id=1 with product_id=10 but has no shipment of its own — "
+                      "if the stitch keyed only on order_id (the pre-#504-Task-8 bug), this row would "
+                      "wrongly inherit product_id=10's shipment and survive the INNER-join drop.";
+        }
+    }
+    EXPECT_TRUE(found_a);
+}
+
+TYPED_TEST(CompositeReverseFkOwnerTest, EmptyRelationOnCompositeOwnerReturnsNoInnerJoinRows) {
+    storm::QuerySet<OrderLineWithShipments, TypeParam> line_qs;
+    this->insert_solo_line(line_qs);
+    auto results = line_qs.template join<^^OrderLineWithShipments::shipments>().select().execute(); // INNER
+    ASSERT_TRUE(results.has_value());
+    EXPECT_TRUE(results->empty());
+}
+
+TYPED_TEST(CompositeReverseFkOwnerTest, LeftJoinKeepsEmptyRelationOnCompositeOwner) {
+    storm::QuerySet<OrderLineWithShipments, TypeParam> line_qs;
+    this->insert_solo_line(line_qs);
+    auto results = line_qs.template left_join<^^OrderLineWithShipments::shipments>().select().execute();
+    ASSERT_TRUE(results.has_value());
+    ASSERT_EQ(results->size(), 1U);
+    EXPECT_TRUE(results->begin()->shipments.empty());
+}
+
+// Fan-out >= 10: one composite owner with 10 shipments — proves the stitch loop
+// appends every related row into the SAME owner's container (no drops, no
+// cross-contamination into a different owner sharing a PK part).
+TYPED_TEST(CompositeReverseFkOwnerTest, FanOutTenShipmentsAllStitchToSameCompositeOwner) {
+    storm::QuerySet<OrderLineWithShipments, TypeParam> line_qs;
+    const OrderLineWithShipments owner{.order_id = 3, .product_id = 7, .quantity = 1, .note = "fanout"};
+    ASSERT_TRUE(line_qs.insert(owner).execute().has_value());
+    // A decoy sharing order_id=3 but a different product_id — must stay unaffected.
+    const OrderLineWithShipments decoy{.order_id = 3, .product_id = 8, .quantity = 1, .note = "decoy"};
+    ASSERT_TRUE(line_qs.insert(decoy).execute().has_value());
+
+    storm::QuerySet<Shipment, TypeParam> ship_qs;
+    for (int i = 0; i < 10; ++i) {
+        ASSERT_TRUE(
+                ship_qs.insert(Shipment{.line = owner, .carrier = std::format("carrier-{}", i)}).execute().has_value()
+        );
+    }
+
+    auto results = line_qs.template join<^^OrderLineWithShipments::shipments>().select().execute();
+    ASSERT_TRUE(results.has_value());
+    ASSERT_EQ(results->size(), 1U); // decoy has zero shipments — dropped by INNER
+    EXPECT_EQ(results->begin()->product_id, 7);
+    EXPECT_EQ(results->begin()->shipments.size(), 10U);
+}
+
+// ---- m2m composite-owner case ----------------------------------------------
+// LedgerWithTags' PK is (region, account, period); `tags` is a many_to_many<>
+// container of LedgerTag via an auto-junction table. The auto-junction DDL
+// (build_junction_sql in schema.cppm) is NOT yet widened for a composite owner
+// side — that is Task 9's scope, tracked separately: build_junction_sql emits
+// exactly ONE "<Base>_id" junction column regardless of Base's own PK arity,
+// AND emits "REFERENCES LedgerWithTags(id)" — a column that does not exist on
+// a composite-PK owner (there is no "id" column at all). SQLite does not
+// validate FK target columns at CREATE TABLE time, so this happens to succeed
+// there, but PostgreSQL does validate and rejects it outright ("column id does
+// not exist") — CONFIRMED during this task's own testing (not a hypothetical):
+// create_table_if_not_exists<LedgerWithTags> genuinely cannot run on
+// PostgreSQL today. This is a pre-existing Task-9-scoped bug, not something
+// Task 8 introduced or can fix without touching schema.cppm (explicitly out
+// of scope here) — hence no StormTestFixture (which would call
+// create_table_if_not_exists and fail on PG); .sql() below is pure text
+// generation and needs only a bare connection, not real tables. Task 8
+// deliberately does NOT touch the m2m junction-side column list — doing so
+// would reference columns the junction schema doesn't have. What IS verified
+// below (without needing the junction DDL, and without hitting the PG bug) is
+// that the m2m path's Q2 SQL shape is UNCHANGED (single "t2.<Base>_id" column,
+// on both a single-PK and a composite-PK owner) — i.e. this task did not
+// silently half-widen the m2m path into broken SQL. Full end-to-end m2m
+// stitch coverage over a composite owner is deferred to whenever Task 9 lands
+// the junction DDL (and, on PostgreSQL, the schema-creation fix too).
+template <typename ConnType> class CompositeM2MOwnerSqlShapeTest : public ::testing::Test {
+  protected:
+    auto SetUp() -> void override {
+        if (!storm::test::backend_available<ConnType>()) {
+            GTEST_SKIP() << "Backend unavailable";
+            return;
+        }
+        auto result = storm::QuerySet<LedgerWithTags, ConnType>::set_default_connection(
+                storm::test::get_connection_string<ConnType>()
+        );
+        ASSERT_TRUE(result.has_value());
+    }
+    auto TearDown() -> void override {
+        storm::QuerySet<LedgerWithTags, ConnType>::clear_default_connection();
+    }
+};
+TYPED_TEST_SUITE(CompositeM2MOwnerSqlShapeTest, DatabaseTypes);
+
+TYPED_TEST(CompositeM2MOwnerSqlShapeTest, Q2SqlStaysSingleColumnPendingTask9JunctionWidening) {
+    storm::QuerySet<LedgerWithTags, TypeParam> ledger_qs;
+    auto                                       sql = ledger_qs.template join<^^LedgerWithTags::tags>().select().sql();
+    // Q2 SELECT head: still exactly one owner-key column (the junction's only
+    // "<Base>_id" column) — NOT all 3 PK parts. Widening this requires Task 9's
+    // junction DDL (a composite owner side needs 3 junction columns, not 1).
+    EXPECT_TRUE(sql.contains("SELECT t2.LedgerWithTags_id, t3.id, t3.label")) << sql;
+    EXPECT_TRUE(sql.contains("WHERE t2.LedgerWithTags_id IN (SELECT region, account, period FROM LedgerWithTags"))
+            << sql;
+}
+
+// Review-fix regression guard: TwoQueryJoinBase::extract_q2_owner_pk originally
+// read Base::primary_key_members_.size() columns unconditionally — correct for
+// reverse-FK (the owning table carries a REAL N-column FK), but WRONG for m2m,
+// whose junction is always exactly 1 physical owner-key column regardless of
+// Base's own PK arity. For LedgerWithTags (3-part PK) that bug would read 3
+// columns from a Q2 row that only has 1 owner column + 2 related columns
+// (t3.id, t3.label) — reading straight into the RELATED entity's own data, a
+// genuine cross-entity misread caught during this task's own self-review
+// (not a hypothetical). M2MJoinStatement::owner_key_column_count_ must stay 1
+// for every model, composite-PK owner or not.
+static_assert(
+        stmt::M2MJoinStatement<
+                LedgerWithTags,
+                storm::db::sqlite::Connection,
+                stmt::JoinType::Inner,
+                ^^LedgerWithTags::tags>::owner_key_column_count_ == 1,
+        "m2m owner-key column count must stay 1 (the junction's single physical column) even for a "
+        "composite-PK owner — Task 9 owns widening the junction itself"
+);
+static_assert(
+        stmt::ReverseFKJoinStatement<
+                OrderLineWithShipments,
+                storm::db::sqlite::Connection,
+                stmt::JoinType::Inner,
+                ^^Shipment::line>::owner_key_column_count_ == 2,
+        "reverse-FK owner-key column count must match the composite base's own PK arity (2 for "
+        "OrderLineWithShipments) — the owning table carries a REAL N-column FK"
+);
+
+template <typename ConnType>
+class CompositeM2MSinglePkRegressionTest : public StormTestFixture<Student, ConnType, Course> {};
+TYPED_TEST_SUITE(CompositeM2MSinglePkRegressionTest, DatabaseTypes);
+
+TYPED_TEST(CompositeM2MSinglePkRegressionTest, SinglePkM2MSqlShapeStaysByteIdentical) {
+    storm::QuerySet<Student, TypeParam> student_qs;
+    auto                                sql = student_qs.template join<^^Student::courses>().select().sql();
+    EXPECT_TRUE(sql.contains("SELECT t2.Student_id, t3.id, t3.title")) << sql;
+    EXPECT_TRUE(sql.contains("WHERE t2.Student_id IN (SELECT id FROM Student)")) << sql;
+}
+
+// ── Reverse-FK Q2 SQL shape over a composite owner (#504 Task 8) ────────────
+// Documents (and regression-guards) the exact widened SQL: the owner-key
+// column list widens to N parts, each individually re-aliased ("t2.<part>",
+// not a bare comma list — that would alias only the first part); the WHERE
+// clause becomes the row-value-IN-subquery form on BOTH sides (outer
+// "(t2.a, t2.b)" wrapped in parens, inner subquery SELECT list a PLAIN
+// comma-joined column list, NOT itself parenthesized — parenthesizing the
+// inner list was a real bug this task's own testing caught: SQLite parses
+// "(a, b)" in a SELECT list as one parenthesized scalar expression, not a row
+// value, so the sub-select silently returns 1 column instead of 2 (an error,
+// not a silent miscompare, so it fails loudly here — but a subtler variant of
+// the same mistake could easily have gone unnoticed without an exact-string
+// assertion). Owner columns include Shipment::line, itself a composite-FK
+// member — its SELECT columns must ALSO widen (t2.line_order_id,
+// t2.line_product_id), not collapse to a single bogus t2.line_id.
+TEST(CompositeFkJoinSqlTest, ReverseFkQ2SqlShapeIsExactOverCompositeOwner) {
+    using JS = stmt::ReverseFKJoinStatement<
+            OrderLineWithShipments,
+            storm::db::sqlite::Connection,
+            stmt::JoinType::Inner,
+            ^^Shipment::line>;
+    const std::string sql = JS::build_q2_sql(nullptr, std::nullopt, std::nullopt, std::nullopt);
+    EXPECT_EQ(
+            sql,
+            "SELECT t2.line_order_id, t2.line_product_id, t2.id, t2.line_order_id, t2.line_product_id, t2.carrier "
+            "FROM Shipment t2 WHERE (t2.line_order_id, t2.line_product_id) IN (SELECT order_id, product_id FROM "
+            "OrderLineWithShipments)"
+    );
+}
+
 TEST(CompositeFkJoinSqlTest, SixCompositeFkJoinsToSameTargetSqlIsExact) {
     using JS = stmt::JoinStatement<
             LedgerEntryRefWide,
