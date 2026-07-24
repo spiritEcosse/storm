@@ -300,9 +300,15 @@ export namespace storm::orm::statements {
             );
         }
 
-        // Q2 row owner pk (column 0) — keys the stitch into the Q1 hash map.
-        static auto extract_q2_owner_pk(typename ConnType::Statement* stmt) noexcept -> std::int64_t {
-            return stmt->extract_int64(0);
+        // Q2 row owner pk (column 0) — keys the stitch into the Q1 hash map (#507).
+        // Templated on PkKeyType to support both int64_t and UUID keys.
+        template <typename PkKeyType>
+        static auto extract_q2_owner_pk(typename ConnType::Statement* stmt) noexcept -> PkKeyType {
+            if constexpr (std::same_as<PkKeyType, utilities::UUID>) {
+                return utilities::UUID{stmt->extract_text(0)};
+            } else {
+                return stmt->extract_int64(0);
+            }
         }
     };
 
@@ -631,8 +637,9 @@ export namespace storm::orm::statements {
         requires(sizeof...(FKFields) >= 1 && (FKFieldOf<T, FKFields> && ...))
     [[nodiscard]] auto make_join_wrapper() -> JoinStatementWrapper<detail::pk_key_type_t<T>> {
         using JS = JoinStatement<T, ConnType, Type, FKFields...>;
+        using PkKeyType = detail::pk_key_type_t<T>;
 
-        return JoinStatementWrapper{
+        return JoinStatementWrapper<PkKeyType>{
                 +[]() -> const std::string& { return JS::get_complete_sql(); },
                 +[](ErasedStatementPtr stmt, ErasedObjectPtr obj) -> void {
                     JS::extract_joined_row(static_cast<typename ConnType::Statement*>(stmt), *static_cast<T*>(obj));
