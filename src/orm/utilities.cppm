@@ -168,6 +168,11 @@ export namespace storm::orm::utilities {
         }
     };
 
+    // Free-standing equality operator for UUID (supports unordered_map keying)
+    [[nodiscard]] constexpr auto operator==(const UUID& lhs, const UUID& rhs) noexcept -> bool {
+        return lhs.value == rhs.value;
+    }
+
     // ============================================================================
     // Chrono / String Conversion Helpers (ISO-8601 format)
     // ============================================================================
@@ -620,3 +625,11 @@ export namespace storm::orm::utilities {
     using BulkSQLCache = SQLCache<std::size_t, buffer_size::CACHE_DEFAULT>;
 
 } // namespace storm::orm::utilities
+
+// Hash specialization for UUID to enable unordered_map<UUID, T*>
+template <>
+struct std::hash<storm::orm::utilities::UUID> {
+    [[nodiscard]] auto operator()(const storm::orm::utilities::UUID& u) const noexcept -> std::size_t {
+        return std::hash<std::string_view>{}(u.value);
+    }
+};
