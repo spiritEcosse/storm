@@ -168,11 +168,6 @@ export namespace storm::orm::utilities {
         }
     };
 
-    // Free-standing equality operator for UUID (supports unordered_map keying)
-    [[nodiscard]] constexpr auto operator==(const UUID& lhs, const UUID& rhs) noexcept -> bool {
-        return lhs.value == rhs.value;
-    }
-
     // ============================================================================
     // Chrono / String Conversion Helpers (ISO-8601 format)
     // ============================================================================
