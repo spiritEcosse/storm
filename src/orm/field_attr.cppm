@@ -164,6 +164,39 @@ export namespace storm::meta {
         return has_annotation_type<AutoUpdate>(member);
     }
 
+    // True when the reflected TYPE `type` is a std::optional<T> specialization (#509).
+    // The detection core shared by every optional-related query in the tree.
+    //
+    // PRECONDITION: `type` is already dealiased — an alias to std::optional<T> does
+    // NOT match (there is no internal dealias, so the normalization step stays owned
+    // by one layer instead of being applied twice). Every caller honours it: the
+    // sites that start from a member go through is_optional_member below, and the
+    // two unwrapping predicates in this file plus unwrap_optional_type in
+    // statements/base.cppm all dealias into their local `t` first.
+    //
+    // Reflection-level comparison rather than `if constexpr`, so it stays usable
+    // inside a consteval loop where the loop variable is not a core constant
+    // expression — the same discipline as is_unsigned64_member below.
+    // has_template_arguments is the required guard: template_of is only valid on
+    // a specialization, and most types are not one.
+    consteval auto is_optional_type(std::meta::info type) -> bool {
+        return std::meta::has_template_arguments(type) && std::meta::template_of(type) == ^^std::optional;
+    }
+
+    // True when the data member `member` has type std::optional<T> (#509).
+    // The single source of truth for the structural nullability query, which was
+    // previously hand-rolled at five sites here and in statements/base.cppm, each
+    // with its own spelling of the same two reflection calls.
+    //
+    // The member-level spelling is what the sites starting from a data member need:
+    // keeping type_of/dealias inside means neither step can be forgotten, and it is
+    // what satisfies is_optional_type's already-dealiased precondition for them. The
+    // sites that already hold a dealiased type (the two unwrapping predicates below,
+    // and unwrap_optional_type in statements/base.cppm) call the core directly.
+    consteval auto is_optional_member(std::meta::info member) -> bool {
+        return is_optional_type(std::meta::dealias(std::meta::type_of(member)));
+    }
+
     // A 64-bit unsigned source type — the set that needs an explicit storage
     // annotation (#436). Signed-64 and all smaller types are unaffected.
     template <typename T>
@@ -179,7 +212,7 @@ export namespace storm::meta {
     // std::uint64_t using-declarator.
     consteval auto is_unsigned64_member(std::meta::info member) -> bool {
         std::meta::info t = std::meta::dealias(std::meta::type_of(member));
-        if (std::meta::has_template_arguments(t) && std::meta::template_of(t) == ^^std::optional) {
+        if (is_optional_type(t)) {
             t = std::meta::dealias(std::meta::template_arguments_of(t)[0]);
         }
         return t == ^^unsigned long || t == ^^unsigned long long;
@@ -263,7 +296,7 @@ export namespace storm::meta {
     // distinguishes the char specializations from the wide ones.
     consteval auto is_text_member(std::meta::info member) -> bool {
         std::meta::info t = std::meta::dealias(std::meta::type_of(member));
-        if (std::meta::has_template_arguments(t) && std::meta::template_of(t) == ^^std::optional) {
+        if (is_optional_type(t)) {
             t = std::meta::dealias(std::meta::template_arguments_of(t)[0]);
         }
         if (!std::meta::has_template_arguments(t)) {

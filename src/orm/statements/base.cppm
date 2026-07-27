@@ -95,11 +95,13 @@ export namespace storm::orm::statements {
         }
 
         // std::optional<T> → T (dealiased); any other type returned dealiased unchanged.
-        // Shared optional-unwrap for FK-target queries.
+        // Shared optional-unwrap for FK-target queries. Detection goes through the
+        // leaf module's is_optional_type (#509) — this site previously spelled the
+        // same check as template_of(dealias(^^std::optional<int>)), which is
+        // equivalent but was the copy most likely to drift from the other four.
         consteval auto unwrap_optional_type(std::meta::info type) -> std::meta::info {
-            auto t = std::meta::dealias(type);
-            if (std::meta::has_template_arguments(t) &&
-                std::meta::template_of(t) == std::meta::template_of(std::meta::dealias(^^std::optional<int>))) {
+            const auto t = std::meta::dealias(type);
+            if (storm::meta::is_optional_type(t)) {
                 return std::meta::dealias(std::meta::template_arguments_of(t)[0]);
             }
             return t;
@@ -343,16 +345,13 @@ export namespace storm::orm::statements {
     // which a NOT NULL FK column cannot hold, so we refuse it at the call site with a clear
     // constraint violation instead of letting the database reject the DELETE at runtime.
     // The annotation is read directly on members from nonstatic_data_members_of (BMI-safe,
-    // #262); optional-ness is a structural query on the member's type.
+    // #262); optional-ness goes through the shared storm::meta::is_optional_member predicate (#509).
     template <typename T>
     concept ModelFkPoliciesValid = []() consteval {
         for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
             auto action = meta::fk_on_delete_action_of(m);
             if (action.has_value() && action.value() == meta::RefAction::SetNull) {
-                const auto type = std::meta::dealias(std::meta::type_of(m));
-                const bool is_optional =
-                        std::meta::has_template_arguments(type) && std::meta::template_of(type) == ^^std::optional;
-                if (!is_optional) {
+                if (!storm::meta::is_optional_member(m)) {
                     return false;
                 }
             }
@@ -412,10 +411,7 @@ export namespace storm::orm::statements {
                 // most one row per that part alone, making the other parts pointless.
                 counts.unique_part +=
                         static_cast<std::size_t>(storm::meta::is_primary_part_member(m) && storm::meta::is_unique(m));
-                counts.nullable += static_cast<std::size_t>(
-                        std::meta::has_template_arguments(std::meta::dealias(std::meta::type_of(m))) &&
-                        std::meta::template_of(std::meta::dealias(std::meta::type_of(m))) == ^^std::optional
-                );
+                counts.nullable += static_cast<std::size_t>(storm::meta::is_optional_member(m));
             }
         }
         return counts;
