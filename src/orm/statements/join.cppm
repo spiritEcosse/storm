@@ -1042,10 +1042,11 @@ export namespace storm::orm::statements {
         // widening the junction to N columns for a composite owner is Task 9's
         // scope (#504), not this one's. TwoQueryJoinBase::extract_q2_owner_pk
         // reads this many columns from the Q2 row's owner key, in lockstep with
-        // append_q2_select_head's single-column emission below. Public so tests
-        // can assert this compile-time invariant directly (a regression guard for
-        // the cross-entity misread this exact offset arithmetic was found to have
-        // during this task's own self-review).
+        // append_q2_select_head's single-column emission below. Public because
+        // TwoQueryJoinBase reads it through Derived::; unlike the reverse-FK
+        // counterpart it is a hardcoded literal, not derived from the owner's PK
+        // arity, so the cross-entity misread found during this task's own
+        // self-review cannot return without editing this line.
         static constexpr std::size_t owner_key_column_count_ = 1;
 
       private:
