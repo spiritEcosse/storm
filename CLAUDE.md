@@ -449,10 +449,14 @@ N columns nullable together.
 
 Four things had to widen in lockstep, each with its own failure mode. (1) **ON clauses** AND-join
 one equality per part (`t2.a = t1.fk_a AND t2.b = t1.fk_b`) — matching only the first part would
-silently join rows sharing just that part. (2) **The m2m/reverse-FK stitch key** became `StitchKey`,
-a fixed 32-byte inline buffer replacing the old `std::int64_t`, since a composite key is not one
-integer and may mix `int`/`std::string`/`int64_t`; the statement-side extractor and the object-side
-builder dispatch per part on the declared type and must stay in agreement. (3) **The Q2 `IN`
+silently join rows sharing just that part. (2) **The m2m/reverse-FK stitch key** gained `StitchKey`,
+a fixed 32-byte inline buffer, for composite owners — a composite key is not one integer and may mix
+`int`/`std::string`/`int64_t`; the statement-side extractor and the object-side builder dispatch per
+part on the declared type and must stay in agreement. A **single-column PK still keys the map on a
+bare `std::uint64_t`**, selected by `if constexpr` on `primary_key_column_count_`: `std::hash<long>`
+is the identity function and `operator==` on a `long` is one inlined compare, so routing single-PK
+models through `StitchKey` cost ~4% on the m2m eager-load path (`M2MRelation` carries a second
+fn-pointer for the narrow extractor; exactly one is populated). (3) **The Q2 `IN`
 subquery** uses the row-value form `(a, b) IN (SELECT a, b FROM …)` — the outer comparison side is
 parenthesized but the inner SELECT list is **left unwrapped**, because parenthesizing it makes
 SQLite parse it as one scalar expression rather than N columns. (4) **Junction DDL** emits one

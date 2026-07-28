@@ -453,9 +453,18 @@ A single-PK junction on both sides is unchanged, byte for byte.
 ### Stitching
 
 The two-query strategy (#391) stitches Q2 rows onto Q1 entities by owner key.
-That key is a `StitchKey` — a fixed 32-byte inline buffer — rather than an
-`int64_t`, since a composite key is not one integer and may mix `int`,
-`std::string`, and `int64_t` parts. The Q2 `IN` subquery uses the row-value form:
+A composite owner key is not one integer and may mix `int`, `std::string`, and
+`int64_t` parts, so those models key the stitch map on a `StitchKey` — a fixed
+32-byte inline buffer holding every part.
+
+A **single-column PK keeps the plain `int64_t` key** it always had, chosen at
+compile time. This is a deliberate performance split, not an implementation
+detail: `std::hash<long>` is the identity function and comparing two `long`s is
+one inlined instruction, whereas both operations on a 33-byte key become
+out-of-line calls made once per result row. Routing single-PK models through
+`StitchKey` measured ~4% slower on the m2m eager-load benchmarks.
+
+The Q2 `IN` subquery uses the row-value form:
 
 ```sql
 -- reverse-FK Q2 over a 2-part owner key

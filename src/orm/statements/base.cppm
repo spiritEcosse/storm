@@ -946,8 +946,8 @@ export namespace storm::orm::statements {
         // declaration order; primary_key_ / pk_name_ above stay the FIRST element, so
         // every single-PK caller is untouched. has_composite_pk_ branches the schema
         // generator (table-level PRIMARY KEY (a, b), #500), the by-key WHERE clause
-        // (#501), and the INSERT column/bind policy (#502). JOIN on a composite
-        // model is still out of scope (#504).
+        // (#501), the INSERT column/bind policy (#502), and the JOIN paths — FK ON
+        // clauses, junction DDL, and the m2m/reverse-FK stitch key (#504).
         static constexpr auto primary_key_members_ = find_primary_key_members_impl();
         static constexpr bool has_composite_pk_    = primary_key_members_.size() > 1;
 
