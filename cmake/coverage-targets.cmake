@@ -128,6 +128,11 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
     COMMENT "Filtering coverage with LCOV_EXCL markers"
     VERBATIM)
 
+  # NOTE: the `coverage` CI job (.github/workflows/ci.yml) invokes genhtml
+  # directly with these same flags instead of building this target, because this
+  # target DEPENDS on `coverage` and would re-run the whole instrumented test
+  # suite a second time just to render a report. Keep the flag list below in
+  # sync with that step if it changes.
   add_custom_target(
     coverage-html
     COMMAND

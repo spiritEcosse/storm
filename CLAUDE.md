@@ -255,6 +255,16 @@ cmake --build --preset ninja-debug-coverage --target coverage-html
 # Open build/debug/coverage/html-filtered/index.html
 ```
 
+**Enforced in CI, not just locally (#528)**: the `coverage` job in `.github/workflows/ci.yml`
+runs `ninja-debug-coverage` on every PR and fails below **100% line coverage** — the same gate
+`commit.sh` step 5 applies, so the threshold is independently reproduced rather than self-reported
+from one machine. It parses the **line** row specifically (functions ~81%, branches ~92% are not
+gated) and uploads the HTML report as a `coverage-html` artifact on pass and failure alike.
+The 100% is of the **filtered** set — 24 files / 8613 lines, `LCOV_EXCL` markers excluded from the
+denominator — not of every line in the tree. PG-only branches in shared code are tested by the `test`
+matrix but not counted here: the coverage runner points `STORM_PG_CONNSTR` at a local unix socket
+that no CI container has, so PG-backed tests skip on an unreachable server.
+
 See [docs/internals/testing/CODE_COVERAGE.md](docs/internals/testing/CODE_COVERAGE.md) for details.
 
 ### Prerequisites

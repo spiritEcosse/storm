@@ -60,13 +60,48 @@ open build/debug/coverage/html-filtered/index.html      # macOS
 
 ### CI Pipeline
 
-```bash
-# Export LCOV format for coverage services (Codecov, Coveralls, etc.)
-cmake --build --preset ninja-debug --target coverage-lcov
+The `coverage` job in `.github/workflows/ci.yml` runs on every PR and push to
+`develop`. It builds `ninja-debug`, runs the `coverage` target, and **fails the
+job below 100% line coverage** — the same gate `commit.sh` applies locally, so
+the threshold is no longer self-reported from one developer's machine (#528).
 
-# The filtered lcov file is at:
+The job parses the **line** row of the lcov summary specifically. Function
+coverage (~81%) and branch coverage (~92%) are not gated; anchoring on the wrong
+row would fail immediately and look like a broken job rather than a wrong
+threshold.
+
+On both pass and failure it uploads the HTML report as a `coverage-html`
+workflow artifact (14-day retention). On failure it also prints the uncovered
+file/line list directly in the job log.
+
+No external coverage service is involved. Publishing to SonarCloud requires
+switching that project from Automatic Analysis to a CI-based scan — deliberately
+deferred, tracked at #457.
+
+```bash
+# The filtered lcov file the job parses:
 # build/debug/coverage/coverage-filtered.lcov
 ```
+
+**PG-only branches are not counted.** The job uses `ninja-debug-coverage`,
+matching `commit.sh` so local and CI numbers stay comparable. The mechanism is
+worth knowing: the preset nulls `STORM_PG_CONNSTR`, but the `coverage-run-main`
+target in `cmake/coverage-targets.cmake` re-sets it to a local unix socket
+(`host=/var/run/postgresql`). Neither CI nor a typical dev box without a running
+server has that socket, so `PQconnectdb` fails and PG-backed tests skip via
+`backend_available()` — they skip on an *unreachable server*, not on an unset
+variable.
+
+PostgreSQL-specific branches in shared code (`adapt_order_by_for_pg` in
+`base.cppm`) are therefore excluded from coverage — they *are* tested, by the
+`test` matrix against a real postgres on PG 14/15/16/17, just not counted here.
+The PG backend files themselves still reach 100% via the `tests/mock_libpq/`
+LD_PRELOAD mock.
+
+Consequence for anyone changing this: attaching a postgres service to the
+coverage job would not by itself change the numbers, because the hardcoded
+`host=/var/run/postgresql` would still miss a service listening at
+`host=postgres`. That connstr has to change too.
 
 ## Excluding Code from Coverage
 
@@ -113,7 +148,11 @@ build/debug/coverage/
 
 ### Line Coverage
 
-- **100% is required** — enforced by `commit.sh` pre-commit hook
+- **100% is required** — enforced by the `commit.sh` pre-commit hook locally and
+  by the `coverage` CI job on every PR (#528)
+- The figure is 100% of the **filtered** set — 24 files / 8613 lines, after
+  `LCOV_EXCL` markers are removed from the denominator (56 markers across 11
+  files in `src/`). It is not 100% of every line in the tree
 - Compile-time only code (`consteval`) must be excluded with `LCOV_EXCL_*`
 
 ### Uncovered Code Categories
