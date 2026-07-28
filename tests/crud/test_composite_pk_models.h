@@ -211,11 +211,23 @@ struct StorageBin {
 // undercount in build_junction_sql's ConstexprString sizing (the pre-#504 fixed
 // "5x name length + 256" budget has no term that scales with PK part count or
 // part identifier length).
+// The SECOND m2m field makes this the only composite-PK owner with more than
+// one relation, which is what #392's multi-relation join<^^T::a, ^^T::b>()
+// needs to be exercised over a composite key: relation Is takes junction alias
+// 2+2*Is and related alias 3+2*Is, and with a composite owner EACH relation's
+// ON clause now AND-joins one equality per owner PK part. A single-relation
+// composite join cannot catch an aliasing error in that arithmetic, since
+// relation 0's aliases (t2/t3) are the same ones the single-relation path uses.
+// LedgerTag is reused as the second, deliberately single-PK, related side so
+// the two relations differ in related-side arity as well (3-part StorageBin vs
+// 1-part LedgerTag) — a per-relation column count leaking across relations
+// would misalign the second relation's extraction.
 struct ShelfAssignment {
     [[= storm::primary_part]] int warehouse_no{};
     [[= storm::primary_part]] std::string shelf_code;
     int priority{};
     [[= storm::many_to_many<>]] std::vector<StorageBin> bins;
+    [[= storm::many_to_many<>]] std::vector<LedgerTag> tags;
 };
 
 #endif // STORM_TESTS_TEST_COMPOSITE_PK_MODELS_H
