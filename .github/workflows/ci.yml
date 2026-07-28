@@ -7,6 +7,36 @@ on:
     branches: [develop]
 
 jobs:
+  # The storm-ci image digest is pinned in more than one workflow (ci.yml and
+  # clang-tidy-sweep.yml). A job's `container.image` is resolved before any step
+  # runs, so it cannot read `env:` or a shared file — the pins have to be literal
+  # in each file. Deduplicating them would mean either a setup job on every run
+  # or moving the pin into repo variables, which takes it out of git and defeats
+  # the point of pinning (see ci.yml's container comment below). Instead, assert
+  # they agree, so drift fails loudly here rather than silently running two
+  # workflows on two different clang-p2996 builds (as in #498).
+  digest-guard:
+    name: storm-ci digest consistency
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Assert storm-ci digests agree
+        run: |
+          mapfile -t pins < <(grep -rhoE 'storm-ci@sha256:[0-9a-f]{64}' .github/workflows | sort)
+          if (( ${#pins[@]} < 2 )); then
+            echo "::error::Expected at least 2 storm-ci digest pins, found ${#pins[@]}."
+            echo "The image reference may have been renamed or restructured — update this guard."
+            exit 1
+          fi
+          if (( $(printf '%s\n' "${pins[@]}" | sort -u | wc -l) != 1 )); then
+            echo "::error::storm-ci digest drift between workflows:"
+            grep -rnE 'storm-ci@sha256:[0-9a-f]{64}' .github/workflows
+            exit 1
+          fi
+          echo "OK: ${#pins[@]} storm-ci pins agree — ${pins[0]}"
+
   test:
     name: "${{ matrix.preset }} / PG ${{ matrix.postgres }}"
     # ninja-msan is skipped in CI: under import std; (issue #326) GTest's static
