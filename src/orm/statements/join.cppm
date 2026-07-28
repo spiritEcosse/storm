@@ -60,8 +60,18 @@ export namespace storm::orm::statements {
     struct M2MRelation {
         M2MClauseSqlFn build_q2_sql_fn                                                         = nullptr;
         auto (*extract_q2_owner_pk_fn)(ErasedStatementPtr) -> storm::orm::utilities::StitchKey = nullptr;
-        auto (*append_related_q2_fn)(ErasedStatementPtr, ErasedObjectPtr) -> void              = nullptr;
-        auto (*container_empty_fn)(ErasedObjectPtr) -> bool                                    = nullptr;
+        // Single-column-PK fast path (#504 perf). Exactly ONE of these two extractors
+        // is non-null, chosen at descriptor-build time by the base model's PK width:
+        // a one-column key is a bare word, so it skips StitchKey's sret return, its
+        // 32-byte zero-init and the out-of-line append_int64 call — all three per Q2
+        // row. Composite keys keep extract_q2_owner_pk_fn. The pair exists because
+        // M2MRelation is deliberately NOT templated (JoinStatementWrapper holds a
+        // std::vector of these and is referenced from five modules), so the key type
+        // cannot be a template parameter here; SelectStatement<T> re-derives the same
+        // choice from Base::primary_key_column_count_ and reads the matching one.
+        auto (*extract_q2_owner_pk_word_fn)(ErasedStatementPtr) -> std::uint64_t  = nullptr;
+        auto (*append_related_q2_fn)(ErasedStatementPtr, ErasedObjectPtr) -> void = nullptr;
+        auto (*container_empty_fn)(ErasedObjectPtr) -> bool                       = nullptr;
         // LEFT keeps zero-relation entities; INNER drops them after the stitch.
         bool is_left = false;
     };
@@ -614,6 +624,24 @@ export namespace storm::orm::statements {
             return key;
         }
 
+        // Single-column-PK fast path (#504 perf): the owner key as one word, skipping
+        // StitchKey entirely. The general extractor above is correct for this case
+        // too, but crossing the M2MRelation fn-pointer boundary with a 33-byte return
+        // costs three things per Q2 row that a bare word does not: an sret memory
+        // round-trip, the 32-byte zero-init of StitchKey::bytes_, and an out-of-line
+        // call to append_int64 (an exported module symbol, so not inlinable into the
+        // erased thunk). Together those were the residual regression left after the
+        // stitch map itself was narrowed. Reuses the SAME per-part type dispatch as
+        // the general path, so the two cannot disagree about what column 0 holds.
+        // Instantiated only when owner_key_column_count_ == 1 — the caller
+        // (make_relation_descriptor) picks between the two at compile time, so a
+        // composite key can never reach this.
+        static auto extract_q2_owner_pk_word(typename ConnType::Statement* stmt) noexcept -> std::uint64_t
+            requires(Derived::owner_key_column_count_ == 1)
+        {
+            return extract_pk_word_at<Base::primary_key_members_[0], 0>(stmt);
+        }
+
       private:
         template <std::size_t... Is>
         static void extract_q2_owner_pk_impl(
@@ -655,6 +683,43 @@ export namespace storm::orm::statements {
                 key.append_string(ColumnExtractor::read_text_view(stmt, col));
             } else {
                 key.append_int64(ColumnExtractor::extract_int_like<std::int64_t>(stmt, col));
+            }
+        }
+
+        // The key WORD one PK part contributes — the single source of truth for
+        // "what does column ColIdx contribute to the stitch key", shared by the
+        // StitchKey path (via append_dispatched_part, whose two appenders write
+        // exactly this) and the single-PK word fast path. Keeping the type dispatch
+        // in one place is what guarantees the two extractors agree; a text part
+        // contributes its hash on both sides, an integral part its int64 value.
+        template <std::meta::info Member, int ColIdx>
+        static auto extract_pk_word_at(typename ConnType::Statement* stmt) noexcept -> std::uint64_t {
+            if constexpr (meta::is_fk_field(Member)) {
+                using FKType         = std::remove_cvref_t<typename[:std::meta::type_of(Member):]>;
+                using InnerFK        = utilities::optional_inner_type_t<FKType>;
+                constexpr auto fk_pk = Base::template find_fk_primary_key<FKType>();
+                using PartType       = std::remove_cvref_t<decltype(std::declval<InnerFK>().[:fk_pk:])>;
+                return dispatched_pk_word<PartType>(stmt, ColIdx);
+            } else {
+                using PartType = std::remove_cvref_t<typename[:std::meta::type_of(Member):]>;
+                return dispatched_pk_word<PartType>(stmt, ColIdx);
+            }
+        }
+
+        // The arms here MUST match append_dispatched_part's exactly — a single-column
+        // PK takes this path while the object side builds its key through
+        // append_string/append_int64, so any type routed differently by the two keys
+        // the map on a value the other never produces. storm::UUID (#507) is the case
+        // that makes this load-bearing rather than theoretical: a UUID PK is always
+        // single-column, so it always reaches THIS function, and it is stored as
+        // TEXT/UUID — reading it as an integer would key every owner on 0.
+        template <typename PartType>
+        static auto dispatched_pk_word(typename ConnType::Statement* stmt, int col) noexcept -> std::uint64_t {
+            if constexpr (std::same_as<PartType, std::string> || std::same_as<PartType, std::string_view> ||
+                          std::same_as<PartType, storm::orm::utilities::UUID>) {
+                return std::hash<std::string_view>{}(ColumnExtractor::read_text_view(stmt, col));
+            } else {
+                return static_cast<std::uint64_t>(ColumnExtractor::extract_int_like<std::int64_t>(stmt, col));
             }
         }
     };
@@ -1791,6 +1856,44 @@ export namespace storm::orm::statements {
         }
     };
 
+    // Whether JS's owner key is a single column, and so takes the bare-word stitch
+    // fast path (#504 perf) rather than a StitchKey. Named once here because both
+    // descriptor fields below branch on it and SelectStatement re-derives the same
+    // condition; they must never disagree about which extractor is populated.
+    template <typename JS> consteval auto narrow_owner_key() -> bool {
+        return JS::owner_key_column_count_ == 1;
+    }
+
+    // The word extractor for a single-column owner key, or nullptr for a composite
+    // one. The if constexpr is load-bearing: JS::extract_q2_owner_pk_word is
+    // constrained on a one-column key, so naming it for a composite JS would be a
+    // hard error rather than a quietly-unused branch.
+    template <storm::db::DatabaseConnection ConnType, typename JS>
+    [[nodiscard]] consteval auto make_owner_key_word_fn() -> auto (*)(ErasedStatementPtr) -> std::uint64_t {
+        if constexpr (narrow_owner_key<JS>()) {
+            return +[](ErasedStatementPtr stmt) -> std::uint64_t {
+                return JS::extract_q2_owner_pk_word(static_cast<typename ConnType::Statement*>(stmt));
+            };
+        } else {
+            return nullptr;
+        }
+    }
+
+    // The StitchKey extractor for a composite owner key, or nullptr when the word
+    // fast path above is taken. Leaving the unused one null rather than populating
+    // both keeps "exactly one is set" an invariant the stitch loop can assert on.
+    template <storm::db::DatabaseConnection ConnType, typename JS>
+    [[nodiscard]] consteval auto make_owner_key_fn() -> auto (*)(ErasedStatementPtr)
+            -> storm::orm::utilities::StitchKey {
+        if constexpr (narrow_owner_key<JS>()) {
+            return nullptr;
+        } else {
+            return +[](ErasedStatementPtr stmt) -> storm::orm::utilities::StitchKey {
+                return JS::extract_q2_owner_pk(static_cast<typename ConnType::Statement*>(stmt));
+            };
+        }
+    }
+
     // Build the M2MRelation descriptor (Q2 builder + stitch fns) from any two-query
     // join statement JS exposing build_q2_sql / extract_q2_owner_pk / append_related_q2
     // / container_empty. Shared by the m2m (#392) and reverse-FK (#398) factories.
@@ -1803,10 +1906,12 @@ export namespace storm::orm::statements {
                                        const std::optional<int>&               offset) -> std::string {
                     return JS::build_q2_sql(where_expr, order_by, limit, offset);
                 },
-                .extract_q2_owner_pk_fn = +[](ErasedStatementPtr stmt) -> storm::orm::utilities::StitchKey {
-                    return JS::extract_q2_owner_pk(static_cast<typename ConnType::Statement*>(stmt));
-                },
-                .append_related_q2_fn = +[](ErasedStatementPtr stmt, ErasedObjectPtr obj) -> void {
+                // Exactly one of the two owner-key extractors is populated, by PK width
+                // (#504 perf). SelectStatement<T> re-derives the same condition from
+                // Base::primary_key_column_count_, so it always reads the one that is set.
+                .extract_q2_owner_pk_fn      = make_owner_key_fn<ConnType, JS>(),
+                .extract_q2_owner_pk_word_fn = make_owner_key_word_fn<ConnType, JS>(),
+                .append_related_q2_fn        = +[](ErasedStatementPtr stmt, ErasedObjectPtr obj) -> void {
                     JS::append_related_q2(static_cast<typename ConnType::Statement*>(stmt), *static_cast<T*>(obj));
                 },
                 .container_empty_fn =

@@ -724,6 +724,23 @@ export namespace storm::orm::utilities {
             return static_cast<std::size_t>(h);
         }
 
+        // The single word of a ONE-part key (#504 perf). A single-column PK is the
+        // overwhelmingly common shape, and for it this whole class is a 33-byte
+        // wrapper around one std::uint64_t: the map can be keyed on that word
+        // directly, recovering libc++'s identity std::hash<integral> and a
+        // one-instruction inlined operator== in place of hash<StitchKey>'s FNV loop
+        // and this class's out-of-line word compare. SelectStatement narrows to this
+        // when Base::primary_key_column_count_ == 1; composite models keep the full
+        // key. Only meaningful for len_ == sizeof(std::uint64_t) — asserted, since a
+        // composite key read through here would silently stitch on its first part
+        // alone (a real mis-stitch, not just a collision).
+        [[nodiscard]] auto first_word() const noexcept -> std::uint64_t {
+            assert(len_ == sizeof(std::uint64_t) && "StitchKey::first_word on a non-single-part key");
+            std::uint64_t word = 0;
+            std::memcpy(&word, bytes_.data(), sizeof(word));
+            return word;
+        }
+
       private:
         void append_bytes(const void* src, std::size_t n) noexcept {
             assert(len_ + n <= CAPACITY && "StitchKey: append exceeds fixed CAPACITY");
