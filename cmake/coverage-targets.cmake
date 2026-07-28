@@ -14,12 +14,30 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
       "${CMAKE_BINARY_DIR}/batch_*.profraw ${CMAKE_BINARY_DIR}/mock.profraw ${CMAKE_BINARY_DIR}/pg_mock.profraw"
   )
 
+  # The coverage run needs a REAL PostgreSQL: three constexpr
+  # transaction-nesting methods on the PG Connection (postgresql_connection.cppm
+  # in_transaction / enter_transaction / leave_transaction) plus part of
+  # pool.cppm are only instantiated by a live connection — tests/mock_libpq does
+  # not reach them. Without a server those lines are uncovered and the gate
+  # fails at ~99.8-99.9%.
+  #
+  # This used to hardcode the socket path, which silently OVERRODE any caller
+  # value — so the gate passed only on a machine that happened to run PG at
+  # /var/run/postgresql, and failed for every contributor and for CI. That is
+  # the environment-dependence #528 exists to remove. Now the hardcoded value is
+  # a DEFAULT: an already-set STORM_PG_CONNSTR wins, which is how the CI
+  # coverage job points these tests at its postgres service container. Local
+  # behavior is unchanged when the variable is unset.
+  #
+  # The default is applied inside coverage-run-batched.sh, NOT here: a
+  # `$ENV{...}` read in this file would be evaluated at CONFIGURE time and baked
+  # into build.ninja, so a later STORM_PG_CONNSTR change would silently not take
+  # effect until the preset was reconfigured. Resolving it in the script keeps
+  # it a build-time decision.
   add_custom_target(
     coverage-run-main
-    COMMAND
-      ${CMAKE_COMMAND} -E env
-      "STORM_PG_CONNSTR=host=/var/run/postgresql dbname=storm_db user=storm_db"
-      ${CMAKE_SOURCE_DIR}/scripts/coverage-run-batched.sh ${CMAKE_BINARY_DIR}
+    COMMAND ${CMAKE_SOURCE_DIR}/scripts/coverage-run-batched.sh
+            ${CMAKE_BINARY_DIR}
     DEPENDS storm_tests
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     COMMENT "Running main tests with coverage instrumentation (batched)"
@@ -128,6 +146,11 @@ if(ENABLE_COVERAGE AND ENABLE_TESTS)
     COMMENT "Filtering coverage with LCOV_EXCL markers"
     VERBATIM)
 
+  # NOTE: the `coverage` CI job (.github/workflows/ci.yml) invokes genhtml
+  # directly with these same flags instead of building this target, because this
+  # target DEPENDS on `coverage` and would re-run the whole instrumented test
+  # suite a second time just to render a report. Keep the flag list below in
+  # sync with that step if it changes.
   add_custom_target(
     coverage-html
     COMMAND

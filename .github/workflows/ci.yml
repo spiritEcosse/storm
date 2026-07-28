@@ -172,3 +172,203 @@ jobs:
       # - name: clang-tidy full sweep
       #   if: matrix.preset == 'ninja-release' && matrix.postgres == 17
       #   run: ./scripts/run_clang_tidy.sh --all
+
+  # Reproduces commit.sh step 5 (the 100%-line-coverage gate) in CI, so the gate
+  # stops being self-reported from one developer's machine. Deliberately NOT a
+  # matrix entry on `test`: it needs no postgres service, runs a different build
+  # target, and would otherwise be duplicated across the whole PG matrix for no
+  # extra signal.
+  #
+  # What the 100% actually means: 100% of the FILTERED set — 24 files / 8613
+  # lines, after `LCOV_EXCL` markers are removed from the denominator (56 markers
+  # across 11 files in src/). It is NOT 100% of every line in the tree. Function
+  # coverage is ~81% and branch ~92%, which is why the parse below anchors on the
+  # `lines.......` row specifically.
+  #
+  # Preset is `ninja-debug-coverage`, and this job attaches a postgres service.
+  # #528 originally proposed running coverage WITHOUT one, on the premise that
+  # the local 100% did not depend on a live server. That premise was wrong: the
+  # local number was measured on a machine running PG at /var/run/postgresql,
+  # which is exactly the socket coverage-run-batched.sh defaults to, so PG tests
+  # were quietly running and their lines were quietly counted. With PG genuinely
+  # absent the same tree measures ~99.8-99.9% (functions drop 80.6% -> 48.7%),
+  # because the PG Connection's constexpr transaction-nesting methods and part of
+  # pool.cppm are instantiated only by a live connection.
+  #
+  # So the choice was never "dependency vs no dependency" — the dependency was
+  # already there, just implicit and undeclared. Attaching the service makes it
+  # explicit and makes local and CI measure the same thing, which is the
+  # comparability the issue was built on. It also means a contributor without a
+  # local PG can no longer be blocked by a gate they cannot reproduce.
+  #
+  # Runs per-PR rather than nightly. Measured cold (rm -rf build, empty ccache,
+  # CPM sources cached as CI caches them): configure 1s + build 73s + coverage
+  # 19s = 93s on 32 cores. The build phase is the parallel part and dominates, so
+  # on a 4-core runner expect roughly 6-9 min wall clock — comparable to the
+  # existing matrix jobs and well short of needing a nightly schedule. Revisit if
+  # it starts gating PR turnaround.
+  coverage:
+    name: coverage (100% lines, filtered)
+    runs-on: ubuntu-24.04
+    container:
+      # Keep in sync with the `test` job's pin — digest-guard asserts they agree.
+      # lcov/genhtml ship in the image already (docker/ci/Dockerfile), so this
+      # job needs no image change.
+      image: ghcr.io/spiritecosse/storm-ci@sha256:0da07cc20e580c8a7310dca6974bc1d09406c3d367faa099fe26e03b9a449bee
+
+    # A real PostgreSQL is REQUIRED for the 100% gate, not an optimization. The
+    # PG Connection's constexpr transaction-nesting methods
+    # (postgresql_connection.cppm:171-181) and part of pool.cppm are instantiated
+    # only by a live connection — tests/mock_libpq does not reach them — so
+    # without a server this job measures ~99.8-99.9% and fails. PG 17 matches the
+    # `test` job's primary entry; the coverage number does not vary by PG
+    # version, so there is no reason to sweep the matrix here.
+    services:
+      postgres:
+        image: "postgres:17"
+        env:
+          POSTGRES_DB: storm_db
+          POSTGRES_USER: storm_db
+          POSTGRES_PASSWORD: storm_db
+        options: >-
+          --health-cmd "pg_isready -U storm_db"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Link clang-p2996 next to source dir
+        run: ln -sfn /opt/clang-p2996 "$(dirname "$GITHUB_WORKSPACE")/clang-p2996"
+
+      - name: Create libc++ modules symlink for import std;
+        # Same rationale as in the `test` job above (issue #326).
+        run: |
+          clang_root="$(dirname "$GITHUB_WORKSPACE")/clang-p2996"
+          share_dir="$clang_root/build/share/libc++"
+          link="$share_dir/v1"
+          target="$clang_root/build/modules/c++/v1"
+          if [ -d "$target" ] && [ ! -e "$link" ]; then
+            mkdir -p "$share_dir"
+            ln -sfn "$target" "$link"
+            echo "Created symlink: $link -> $target"
+          else
+            echo "Symlink already exists or target missing — skipping"
+          fi
+
+      - name: Cache CPM packages
+        uses: actions/cache@v4
+        with:
+          path: .cache/CPM
+          key: cpm-ninja-debug-${{ hashFiles('cmake/cpm.cmake', 'cmake/tests.cmake', 'cmake/bench.cmake') }}
+          restore-keys: |
+            cpm-ninja-debug-
+            cpm-
+
+      - name: Configure
+        run: cmake --preset ninja-debug
+
+      - name: Build
+        # Build the test binaries through the retry wrapper first, so a
+        # clang-scan-deps segfault (the known C++26 module flake) is retried here
+        # rather than failing the coverage step and reading as a coverage drop.
+        run: ./scripts/build-with-retry.sh ninja-debug
+
+      - name: Run coverage and enforce 100% line threshold
+        env:
+          # Points coverage-run-batched.sh at the service container above,
+          # overriding its local-socket default. Same value the `test` job uses.
+          # Without this the PG-only lines are uncovered and the gate fails.
+          STORM_PG_CONNSTR: "host=postgres port=5432 dbname=storm_db user=storm_db password=storm_db"
+        run: |
+          set -o pipefail
+          # Drop stale profraw/profdata — same as commit.sh, prevents a partial
+          # merge from reporting phantom uncovered lines.
+          cmake --build --preset ninja-debug-coverage --target coverage-clean \
+            > /dev/null 2>&1 || true
+
+          # Summary lands under build/ (already gitignored) rather than the
+          # workspace root, so the job leaves no stray file in the tree.
+          summary=build/debug/coverage-summary.txt
+          mkdir -p "$(dirname "$summary")"
+          if ! cmake --build --preset ninja-debug-coverage --target coverage \
+                 2>&1 | tee "$summary"; then
+            echo "::error::Coverage build/analysis failed."
+            exit 1
+          fi
+
+          # Parse the LINE row specifically. lcov --summary prints
+          # "lines.......: 100.0% (8613 of 8613 lines)" alongside functions/branches
+          # rows; anchoring on the wrong one would gate against ~81% or ~92% and
+          # look like a broken job. Same expression commit.sh:399 uses.
+          line_cov=$(grep 'lines\.\.\.\.\.\.\.' "$summary" \
+                     | tail -1 | grep -oP '[0-9.]+(?=%)')
+
+          # An unparseable summary must fail loudly, not silently pass — a missing
+          # number here would otherwise be indistinguishable from a clean run.
+          if [ -z "$line_cov" ]; then
+            echo "::error::Could not parse line coverage from the lcov summary."
+            tail -20 "$summary"
+            exit 1
+          fi
+
+          echo "Line coverage: ${line_cov}% (filtered set)"
+          if [ "$line_cov" != "100.0" ]; then
+            echo "::error::Line coverage ${line_cov}% is below the required 100.0%."
+            echo "Uncovered lines (file:line):"
+            # Write to a file first, then truncate for display. Piping awk
+            # straight into `head -100` would SIGPIPE awk once the limit is hit;
+            # under `set -e -o pipefail` that aborts this block at exit 141,
+            # losing both the remaining output and the `exit 1` below — i.e. the
+            # diagnostics vanish exactly when the drop is biggest.
+            #
+            # substr($0, 4) rather than `-F:` + $2: an lcov SF: path may itself
+            # contain a colon, which field-splitting would silently truncate.
+            # `/^DA:/` is anchored, so branch records (BRDA:...) don't match.
+            uncovered=build/debug/coverage/uncovered.txt
+            awk '
+              /^SF:/  { file = substr($0, 4); next }
+              /^DA:/  { split(substr($0, 4), d, ","); if (d[2] == 0) print "  " file ":" d[1] }
+            ' build/debug/coverage/coverage-filtered.lcov > "$uncovered"
+            head -100 "$uncovered"
+            total=$(wc -l < "$uncovered")
+            if [ "$total" -gt 100 ]; then
+              echo "  ... and $((total - 100)) more (see the coverage-html artifact)"
+            fi
+            exit 1
+          fi
+          echo "OK: 100.0% line coverage on the filtered set."
+
+      - name: Generate HTML report
+        # Runs even on a failed gate — the report is most useful precisely when
+        # coverage dropped.
+        #
+        # Calls genhtml directly rather than the `coverage-html` target: that
+        # target DEPENDS on `coverage`, and these are always-out-of-date custom
+        # targets, so building it would re-run the entire instrumented test suite
+        # a second time. The tracefile it consumes was already produced by the
+        # step above, so this just renders it.
+        if: always()
+        run: |
+          lcov_file=build/debug/coverage/coverage-filtered.lcov
+          if [ ! -f "$lcov_file" ]; then
+            echo "No tracefile at $lcov_file — coverage run did not get far enough."
+            exit 0
+          fi
+          genhtml --rc branch_coverage=1 \
+            --rc c_file_extensions=c,h,i,C,H,I,icc,cpp,cc,cxx,hh,hpp,hxx,cppm \
+            --ignore-errors deprecated,range,inconsistent \
+            --legend --title "Storm ORM Coverage (filtered)" \
+            --output-directory build/debug/coverage/html-filtered \
+            "$lcov_file"
+
+      - name: Upload HTML coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: build/debug/coverage/html-filtered/
+          retention-days: 14
+          if-no-files-found: warn

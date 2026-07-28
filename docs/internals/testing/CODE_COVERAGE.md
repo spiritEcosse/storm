@@ -60,13 +60,76 @@ open build/debug/coverage/html-filtered/index.html      # macOS
 
 ### CI Pipeline
 
-```bash
-# Export LCOV format for coverage services (Codecov, Coveralls, etc.)
-cmake --build --preset ninja-debug --target coverage-lcov
+The `coverage` job in `.github/workflows/ci.yml` runs on every PR and push to
+`develop`. It builds `ninja-debug`, runs the `coverage` target, and **fails the
+job below 100% line coverage** — the same gate `commit.sh` applies locally, so
+the threshold is no longer self-reported from one developer's machine (#528).
 
-# The filtered lcov file is at:
+The job parses the **line** row of the lcov summary specifically. Function
+coverage (~81%) and branch coverage (~92%) are not gated; anchoring on the wrong
+row would fail immediately and look like a broken job rather than a wrong
+threshold.
+
+On both pass and failure it uploads the HTML report as a `coverage-html`
+workflow artifact (14-day retention). On failure it also prints the uncovered
+file/line list directly in the job log.
+
+No external coverage service is involved. Publishing to SonarCloud requires
+switching that project from Automatic Analysis to a CI-based scan — deliberately
+deferred, tracked at #457.
+
+```bash
+# The filtered lcov file the job parses:
 # build/debug/coverage/coverage-filtered.lcov
 ```
+
+### A running PostgreSQL is required
+
+**The 100% gate cannot be met without a live PostgreSQL server** — locally or in
+CI. This is not an optimization or a nice-to-have.
+
+Three `constexpr` transaction-nesting methods on the PG `Connection`
+(`postgresql_connection.cppm` — `in_transaction`, `enter_transaction`,
+`leave_transaction`) and part of `pool.cppm` are instantiated only by a live
+connection. `tests/mock_libpq/` does not reach them. With PG absent the tree
+measures **~99.8-99.9%**, and function coverage drops from **80.6% to 48.7%** —
+that second number is the quickest way to recognize this situation.
+
+`scripts/coverage-run-batched.sh` defaults `STORM_PG_CONNSTR` to the local unix
+socket (`host=/var/run/postgresql`); an already-exported value wins. That is how
+the CI coverage job points the tests at its `postgres` service container.
+
+**Which entry point you use matters.** The `ninja-debug-coverage` *build preset*
+nulls `STORM_PG_CONNSTR`, so the documented local command —
+`cmake --build --preset ninja-debug-coverage --target coverage` — always gets the
+script's default, whatever your shell exports. That is deliberate: it keeps the
+local number reproducible instead of varying with each developer's environment.
+To point local coverage somewhere else (a Docker PG on another port, say),
+invoke the script directly:
+
+```bash
+STORM_PG_CONNSTR="host=localhost port=5433 dbname=storm_db user=storm_db" \
+  ./scripts/coverage-run-batched.sh build/debug
+```
+
+In CI the preset's null does *not* strip the step-level value — it only clears an
+inherited shell variable at preset-expansion time — which is why the service
+container is reachable.
+
+Note that `STORM_PG_CONNSTR=""` is **not** a way to disable PostgreSQL: libpq
+reads an empty string as "use the `PG*` environment defaults", so it connects
+anyway on a machine with `PGHOST`/`PGUSER` exported. To genuinely force
+SQLite-only, clear those too (`env -u STORM_PG_CONNSTR -u PGHOST -u PGUSER …`) —
+which fails the 100% gate by design.
+
+This default previously lived in `cmake/coverage-targets.cmake` as an
+unconditional override, which made the gate silently environment-dependent: it
+passed only on a machine that happened to run PG at that socket, and failed for
+every contributor and for CI without it. That is precisely the self-reported gate
+#528 exists to eliminate.
+
+**If coverage fails just under 100% and you expected 100%, check that PostgreSQL is
+running before looking at your code.**
 
 ## Excluding Code from Coverage
 
@@ -113,7 +176,11 @@ build/debug/coverage/
 
 ### Line Coverage
 
-- **100% is required** — enforced by `commit.sh` pre-commit hook
+- **100% is required** — enforced by the `commit.sh` pre-commit hook locally and
+  by the `coverage` CI job on every PR (#528)
+- The figure is 100% of the **filtered** set — 24 files / 8613 lines, after
+  `LCOV_EXCL` markers are removed from the denominator (56 markers across 11
+  files in `src/`). It is not 100% of every line in the tree
 - Compile-time only code (`consteval`) must be excluded with `LCOV_EXCL_*`
 
 ### Uncovered Code Categories
