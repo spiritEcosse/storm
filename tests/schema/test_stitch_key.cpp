@@ -61,3 +61,20 @@ TEST(StitchKeyTest, StringPartDifferentValuesHashDifferently) {
     key_b.append_string("bob-warehouse");
     EXPECT_NE(key_a, key_b);
 }
+
+// The length gate in operator== is load-bearing, not defensive: without it the
+// word loop would return true as soon as it exhausted the SHORTER key, so a
+// 1-part key would compare equal to a 2-part key sharing its first part — and a
+// composite owner would stitch onto a single-PK one. No other test compares keys
+// of different arity, so this branch is only covered here.
+TEST(StitchKeyTest, ShorterKeyIsNotEqualToLongerKeySharingItsPrefix) {
+    storm::orm::utilities::StitchKey one_part;
+    one_part.append_int64(42);
+
+    storm::orm::utilities::StitchKey two_parts;
+    two_parts.append_int64(42); // identical first word
+    two_parts.append_int64(7);
+
+    EXPECT_NE(one_part, two_parts);
+    EXPECT_NE(two_parts, one_part); // both argument orders exercise the gate
+}

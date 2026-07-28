@@ -666,17 +666,38 @@ export namespace storm::orm::utilities {
             append_bytes(&v, sizeof(v));
         }
 
+        // Both loops below read whole 8-byte words, so every appender must write
+        // exactly 8. append_int64 does by construction; append_string does only
+        // while size_t is 64-bit, so assert it rather than leave it to a comment.
+        static_assert(sizeof(std::size_t) == sizeof(std::uint64_t), "StitchKey assumes a 64-bit std::size_t");
+
         void append_string(std::string_view v) noexcept {
             const std::size_t h = std::hash<std::string_view>{}(v);
             append_bytes(&h, sizeof(h));
         }
 
-        // memcmp, NOT std::ranges::equal: perf showed the latter lowering to a
-        // byte-at-a-time loop (movzbl/cmp/jne per byte, 85% of its samples in the
-        // back-edge) worth 2.2% of the m2m eager-load profile, where the bare
-        // std::int64_t key this replaced compared in one inlined instruction.
+        // Word-wise compare, inline. This runs on EVERY hash-map probe of the m2m
+        // stitch, where the bare std::int64_t key it replaced compared in one
+        // inlined instruction, so the two obvious spellings both cost real time:
+        // std::ranges::equal over a span lowers to a byte-at-a-time loop
+        // (movzbl/cmp/jne per byte), and std::memcmp lowers to a PLT call into
+        // libc's bcmp — perf attributed 11.7% of the fanout200 profile to that
+        // call alone. Comparing whole words keeps it branch-light and callable-free.
+        // Safe because len_ is always a multiple of 8 (see hash()).
         friend auto operator==(const StitchKey& lhs, const StitchKey& rhs) noexcept -> bool {
-            return lhs.len_ == rhs.len_ && std::memcmp(lhs.bytes_.data(), rhs.bytes_.data(), lhs.len_) == 0;
+            if (lhs.len_ != rhs.len_) {
+                return false;
+            }
+            for (std::size_t off = 0; off + sizeof(std::uint64_t) <= lhs.len_; off += sizeof(std::uint64_t)) {
+                std::uint64_t lhs_word = 0;
+                std::uint64_t rhs_word = 0;
+                std::memcpy(&lhs_word, lhs.bytes_.data() + off, sizeof(lhs_word));
+                std::memcpy(&rhs_word, rhs.bytes_.data() + off, sizeof(rhs_word));
+                if (lhs_word != rhs_word) {
+                    return false;
+                }
+            }
+            return true;
         }
 
         // Word-wise FNV-1a. NOT std::hash<string_view>: libc++ routes that to

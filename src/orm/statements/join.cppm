@@ -190,35 +190,63 @@ export namespace storm::orm::statements {
         rel.[:Member:] = std::move(inner);
     }
 
-    // Extract one related/owner member at the ACTUAL SQL column position col_idx
-    // (threaded by reference, not derived from the member index — a composite-FK
-    // member, #504 Task 8, spans more than one SQL column, so member index and
-    // column position diverge from that member onward, exactly like
-    // BaseStatement::extract_column_fast for a plain SELECT). Regular columns by
-    // value, FK columns as pk-only objects (mirrors plain-SELECT per-member
-    // semantics). col_idx is advanced by exactly the columns this member consumed.
-    template <typename RelatedBase, typename Related, std::size_t I, typename Statement>
-    auto extract_relation_member(Statement* stmt, Related& rel, int& col_idx) noexcept -> void {
+    // How many SQL columns member I of RelatedBase occupies: 1 for a regular
+    // column, N for an FK whose target has an N-part key (#504 Task 8).
+    template <typename RelatedBase, typename Related, std::size_t I> consteval auto relation_member_width() -> int {
         constexpr auto member = RelatedBase::all_members_[I];
-        using FieldType       = std::remove_cvref_t<decltype(rel.[:member:])>;
         if constexpr (meta::is_fk_field(member)) {
-            constexpr std::size_t parts = RelatedBase::template fk_primary_key_count<FieldType>();
-            extract_relation_fk_column<RelatedBase, Related, FieldType, member>(stmt, rel, col_idx);
-            col_idx += static_cast<int>(parts);
+            using FieldType = std::remove_cvref_t<decltype(std::declval<Related&>().[:member:])>;
+            return static_cast<int>(RelatedBase::template fk_primary_key_count<FieldType>());
         } else {
-            rel.[:member:] = ColumnExtractor::template extract_column_value<FieldType>(stmt, col_idx);
-            ++col_idx;
+            return 1;
         }
     }
 
-    // Extract a full related/owner entity from columns starting at ColOffset,
-    // threading the actual SQL column position through col_idx (#504 Task 8:
-    // diverges from the member index once a composite-FK member has been consumed).
+    // SQL column position of member I: ColOffset plus the widths of members
+    // 0..I-1. A composite-FK member makes position diverge from member index from
+    // that member onward, but every width is a compile-time constant, so the
+    // position is one too — it never needs a runtime accumulator.
+    //
+    // This is load-bearing, not tidiness. Threading a runtime `int& col_idx`
+    // through this fold (the shape #504 Task 8 originally used) turned
+    // extract_relation_member from a fully-inlined constant-offset read into an
+    // out-of-line call taking a reference, once per column per Q2 row: perf diff
+    // against the merge-base attributed +7.8% relative to exactly that symbol on
+    // Storm/M2M/join_select/fanout200.
+    template <typename RelatedBase, typename Related, int ColOffset, std::size_t... Is>
+    consteval auto relation_column_offset_impl(std::index_sequence<Is...> /*unused*/) -> int {
+        return ColOffset + (relation_member_width<RelatedBase, Related, Is>() + ... + 0);
+    }
+
+    template <typename RelatedBase, typename Related, int ColOffset, std::size_t I>
+    consteval auto relation_column_offset() -> int {
+        return relation_column_offset_impl<RelatedBase, Related, ColOffset>(std::make_index_sequence<I>{});
+    }
+
+    // Extract one related/owner member from its (compile-time) SQL column
+    // position. Regular columns by value, FK columns as pk-only objects — a
+    // composite-FK member consumes a BLOCK of columns starting there (mirrors
+    // plain-SELECT per-member semantics).
+    template <typename RelatedBase, typename Related, int ColOffset, std::size_t I, typename Statement>
+    auto extract_relation_member(Statement* stmt, Related& rel) noexcept -> void {
+        constexpr auto member = RelatedBase::all_members_[I];
+        constexpr int  col    = relation_column_offset<RelatedBase, Related, ColOffset, I>();
+        using FieldType       = std::remove_cvref_t<decltype(rel.[:member:])>;
+        if constexpr (meta::is_fk_field(member)) {
+            extract_relation_fk_column<RelatedBase, Related, FieldType, member>(stmt, rel, col);
+        } else {
+            rel.[:member:] = ColumnExtractor::template extract_column_value<FieldType>(stmt, col);
+        }
+    }
+
+    // Extract a full related/owner entity from columns starting at ColOffset.
+    // Each member's column position is computed at compile time (see
+    // relation_column_offset), so this stays a flat sequence of constant-offset
+    // reads even when a composite-FK member widens the row.
     template <typename RelatedBase, typename Related, int ColOffset, typename Statement, std::size_t... Is>
     auto extract_relation_entity(Statement* stmt, Related& rel, std::index_sequence<Is...> /*unused*/) noexcept
             -> void {
-        int col_idx = ColOffset;
-        ((extract_relation_member<RelatedBase, Related, Is>(stmt, rel, col_idx)), ...);
+        ((extract_relation_member<RelatedBase, Related, ColOffset, Is>(stmt, rel)), ...);
     }
 
     // Q1 — the base entity subquery: SELECT <base cols> FROM <Base> [clauses]. Its
