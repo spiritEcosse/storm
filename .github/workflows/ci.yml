@@ -185,24 +185,21 @@ jobs:
   # coverage is ~81% and branch ~92%, which is why the parse below anchors on the
   # `lines.......` row specifically.
   #
-  # Preset is `ninja-debug-coverage` — matching commit.sh, so the local and CI
-  # numbers are comparable. Note the mechanism: the preset nulls
-  # STORM_PG_CONNSTR, but cmake/coverage-targets.cmake's `coverage-run-main`
-  # then re-sets it to a LOCAL UNIX SOCKET (host=/var/run/postgresql). No such
-  # socket exists in this container, so PQconnectdb fails and the PG-backed tests
-  # skip via backend_available() — they skip on an unreachable server, not on an
-  # unset variable. Consequence: PG-only branches in shared code (the
-  # adapt_order_by_for_pg NULLS FIRST/LAST block in base.cppm) are excluded from
-  # coverage. They ARE tested — the `test` matrix above runs them against a real
-  # postgres on PG 14/15/16/17 — just not counted here. Running coverage against
-  # a real PG was considered and rejected in #528: ~0.2% of lines, all already
-  # tested, at the cost of a flaky service dependency on the coverage gate.
-  # PG backend files still reach 100% via the tests/mock_libpq/ LD_PRELOAD mock.
+  # Preset is `ninja-debug-coverage`, and this job attaches a postgres service.
+  # #528 originally proposed running coverage WITHOUT one, on the premise that
+  # the local 100% did not depend on a live server. That premise was wrong: the
+  # local number was measured on a machine running PG at /var/run/postgresql,
+  # which is exactly the socket coverage-run-batched.sh defaults to, so PG tests
+  # were quietly running and their lines were quietly counted. With PG genuinely
+  # absent the same tree measures ~99.8-99.9% (functions drop 80.6% -> 48.7%),
+  # because the PG Connection's constexpr transaction-nesting methods and part of
+  # pool.cppm are instantiated only by a live connection.
   #
-  # If a PG service is ever added here, adding it is NOT sufficient on its own:
-  # coverage-run-main's hardcoded host=/var/run/postgresql would still miss a
-  # service listening at host=postgres, so the numbers would not move and the
-  # reason would be non-obvious. That connstr has to change too.
+  # So the choice was never "dependency vs no dependency" — the dependency was
+  # already there, just implicit and undeclared. Attaching the service makes it
+  # explicit and makes local and CI measure the same thing, which is the
+  # comparability the issue was built on. It also means a contributor without a
+  # local PG can no longer be blocked by a gate they cannot reproduce.
   #
   # Runs per-PR rather than nightly. Measured cold (rm -rf build, empty ccache,
   # CPM sources cached as CI caches them): configure 1s + build 73s + coverage
@@ -218,6 +215,26 @@ jobs:
       # lcov/genhtml ship in the image already (docker/ci/Dockerfile), so this
       # job needs no image change.
       image: ghcr.io/spiritecosse/storm-ci@sha256:0da07cc20e580c8a7310dca6974bc1d09406c3d367faa099fe26e03b9a449bee
+
+    # A real PostgreSQL is REQUIRED for the 100% gate, not an optimization. The
+    # PG Connection's constexpr transaction-nesting methods
+    # (postgresql_connection.cppm:171-181) and part of pool.cppm are instantiated
+    # only by a live connection — tests/mock_libpq does not reach them — so
+    # without a server this job measures ~99.8-99.9% and fails. PG 17 matches the
+    # `test` job's primary entry; the coverage number does not vary by PG
+    # version, so there is no reason to sweep the matrix here.
+    services:
+      postgres:
+        image: "postgres:17"
+        env:
+          POSTGRES_DB: storm_db
+          POSTGRES_USER: storm_db
+          POSTGRES_PASSWORD: storm_db
+        options: >-
+          --health-cmd "pg_isready -U storm_db"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
 
     steps:
       - name: Checkout
@@ -260,6 +277,11 @@ jobs:
         run: ./scripts/build-with-retry.sh ninja-debug
 
       - name: Run coverage and enforce 100% line threshold
+        env:
+          # Points coverage-run-batched.sh at the service container above,
+          # overriding its local-socket default. Same value the `test` job uses.
+          # Without this the PG-only lines are uncovered and the gate fails.
+          STORM_PG_CONNSTR: "host=postgres port=5432 dbname=storm_db user=storm_db password=storm_db"
         run: |
           set -o pipefail
           # Drop stale profraw/profdata — same as commit.sh, prevents a partial

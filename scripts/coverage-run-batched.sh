@@ -27,6 +27,44 @@ set -e
 BUILD_DIR="${1:-.}"
 TEST_BIN="${BUILD_DIR}/tests/storm_tests"
 
+# The coverage gate requires a REAL PostgreSQL. Three constexpr transaction
+# methods on the PG Connection (postgresql_connection.cppm in_transaction /
+# enter_transaction / leave_transaction) plus part of pool.cppm are instantiated
+# only by a live connection — tests/mock_libpq never reaches them — so without a
+# server the run lands at ~99.8-99.9% and the 100% gate fails.
+#
+# Default to the local unix socket, but let an already-exported value win: that
+# is how the CI coverage job points these tests at its postgres service
+# container. This default previously lived in cmake/coverage-targets.cmake as an
+# unconditional override, which meant the gate passed only on a machine that
+# happened to run PG at this socket and failed for everyone else (#528).
+#
+# `${VAR+set}` tests DECLARATION, not emptiness: an explicitly-set value is
+# passed through untouched (including an empty one), and only a genuinely unset
+# variable gets the default.
+#
+# Note an empty value is NOT a way to disable PostgreSQL. libpq reads "" as "use
+# the PG* environment defaults", so PQconnectdb("") succeeds on a machine with
+# PGHOST/PGUSER exported (verified). backend_available() only rejects a NULL
+# pointer, so an empty string reaches libpq. To genuinely force SQLite-only,
+# clear the libpq defaults too:
+#   env -u STORM_PG_CONNSTR -u PGHOST -u PGUSER -u PGDATABASE ...
+# — which fails the 100% gate by design, since the PG-only lines go uncovered.
+if [[ -z "${STORM_PG_CONNSTR+set}" ]]; then
+    export STORM_PG_CONNSTR="host=/var/run/postgresql dbname=storm_db user=storm_db"
+fi
+
+# Fail-loud diagnostic: without a reachable server the PG suites SKIP silently
+# (test output goes to /dev/null below, and a skip is not a batch failure), so
+# the only symptom would be ~11 uncovered lines in files the contributor never
+# touched. Say so up front instead.
+if command -v pg_isready > /dev/null 2>&1 \
+   && ! pg_isready -d "$STORM_PG_CONNSTR" > /dev/null 2>&1; then
+    echo "  WARN: PostgreSQL unreachable at [$STORM_PG_CONNSTR]" >&2
+    echo "        PG tests will SKIP; the 100% line-coverage gate CANNOT be met" >&2
+    echo "        without a live server (expect ~99.8-99.9%, functions ~48.7%)." >&2
+fi
+
 if [[ ! -x "$TEST_BIN" ]]; then
     echo "ERROR: Test binary not found: $TEST_BIN" >&2
     exit 1

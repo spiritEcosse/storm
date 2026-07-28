@@ -83,25 +83,53 @@ deferred, tracked at #457.
 # build/debug/coverage/coverage-filtered.lcov
 ```
 
-**PG-only branches are not counted.** The job uses `ninja-debug-coverage`,
-matching `commit.sh` so local and CI numbers stay comparable. The mechanism is
-worth knowing: the preset nulls `STORM_PG_CONNSTR`, but the `coverage-run-main`
-target in `cmake/coverage-targets.cmake` re-sets it to a local unix socket
-(`host=/var/run/postgresql`). Neither CI nor a typical dev box without a running
-server has that socket, so `PQconnectdb` fails and PG-backed tests skip via
-`backend_available()` — they skip on an *unreachable server*, not on an unset
-variable.
+### A running PostgreSQL is required
 
-PostgreSQL-specific branches in shared code (`adapt_order_by_for_pg` in
-`base.cppm`) are therefore excluded from coverage — they *are* tested, by the
-`test` matrix against a real postgres on PG 14/15/16/17, just not counted here.
-The PG backend files themselves still reach 100% via the `tests/mock_libpq/`
-LD_PRELOAD mock.
+**The 100% gate cannot be met without a live PostgreSQL server** — locally or in
+CI. This is not an optimization or a nice-to-have.
 
-Consequence for anyone changing this: attaching a postgres service to the
-coverage job would not by itself change the numbers, because the hardcoded
-`host=/var/run/postgresql` would still miss a service listening at
-`host=postgres`. That connstr has to change too.
+Three `constexpr` transaction-nesting methods on the PG `Connection`
+(`postgresql_connection.cppm` — `in_transaction`, `enter_transaction`,
+`leave_transaction`) and part of `pool.cppm` are instantiated only by a live
+connection. `tests/mock_libpq/` does not reach them. With PG absent the tree
+measures **~99.8-99.9%**, and function coverage drops from **80.6% to 48.7%** —
+that second number is the quickest way to recognize this situation.
+
+`scripts/coverage-run-batched.sh` defaults `STORM_PG_CONNSTR` to the local unix
+socket (`host=/var/run/postgresql`); an already-exported value wins. That is how
+the CI coverage job points the tests at its `postgres` service container.
+
+**Which entry point you use matters.** The `ninja-debug-coverage` *build preset*
+nulls `STORM_PG_CONNSTR`, so the documented local command —
+`cmake --build --preset ninja-debug-coverage --target coverage` — always gets the
+script's default, whatever your shell exports. That is deliberate: it keeps the
+local number reproducible instead of varying with each developer's environment.
+To point local coverage somewhere else (a Docker PG on another port, say),
+invoke the script directly:
+
+```bash
+STORM_PG_CONNSTR="host=localhost port=5433 dbname=storm_db user=storm_db" \
+  ./scripts/coverage-run-batched.sh build/debug
+```
+
+In CI the preset's null does *not* strip the step-level value — it only clears an
+inherited shell variable at preset-expansion time — which is why the service
+container is reachable.
+
+Note that `STORM_PG_CONNSTR=""` is **not** a way to disable PostgreSQL: libpq
+reads an empty string as "use the `PG*` environment defaults", so it connects
+anyway on a machine with `PGHOST`/`PGUSER` exported. To genuinely force
+SQLite-only, clear those too (`env -u STORM_PG_CONNSTR -u PGHOST -u PGUSER …`) —
+which fails the 100% gate by design.
+
+This default previously lived in `cmake/coverage-targets.cmake` as an
+unconditional override, which made the gate silently environment-dependent: it
+passed only on a machine that happened to run PG at that socket, and failed for
+every contributor and for CI without it. That is precisely the self-reported gate
+#528 exists to eliminate.
+
+**If coverage fails just under 100% and you expected 100%, check that PostgreSQL is
+running before looking at your code.**
 
 ## Excluding Code from Coverage
 

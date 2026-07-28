@@ -261,9 +261,17 @@ runs `ninja-debug-coverage` on every PR and fails below **100% line coverage** �
 from one machine. It parses the **line** row specifically (functions ~81%, branches ~92% are not
 gated) and uploads the HTML report as a `coverage-html` artifact on pass and failure alike.
 The 100% is of the **filtered** set — 24 files / 8613 lines, `LCOV_EXCL` markers excluded from the
-denominator — not of every line in the tree. PG-only branches in shared code are tested by the `test`
-matrix but not counted here: the coverage runner points `STORM_PG_CONNSTR` at a local unix socket
-that no CI container has, so PG-backed tests skip on an unreachable server.
+denominator — not of every line in the tree.
+
+**⚠️ Coverage requires a running PostgreSQL** — the PG `Connection`'s `constexpr` transaction-nesting
+methods and part of `pool.cppm` are instantiated only by a live connection (the libpq mock does not
+reach them). Without a server the tree measures **~99.8-99.9%** and the gate fails; function coverage
+dropping from 80.6% to **48.7%** is the tell, and the run prints a `WARN: PostgreSQL unreachable`
+line. `scripts/coverage-run-batched.sh` defaults `STORM_PG_CONNSTR` to `host=/var/run/postgresql`;
+an exported value wins, which is how CI targets its `postgres` service container. Note the
+`ninja-debug-coverage` **build preset** nulls the variable, so the documented local command always
+uses the script's default — invoke the script directly to point elsewhere. If coverage fails just
+under 100%, check PG is up before suspecting your code.
 
 See [docs/internals/testing/CODE_COVERAGE.md](docs/internals/testing/CODE_COVERAGE.md) for details.
 

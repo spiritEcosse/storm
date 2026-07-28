@@ -105,3 +105,15 @@ These scripts have project-specific conventions — understand them before modif
 - Used by the `/sonarcloud-status` skill
 
 **`scripts/coverage-run-batched.sh`** — Batched coverage report generation
+- **Requires a running PostgreSQL** to reach 100%: the PG `Connection`'s `constexpr`
+  transaction methods and part of `pool.cppm` are instantiated only by a live connection
+  (the libpq mock does not reach them). Without one the tree measures ~99.8-99.9% and
+  function coverage drops 80.6% → 48.7%; the script prints a `WARN: PostgreSQL unreachable`
+  line so the failure is self-diagnosing.
+- Defaults `STORM_PG_CONNSTR` to `host=/var/run/postgresql`; an exported value wins — that
+  is how CI targets its `postgres` service container. But the `ninja-debug-coverage` **build
+  preset** nulls the variable, so `cmake --build --preset ninja-debug-coverage --target
+  coverage` always uses the default; invoke the script directly to override locally.
+- `STORM_PG_CONNSTR=""` does **not** disable PG: libpq treats an empty string as "use the
+  `PG*` env defaults" and connects anyway when `PGHOST`/`PGUSER` are set. Force SQLite-only
+  with `env -u STORM_PG_CONNSTR -u PGHOST -u PGUSER` (fails the 100% gate by design).
