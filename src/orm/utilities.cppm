@@ -671,16 +671,36 @@ export namespace storm::orm::utilities {
             append_bytes(&h, sizeof(h));
         }
 
+        // memcmp, NOT std::ranges::equal: perf showed the latter lowering to a
+        // byte-at-a-time loop (movzbl/cmp/jne per byte, 85% of its samples in the
+        // back-edge) worth 2.2% of the m2m eager-load profile, where the bare
+        // std::int64_t key this replaced compared in one inlined instruction.
         friend auto operator==(const StitchKey& lhs, const StitchKey& rhs) noexcept -> bool {
-            return lhs.len_ == rhs.len_ &&
-                   std::ranges::equal(std::span{lhs.bytes_.data(), lhs.len_}, std::span{rhs.bytes_.data(), rhs.len_});
+            return lhs.len_ == rhs.len_ && std::memcmp(lhs.bytes_.data(), rhs.bytes_.data(), lhs.len_) == 0;
         }
 
-        [[nodiscard]] auto data() const noexcept -> const std::byte* {
-            return bytes_.data();
-        }
-        [[nodiscard]] auto size() const noexcept -> std::size_t {
-            return len_;
+        // Word-wise FNV-1a. NOT std::hash<string_view>: libc++ routes that to
+        // murmur2/cityhash, which perf showed running once per Q1 owner AND once
+        // per Q2 related row, where the bare std::int64_t key this replaced used
+        // the identity hash.
+        //
+        // Reads whole words, which is safe ONLY because len_ is always a multiple
+        // of 8: append_bytes is private and both public appenders write exactly 8
+        // (append_int64 an int64, append_string a size_t hash). A part type of any
+        // other width would leave a tail outside this loop, contributing nothing
+        // to the hash — not a correctness bug (operator== still separates such
+        // keys, so the map resolves it) but a silent collision cliff. Revisit the
+        // loop before adding an appender of a different width.
+        [[nodiscard]] auto hash() const noexcept -> std::size_t {
+            constexpr std::uint64_t FNV_OFFSET = 1469598103934665603ULL;
+            constexpr std::uint64_t FNV_PRIME  = 1099511628211ULL;
+            std::uint64_t           h          = FNV_OFFSET;
+            for (std::size_t off = 0; off + sizeof(std::uint64_t) <= len_; off += sizeof(std::uint64_t)) {
+                std::uint64_t word = 0;
+                std::memcpy(&word, bytes_.data() + off, sizeof(word));
+                h = (h ^ word) * FNV_PRIME;
+            }
+            return static_cast<std::size_t>(h);
         }
 
       private:
@@ -706,12 +726,11 @@ template <> struct std::hash<storm::orm::utilities::UUID> {
 // LCOV_EXCL_STOP
 
 // std::hash<StitchKey> must live in namespace std (import std; provides no macro
-// or ADL escape hatch for specializing it inside storm::). Hashes the occupied
-// byte range only (mirrors operator=='s a.len_-bounded comparison).
+// or ADL escape hatch for specializing it inside storm::). Delegates to the
+// member hash(), which covers the occupied byte range only (mirroring
+// operator=='s len_-bounded comparison).
 export template <> struct std::hash<storm::orm::utilities::StitchKey> {
     auto operator()(const storm::orm::utilities::StitchKey& k) const noexcept -> std::size_t {
-        return std::hash<std::string_view>{}(
-                std::string_view{reinterpret_cast<const char*>(k.data()), k.size()} // NOLINT
-        );
+        return k.hash();
     }
 };
