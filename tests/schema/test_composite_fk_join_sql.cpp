@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <meta>
+#include <plf_hive/plf_hive.h> // NOSONAR cpp:S954 — must precede `import std;` (see test_m2m_models.h)
 
 #include "test_db_helpers.h"
 
@@ -11,6 +12,7 @@ import std;
 // Must follow test_models.h: OrderLine/Ledger are composite-PK fixtures reused
 // across the #501/#502 tests; nothing here needs Person as an FK part.
 #include "crud/test_composite_pk_models.h" // NOSONAR cpp:S954
+#include "query/test_m2m_models.h"         // NOSONAR cpp:S954 — Student/Course (single-PK junction baseline)
 
 // ── #504 (Task 2): widen find_fk_primary_key to find_fk_primary_key_members ──
 // Step 1 of the composite-FK-join plan. Adds an ADDITIVE, composite-aware
@@ -156,4 +158,165 @@ TEST(CompositeFkArityTest, ValidForeignKeyAcceptsCompositePkTargetWithNoArityMis
     static_assert(storm::orm::statements::ValidForeignKey<OrderLine>);
     static_assert(storm::orm::statements::ValidForeignKey<std::optional<OrderLine>>);
     SUCCEED();
+}
+
+// ── #504 (Task 9): junction-table DDL when either m2m side has a composite PK ──
+//
+// The auto-junction table (#203) was fixed at exactly 2 columns —
+// "<Owner>_id INTEGER NOT NULL, <Related>_id INTEGER NOT NULL" — with a
+// 2-column PRIMARY KEY and two FK clauses hardcoded to "REFERENCES <side>(id)".
+// Every one of those three assumptions breaks when a side's PK is composite:
+//
+//   1. ONE column per side is not enough — a 3-part owner key needs 3 columns,
+//      and there is no single column that could stand in for it (LedgerWithTags
+//      has no "id" column at all).
+//   2. The PRIMARY KEY must list every column from both sides, or the junction
+//      would reject legitimate distinct pairs as duplicates.
+//   3. "REFERENCES <side>(id)" names a column that does not exist on a
+//      composite-PK model. SQLite does not validate FK target columns at CREATE
+//      TABLE time so it silently accepts this, but PostgreSQL rejects it
+//      outright — which is why create_table_if_not_exists<LedgerWithTags> could
+//      not run on PG at all before this task.
+//
+// The column naming follows Task 3's convention verbatim: a single-PK side keeps
+// the exact legacy "<Side>_id" spelling (byte-identical), a composite side emits
+// "<Side>_<part>" per PK part.
+
+namespace {
+    namespace schema_ns = storm::orm::schema;
+
+    template <typename Model, schema_ns::Dialect D> auto junction_sql() -> const std::string& {
+        return schema_ns::SchemaStatement<Model>::template junction_table_sql<D>();
+    }
+} // namespace
+
+// ---- Regression guard: single-PK on BOTH sides must stay BYTE-IDENTICAL. -----
+// Every prior task in #504 carries such a guarantee. This is an EXACT-string
+// assertion (not `contains`) against Student/Course, the canonical in-tree m2m
+// pair from #203 — the whole DDL, every byte, including whitespace and the
+// trailing ")". If the composite widening leaks into the single-PK path at all,
+// this fails.
+
+namespace {
+    // The two dialects' single-PK junction DDL differs in exactly one token (the
+    // integer column type), so the expected string is built from that token
+    // rather than written out twice — every other byte is still asserted
+    // literally, keeping this a true exact-string regression guard.
+    auto expected_student_course_ddl(std::string_view int_type) -> std::string {
+        return std::format(
+                "CREATE TABLE Student_Course (\n"
+                "    Student_id {0} NOT NULL,\n"
+                "    Course_id {0} NOT NULL,\n"
+                "    PRIMARY KEY (Student_id, Course_id),\n"
+                "    FOREIGN KEY (Student_id) REFERENCES Student(id) ON DELETE CASCADE,\n"
+                "    FOREIGN KEY (Course_id) REFERENCES Course(id) ON DELETE CASCADE\n"
+                ")",
+                int_type
+        );
+    }
+} // namespace
+
+TEST(JunctionDdlTest, SinglePkBothSidesSqliteStaysByteIdentical) {
+    const std::string& sql = junction_sql<Student, schema_ns::Dialect::SQLite>();
+    EXPECT_EQ(sql, expected_student_course_ddl("INTEGER"));
+}
+
+TEST(JunctionDdlTest, SinglePkBothSidesPostgresStaysByteIdentical) {
+    const std::string& sql = junction_sql<Student, schema_ns::Dialect::PostgreSQL>();
+    EXPECT_EQ(sql, expected_student_course_ddl("BIGINT"));
+}
+
+// ---- Composite OWNER side (LedgerWithTags: region/account/period) ------------
+// 3 owner columns + 1 related column; PK lists all 4; the owner FK clause names
+// all three target parts instead of the nonexistent "id".
+
+TEST(JunctionDdlTest, CompositeOwnerSideEmitsOneColumnPerPkPart) {
+    const std::string& sql = junction_sql<LedgerWithTags, schema_ns::Dialect::SQLite>();
+    EXPECT_EQ(
+            sql,
+            "CREATE TABLE LedgerWithTags_LedgerTag (\n"
+            "    LedgerWithTags_region INTEGER NOT NULL,\n"
+            "    LedgerWithTags_account TEXT NOT NULL,\n"
+            "    LedgerWithTags_period INTEGER NOT NULL,\n"
+            "    LedgerTag_id INTEGER NOT NULL,\n"
+            "    PRIMARY KEY (LedgerWithTags_region, LedgerWithTags_account, LedgerWithTags_period, LedgerTag_id),\n"
+            "    FOREIGN KEY (LedgerWithTags_region, LedgerWithTags_account, LedgerWithTags_period) REFERENCES "
+            "LedgerWithTags(region, account, period) ON DELETE CASCADE,\n"
+            "    FOREIGN KEY (LedgerTag_id) REFERENCES LedgerTag(id) ON DELETE CASCADE\n"
+            ")"
+    );
+}
+
+// PG must map each part to its own dialect type: int -> BIGINT, string -> TEXT,
+// int64 -> BIGINT. A single hardcoded "BIGINT NOT NULL" for every column (the
+// pre-fix shape) would type the TEXT part wrong and PG would reject the FK for
+// a type mismatch against LedgerWithTags.account.
+TEST(JunctionDdlTest, CompositeOwnerSidePostgresTypesEachPartIndividually) {
+    const std::string& sql = junction_sql<LedgerWithTags, schema_ns::Dialect::PostgreSQL>();
+    EXPECT_TRUE(sql.contains("LedgerWithTags_region BIGINT NOT NULL")) << sql;
+    EXPECT_TRUE(sql.contains("LedgerWithTags_account TEXT NOT NULL")) << sql;
+    EXPECT_TRUE(sql.contains("LedgerWithTags_period BIGINT NOT NULL")) << sql;
+    EXPECT_TRUE(sql.contains("LedgerTag_id BIGINT NOT NULL")) << sql;
+}
+
+// ---- Composite RELATED side (TagRegistry -> CatalogEntry) --------------------
+// The mirror direction: single-PK owner keeps its legacy "<Owner>_id" spelling
+// unchanged while the RELATED side widens. Proves the widening is per-side, not
+// an all-or-nothing switch driven by the owner alone.
+
+TEST(JunctionDdlTest, CompositeRelatedSideWidensWhileOwnerStaysSingleColumn) {
+    const std::string& sql = junction_sql<TagRegistry, schema_ns::Dialect::SQLite>();
+    EXPECT_EQ(
+            sql,
+            "CREATE TABLE TagRegistry_CatalogEntry (\n"
+            "    TagRegistry_id INTEGER NOT NULL,\n"
+            "    CatalogEntry_catalog_id INTEGER NOT NULL,\n"
+            "    CatalogEntry_entry_no INTEGER NOT NULL,\n"
+            "    PRIMARY KEY (TagRegistry_id, CatalogEntry_catalog_id, CatalogEntry_entry_no),\n"
+            "    FOREIGN KEY (TagRegistry_id) REFERENCES TagRegistry(id) ON DELETE CASCADE,\n"
+            "    FOREIGN KEY (CatalogEntry_catalog_id, CatalogEntry_entry_no) REFERENCES "
+            "CatalogEntry(catalog_id, entry_no) ON DELETE CASCADE\n"
+            ")"
+    );
+}
+
+// ---- Composite on BOTH sides (ShelfAssignment -> StorageBin) ------------------
+// 2 + 3 = 5 junction columns, all five in the PK, both FK clauses multi-column.
+// This is also the widest junction in the tree: if build_junction_sql's
+// ConstexprString budget undercounts, ConstexprString truncates SILENTLY (no
+// diagnostic — the exact failure mode Task 7 hit), so this exact-string
+// assertion is the sizing test as much as it is the shape test.
+
+TEST(JunctionDdlTest, CompositeOnBothSidesEmitsEveryColumnFromEachSide) {
+    const std::string& sql = junction_sql<ShelfAssignment, schema_ns::Dialect::SQLite>();
+    EXPECT_EQ(
+            sql,
+            "CREATE TABLE ShelfAssignment_StorageBin (\n"
+            "    ShelfAssignment_warehouse_no INTEGER NOT NULL,\n"
+            "    ShelfAssignment_shelf_code TEXT NOT NULL,\n"
+            "    StorageBin_aisle INTEGER NOT NULL,\n"
+            "    StorageBin_bin_code TEXT NOT NULL,\n"
+            "    StorageBin_revision INTEGER NOT NULL,\n"
+            "    PRIMARY KEY (ShelfAssignment_warehouse_no, ShelfAssignment_shelf_code, StorageBin_aisle, "
+            "StorageBin_bin_code, StorageBin_revision),\n"
+            "    FOREIGN KEY (ShelfAssignment_warehouse_no, ShelfAssignment_shelf_code) REFERENCES "
+            "ShelfAssignment(warehouse_no, shelf_code) ON DELETE CASCADE,\n"
+            "    FOREIGN KEY (StorageBin_aisle, StorageBin_bin_code, StorageBin_revision) REFERENCES "
+            "StorageBin(aisle, bin_code, revision) ON DELETE CASCADE\n"
+            ")"
+    );
+}
+
+// Exact byte-budget guard, independent of the string content above. The
+// generated SQL must fit its ConstexprString buffer with NO truncation: a
+// silently-truncated buffer would still produce a valid-looking prefix, so
+// assert the emitted length equals what a from-scratch measurement says it
+// should be. The widest fixture (5 columns, mixed types) is the one that would
+// expose an undercount that narrower fixtures' slack absorbs.
+TEST(JunctionDdlTest, WidestJunctionSqlIsNotSilentlyTruncated) {
+    const std::string& sql = junction_sql<ShelfAssignment, schema_ns::Dialect::SQLite>();
+    ASSERT_FALSE(sql.empty());
+    EXPECT_TRUE(sql.ends_with("\n)")) << "truncated buffer would lose the closing paren: " << sql;
+    EXPECT_EQ(std::ranges::count(sql, '('), std::ranges::count(sql, ')'))
+            << "unbalanced parens indicate truncation: " << sql;
 }

@@ -646,6 +646,225 @@ export namespace storm::orm::schema {
             return sizer.len;
         }
 
+        // ---- Auto-junction table DDL (#203, widened for composite PKs in #504) ----
+        //
+        // The auto-junction was fixed at two columns, "<Owner>_id" and "<Related>_id",
+        // with both sides' FK clauses hardcoded to "REFERENCES <Side>(id)". All three
+        // parts of that shape break when a side's primary key spans several columns
+        // (#500): one column cannot carry an N-part key, the PRIMARY KEY clause must
+        // list every column or the junction rejects legitimate distinct pairs, and
+        // "(id)" names a column a composite-PK model does not have. (SQLite does not
+        // validate FK target columns at CREATE TABLE time so it accepted the broken
+        // DDL silently; PostgreSQL rejected it, which is why such a model could not be
+        // created there at all.)
+        //
+        // Naming follows the composite-FK convention (#504 Task 3): a single-PK side
+        // keeps the exact legacy "<Side>_id" spelling, a composite side emits
+        // "<Side>_<part>" per part. The single-PK spelling is a hardcoded special case,
+        // NOT a degenerate instance of the general rule — same discipline as
+        // append_fk_column_names, so the byte-identical guarantee for existing junctions
+        // cannot drift.
+        //
+        // Free functions rather than SchemaStatement methods: that class is at its
+        // S1448 method ceiling, and these need both sides' own BaseStatement, not
+        // SchemaStatement<T>'s.
+
+        // Column-name writer for one junction side, part `Is`. Single-PK sides ignore
+        // `Is` entirely (they have exactly one part, index 0). The composite branch
+        // routes the part through append_column_name (#422), so an FK key part
+        // (`[[= storm::primary_part]][[= storm::fk<>]] Person warehouse` — the canonical
+        // association-table shape) emits "<Side>_warehouse_id", matching the column
+        // append_junction_side_target_list names on the FK clause's target side.
+        // Naming the bare member would produce a junction column referencing a column
+        // that does not exist on the target.
+        template <typename SideType, std::size_t Is, typename SqlT>
+        consteval void append_junction_side_column_name(SqlT& sql, std::string_view side_name) {
+            using SideBase = storm::orm::statements::BaseStatement<SideType>;
+            sql.append(side_name);
+            if constexpr (SideBase::has_composite_pk_) {
+                sql.append("_");
+                storm::meta::append_column_name(sql, SideBase::primary_key_members_[Is]);
+            } else {
+                sql.append("_id");
+            }
+        }
+
+        // The C++ type a composite key part is STORED as. A plain part stores its own
+        // declared type; an FK part stores the REFERENCED row's key, so its storage type
+        // is that key's type, not the whole related struct (which has no storage class at
+        // all — it would fall through to StorageClass::Fallback and trip
+        // not_null_type_for's static_assert from several levels down inside a sizer,
+        // naming neither the model nor the field). Same is_fk_field routing that
+        // BaseStatement::bind_one_pk_part (#501) and TwoQueryJoinBase::append_pk_part_to_key
+        // (#504 Task 8) already use for the identical question. Single-level, matching the
+        // ValidForeignKey precedent (#412): the referenced key is taken as-is, never
+        // resolved recursively if it is ITSELF an FK.
+        template <std::meta::info PartMember> consteval auto pk_part_storage_type() -> std::meta::info {
+            if constexpr (storm::orm::statements::meta::is_fk_field(PartMember)) {
+                using FkFieldType = std::remove_cvref_t<typename[:std::meta::type_of(PartMember):]>;
+                using InnerType   = storm::orm::utilities::optional_inner_type_t<FkFieldType>;
+                return std::meta::type_of(storm::orm::statements::BaseStatement<InnerType>::primary_key_);
+            } else {
+                return std::meta::type_of(PartMember);
+            }
+        }
+
+        // "<Side>_<part> <TYPE> NOT NULL" for one junction column. A junction column is
+        // always NOT NULL (a junction row with a partial key is meaningless), matching
+        // the pre-#504 behaviour. A composite side types each part from that part's OWN
+        // STORED type (int -> INTEGER/BIGINT, string -> TEXT, an FK part -> the referenced
+        // key's type) via the same storage_class_of dispatch every other column uses; a
+        // single-PK side keeps the pre-#504 hardcoded integer type, which is what makes
+        // its output byte-identical.
+        template <typename SideType, std::size_t Is, Dialect D, typename SqlT>
+        consteval void append_junction_side_column_def(SqlT& sql, std::string_view side_name) {
+            using SideBase = storm::orm::statements::BaseStatement<SideType>;
+            append_junction_side_column_name<SideType, Is>(sql, side_name);
+            sql.append(" ");
+            if constexpr (SideBase::has_composite_pk_) {
+                using PartType =
+                        std::remove_cvref_t<typename[:pk_part_storage_type<SideBase::primary_key_members_[Is]>():]>;
+                sql.append(sql_type_for<storage_class_of<PartType>(), D, /*Nullable=*/false>());
+            } else {
+                sql.append((D == Dialect::PostgreSQL) ? "BIGINT NOT NULL" : "INTEGER NOT NULL");
+            }
+        }
+
+        // How many junction columns a side contributes: 1 for a single-column PK,
+        // N for a composite one.
+        template <typename SideType> consteval auto junction_side_column_count() -> std::size_t {
+            return storm::orm::statements::BaseStatement<SideType>::primary_key_column_count_;
+        }
+
+        template <typename SideType, Dialect D, typename SqlT, std::size_t... Is>
+        consteval void append_junction_side_column_defs_impl(
+                SqlT& sql, std::string_view side_name, std::index_sequence<Is...> /*unused*/
+        ) {
+            (
+                    [&] {
+                        if constexpr (Is > 0) {
+                            sql.append(",\n    ");
+                        }
+                        append_junction_side_column_def<SideType, Is, D>(sql, side_name);
+                    }(),
+                    ...
+            );
+        }
+
+        // Every column definition this side contributes, ",\n    "-joined.
+        template <typename SideType, Dialect D, typename SqlT>
+        consteval void append_junction_side_column_defs(SqlT& sql, std::string_view side_name) {
+            append_junction_side_column_defs_impl<SideType, D>(
+                    sql, side_name, std::make_index_sequence<junction_side_column_count<SideType>()>{}
+            );
+        }
+
+        template <typename SideType, typename SqlT, std::size_t... Is>
+        consteval void append_junction_side_column_list_impl(
+                SqlT& sql, std::string_view side_name, std::index_sequence<Is...> /*unused*/
+        ) {
+            (
+                    [&] {
+                        if constexpr (Is > 0) {
+                            sql.append(", ");
+                        }
+                        append_junction_side_column_name<SideType, Is>(sql, side_name);
+                    }(),
+                    ...
+            );
+        }
+
+        // Every column NAME this side contributes, ", "-joined — used by both the
+        // PRIMARY KEY clause and the local side of the FOREIGN KEY clause, so those two
+        // can never disagree about which columns exist.
+        template <typename SideType, typename SqlT>
+        consteval void append_junction_side_column_list(SqlT& sql, std::string_view side_name) {
+            append_junction_side_column_list_impl<SideType>(
+                    sql, side_name, std::make_index_sequence<junction_side_column_count<SideType>()>{}
+            );
+        }
+
+        template <typename SideType, typename SqlT, std::size_t... Is>
+        consteval void append_junction_side_target_list_impl(SqlT& sql, std::index_sequence<Is...> /*unused*/) {
+            using SideBase = storm::orm::statements::BaseStatement<SideType>;
+            (
+                    [&] {
+                        if constexpr (Is > 0) {
+                            sql.append(", ");
+                        }
+                        storm::meta::append_column_name(sql, SideBase::primary_key_members_[Is]);
+                    }(),
+                    ...
+            );
+        }
+
+        // The TARGET side of this side's FOREIGN KEY clause: the referenced model's own
+        // primary-key column names. Composite sides only (#504) — a single-PK side keeps
+        // the literal "(id)" the pre-#504 code emitted, deliberately NOT generalised
+        // here: a single PK named something other than "id" is a pre-existing, separate
+        // bug (#506) and fixing it in this path would change existing junction DDL.
+        // Routed through append_column_name (#422) so an FK part emits "<part>_id".
+        template <typename SideType, typename SqlT> consteval void append_junction_side_target_list(SqlT& sql) {
+            append_junction_side_target_list_impl<SideType>(
+                    sql, std::make_index_sequence<junction_side_column_count<SideType>()>{}
+            );
+        }
+
+        // "FOREIGN KEY (<local cols>) REFERENCES <Side>(<target cols>) ON DELETE <action>"
+        // for one junction side (#412).
+        template <typename SideType, typename SqlT>
+        consteval void append_junction_fk(SqlT& sql, std::string_view side_name, std::string_view action) {
+            using SideBase = storm::orm::statements::BaseStatement<SideType>;
+            sql.append("FOREIGN KEY (");
+            append_junction_side_column_list<SideType>(sql, side_name);
+            sql.append(") REFERENCES ");
+            sql.append(side_name);
+            sql.append("(");
+            if constexpr (SideBase::has_composite_pk_) {
+                append_junction_side_target_list<SideType>(sql);
+            } else {
+                sql.append("id"); // pre-#504 text, kept verbatim — see the note above
+            }
+            sql.append(") ON DELETE ");
+            sql.append(action);
+        }
+
+        // The whole junction CREATE TABLE. Single sink-agnostic writer: the size
+        // companion below runs THIS function against ClauseSizer, so the budget is
+        // measured from the emitting code itself and cannot drift from it.
+        template <typename OwnerType, typename RelatedType, Dialect D, typename SqlT>
+        consteval void append_junction_sql(SqlT& sql, std::string_view action) {
+            constexpr auto owner_name   = std::meta::identifier_of(^^OwnerType);
+            constexpr auto related_name = std::meta::identifier_of(std::meta::dealias(^^RelatedType));
+            sql.append("CREATE TABLE ");
+            sql.append(owner_name);
+            sql.append("_");
+            sql.append(related_name);
+            sql.append(" (\n    ");
+            append_junction_side_column_defs<OwnerType, D>(sql, owner_name);
+            sql.append(",\n    ");
+            append_junction_side_column_defs<RelatedType, D>(sql, related_name);
+            sql.append(",\n    PRIMARY KEY (");
+            append_junction_side_column_list<OwnerType>(sql, owner_name);
+            sql.append(", ");
+            append_junction_side_column_list<RelatedType>(sql, related_name);
+            sql.append("),\n    ");
+            append_junction_fk<OwnerType>(sql, owner_name, action);
+            sql.append(",\n    ");
+            append_junction_fk<RelatedType>(sql, related_name, action);
+            sql.append("\n)");
+        }
+
+        // Exact byte size of append_junction_sql's output, measured by rendering it into
+        // the counting sink — the same technique every other exact-size companion in this
+        // file uses.
+        template <typename OwnerType, typename RelatedType, Dialect D>
+        consteval auto junction_sql_size(std::string_view action) -> std::size_t {
+            ClauseSizer sizer;
+            append_junction_sql<OwnerType, RelatedType, D>(sizer, action);
+            return sizer.len;
+        }
+
     } // namespace detail
 
     template <typename T> class SchemaStatement : private storm::orm::statements::BaseStatement<T> {
@@ -1359,55 +1578,34 @@ export namespace storm::orm::schema {
             return members;
         }();
 
-        // Append "FOREIGN KEY (<name>_id) REFERENCES <name>(id) ON DELETE <action>" for one
-        // junction side (#412). The default action is CASCADE — an orphaned junction row is
-        // meaningless once its owner/related entity is gone — but it is overridable per m2m
-        // field via many_to_many<RefAction::...> (#431), applied to both sides.
-        template <typename SqlT>
-        static consteval void append_junction_fk(SqlT& sql, std::string_view name, std::string_view action) {
-            sql.append("FOREIGN KEY (");
-            sql.append(name);
-            sql.append("_id) REFERENCES ");
-            sql.append(name);
-            sql.append("(id) ON DELETE ");
-            sql.append(action);
-        }
-
         // Junction DDL: <T>_<Related> (<T>_id, <Related>_id, PRIMARY KEY (both),
         // FOREIGN KEY each side ON DELETE <action>). The composite PK rejects duplicate
         // relation pairs and doubles as the index; the FKs enforce referential integrity (#412).
         // The ON DELETE action is CASCADE unless the m2m field carries
         // many_to_many<RefAction::...> (#431), which overrides BOTH sides.
+        //
+        // Composite-PK sides (#504): a side whose model has a multi-column primary key
+        // (#500) contributes ONE junction column PER key part instead of a single
+        // "<Side>_id" — see detail::append_junction_side_column_name for the naming and the
+        // reason the single-PK spelling stays a hardcoded special case rather than a
+        // degenerate instance of the general rule.
         template <Dialect D, std::meta::info Member> static consteval auto build_junction_sql() {
-            constexpr auto related      = statements::meta::related_type_from_container(std::meta::type_of(Member));
-            constexpr auto owner_name   = std::meta::identifier_of(^^T);
-            constexpr auto related_name = std::meta::identifier_of(related);
-            constexpr std::string_view id_type =
-                    (D == Dialect::PostgreSQL) ? "_id BIGINT NOT NULL" : "_id INTEGER NOT NULL";
+            constexpr auto related = statements::meta::related_type_from_container(std::meta::type_of(Member));
             constexpr std::string_view action =
                     statements::meta::ref_action_sql(statements::meta::m2m_junction_on_delete_of(Member));
-            // owner/related names each appear 5× (column ×2, PK ×2, FK clause once more);
-            // 256 fixed covers the CREATE/FOREIGN KEY/REFERENCES/ON DELETE <action> scaffolding.
-            ConstexprString<((owner_name.size() + related_name.size()) * 5) + 256> sql;
-            sql.append("CREATE TABLE ");
-            sql.append(owner_name);
-            sql.append("_");
-            sql.append(related_name);
-            sql.append(" (\n    ");
-            sql.append(owner_name);
-            sql.append(id_type);
-            sql.append(",\n    ");
-            sql.append(related_name);
-            sql.append(id_type);
-            sql.append(",\n    PRIMARY KEY (");
-            sql.append(owner_name);
-            sql.append("_id, ");
-            sql.append(related_name);
-            sql.append("_id),\n    ");
-            append_junction_fk(sql, owner_name, action);
-            sql.append(",\n    ");
-            append_junction_fk(sql, related_name, action);
-            sql.append("\n)");
+            using RelatedType = typename[:related:];
+            // Exact budget: the writer is run against the counting sink (ClauseSizer),
+            // so the buffer is measured from the SAME code that fills it. The pre-#504
+            // "5x name length + 256" heuristic had no term scaling with PK part count or
+            // part-identifier length, and ConstexprString truncates SILENTLY on overflow.
+            //
+            // The +1 is ConstexprString's NUL terminator: its append stops at
+            // `len < N - 1`, so a buffer of exactly the rendered length holds one byte
+            // FEWER than it needs and silently drops the final character. Caught by the
+            // single-PK byte-identical regression test, which lost its closing ")".
+            constexpr std::size_t size = detail::junction_sql_size<T, RelatedType, D>(action) + 1;
+            ConstexprString<size> sql;
+            detail::append_junction_sql<T, RelatedType, D>(sql, action);
             return sql;
         }
 

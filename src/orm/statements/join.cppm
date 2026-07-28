@@ -272,19 +272,15 @@ export namespace storm::orm::statements {
     // and trailing ")" + base clauses are appended by the caller). Base supplies the
     // pk + table name. ConstexprString size is per-instantiation, hence the `auto&`.
     //
-    // WidenForCompositePk is supplied by the CALLER, not re-derived from
-    // Base::has_composite_pk_ — the two Q2-prefix builders want genuinely
-    // different arities for the SAME composite Base. Reverse-FK's LHS
-    // ("t2.<fk>_id" or the widened row-value form) always matches Base's real
-    // PK arity, so it passes Base::has_composite_pk_ through unchanged. m2m's
-    // LHS ("t2.<owner>_id") is frozen at exactly 1 column regardless of
-    // Base's own PK arity — the junction has exactly one physical owner-key
-    // column today (Task 9's scope, #504, widens it) — so it always passes
-    // false; letting this helper re-derive the flag from Base itself
-    // previously widened the RHS to N columns against a frozen 1-column LHS,
-    // an arity mismatch SQLite rejects at runtime ("sub-select returns 3
-    // columns - expected 1") — caught in review, not by a test (the
-    // .sql()-only test asserted the broken shape as correct). A composite
+    // WidenForCompositePk is supplied by the CALLER rather than re-derived from
+    // Base::has_composite_pk_ here, so each Q2-prefix builder states the arity of
+    // its OWN comparison LHS at the point it emits it. Both builders pass
+    // Base::has_composite_pk_ today — reverse-FK's LHS is the owning table's real
+    // N-column FK (Task 6/7), m2m's is the junction's N owner-key columns (Task 9,
+    // which widened it from the single "<Base>_id" it used to be). Widening the RHS
+    // against an LHS of a different arity is a runtime error, not a silent
+    // miscompare ("sub-select returns 3 columns - expected 1"), which is exactly
+    // why the choice stays visible at the call site. A composite
     // base PK emits a PLAIN comma-joined column list "<a>, <b>, ..."
     // (row-value-IN-subquery form: SQLite/PG match row arity by SELECT-list
     // column COUNT, not by literal tuple syntax — parenthesizing the list
@@ -392,24 +388,48 @@ export namespace storm::orm::statements {
         return sizer.len;
     }
 
-    // Append the Q2 SELECT head: "SELECT t2.<owner_key>[_id]" + the RelatedBase column
-    // block (col_prefix-aliased). owner_key is the stitch key column (m2m: "<owner>",
-    // key_id_suffix=true → "<owner>_id"; reverse-FK: "<fk>_id", key_id_suffix=false).
-    //
-    // Single-column owner key ONLY — used by the m2m junction/through-model path,
-    // where the owner-side key is genuinely one physical column today (the
-    // auto-junction table has exactly one "<Base>_id" column regardless of whether
-    // Base's own PK is composite; widening that is Task 9's scope, not this one's).
-    template <typename RelatedBase>
-    consteval auto
-    append_q2_select_head(auto& result, std::string_view owner_key, bool key_id_suffix, std::string_view col_prefix)
-            -> void {
-        result.append("SELECT t2.");
-        result.append(owner_key);
-        if (key_id_suffix) {
+    // Append ONE junction column name for `SideBase`'s PK part index `part`, with no
+    // alias prefix: "<side_col>_id" for a single-PK side (byte-identical to the
+    // pre-#504 emission), "<side_col>_<part>" for a composite one (#504 Task 9).
+    // `side_col` is the junction column's base name — the side's TABLE name for an
+    // auto-junction, or the through model's FK MEMBER name for a through junction;
+    // both spell their columns from this same rule, which is why one helper serves
+    // both. Must stay byte-identical to schema.cppm's junction DDL
+    // (detail::append_junction_side_column_name), which is the only producer of the
+    // columns this reads.
+    template <typename SideBase>
+    consteval auto append_junction_side_col(auto& result, std::string_view side_col, std::size_t part) -> void {
+        result.append(side_col);
+        if constexpr (SideBase::has_composite_pk_) {
+            result.append("_");
+            // #422 — an FK key part's column is "<name>_id", so the junction column is
+            // "<side>_<name>_id"; naming the bare member here would not match the
+            // junction DDL's own append_junction_side_column_name.
+            meta::append_column_name(result, SideBase::primary_key_members_[part]);
+        } else {
             result.append("_id");
         }
-        append_relation_columns<RelatedBase>(result, col_prefix);
+    }
+
+    // Append a junction side's whole column list, each part individually aliased with
+    // `prefix` (e.g. "t2."): "<prefix><side>_id" for a single-PK side, or
+    // "<prefix><side>_<part1>, <prefix><side>_<part2>, …" for a composite one. A plain
+    // comma-joined name list would alias only the first part.
+    //
+    // Separate from append_owner_fk_col_list (the reverse-FK sibling) because the two
+    // derive their names from different sources: reverse-FK names an FK MEMBER of the
+    // owning model (whose composite spelling comes from the TARGET's parts via
+    // append_fk_column_name_for_part), the junction names a junction column directly.
+    template <typename SideBase>
+    consteval auto append_junction_side_col_list(auto& result, std::string_view side_col, std::string_view prefix)
+            -> void {
+        for (std::size_t p = 0; p < SideBase::primary_key_column_count_; ++p) {
+            if (p > 0) {
+                result.append(", ");
+            }
+            result.append(prefix);
+            append_junction_side_col<SideBase>(result, side_col, p);
+        }
     }
 
     // Append "t2.<part1>, t2.<part2>, …" — the owner-side FK column list, each part
@@ -447,12 +467,11 @@ export namespace storm::orm::statements {
         return total;
     }
 
-    // Multi-column owner-key sibling of append_q2_select_head, for a REAL physical
-    // multi-column owner key (the reverse-FK owning table's own FK columns, which DO
-    // exist as N real columns via Task 6/7's composite-FK naming — unlike the m2m
-    // junction table, which is still a single physical column, Task 9's scope).
-    // N=1 collapses to exactly "t2.<fk>_id" — byte-identical to the single-column
-    // overload above.
+    // The reverse-FK Q2 SELECT head: "SELECT " + the owning table's own FK column(s)
+    // back at Base, then the RelatedBase column block. The FK columns are named from
+    // Base's PK parts via Task 6/7's composite-FK naming, NOT from the junction rule
+    // above — a reverse-FK load has no junction table at all. N=1 collapses to exactly
+    // "t2.<fk>_id", byte-identical to the pre-#504 form.
     template <typename RelatedBase, std::size_t N>
     consteval auto append_q2_select_head_multi(
             auto&                                 result,
@@ -538,16 +557,16 @@ export namespace storm::orm::statements {
         }
 
         // Q2 row owner key (columns 0..N-1) — keys the stitch into the Q1 hash map.
-        // N is Derived::owner_key_column_count_, NOT Base::primary_key_members_.size()
-        // unconditionally: the two agree for reverse-FK (the owning table carries a
-        // REAL N-column FK, #504 Task 8), but NOT for m2m, where the junction table
-        // is still exactly ONE physical column ("<Base>_id") regardless of whether
-        // Base's own PK is composite (Task 9's scope to widen). Reading
-        // Base::primary_key_members_.size() columns unconditionally would, for a
-        // composite-PK m2m owner, read PAST the single junction column into the
-        // RELATED entity's own columns — a real cross-entity misread, not merely a
-        // stitch-collision, caught while cross-checking this exact offset agreement
-        // during this task's self-review. Base::primary_key_members_ may mix types
+        // N is Derived::owner_key_column_count_, which both derived classes define as
+        // Base::primary_key_column_count_ since #504 Task 9 widened the m2m junction
+        // to one owner column per PK part (reverse-FK already matched, Task 8: the
+        // owning table carries a REAL N-column FK). It stays a Derived:: constant
+        // rather than being read off Base here so the count remains ONE named value
+        // per statement class, shared with that class's Q2 SELECT emission and
+        // insert_related offset: reading a different count here than the SELECT emits
+        // would read PAST the owner key into the RELATED entity's own columns — a
+        // silent cross-entity misread (column_int64 on a TEXT column just returns 0),
+        // not merely a stitch collision. Base::primary_key_members_ may mix types
         // (int, std::string, int64_t, …), so each part is dispatched to
         // append_int64/append_string by ITS OWN type at compile time (mirrors
         // bind_one_pk_part in base.cppm). N=1 (single-column PK, or any m2m relation)
@@ -1010,23 +1029,15 @@ export namespace storm::orm::statements {
     // <Base>_id / <Related>_id columns; through mode uses the through model's
     // table with its FK field names (<field>_id).
     //
-    // NOT YET SUPPORTED: a composite-PK owner (T). The junction table has
-    // exactly ONE physical owner-key column ("<Base>_id") — widening it to N
-    // columns matching a composite Base PK is Task 9's scope (schema.cppm's
-    // junction DDL), not this one's. Until then there is no valid single
-    // column to select as "the base's identity": Base::pk_name_ for a
-    // composite-PK model is merely the FIRST declared part (e.g. "region" for
-    // LedgerWithTags, which has no "id" column at all), so falling back to it
-    // would silently compare an unrelated column instead of failing loudly.
-    // M2MOwnerPkSupported<T> turns that into a compile-time rejection instead
-    // of the silently-invalid-SQL shape it used to produce (found in review).
+    // A composite-PK owner (T) is supported since #504 Task 9: the junction table
+    // carries one owner-key column PER PK part ("<Base>_<part>"), so the Q2 owner
+    // key is an N-column row value, matched against an N-column subquery. Before
+    // that, the junction had exactly one physical "<Base>_id" column with no valid
+    // composite counterpart, and the case was rejected at compile time
+    // (M2MOwnerPkSupported, removed together with the junction widening).
     // =========================================================================
-    template <typename T>
-    concept M2MOwnerPkSupported = !BaseStatement<T>::has_composite_pk_;
-
     template <typename T, storm::db::DatabaseConnection ConnType, JoinType Type, std::meta::info M2MField>
-        requires M2MFieldOf<T, M2MField> && M2MOwnerPkSupported<T> &&
-                         (Type == JoinType::Inner || Type == JoinType::Left)
+        requires M2MFieldOf<T, M2MField> && (Type == JoinType::Inner || Type == JoinType::Left)
     class M2MJoinStatement
         : private BaseStatement<T>,
           public TwoQueryJoinBase<M2MJoinStatement<T, ConnType, Type, M2MField>, BaseStatement<T>, ConnType, Type> {
@@ -1037,17 +1048,19 @@ export namespace storm::orm::statements {
         friend TwoQuery;
 
       public:
-        // The m2m junction is ALWAYS exactly one physical owner-key column
-        // ("<Base>_id"), regardless of whether Base's own PK is composite —
-        // widening the junction to N columns for a composite owner is Task 9's
-        // scope (#504), not this one's. TwoQueryJoinBase::extract_q2_owner_pk
-        // reads this many columns from the Q2 row's owner key, in lockstep with
-        // append_q2_select_head's single-column emission below. Public because
-        // TwoQueryJoinBase reads it through Derived::; unlike the reverse-FK
-        // counterpart it is a hardcoded literal, not derived from the owner's PK
-        // arity, so the cross-entity misread found during this task's own
-        // self-review cannot return without editing this line.
-        static constexpr std::size_t owner_key_column_count_ = 1;
+        // The junction carries one owner-key column per PK part of Base — one
+        // "<Base>_id" for a single-column PK, N "<Base>_<part>" columns for a
+        // composite one (#504 Task 9's junction DDL widening). Three things must
+        // agree on this count: the Q2 SELECT head's owner-key column emission
+        // (append_junction_side_col_list, below), TwoQueryJoinBase::
+        // extract_q2_owner_pk's column-reading loop (which reads exactly this many),
+        // and insert_related's starting offset for the related entity's own columns.
+        // Reading a different count here than the SELECT emits would read PAST the
+        // owner key into the RELATED entity's data — a silent cross-entity misread
+        // (SQLite's column_int64 on a TEXT column just returns 0), which is why this
+        // is a single named constant rather than each site deriving its own.
+        // Public because TwoQueryJoinBase reads it through Derived::.
+        static constexpr std::size_t owner_key_column_count_ = Base::primary_key_column_count_;
 
       private:
         // Re-derive the member from ^^T by identifier — annotation reads on a
@@ -1180,6 +1193,81 @@ export namespace storm::orm::statements {
         static constexpr std::string_view related_col_v_   = related_col_name();
         static constexpr std::string_view join_kw_v_       = TwoQuery::join_keyword();
 
+        // ---- ON-clause column pairs for the aggregate path (#504 Task 9) ----------
+        //
+        // The complete-SQL join is a chain of two ON clauses — base⟷junction and
+        // junction⟷related — each of which must AND-join ONE equality PER PK PART of
+        // the side it keys on. Both sides need the same pair of names per part:
+        //
+        //   model_col    the part's own column in the side's own table
+        //                ("region", or "warehouse_id" for an FK part — via
+        //                append_column_name, #422; naming the bare member would emit
+        //                a column that does not exist)
+        //   junction_col the junction column carrying it ("<side>_id" single-PK,
+        //                "<side>_<part>" composite — schema.cppm's junction DDL rule)
+        //
+        // Both names can be CONCATENATIONS, so neither exists as a stable
+        // string_view on its own: they must be MATERIALIZED into static storage. One
+        // newline-separated buffer per side holds them; the arrays below are
+        // non-owning views into that buffer, valid for the program's lifetime since
+        // the buffer is a constexpr static.
+        //
+        // Writer + counting sink, so the buffer budget is measured from the code that
+        // fills it (append_side_join_names is run against BOTH) and the two cannot
+        // drift — the ConstexprString overflow this guards against truncates SILENTLY.
+        template <typename SideBase>
+        static consteval auto append_side_join_names(auto& buf, std::string_view side_col) -> void {
+            for (std::size_t p = 0; p < SideBase::primary_key_column_count_; ++p) {
+                meta::append_column_name(buf, SideBase::primary_key_members_[p]); // #422 — FK part → "<name>_id"
+                buf.append("\n");                                                 // separator — split back out below
+                append_junction_side_col<SideBase>(buf, side_col, p);
+                buf.append("\n");
+            }
+        }
+
+        template <typename SideBase>
+        static consteval auto side_join_names_size(std::string_view side_col) -> std::size_t {
+            RelationColumnsSizer sizer;
+            append_side_join_names<SideBase>(sizer, side_col);
+            return sizer.len;
+        }
+
+        struct JoinCol {
+            std::string_view model_col;    // the side's own table column
+            std::string_view junction_col; // the junction column carrying it
+        };
+
+        // Slice a side's newline-separated name buffer back into per-part pairs.
+        template <typename SideBase>
+        static consteval auto slice_side_join_cols(std::string_view all)
+                -> std::array<JoinCol, SideBase::primary_key_column_count_> {
+            std::array<JoinCol, SideBase::primary_key_column_count_> cols{};
+            std::size_t                                              pos = 0;
+            for (std::size_t i = 0; i < SideBase::primary_key_column_count_; ++i) {
+                const std::size_t model_end = all.find('\n', pos);
+                cols[i].model_col           = all.substr(pos, model_end - pos);
+                pos                         = model_end + 1;
+                const std::size_t junc_end  = all.find('\n', pos);
+                cols[i].junction_col        = all.substr(pos, junc_end - pos);
+                pos                         = junc_end + 1;
+            }
+            return cols;
+        }
+
+        static constexpr auto owner_join_names_ = []() consteval {
+            ConstexprString<side_join_names_size<Base>(owner_col_name()) + 1> buf; // +1: NUL terminator
+            append_side_join_names<Base>(buf, owner_col_name());
+            return buf;
+        }();
+        static constexpr auto owner_join_cols_ = slice_side_join_cols<Base>(owner_join_names_.view());
+
+        static constexpr auto related_join_names_ = []() consteval {
+            ConstexprString<side_join_names_size<RelatedBase>(related_col_name()) + 1> buf;
+            append_side_join_names<RelatedBase>(buf, related_col_name());
+            return buf;
+        }();
+        static constexpr auto related_join_cols_ = slice_side_join_cols<RelatedBase>(related_join_names_.view());
+
         struct RelatedCol {
             std::string_view name;
             bool             is_fk;
@@ -1220,35 +1308,65 @@ export namespace storm::orm::statements {
             }
         }
 
-        // Append "<KW> <junction> t<J> ON t1.<pk> = t<J>.<owner>_id
-        //         <KW> <Related> t<R> ON t<J>.<related>_id = t<R>.<rpk>"
-        // with J = junction_alias, R = junction_alias + 1.
+        // Append one side's ON-clause body: one equality PER PK PART of that side,
+        // AND-joined (#504 Task 9). Matching on only the first part would join rows
+        // whose remaining parts differ — silently wrong, not an error. A single-column
+        // PK emits exactly one equality, byte-identical to the pre-#504 form.
+        //
+        // `model_first` fixes the operand ORDER, which differs between the two clauses
+        // in the chain and is part of the byte-identical guarantee: the base⟷junction
+        // clause writes "t1.<model> = t<J>.<junction>", the junction⟷related clause
+        // writes "t<J>.<junction> = t<R>.<model>".
+        template <std::size_t N>
+        static auto append_join_on_body(
+                std::string&                  sql,
+                const std::array<JoinCol, N>& cols,
+                std::string_view              model_alias,
+                std::string_view              junction_alias,
+                bool                          model_first
+        ) -> void {
+            bool first_part = true;
+            for (const auto& part : cols) {
+                if (!first_part) {
+                    sql += " AND ";
+                }
+                const std::string_view lhs_alias = model_first ? model_alias : junction_alias;
+                const std::string_view lhs_col   = model_first ? part.model_col : part.junction_col;
+                const std::string_view rhs_alias = model_first ? junction_alias : model_alias;
+                const std::string_view rhs_col   = model_first ? part.junction_col : part.model_col;
+                sql += lhs_alias;
+                sql += ".";
+                sql += lhs_col;
+                sql += " = ";
+                sql += rhs_alias;
+                sql += ".";
+                sql += rhs_col;
+                first_part = false;
+            }
+        }
+
+        // Append "<KW> <junction> t<J> ON t1.<pk parts> = t<J>.<owner cols>
+        //         <KW> <Related> t<R> ON t<J>.<related cols> = t<R>.<rpk parts>"
+        // with J = junction_alias, R = junction_alias + 1. BOTH ON clauses AND-join
+        // every PK part of the side they key on: the owner side from owner_join_cols_,
+        // the related side from related_join_cols_ (#504 Task 9). Each list pairs a
+        // model column with the junction column carrying it, so a list can never fall
+        // out of step with the junction DDL that produced those columns.
         static auto append_complete_join(std::string& sql, std::size_t junction_alias) -> void {
-            const std::string junction = std::to_string(junction_alias);
-            const std::string related  = std::to_string(junction_alias + 1);
+            const std::string junction_ali = "t" + std::to_string(junction_alias);
+            const std::string related_ali  = "t" + std::to_string(junction_alias + 1);
             sql += join_kw_v_;
             sql += junction_name_v_;
-            sql += " t";
-            sql += junction;
-            sql += " ON t1.";
-            sql += Base::pk_name_;
-            sql += " = t";
-            sql += junction;
-            sql += ".";
-            sql += owner_col_v_;
-            sql += "_id";
+            sql += " ";
+            sql += junction_ali;
+            sql += " ON ";
+            append_join_on_body(sql, owner_join_cols_, "t1", junction_ali, /*model_first=*/true);
             sql += join_kw_v_;
             sql += RelatedBase::table_name_;
-            sql += " t";
-            sql += related;
-            sql += " ON t";
-            sql += junction;
-            sql += ".";
-            sql += related_col_v_;
-            sql += "_id = t";
-            sql += related;
-            sql += ".";
-            sql += RelatedBase::pk_name_;
+            sql += " ";
+            sql += related_ali;
+            sql += " ON ";
+            append_join_on_body(sql, related_join_cols_, related_ali, junction_ali, /*model_first=*/false);
         }
 
         // =====================================================================
@@ -1256,9 +1374,10 @@ export namespace storm::orm::statements {
         //
         // Q1: SELECT <base cols> FROM <Base> [WHERE …][ORDER BY …][LIMIT/OFFSET]
         //     — the entities to load (a plain base SELECT; no join, no sorter).
-        // Q2: SELECT t2.<owner>_id, t3.<related cols>
-        //     FROM <junction> t2 INNER JOIN <Related> t3 ON t2.<related>_id = t3.<rpk>
-        //     WHERE t2.<owner>_id IN (<the SAME base subquery as Q1>)
+        // Q2: SELECT t2.<owner key cols>, t3.<related cols>
+        //     FROM <junction> t2 INNER JOIN <Related> t3
+        //          ON t2.<related key cols> = t3.<related pk parts>   (AND-joined)
+        //     WHERE t2.<owner key cols> IN (<the SAME base subquery as Q1>)
         //     — related rows for exactly the loaded entities, no base columns
         //       duplicated, no ORDER BY.
         //
@@ -1273,38 +1392,79 @@ export namespace storm::orm::statements {
         // Q1 (build_base_subquery), Q2 (build_q2_sql), and the owner-pk extractor are
         // inherited from TwoQueryJoinBase; this class only supplies the Q2 prefix below.
 
-        // q2_prefix_: "SELECT t2.<owner>_id, t3.<r…> FROM <junction> t2
-        //              INNER JOIN <Related> t3 ON t2.<related>_id = t3.<rpk>
-        //              WHERE t2.<owner>_id IN (SELECT <base.pk> FROM <Base>"
-        static consteval auto calculate_q2_prefix_size() -> std::size_t {
-            std::size_t total = 7 + 3 + owner_col_name().size() + 3; // "SELECT " + "t2." + owner + "_id"
-            total += relation_columns_size<RelatedBase>("t3.");
-            total += 6 + junction_table_name().size() + 13 + RelatedBase::table_name_.size() + 10 +
-                     related_col_name().size() + 9 + RelatedBase::pk_name_.size(); // FROM…ON…
-            // false: the junction's owner-key LHS is frozen at exactly 1 column
-            // (M2MOwnerPkSupported<T> rejects a composite Base at compile time,
-            // so Base::has_composite_pk_ is always false here — but the count is
-            // still passed explicitly rather than re-derived, so this call site's
-            // intent does not depend on that gate to stay correct).
-            total += 10 + owner_col_name().size() + in_subquery_open_size<Base, false>(); // WHERE t2.<owner>_id IN(…
-            return total + utilities::sql_len::SMALL_BUFFER;
+        // The consteval junction⟷related ON body: one equality PER RELATED PK PART,
+        // AND-joined. The consteval twin of append_join_on_body above (which serves
+        // the runtime-assembled aggregate path and cannot be reused here — its
+        // JoinCol views are runtime views into a static buffer). Single-PK collapses
+        // to exactly "t2.<related>_id = t3.<rpk>", the pre-#504 text.
+        //
+        // Widening this side is what #504 Task 9's junction DDL made MANDATORY: the
+        // junction of a composite-PK related model has no "<Related>_id" column at
+        // all, so the pre-widening single-column form named a column that does not
+        // exist ("no such column: t2.CatalogEntry_id"). Even with the column present,
+        // matching only RelatedBase::pk_name_ (the FIRST part) would join related rows
+        // that share their first part but differ in a later one.
+        static consteval auto append_q2_related_on(auto& result) -> void {
+            for (std::size_t p = 0; p < RelatedBase::primary_key_column_count_; ++p) {
+                if (p > 0) {
+                    result.append(" AND ");
+                }
+                result.append("t2.");
+                append_junction_side_col<RelatedBase>(result, related_col_name(), p);
+                result.append(" = t3.");
+                meta::append_column_name(result, RelatedBase::primary_key_members_[p]); // #422
+            }
         }
 
-        static consteval auto build_q2_prefix() {
-            ConstexprString<calculate_q2_prefix_size()> result;
-            append_q2_select_head<RelatedBase>(result, owner_col_name(), /*key_id_suffix=*/true, "t3.");
+        // q2_prefix_: "SELECT t2.<owner cols>, t3.<r…> FROM <junction> t2
+        //              INNER JOIN <Related> t3 ON t2.<related cols> = t3.<rpk parts>
+        //              WHERE t2.<owner cols> IN (SELECT <base.pk parts> FROM <Base>"
+        // Writes the Q2 prefix into any sink with .append(string_view) — the size
+        // companion below runs THIS function into the counting sink, so the buffer
+        // budget is measured from the code that fills it and the two cannot drift.
+        //
+        // BOTH junction sides are N columns wide since #504 Task 9 widened the
+        // junction DDL to one column per PK part on each side: the owner key is
+        // owner_key_column_count_ columns ("<owner>_id" single-PK, N "<owner>_<part>"
+        // composite), the related key likewise. For an owner N > 1 the WHERE
+        // comparison side is wrapped in parens as a row value — "(a, b) IN (SELECT a,
+        // b FROM …)" — while the subquery's own SELECT list stays UNparenthesized: a
+        // parenthesized comma list inside a SELECT list parses as ONE scalar
+        // expression, not N columns, which SQLite rejects with "sub-select returns 1
+        // columns - expected 2". The LHS arity and the subquery arity are both
+        // driven by Base::has_composite_pk_ here so they always agree. The related
+        // side never reaches the IN-subquery — it is an ordinary equi-join — so its
+        // arity is independent of the owner's.
+        static consteval auto append_q2_prefix(auto& result) -> void {
+            result.append("SELECT ");
+            append_junction_side_col_list<Base>(result, owner_col_name(), "t2.");
+            append_relation_columns<RelatedBase>(result, "t3.");
             result.append(" FROM ");
             result.append(junction_table_name());
             result.append(" t2 INNER JOIN ");
             result.append(RelatedBase::table_name_);
-            result.append(" t3 ON t2.");
-            result.append(related_col_name());
-            result.append("_id = t3.");
-            result.append(RelatedBase::pk_name_);
-            result.append(" WHERE t2.");
-            result.append(owner_col_name());
-            result.append("_id");
-            append_in_subquery_open<Base, false>(result); // frozen 1-column LHS — see size fn above
+            result.append(" t3 ON ");
+            append_q2_related_on(result);
+            result.append(" WHERE ");
+            if constexpr (Base::has_composite_pk_) {
+                result.append("(");
+                append_junction_side_col_list<Base>(result, owner_col_name(), "t2.");
+                result.append(")");
+            } else {
+                append_junction_side_col_list<Base>(result, owner_col_name(), "t2.");
+            }
+            append_in_subquery_open<Base, Base::has_composite_pk_>(result);
+        }
+
+        static consteval auto calculate_q2_prefix_size() -> std::size_t {
+            RelationColumnsSizer sizer;
+            append_q2_prefix(sizer);
+            return sizer.len + utilities::sql_len::SMALL_BUFFER;
+        }
+
+        static consteval auto build_q2_prefix() {
+            ConstexprString<calculate_q2_prefix_size()> result;
+            append_q2_prefix(result);
             return result;
         }
 
@@ -1313,10 +1473,12 @@ export namespace storm::orm::statements {
         static constexpr auto q2_prefix_arr_ = build_q2_prefix();
 
         // Append the Q2 row's related object into obj's container. Q2 related
-        // columns start at index 1 (after the owner pk). Always present — Q2 is
-        // an INNER join, so there is never a NULL related row to skip.
+        // columns start after the owner key, which is owner_key_column_count_
+        // columns wide (1 for a single-PK owner — the pre-#504 value — N for a
+        // composite one, #504 Task 9). Always present — Q2 is an INNER join, so
+        // there is never a NULL related row to skip.
         static auto append_related_q2(Statement* stmt, T& obj) noexcept -> void {
-            insert_related<1>(stmt, obj);
+            insert_related<static_cast<int>(owner_key_column_count_)>(stmt, obj);
         }
 
         // True when this entity has at least one related row — drives the
@@ -1385,11 +1547,11 @@ export namespace storm::orm::statements {
 
       public:
         // The reverse-FK owning table carries a REAL N-column FK back to Base (#504
-        // Task 6/7's widened FK naming), so N here is genuinely
-        // Base::primary_key_column_count_ — unlike the m2m junction (always 1
-        // physical column, Task 9's scope). TwoQueryJoinBase::extract_q2_owner_pk
-        // reads this many columns from the Q2 row's owner key, in lockstep with
-        // append_q2_select_head_multi's N-column emission below. Public so tests
+        // Task 6/7's widened FK naming), so N here is Base::primary_key_column_count_.
+        // TwoQueryJoinBase::extract_q2_owner_pk reads this many columns from the Q2
+        // row's owner key, in lockstep with append_q2_select_head_multi's N-column
+        // emission below, and append_related_q2 starts the owning entity's own
+        // columns right after them. Public so tests
         // can assert this compile-time invariant directly (a regression guard for
         // the cross-entity misread this exact offset arithmetic was found to have
         // during this task's own self-review).

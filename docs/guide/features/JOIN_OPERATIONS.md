@@ -378,6 +378,102 @@ the modifier-free complete SQL `Person t1 <KW> Owner t2 ON t2.<fk>_id = t1.<pk>`
 - The annotation spelling carries the owner type, not `reverse_fk<>` —
   the flag annotations are plain tag objects, so a templated flag is impossible (as for m2m).
 
+## Composite Primary Keys in JOINs (#504)
+
+Every join path above works when a model has a composite primary key
+(two or more `[[= storm::primary_part]]` members, #500). No API changes — the
+same `join<>()` / `left_join<>()` calls apply.
+
+### FK columns
+
+An FK to an N-part target occupies **N columns**, named `<member>_<part>`:
+
+```cpp
+struct OrderLine {
+    [[= storm::primary_part]] int order_id{};
+    [[= storm::primary_part]] int product_id{};
+    int quantity{};
+};
+
+struct Shipment {
+    [[= storm::primary_autoincrement]] int id{};
+    [[= storm::fk<>]] OrderLine line;   // → line_order_id, line_product_id
+};
+```
+
+A single-PK target keeps the exact `<member>_id` spelling it always had, so
+pre-#504 schemas and SQL are byte-identical. `std::optional<OrderLine>` makes
+all N columns nullable together.
+
+### ON clauses
+
+Joins AND-join one equality per key part, in declaration order:
+
+```sql
+INNER JOIN OrderLine t2
+        ON t2.order_id   = t1.line_order_id
+       AND t2.product_id = t1.line_product_id
+```
+
+Matching only the first part would silently join rows that share it but differ
+later, so all parts are always compared.
+
+### Junction tables (m2m)
+
+A composite side contributes one junction column per PK part, `<Side>_<part>`.
+Composite PK is supported on **either or both** sides:
+
+```sql
+CREATE TABLE ShelfAssignment_StorageBin (
+    ShelfAssignment_warehouse_no INTEGER NOT NULL,
+    ShelfAssignment_shelf_code TEXT NOT NULL,
+    StorageBin_aisle INTEGER NOT NULL,
+    StorageBin_bin_code TEXT NOT NULL,
+    StorageBin_revision INTEGER NOT NULL,
+    PRIMARY KEY (ShelfAssignment_warehouse_no, ShelfAssignment_shelf_code,
+                 StorageBin_aisle, StorageBin_bin_code, StorageBin_revision),
+    FOREIGN KEY (ShelfAssignment_warehouse_no, ShelfAssignment_shelf_code)
+        REFERENCES ShelfAssignment(warehouse_no, shelf_code) ON DELETE CASCADE,
+    FOREIGN KEY (StorageBin_aisle, StorageBin_bin_code, StorageBin_revision)
+        REFERENCES StorageBin(aisle, bin_code, revision) ON DELETE CASCADE
+)
+```
+
+(The real DDL puts each `PRIMARY KEY` / `FOREIGN KEY` clause on one line; wrapped
+here for readability.)
+
+Each `FOREIGN KEY` names the target's real key columns. This also fixed a latent
+bug: the old DDL emitted `REFERENCES <Side>(id)`, naming a column a composite-PK
+model does not have. SQLite does not validate FK targets at `CREATE TABLE` time
+so it accepted this silently, but PostgreSQL rejects it — composite-PK junction
+tables could not be created on PG at all.
+
+A single-PK junction on both sides is unchanged, byte for byte.
+
+### Stitching
+
+The two-query strategy (#391) stitches Q2 rows onto Q1 entities by owner key.
+That key is a `StitchKey` — a fixed 32-byte inline buffer — rather than an
+`int64_t`, since a composite key is not one integer and may mix `int`,
+`std::string`, and `int64_t` parts. The Q2 `IN` subquery uses the row-value form:
+
+```sql
+-- reverse-FK Q2 over a 2-part owner key
+WHERE (t2.line_order_id, t2.line_product_id)
+   IN (SELECT order_id, product_id FROM OrderLine)
+```
+
+Note the inner `SELECT` list is deliberately **not** parenthesized — wrapping it
+makes SQLite parse it as a single scalar expression instead of N columns.
+
+### Notes
+
+- An FK member may itself be a `primary_part`; it stores the referenced key's
+  type, so a composite key over FKs (the usual association-table shape) works.
+- A key part that is an FK emits its `_id` column name, e.g. `warehouse_id`.
+- Composite keys are never DB-generated, so every part is caller data on INSERT
+  (#502).
+
 ## Architecture
 
 ### Type-Erased SQL Builder Pattern

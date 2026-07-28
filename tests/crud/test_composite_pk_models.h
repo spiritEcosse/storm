@@ -165,4 +165,57 @@ struct MixedFkOrder {
     [[= storm::fk<>]] std::optional<Person> single;
 };
 
+// ── #504 Task 9: junction-table DDL when EITHER m2m side has a composite PK ──
+//
+// LedgerWithTags (above) covers the composite-OWNER direction (3-part owner PK,
+// single-PK related). The two fixtures below cover the other two directions, so
+// the "<side>_<part>" widening is exercised on both sides independently rather
+// than only on the owner side:
+//
+//   TagRegistry     — single-PK OWNER, composite (2-part) RELATED.
+//   ShelfAssignment — composite (2-part) OWNER *and* composite (3-part) RELATED,
+//                     the both-sides case, where the junction carries 5 columns.
+
+// Composite (2-part) RELATED model for the single-PK-owner direction. Both parts
+// are int, so the junction's related-side columns are the simple homogeneous case.
+struct CatalogEntry {
+    [[= storm::primary_part]] int catalog_id{};
+    [[= storm::primary_part]] int entry_no{};
+    std::string title;
+};
+
+// Single-PK OWNER pointing at a composite-PK RELATED model: the junction must
+// emit ONE owner column (tagregistry_id, the unchanged single-PK spelling) plus
+// TWO related columns (CatalogEntry_catalog_id, CatalogEntry_entry_no).
+struct TagRegistry {
+    [[= storm::primary_autoincrement]] int id{};
+    std::string label;
+    [[= storm::many_to_many<>]] std::vector<CatalogEntry> entries;
+};
+
+// Composite (3-part) RELATED model with MIXED part types (int + string +
+// int64_t) — proves the junction's related-side column TYPES are derived per
+// part from the target's own PK-part types, not assumed integral. Paired with a
+// composite owner below for the both-sides case.
+struct StorageBin {
+    [[= storm::primary_part]] int aisle{};
+    [[= storm::primary_part]] std::string bin_code;
+    [[= storm::primary_part]] std::int64_t revision{};
+    double capacity{};
+};
+
+// Composite owner (2-part) AND composite related (3-part): the junction carries
+// 2 + 3 = 5 columns, all five in the PRIMARY KEY, with a 2-column FK clause to
+// the owner and a 3-column FK clause to the related side. This is the widest
+// junction in the tree and the fixture that would expose a byte-budget
+// undercount in build_junction_sql's ConstexprString sizing (the pre-#504 fixed
+// "5x name length + 256" budget has no term that scales with PK part count or
+// part identifier length).
+struct ShelfAssignment {
+    [[= storm::primary_part]] int warehouse_no{};
+    [[= storm::primary_part]] std::string shelf_code;
+    int priority{};
+    [[= storm::many_to_many<>]] std::vector<StorageBin> bins;
+};
+
 #endif // STORM_TESTS_TEST_COMPOSITE_PK_MODELS_H
