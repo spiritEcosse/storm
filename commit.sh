@@ -180,6 +180,27 @@ if [[ "$HAS_BENCH_CHANGES" == true && "$HAS_CPP_CHANGES" == true ]]; then
     RUN_BENCH_RELEASE=true
 fi
 
+# --- Agent frontmatter guard (issue #543) ---
+# A multi-line `description:` makes Claude Code drop the agent SILENTLY — the
+# bug that left storm-sql-reviewer and storm-buildsystem-reviewer
+# undispatchable from the day they merged, and CLAUDE.md rule #13 partly
+# unenforceable. Cheap pure-bash check, so it runs whenever an agent file is
+# staged.
+#
+# Deliberately placed BEFORE the TOTAL_STEPS==0 early exit below: a commit
+# touching only .claude/agents/*.md has no C++ or cmake, so it skips every
+# other step — exactly the commit that can introduce this bug. Gating it on
+# the step count would make the guard miss its own failure case.
+if [[ -n "$STAGED_FILES" ]] \
+   && grep -q '^\.claude/agents/.*\.md$' <<< "$STAGED_FILES"; then
+    if ! "$(dirname "${BASH_SOURCE[0]}")/scripts/check-agent-frontmatter.sh"; then
+        echo ""
+        echo -e "${RED}${BOLD} COMMIT BLOCKED — invalid agent frontmatter${RESET}"
+        exit 1
+    fi
+    echo -e "${DIM}✓ agent frontmatter valid${RESET}"
+fi
+
 # --- Count total steps ---
 TOTAL_STEPS=0
 [[ "$RUN_FORMAT" == true ]] && ((TOTAL_STEPS++))
