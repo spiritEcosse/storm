@@ -145,3 +145,48 @@ Duplication details (from PR files):
 - **Auto-detection**: When run without arguments, the script uses `gh pr view` to find the PR associated with the current Git branch
 - **Duplication details**: Shows exact line ranges where code is duplicated, including cross-file duplications
 - **PR-specific metrics**: The summary metrics (blocks, lines, density) are specific to new code in the PR; detailed locations show all duplications in modified files
+
+## Agent Frontmatter Check
+
+Validates that every `.claude/agents/*.md` file has a single-line `description:` in its
+YAML frontmatter.
+
+### Why
+
+Claude Code parses each agent file's frontmatter to register the agent. In YAML an unquoted
+scalar ends at the first line starting in column 0, so a `description:` written across real
+newlines terminates early, the parse fails, and **the agent is dropped silently** — it never
+appears in the available-agents list and cannot be dispatched, with no warning emitted.
+
+`storm-sql-reviewer` and `storm-buildsystem-reviewer` both shipped this way and were
+undispatchable from the day they merged, which left CLAUDE.md rule #13 partly unenforceable
+(issue #543). A diff review does not catch it: the broken file looks perfectly readable.
+
+The fix and the enforced invariant: keep `description:` on **one physical line**, writing
+newlines as literal `\n` escapes — the form used by every agent file that loads correctly.
+
+### Usage
+
+```bash
+./scripts/check-agent-frontmatter.sh              # defaults to .claude/agents
+./scripts/check-agent-frontmatter.sh some/dir     # validate another directory
+./scripts/tests/test_check_agent_frontmatter.sh   # self-test
+```
+
+Exit code `0` = all agent files valid, `1` = at least one invalid.
+
+### Where it runs
+
+- **`commit.sh`** — whenever a `.claude/agents/*.md` file is staged. Runs before the
+  step-count early exit, since an agent-only commit skips every C++/cmake step and is
+  exactly the commit that can introduce this bug.
+- **CI** — the `agent-frontmatter` job in `.github/workflows/ci.yml`, which also self-tests
+  the validator. Emits `::error file=…` annotations so failures land on the file in the PR diff.
+
+### Notes
+
+- Not a strict YAML validation. The descriptions contain unquoted `:` characters that a strict
+  parser rejects but Claude Code's lenient parser accepts — the physical line span, not YAML
+  validity, is what distinguishes a loading file from a dropped one.
+- A `.md` file with no opening `---` is treated as shared prose, not an agent, and skipped.
+- An agent file with **no** `description:` at all is reported: it cannot be registered either.

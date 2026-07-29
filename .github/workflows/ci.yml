@@ -37,6 +37,27 @@ jobs:
           fi
           echo "OK: ${#pins[@]} storm-ci pins agree — ${pins[0]}"
 
+  # A Claude Code agent whose `description:` spans several physical lines fails
+  # the frontmatter parse and is dropped SILENTLY — it never appears in the
+  # available-agents list, with no warning anywhere. storm-sql-reviewer and
+  # storm-buildsystem-reviewer shipped broken this way and were undispatchable
+  # from the day they merged, making CLAUDE.md rule #13 partly unenforceable
+  # (#543). Nothing at review time catches it: the file looks fine in a diff.
+  # commit.sh runs the same script pre-commit; this job covers the paths that
+  # bypass the hook.
+  agent-frontmatter:
+    name: agent frontmatter (single-line descriptions)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate .claude/agents/*.md frontmatter
+        run: ./scripts/check-agent-frontmatter.sh
+
+      - name: Self-test the validator
+        run: ./scripts/tests/test_check_agent_frontmatter.sh
+
   test:
     name: "${{ matrix.preset }} / PG ${{ matrix.postgres }}"
     # ninja-msan is skipped in CI: under import std; (issue #326) GTest's static
