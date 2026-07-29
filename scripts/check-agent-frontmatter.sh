@@ -38,7 +38,7 @@ ERRORS=0
 report() {
     local file="$1" problem="$2"
     if [[ -n "${GITHUB_ACTIONS:-}" ]]; then
-        echo "::error file=${file#"$PWD/"}::$problem"
+        echo "::error file=${file#"$PWD/"}::$problem" >&2
     fi
     echo "✗ $(basename "$file"): $problem" >&2
     ERRORS=$((ERRORS + 1))

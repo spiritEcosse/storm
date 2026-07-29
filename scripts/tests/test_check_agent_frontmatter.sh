@@ -71,6 +71,12 @@ write_agent() {
                 printf 'description: Does a thing. Examples:\n\n<example>\nContext: A context.\nuser: "do it"\n</example>\n'
                 ;;
             no-desc) ;;
+            *)
+                # A typo'd kind would otherwise write a description-less file
+                # and surface as a confusing assertion failure downstream.
+                echo "write_agent: unknown kind '$kind'" >&2
+                exit 1
+                ;;
         esac
         if [[ "$kind" == "other-key" ]]; then
             echo "origin: ECC"
@@ -208,6 +214,37 @@ scenario_reported_span_is_accurate() {
     return 0
 }
 
+# The GitHub Actions annotation must go to STDERR, alongside the human-readable
+# error, so the two cannot be separated in the log. Asserting on the split
+# streams is the point: `run_checker` folds them with 2>&1 and would pass either
+# way, which is why this branch was previously untested.
+scenario_gha_annotation_on_stderr() {
+    write_agent multiline "$TMP/bad.md"
+    local on_stdout on_stderr
+    on_stdout="$(GITHUB_ACTIONS=true "$CHECKER" "$TMP" 2>/dev/null)"
+    on_stderr="$(GITHUB_ACTIONS=true "$CHECKER" "$TMP" 2>&1 >/dev/null)"
+    OUT="stdout=[$on_stdout] stderr=[$on_stderr]"
+    if [[ "$on_stderr" == *"::error file="* && "$on_stdout" != *"::error"* ]]; then
+        pass "::error annotation goes to stderr, not stdout"
+    else
+        fail "annotation stream wrong. $OUT"
+    fi
+    return 0
+}
+
+# Without GITHUB_ACTIONS the annotation must not appear at all — a local run
+# should show only the human-readable message.
+scenario_no_annotation_outside_gha() {
+    write_agent multiline "$TMP/bad.md"
+    OUT="$(env -u GITHUB_ACTIONS "$CHECKER" "$TMP" 2>&1)"
+    if [[ "$OUT" != *"::error"* && "$OUT" == *"bad.md"* ]]; then
+        pass "no ::error annotation emitted outside GitHub Actions"
+    else
+        fail "unexpected annotation in local run. Output: $OUT"
+    fi
+    return 0
+}
+
 # The regression guard proper: the real repo must stay clean.
 scenario_real_repo_agents_pass() {
     run_checker "$REPO_ROOT/.claude/agents"
@@ -225,6 +262,8 @@ SCENARIOS=(
     empty_dir_passes
     uncommon_trailing_key_passes
     reported_span_is_accurate
+    gha_annotation_on_stderr
+    no_annotation_outside_gha
     real_repo_agents_pass
 )
 
