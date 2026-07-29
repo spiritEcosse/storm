@@ -269,20 +269,88 @@ export namespace storm::orm::statements {
             }
             return false;
         }
+
+        // True iff the FK field type `fk_type` refers to an entity whose SINGLE primary key
+        // is itself well-typed for use as a KEY (#517). Strictly stronger than
+        // valid_fk_target (above), which only asks whether a PK EXISTS.
+        //
+        // The extra hop matters only where the FK is itself part of a primary key. An FK
+        // part binds the REFERENCED row's key (bind_one_pk_part splices
+        // find_fk_primary_key<FKType>()), so the value that lands in the composite key
+        // column is the target's PK — if that is a `double`, the part-type policy has been
+        // circumvented one hop away. Presence alone would accept it, because
+        // BaseStatement<Target> is only instantiated when the target is separately used as
+        // a model in its own right.
+        //
+        // A COMPOSITE-keyed target is refused outright. Referencing one needs a
+        // multi-column FK (several referencing columns bound together), which is #504's
+        // territory and out of scope here; the alternative — checking only the target's
+        // first part — silently accepts a key it never validated. The is_primary_part_member
+        // test MUST come first: is_primary_member subsumes it (field_attr.cppm), so testing
+        // is_primary_member first would route a composite target's first part into the
+        // SINGLE-PK allowlist and answer wrongly in both directions (accepting an int-first
+        // composite whose later parts were never seen; rejecting a legitimate TEXT-first one).
+        //
+        // Deliberately a SEPARATE helper rather than tightening valid_fk_target: that one
+        // is shared with FKFieldOf (#474), where an ordinary (non-key) FK field has no
+        // reason to constrain its target's PK type. Single-level, like its sibling — the
+        // target's own PK only, never recursing into the target's FKs, so a self- or
+        // mutually-referential model still terminates in one step.
+        consteval auto valid_fk_key_target(std::meta::info fk_type) -> bool {
+            const std::meta::info target = unwrap_optional_type(fk_type);
+            for (auto m : std::meta::nonstatic_data_members_of(target, std::meta::access_context::unchecked())) {
+                if (storm::meta::is_primary_part_member(m)) {
+                    return false; // composite-keyed target: needs a multi-column FK (#504)
+                }
+                if (storm::meta::is_primary_member(m)) {
+                    return is_primary_key_typed_member(m);
+                }
+            }
+            return false; // no PK at all — the same verdict valid_fk_target would give
+        }
+
+        // True iff `member` is a well-typed COMPOSITE primary-key part (#517). The #505
+        // single-PK allowlist WIDENED WITH TEXT, plus an FK carve-out.
+        //
+        // TEXT is admitted for parts but not for a single PK, and the split is not
+        // arbitrary. #505 rejects a TEXT single PK because this tree has not separated
+        // "is the key" from "is DB-generated": the RETURNING id / last_insert_rowid /
+        // hardcoded-int64 PK sites (select.cppm, join.cppm, insert.cppm) assume an
+        // integer identity. A composite key is never DB-generated (#502 — no
+        // AUTOINCREMENT, no IDENTITY, no RETURNING; every part is caller data), so that
+        // rationale does not reach a part. It also matches every mainstream ORM and SQL
+        // itself: SQLAlchemy's Column(String, primary_key=True), Django's
+        // CharField(primary_key=True) and JPA's @Id String are all ordinary, and a
+        // (warehouse, sku) key is the canonical association-table shape.
+        //
+        // ORDER IS LOAD-BEARING: is_text_member (#493) looks THROUGH std::optional<>, so
+        // the nullable rejection must come first or optional<std::string> would be
+        // admitted as a key part. ModelPrimaryKeyValid also rejects a nullable PK, but
+        // this concept must reject it independently — the two are ANDed separately onto
+        // BaseStatement and the tests assert on this one alone; letting them disagree
+        // would make the verdict depend on which concept a diagnostic happens to name.
+        //
+        // An FK part is validated through its TARGET's primary key, not its own declared
+        // type: it binds the referenced row's key (the is_fk_field branch of
+        // bind_one_pk_part), so "the member's type" is the wrong question — the right one
+        // is asked by valid_fk_key_target just above.
+        consteval auto is_primary_key_part_typed_member(std::meta::info member) -> bool {
+            if (storm::meta::is_optional_member(member)) {
+                return false;
+            }
+            if (storm::meta::is_fk_field(member)) {
+                return valid_fk_key_target(std::meta::type_of(member));
+            }
+            return is_primary_key_typed_member(member) || storm::meta::is_text_member(member);
+        }
     } // namespace meta
 
-    // Concept: T's SINGLE primary-key member (storm::primary / primary_autoincrement) has
-    // a type admitted as a primary key (#505). Scoped to the single-column case only —
-    // a composite key (two or more storm::primary_part members, #500) is exempted
-    // entirely and returns true unconditionally, for two reasons: (1) issue #505 was
-    // decided before composite PKs existed in this codebase, so the accepted-type set
-    // was never scoped against composite parts; (2) an FK-typed composite part (e.g.
-    // StockEntry::warehouse in tests/crud/test_composite_pk_models.h) binds via the
-    // REFERENCED row's key (meta::is_fk_field routing in bind_one_pk_part), not its own
-    // declared type, so "the member's type" is not even the right question for that part
-    // — and a plain non-FK TEXT part (e.g. Inventory::sku, same file) is an already-shipped,
-    // already-tested composite-key shape. Composite-PK type constraints are their own
-    // unscoped follow-up, not a silent widening of this concept's contract.
+    // Concept: T's primary-key member(s) have a type admitted as a primary key. Covers BOTH
+    // shapes: a single storm::primary / primary_autoincrement member goes through the #505
+    // allowlist (meta::is_primary_key_typed_member), and every storm::primary_part member of
+    // a composite key (#500) goes through meta::is_primary_key_part_typed_member — the same
+    // allowlist widened with TEXT, FK parts excepted (#517). A composite model is accepted
+    // only if EVERY part passes.
     //
     // ANDed alongside ModelWithPrimaryKey on BaseStatement's constraint list — a model
     // with NO primary key already fails that sibling concept, so the loop here always
@@ -303,13 +371,15 @@ export namespace storm::orm::statements {
     concept PrimaryKeyType = []() consteval {
         for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked())) {
             if (meta::is_primary_part_member(m)) {
-                return true; // composite key: type constraint out of scope for #505
-            }
-            if (meta::is_primary_member(m)) {
+                // Composite (#517): every part is checked; keep scanning after a pass.
+                if (!meta::is_primary_key_part_typed_member(m)) {
+                    return false;
+                }
+            } else if (meta::is_primary_member(m)) {
                 return meta::is_primary_key_typed_member(m);
             }
         }
-        return true; // no PK member: ModelWithPrimaryKey<T> is the concept that rejects this
+        return true; // every part passed, or no PK member: ModelWithPrimaryKey rejects that
     }();
 
     // A field type is a valid FK target iff its referenced entity (optional-unwrapped)
