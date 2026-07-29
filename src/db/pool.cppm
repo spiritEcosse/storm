@@ -244,13 +244,23 @@ export namespace storm::db {
                 if (!result) {
                     return std::expected<ConnType*, Error>{std::unexpected(result.error())};
                 }
-                // Re-check: another thread may have grown the pool while we were unlocked
+                // Re-check: another thread may have grown the pool while we were unlocked.
+                //
+                // Both arms are race-only, reachable solely when another thread reaches
+                // max_connections during the open() window above. The find_idle() arm is
+                // covered deterministically by MockPoolTest.Checkout_RaceMaxReachedWithIdle
+                // (#544) — before that test existed it was hit only incidentally, by the
+                // 10-thread scramble in Checkout_RaceConditionMaxReached, which made the CI
+                // 100%-line-coverage gate flake at 99.9% on exactly these two lines. If they
+                // ever show up uncovered again, suspect that test, not a real coverage gap.
                 if (static_cast<int>(entries_.size()) >= config_.max_connections) {
                     if (auto* idle = find_idle(); idle != nullptr) {
                         return std::expected<ConnType*, Error>{idle};
                     }
-                    return std::nullopt; // LCOV_EXCL_LINE — race-only fall-through: pool hit max during unlock + all
-                                         // slots in use
+                    // Race-only fall-through: pool hit max during unlock + all slots in
+                    // use. Covered by MockPoolTest.Checkout_RaceMaxReachedNoIdle (#544);
+                    // was LCOV_EXCL_LINE until that test made it deterministic.
+                    return std::nullopt;
                 }
                 auto now = Clock::now();
                 entries_.emplace_back(std::make_unique<ConnType>(std::move(result.value())), true, now, now);
