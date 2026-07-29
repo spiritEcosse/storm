@@ -1,0 +1,250 @@
+#include <gtest/gtest.h>
+#include <meta>
+
+#include "test_db_helpers.h"
+
+import storm;
+import std;
+
+#include "test_models.h" // NOSONAR cpp:S954 — Person, StormTestFixture, ensure_tables
+
+// Must follow test_models.h: OrderLineWithShipments/Shipment name storm:: annotations.
+#include "test_composite_pk_models.h" // NOSONAR cpp:S954
+
+// ── #504: composite FK bind + extract (INSERT/SELECT plain FK column) ───────
+// Shipment::line is a plain (non-JOIN) FK member whose target
+// (OrderLineWithShipments) carries a 2-part composite PK (order_id, product_id).
+// This proves the INSERT bind path writes both target-key parts into
+// line_order_id/line_product_id, and the SELECT extraction path reads them back
+// into a fully-populated `line` object — without ever touching the JOIN machinery
+// (out of scope here, #504's later tasks).
+
+namespace {
+
+    // SchemaStatement<Shipment>::create_table_if_not_exists creates the FK parent
+    // (OrderLineWithShipments) automatically via create_fk_parents (#412), so no
+    // ExtraModels are needed here — unlike StockEntryTest in test_composite_pk_crud.cpp,
+    // which creates Person itself because that fixture seeds through raw SQL before
+    // Shipment's own table exists.
+    template <typename ConnType> class CompositeFkJoinTest : public StormTestFixture<Shipment, ConnType> {};
+
+} // namespace
+
+TYPED_TEST_SUITE(CompositeFkJoinTest, DatabaseTypes);
+
+TYPED_TEST(CompositeFkJoinTest, InsertAndSelectRoundTripsCompositeFkColumns) {
+    storm::QuerySet<OrderLineWithShipments, TypeParam> line_qs;
+    const OrderLineWithShipments line{.order_id = 5, .product_id = 12, .quantity = 3, .note = "first"};
+    ASSERT_TRUE(line_qs.insert(line).execute().has_value());
+
+    storm::QuerySet<Shipment, TypeParam> ship_qs;
+    const Shipment                       ship{.line = line, .carrier = "UPS"};
+    auto                                 insert_result = ship_qs.insert(ship).execute();
+    ASSERT_TRUE(insert_result.has_value());
+
+    auto rows = ship_qs.select().execute();
+    ASSERT_TRUE(rows.has_value());
+    ASSERT_EQ(rows.value().size(), 1U);
+    const Shipment& loaded = *rows.value().begin();
+    EXPECT_EQ(loaded.line.order_id, 5);
+    EXPECT_EQ(loaded.line.product_id, 12);
+    EXPECT_EQ(loaded.carrier, "UPS");
+}
+
+// Distinguishes the two composite-FK target parts from each other: swapping them
+// would have this test pass if the bind/extract order matched a coincidental
+// symmetry, but the two rows below share no value across order_id/product_id.
+TYPED_TEST(CompositeFkJoinTest, MultipleShipmentsResolveDistinctCompositeFkTargets) {
+    storm::QuerySet<OrderLineWithShipments, TypeParam> line_qs;
+    const OrderLineWithShipments line_a{.order_id = 1, .product_id = 100, .quantity = 1, .note = "a"};
+    const OrderLineWithShipments line_b{.order_id = 2, .product_id = 200, .quantity = 2, .note = "b"};
+    ASSERT_TRUE(line_qs.insert(line_a).execute().has_value());
+    ASSERT_TRUE(line_qs.insert(line_b).execute().has_value());
+
+    storm::QuerySet<Shipment, TypeParam> ship_qs;
+    ASSERT_TRUE(ship_qs.insert(Shipment{.line = line_a, .carrier = "DHL"}).execute().has_value());
+    ASSERT_TRUE(ship_qs.insert(Shipment{.line = line_b, .carrier = "FedEx"}).execute().has_value());
+
+    auto rows = ship_qs.select().execute();
+    ASSERT_TRUE(rows.has_value());
+    ASSERT_EQ(rows.value().size(), 2U);
+
+    bool found_a = false;
+    bool found_b = false;
+    for (const Shipment& row : rows.value()) {
+        if (row.carrier == "DHL") {
+            EXPECT_EQ(row.line.order_id, 1);
+            EXPECT_EQ(row.line.product_id, 100);
+            found_a = true;
+        } else if (row.carrier == "FedEx") {
+            EXPECT_EQ(row.line.order_id, 2);
+            EXPECT_EQ(row.line.product_id, 200);
+            found_b = true;
+        }
+    }
+    EXPECT_TRUE(found_a);
+    EXPECT_TRUE(found_b);
+}
+
+TYPED_TEST(CompositeFkJoinTest, SchemaEmitsTwoColumnsForCompositeFk) {
+    // line_order_id, line_product_id must both exist as columns.
+    const std::string& sql = storm::create_table_sql<Shipment>();
+    EXPECT_NE(sql.find("line_order_id"), std::string::npos) << sql;
+    EXPECT_NE(sql.find("line_product_id"), std::string::npos) << sql;
+}
+
+// ── Review fix: nullable composite-FK DDL must not force NOT NULL ───────────
+// OptionalShipment::line is std::optional<OrderLineWithShipments> — the
+// generated columns (line_order_id, line_product_id) must NOT carry NOT NULL,
+// since the FK member itself is nullable. Also proves the non-optional case
+// (Shipment above) never emitted a doubled "NOT NULL NOT NULL" suffix.
+TEST(CompositeFkSchemaTest, NullableCompositeFkColumnsOmitNotNull) {
+    const std::string& sql = storm::create_table_sql<OptionalShipment>();
+    EXPECT_NE(sql.find("line_order_id INTEGER,"), std::string::npos) << sql;
+    EXPECT_NE(sql.find("line_product_id INTEGER,"), std::string::npos) << sql;
+    EXPECT_EQ(sql.find("line_order_id INTEGER NOT NULL"), std::string::npos) << sql;
+    EXPECT_EQ(sql.find("line_product_id INTEGER NOT NULL"), std::string::npos) << sql;
+}
+
+TEST(CompositeFkSchemaTest, NonOptionalCompositeFkColumnsHaveExactlyOneNotNull) {
+    const std::string& sql = storm::create_table_sql<Shipment>();
+    EXPECT_EQ(sql.find("NOT NULL NOT NULL"), std::string::npos) << sql;
+}
+
+// ── OptionalShipment plain (non-JOIN) bind/extract round trip ──────────────
+// OptionalShipment::line is std::optional<OrderLineWithShipments> (a NULLABLE
+// composite FK) — before this test, OptionalShipment was only ever exercised
+// via create_table_sql<>() (pure DDL text, no bind/extract). These tests are
+// the first to actually INSERT and plain-SELECT it, covering
+// bind_fk_field_at_index's composite-optional branches (bind_null_run's
+// has-no-value path, bind_fk_parts's has-a-value path) and
+// extract_column_fast/extract_optional_fk_parts's composite-optional branches
+// (both the NULL and the has-a-value path) on the PLAIN SELECT path — distinct
+// from tests/query/test_composite_fk_join.cpp's JOIN-path coverage of the same
+// model, which never touches extract_column_fast.
+namespace {
+    template <typename ConnType>
+    class OptionalShipmentTest : public StormTestFixture<OptionalShipment, ConnType, OrderLineWithShipments> {};
+} // namespace
+
+TYPED_TEST_SUITE(OptionalShipmentTest, DatabaseTypes);
+
+TYPED_TEST(OptionalShipmentTest, PlainSelectRoundTripsNonNullCompositeFk) {
+    storm::QuerySet<OrderLineWithShipments, TypeParam> line_qs;
+    const OrderLineWithShipments line{.order_id = 5, .product_id = 12, .quantity = 3, .note = "first"};
+    ASSERT_TRUE(line_qs.insert(line).execute().has_value());
+
+    storm::QuerySet<OptionalShipment, TypeParam> ship_qs;
+    ASSERT_TRUE(ship_qs.insert(OptionalShipment{.line = line, .carrier = "UPS"}).execute().has_value());
+
+    auto rows = ship_qs.select().execute();
+    ASSERT_TRUE(rows.has_value());
+    ASSERT_EQ(rows.value().size(), 1U);
+    const OptionalShipment& loaded = *rows.value().begin();
+    ASSERT_TRUE(loaded.line.has_value());
+    EXPECT_EQ(loaded.line->order_id, 5);
+    EXPECT_EQ(loaded.line->product_id, 12);
+    EXPECT_EQ(loaded.carrier, "UPS");
+}
+
+TYPED_TEST(OptionalShipmentTest, PlainSelectRoundTripsNullCompositeFk) {
+    storm::QuerySet<OptionalShipment, TypeParam> ship_qs;
+    ASSERT_TRUE(ship_qs.insert(OptionalShipment{.line = std::nullopt, .carrier = "FedEx"}).execute().has_value());
+
+    auto rows = ship_qs.select().execute();
+    ASSERT_TRUE(rows.has_value());
+    ASSERT_EQ(rows.value().size(), 1U);
+    const OptionalShipment& loaded = *rows.value().begin();
+    EXPECT_FALSE(loaded.line.has_value());
+    EXPECT_EQ(loaded.carrier, "FedEx");
+}
+
+// ── Review fix: composite-FK member before an optional single-column FK ────
+// MixedFkOrder::composite (2 SQL columns) precedes MixedFkOrder::single (an
+// optional single-column FK to Person). Before the fix, the optional
+// single-column-FK extraction branch read column position = member index
+// instead of the threaded col_idx, so `single` would read from the wrong
+// column (composite's second column) once a composite-FK member preceded it.
+namespace {
+    template <typename ConnType>
+    class MixedFkOrderTest : public StormTestFixture<MixedFkOrder, ConnType, OrderLineWithShipments, Person> {};
+
+    // Shared setup: insert and return an OrderLineWithShipments row used as
+    // MixedFkOrder::composite's target in both tests below.
+    template <typename ConnType>
+    auto insert_mixed_fk_order_line(int order_id, int product_id, std::string note) -> OrderLineWithShipments {
+        storm::QuerySet<OrderLineWithShipments, ConnType> line_qs;
+        const OrderLineWithShipments                      line{
+                                     .order_id = order_id, .product_id = product_id, .quantity = 1, .note = std::move(note)
+        };
+        EXPECT_TRUE(line_qs.insert(line).execute().has_value());
+        return line;
+    }
+
+    // Shared verification: insert `order`, select it back, and return the
+    // sole loaded row for the caller to assert on.
+    template <typename ConnType> auto insert_and_reload_mixed_fk_order(const MixedFkOrder& order) -> MixedFkOrder {
+        storm::QuerySet<MixedFkOrder, ConnType> order_qs;
+        EXPECT_TRUE(order_qs.insert(order).execute().has_value());
+
+        auto rows = order_qs.select().execute();
+        EXPECT_TRUE(rows.has_value());
+        EXPECT_EQ(rows.value().size(), 1U);
+        return *rows.value().begin();
+    }
+} // namespace
+
+TYPED_TEST_SUITE(MixedFkOrderTest, DatabaseTypes);
+
+TYPED_TEST(MixedFkOrderTest, ExtractsOptionalSingleColumnFkAfterPrecedingCompositeFk) {
+    const OrderLineWithShipments line = insert_mixed_fk_order_line<TypeParam>(7, 42, "n");
+
+    storm::QuerySet<Person, TypeParam> person_qs;
+    const Person                       owner{.name = "Carol", .age = 40};
+    ASSERT_TRUE(person_qs.insert(owner).execute().has_value());
+
+    const MixedFkOrder order{.composite = line, .single = Person{.id = 1}};
+    const MixedFkOrder loaded = insert_and_reload_mixed_fk_order<TypeParam>(order);
+    EXPECT_EQ(loaded.composite.order_id, 7);
+    EXPECT_EQ(loaded.composite.product_id, 42);
+    ASSERT_TRUE(loaded.single.has_value());
+    EXPECT_EQ(loaded.single->id, 1);
+}
+
+TYPED_TEST(MixedFkOrderTest, ExtractsNullOptionalSingleColumnFkAfterPrecedingCompositeFk) {
+    const OrderLineWithShipments line = insert_mixed_fk_order_line<TypeParam>(8, 43, "n2");
+
+    const MixedFkOrder order{.composite = line, .single = std::nullopt};
+    const MixedFkOrder loaded = insert_and_reload_mixed_fk_order<TypeParam>(order);
+    EXPECT_EQ(loaded.composite.order_id, 8);
+    EXPECT_EQ(loaded.composite.product_id, 43);
+    EXPECT_FALSE(loaded.single.has_value());
+}
+
+// ── Single-column FK regression ──────────────────────────────────────────────
+// Message::sender (test_models.h) is the long-standing single-column FK fixture.
+// Its bind/extract behaviour must be byte-for-byte unchanged by the composite
+// widening (the if constexpr branches key on fk_primary_key_count<FKType>()).
+
+namespace {
+    template <typename ConnType>
+    class SingleColumnFkRegressionTest : public StormTestFixture<Message, ConnType, Person> {};
+} // namespace
+
+TYPED_TEST_SUITE(SingleColumnFkRegressionTest, DatabaseTypes);
+
+TYPED_TEST(SingleColumnFkRegressionTest, InsertAndSelectRoundTripsSingleColumnFk) {
+    storm::QuerySet<Person, TypeParam> person_qs;
+    const Person                       sender{.name = "Alice", .age = 30};
+    ASSERT_TRUE(person_qs.insert(sender).execute().has_value());
+
+    storm::QuerySet<Message, TypeParam> msg_qs;
+    const Message                       msg{.content = "hi", .sender = {.id = 1}};
+    ASSERT_TRUE(msg_qs.insert(msg).execute().has_value());
+
+    auto rows = msg_qs.select().execute();
+    ASSERT_TRUE(rows.has_value());
+    ASSERT_EQ(rows.value().size(), 1U);
+    EXPECT_EQ(rows.value().begin()->sender.id, 1);
+    EXPECT_EQ(rows.value().begin()->content, "hi");
+}

@@ -88,6 +88,16 @@ namespace {
         [[= storm::auto_update]] std::chrono::system_clock::time_point updated_at{};
     };
 
+    // FK targeting MockOrderLine's composite (2-part) PK, as std::optional — used
+    // to cover bind_null_run()'s error branch (#504): binding a NULL composite FK
+    // loops bind_null() once per target PK part, so a failure on any iteration
+    // must propagate. The plain single-column optional-FK mock above
+    // (MockOptionalFKMessage) only ever hits the N==1 bind_null branch.
+    struct MockOptionalCompositeFkOrder {
+        [[= storm::primary]] int                       id{};
+        [[= storm::fk<>]] std::optional<MockOrderLine> shipment_line;
+    };
+
     /**
      * @brief Test fixture for ORM mock error tests
      *
@@ -3568,6 +3578,22 @@ namespace {
         auto result = qs.insert(msg).execute();
 
         ASSERT_FALSE(result.has_value()) << "Insert should fail when optional FK null bind fails";
+        EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
+    }
+
+    // #504 — bind_null_run()'s error branch: a NULL composite-FK (std::optional<
+    // MockOrderLine>, 2-part PK) loops bind_null() once per target PK part, so a
+    // failure must propagate out of the loop rather than being swallowed.
+    TEST_F(ORMMockErrorTest, InsertOptionalCompositeFKNullBindFailure) {
+        MockSqlite3Config::bind_null_returns(SQLITE_NOMEM);
+
+        (void)QuerySet<MockOptionalCompositeFkOrder>::set_default_connection(":memory:");
+        QuerySet<MockOptionalCompositeFkOrder> qs;
+        MockOptionalCompositeFkOrder const     order{.id = 0, .shipment_line = std::nullopt};
+
+        auto result = qs.insert(order).execute();
+
+        ASSERT_FALSE(result.has_value()) << "Insert should fail when composite optional FK null bind fails";
         EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
     }
 

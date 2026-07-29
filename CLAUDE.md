@@ -440,6 +440,41 @@ right once the key columns are bound). Single-PK INSERT SQL is byte-identical
 (regression-asserted) and the `RETURNING id` path is unchanged. Upsert/`ON CONFLICT` is #503,
 JOIN #504.
 
+**Composite PK — FKs and JOINs (#504)**: an FK may reference a composite-PK model, and every JOIN
+path (regular FK, m2m, reverse-FK) works over multi-column keys. An FK to an N-part target occupies
+**N columns**, named `<member>_<part>` (`line_order_id`, `line_product_id`) — the single-column
+`<member>_id` spelling is unchanged for single-PK targets, so all pre-#504 SQL is byte-identical
+(regression-asserted at every layer). Nullable composite FKs work: `std::optional<Target>` makes all
+N columns nullable together.
+
+Four things had to widen in lockstep, each with its own failure mode. (1) **ON clauses** AND-join
+one equality per part (`t2.a = t1.fk_a AND t2.b = t1.fk_b`) — matching only the first part would
+silently join rows sharing just that part. (2) **The m2m/reverse-FK stitch key** gained `StitchKey`,
+a fixed 32-byte inline buffer, for composite owners — a composite key is not one integer and may mix
+`int`/`std::string`/`int64_t`; the statement-side extractor and the object-side builder dispatch per
+part on the declared type and must stay in agreement. A **single-column PK still keys the map on a
+bare `std::uint64_t`**, selected by `if constexpr` on `primary_key_column_count_`: `std::hash<long>`
+is the identity function and `operator==` on a `long` is one inlined compare, so routing single-PK
+models through `StitchKey` cost ~4% on the m2m eager-load path (`M2MRelation` carries a second
+fn-pointer for the narrow extractor; exactly one is populated). (3) **The Q2 `IN`
+subquery** uses the row-value form `(a, b) IN (SELECT a, b FROM …)` — the outer comparison side is
+parenthesized but the inner SELECT list is **left unwrapped**, because parenthesizing it makes
+SQLite parse it as one scalar expression rather than N columns. (4) **Junction DDL** emits one
+column per PK part per side, `<Side>_<part>`, with the PRIMARY KEY listing all N+M and each
+`FOREIGN KEY` naming the target's real key columns. That last part also fixed a latent bug: the
+old `REFERENCES <Side>(id)` named a nonexistent column for a composite side — SQLite silently
+accepts an unvalidated FK target, but PG rejects it outright, so composite-PK junction tables could
+not be created on PG at all. Composite PK is supported on **either or both** m2m sides.
+
+An FK member used as a `primary_part` stores the *referenced* key's type, not the whole struct —
+`pk_part_storage_type` routes through the same `is_fk_field` check as `bind_one_pk_part` (#501).
+Without it, a composite key over FKs (the canonical association-table shape) hard-errors inside a
+sizer with a message naming neither model nor field. Column names always go through
+`append_column_name` (#422), so an FK part emits `warehouse_id`. Sizing is exact: the junction
+sizer runs the **writer itself** into a counting sink, so the two cannot drift — and note
+`ConstexprString<N>` holds only `N-1` bytes (its `append` stops at `len < N - 1`), so a buffer
+sized to exactly the rendered length silently drops the final character.
+
 **Foreign keys (#431)**: `[[= storm::fk<>]]` marks an FK field (bare = `RESTRICT`,
 the SQL default — no `ON DELETE` clause emitted). The `ON DELETE` policy is the template
 arg: `fk<RefAction::Cascade>` / `fk<RefAction::SetNull>` / `fk<RefAction::Restrict>` /

@@ -828,6 +828,26 @@ export namespace storm::orm::statements {
             std::unreachable(); // never reached: requires ModelWithPrimaryKey<...> guarantees a primary key exists
         }
 
+        // Widened form of find_fk_primary_key (#504): returns the FK target's FULL
+        // primary-key member list — 1 element for a single-column target (matching
+        // find_fk_primary_key exactly), N for a composite target. Existing single-FK
+        // call sites keep using find_fk_primary_key unchanged (byte-identical splice
+        // shape); this is used only by the new composite-FK bind/extract/JOIN paths.
+        template <typename FKType>
+            requires ValidForeignKey<FKType>
+        static consteval auto fk_primary_key_count() -> std::size_t {
+            using InnerType = utilities::optional_inner_type_t<FKType>;
+            return BaseStatement<InnerType>::primary_key_column_count_;
+        }
+
+        template <typename FKType>
+            requires ValidForeignKey<FKType>
+        static consteval auto find_fk_primary_key_members()
+                -> std::array<std::meta::info, fk_primary_key_count<FKType>()> {
+            using InnerType = utilities::optional_inner_type_t<FKType>;
+            return BaseStatement<InnerType>::primary_key_members_;
+        }
+
       protected:
         // Number of PERSISTED fields. Relation container members (many-to-many #203,
         // reverse_fk #398) map to a separate query, not to a column, so they are
@@ -926,8 +946,8 @@ export namespace storm::orm::statements {
         // declaration order; primary_key_ / pk_name_ above stay the FIRST element, so
         // every single-PK caller is untouched. has_composite_pk_ branches the schema
         // generator (table-level PRIMARY KEY (a, b), #500), the by-key WHERE clause
-        // (#501), and the INSERT column/bind policy (#502). JOIN on a composite
-        // model is still out of scope (#504).
+        // (#501), the INSERT column/bind policy (#502), and the JOIN paths — FK ON
+        // clauses, junction DDL, and the m2m/reverse-FK stitch key (#504).
         static constexpr auto primary_key_members_ = find_primary_key_members_impl();
         static constexpr bool has_composite_pk_    = primary_key_members_.size() > 1;
 
@@ -1099,7 +1119,33 @@ export namespace storm::orm::statements {
             return {};
         }
 
+        // Bind N SQL NULLs starting at param_index, advancing it past all of them —
+        // the composite-FK counterpart of a single stmt->bind_null() call, used when an
+        // empty std::optional<CompositeFkTarget> must NULL out every target PK-part
+        // column (#504). Extracted from bind_fk_field_at_index to keep that function's
+        // cognitive complexity under the project's threshold.
+        template <typename ConnType>
+        [[nodiscard]] __attribute__((always_inline)) static constexpr auto
+        bind_null_run(typename ConnType::Statement* stmt, int& param_index, std::size_t count) noexcept
+                -> std::expected<void, typename ConnType::Error> {
+            for (std::size_t i = 0; i < count; ++i) {
+                auto null_result = stmt->bind_null(param_index);
+                if (!null_result) {
+                    return std::unexpected(null_result.error());
+                }
+                ++param_index;
+            }
+            return {};
+        }
+
         // Extract and bind the foreign object's PK value (NULL for an empty optional FK).
+        //
+        // Widened for a composite FK target (#504): the utilities::is_optional_v /
+        // is_fk_field dispatch stays exactly as it was for a SINGLE-column target
+        // (fk_primary_key_count<FKType>() == 1, the pre-#504 code path, byte-for-byte
+        // unchanged below); a composite target (> 1) routes through bind_fk_parts /
+        // bind_null_run, which bind every part of the target's primary key and advance
+        // param_index past all of them.
         template <typename ConnType, std::size_t Index>
         [[nodiscard]] __attribute__((always_inline)) static constexpr auto
         bind_fk_field_at_index(typename ConnType::Statement* stmt, const T& obj, int& param_index) noexcept
@@ -1107,21 +1153,77 @@ export namespace storm::orm::statements {
             constexpr auto member = all_members_[Index];
             using FKType          = std::remove_cvref_t<decltype(obj.[:member:])>;
             if constexpr (utilities::is_optional_v<FKType>) {
-                // Optional FK: bind NULL when empty, otherwise bind the inner PK value
+                // Optional FK: bind NULL(s) when empty, otherwise bind the inner PK value(s)
                 if (!obj.[:member:].has_value()) {
-                    auto null_result = stmt->bind_null(param_index);
-                    if (!null_result) {
-                        return std::unexpected(null_result.error());
+                    if constexpr (fk_primary_key_count<FKType>() == 1) {
+                        auto null_result = stmt->bind_null(param_index);
+                        if (!null_result) {
+                            return std::unexpected(null_result.error());
+                        }
+                        ++param_index;
+                        return {};
+                    } else {
+                        return bind_null_run<ConnType>(stmt, param_index, fk_primary_key_count<FKType>());
                     }
-                    ++param_index;
-                    return {};
                 }
-                constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
-                return bind_one<ConnType>(stmt, param_index, obj.[:member:].value().[:fk_pk_member:]);
+                if constexpr (fk_primary_key_count<FKType>() == 1) {
+                    constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
+                    return bind_one<ConnType>(stmt, param_index, obj.[:member:].value().[:fk_pk_member:]);
+                } else {
+                    return bind_fk_parts<ConnType, FKType>(stmt, obj.[:member:].value(), param_index);
+                }
             } else {
-                constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
-                return bind_one<ConnType>(stmt, param_index, obj.[:member:].[:fk_pk_member:]);
+                if constexpr (fk_primary_key_count<FKType>() == 1) {
+                    constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
+                    return bind_one<ConnType>(stmt, param_index, obj.[:member:].[:fk_pk_member:]);
+                } else {
+                    return bind_fk_parts<ConnType, FKType>(stmt, obj.[:member:], param_index);
+                }
             }
+        }
+
+        // Bind one part of a composite FK target's primary key at `param_index`,
+        // advancing it on success. `Member` is an NTTP (not a runtime array
+        // element): a std::meta::info captured by a runtime lambda closure is a
+        // "consteval-only type used outside a constant expression" hard error in
+        // this compiler, so each part must be named as a template argument, the
+        // same discipline bind_one_pk_part uses for composite-PK binding (#501).
+        template <typename ConnType, std::meta::info Member>
+        [[nodiscard]] __attribute__((always_inline)) static constexpr auto
+        bind_one_fk_part(typename ConnType::Statement* stmt, const auto& fk_obj, int& param_index) noexcept
+                -> std::expected<void, typename ConnType::Error> {
+            auto result = bind_value_by_type<ConnType>(*stmt, param_index, fk_obj.[:Member:]);
+            if (result.has_value()) {
+                ++param_index;
+            }
+            return result;
+        }
+
+        // Bind every part of the FK target's primary key, in declaration order,
+        // advancing param_index past all of them. Only reached for a composite
+        // target (fk_primary_key_count<FKType>() > 1) — see bind_fk_field_at_index.
+        // Index-sequence fold over the FUNCTION TEMPLATE's own parameter pack
+        // (Is), not a runtime lambda closure — see bind_one_fk_part above.
+        template <typename ConnType, typename FKType, std::size_t... Is>
+        [[nodiscard]] __attribute__((always_inline)) static constexpr auto bind_fk_parts_impl(
+                typename ConnType::Statement* stmt,
+                const auto&                   fk_obj,
+                int&                          param_index,
+                std::index_sequence<Is...> /*unused*/
+        ) noexcept -> std::expected<void, typename ConnType::Error> {
+            constexpr auto                                members = find_fk_primary_key_members<FKType>();
+            std::expected<void, typename ConnType::Error> result{};
+            ((result = bind_one_fk_part<ConnType, members[Is]>(stmt, fk_obj, param_index), result.has_value()) && ...);
+            return result;
+        }
+
+        template <typename ConnType, typename FKType>
+        [[nodiscard]] __attribute__((always_inline)) static constexpr auto
+        bind_fk_parts(typename ConnType::Statement* stmt, const auto& fk_obj, int& param_index) noexcept
+                -> std::expected<void, typename ConnType::Error> {
+            return bind_fk_parts_impl<ConnType, FKType>(
+                    stmt, fk_obj, param_index, std::make_index_sequence<fk_primary_key_count<FKType>()>{}
+            );
         }
 
         // Bulk binding scaffolding: iterate objects, fold the per-field bind over the
@@ -1291,51 +1393,131 @@ export namespace storm::orm::statements {
         // (avoids P2996 experimental compiler limitation in select.cppm module)
         // =====================================================================
 
-        // Extract optional FK column: set nullopt when NULL, otherwise extract inner PK
+        // Extract optional FK column: set nullopt when NULL, otherwise extract inner PK.
+        // Single-column target only (fk_primary_key_count<FieldType>() == 1) — the
+        // pre-#504 code, widened only to read from col_idx (the ACTUAL SQL column
+        // position) rather than Index (the member's position in all_members_): the two
+        // diverge once any earlier member is a composite-FK member consuming N>1 columns
+        // (#504). Index still drives the MEMBER lookup (member = all_members_[Index]) —
+        // that part is correct and unchanged; only the column POSITION moves to the
+        // threaded col_idx parameter, matching extract_fk_parts/extract_optional_fk_parts.
         template <std::size_t Index, typename Statement, typename FieldType>
-        __attribute__((always_inline)) static void extract_optional_fk_column(Statement* stmt, T& obj) noexcept {
+        __attribute__((always_inline)) static void
+        extract_optional_fk_column(Statement* stmt, T& obj, int col_idx) noexcept {
             constexpr auto member       = all_members_[Index];
             using InnerFKType           = utilities::optional_inner_type_t<FieldType>;
             constexpr auto fk_pk_member = find_fk_primary_key<FieldType>();
             using PKType                = std::remove_cvref_t<decltype(std::declval<InnerFKType>().[:fk_pk_member:])>;
-            if (stmt->is_null(Index)) {
+            if (stmt->is_null(col_idx)) {
                 obj.[:member:] = std::nullopt;
             } else {
                 InnerFKType fk_inner{};
-                fk_inner.[:fk_pk_member:] = ColumnExtractor::extract_column_value<PKType>(stmt, Index);
+                fk_inner.[:fk_pk_member:] = ColumnExtractor::extract_column_value<PKType>(stmt, col_idx);
                 obj.[:member:]            = std::move(fk_inner);
             }
         }
 
-        // Extract single column into obj at compile-time index
-        // Statement is deduced from stmt pointer; all_members_[Index] is valid here
+        // Extract one part of a composite FK target's primary key from column
+        // col_idx into fk_obj.[:Member:]. `Member` is an NTTP — see bind_one_fk_part
+        // for why a std::meta::info cannot instead be captured by a runtime lambda
+        // closure in this compiler.
+        template <std::meta::info Member, typename Statement>
+        __attribute__((always_inline)) static void
+        extract_one_fk_part(Statement* stmt, auto& fk_obj, int col_idx) noexcept {
+            using PartType    = std::remove_cvref_t<decltype(fk_obj.[:Member:])>;
+            fk_obj.[:Member:] = ColumnExtractor::extract_column_value<PartType>(stmt, col_idx);
+        }
+
+        // Extract every part of a composite FK target's primary key from N
+        // consecutive columns starting at col_idx, in declaration order (#504).
+        // Single-column targets never reach this — see extract_column_fast's dispatch.
+        // Index-sequence fold over the FUNCTION TEMPLATE's own parameter pack (Is),
+        // not a runtime lambda closure — see extract_one_fk_part above.
+        template <typename Statement, typename FieldType, std::size_t... Is>
+        __attribute__((always_inline)) static void extract_fk_parts_impl(
+                Statement* stmt, auto& fk_obj, int col_idx, std::index_sequence<Is...> /*unused*/
+        ) noexcept {
+            constexpr auto members = find_fk_primary_key_members<FieldType>();
+            (extract_one_fk_part<members[Is], Statement>(stmt, fk_obj, col_idx + static_cast<int>(Is)), ...);
+        }
+
+        template <typename Statement, typename FieldType>
+        __attribute__((always_inline)) static void
+        extract_fk_parts(Statement* stmt, auto& fk_obj, int col_idx) noexcept {
+            extract_fk_parts_impl<Statement, FieldType>(
+                    stmt, fk_obj, col_idx, std::make_index_sequence<fk_primary_key_count<FieldType>()>{}
+            );
+        }
+
+        // Extract an optional composite FK: NULL in the first of the N columns means
+        // no match (mirrors the single-column NULL-FK convention) → nullopt; otherwise
+        // every part is extracted from its own column (#504).
+        template <typename Statement, typename FieldType>
+        __attribute__((always_inline)) static void
+        extract_optional_fk_parts(Statement* stmt, auto& obj_field, int col_idx) noexcept {
+            using InnerFKType = utilities::optional_inner_type_t<FieldType>;
+            if (stmt->is_null(col_idx)) {
+                obj_field = std::nullopt;
+            } else {
+                InnerFKType fk_inner{};
+                extract_fk_parts<Statement, InnerFKType>(stmt, fk_inner, col_idx);
+                obj_field = std::move(fk_inner);
+            }
+        }
+
+        // Extract single column into obj at compile-time member index, reading from
+        // col_idx (the ACTUAL SQL column position, threaded by reference through the
+        // fold below) rather than Index directly: a composite-FK member (#504) spans
+        // more than one SQL column, so member index and column position diverge from
+        // that member onward. col_idx is advanced by exactly the columns this member
+        // consumed — 1 for every pre-#504 shape, fk_primary_key_count<FieldType>()
+        // for a composite FK.
         template <std::size_t Index, typename Statement>
-        __attribute__((always_inline)) static void extract_column_fast(Statement* stmt, T& obj) noexcept {
+        __attribute__((always_inline)) static void extract_column_fast(Statement* stmt, T& obj, int& col_idx) noexcept {
             if constexpr (Index < field_count_) {
                 constexpr auto member = all_members_[Index];
                 using FieldType       = std::remove_cvref_t<decltype(obj.[:member:])>;
                 if constexpr (is_fk_field(member)) {
                     if constexpr (utilities::is_optional_v<FieldType>) {
-                        extract_optional_fk_column<Index, Statement, FieldType>(stmt, obj);
+                        if constexpr (fk_primary_key_count<FieldType>() == 1) {
+                            extract_optional_fk_column<Index, Statement, FieldType>(stmt, obj, col_idx);
+                            ++col_idx;
+                        } else {
+                            extract_optional_fk_parts<Statement, FieldType>(stmt, obj.[:member:], col_idx);
+                            col_idx += static_cast<int>(fk_primary_key_count<FieldType>());
+                        }
                     } else {
-                        obj.[:member:]              = FieldType{};
-                        constexpr auto fk_pk_member = find_fk_primary_key<FieldType>();
-                        using PKType                = std::remove_cvref_t<decltype(obj.[:member:].[:fk_pk_member:])>;
-                        obj.[:member:].[:fk_pk_member:] = ColumnExtractor::extract_column_value<PKType>(stmt, Index);
+                        obj.[:member:] = FieldType{};
+                        if constexpr (fk_primary_key_count<FieldType>() == 1) {
+                            constexpr auto fk_pk_member = find_fk_primary_key<FieldType>();
+                            using PKType = std::remove_cvref_t<decltype(obj.[:member:].[:fk_pk_member:])>;
+                            obj.[:member:].[:fk_pk_member:] = ColumnExtractor::extract_column_value<PKType>(
+                                                                    stmt, col_idx
+                                                            );
+                            ++col_idx;
+                        } else {
+                            extract_fk_parts<Statement, FieldType>(stmt, obj.[:member:], col_idx);
+                            col_idx += static_cast<int>(fk_primary_key_count<FieldType>());
+                        }
                     }
                 } else if constexpr (storm::meta::has_full_unsigned_attr(member)) {
-                    extract_full_unsigned_into<member, FieldType>(stmt, obj, Index);
+                    extract_full_unsigned_into<member, FieldType>(stmt, obj, col_idx);
+                    ++col_idx;
                 } else {
-                    obj.[:member:] = ColumnExtractor::extract_column_value<FieldType>(stmt, Index);
+                    obj.[:member:] = ColumnExtractor::extract_column_value<FieldType>(stmt, col_idx);
+                    ++col_idx;
                 }
             }
         }
 
-        // Expand index sequence and extract each column
+        // Expand index sequence and extract each column, threading the actual SQL
+        // column position through col_idx (#504: diverges from the member index once
+        // a composite-FK member has been consumed).
         template <typename Statement, std::size_t... Is>
         __attribute__((always_inline)) static void
         extract_all_columns_impl(Statement* stmt, T& obj, std::index_sequence<Is...> /*unused*/) noexcept {
-            ((extract_column_fast<Is>(stmt, obj)), ...);
+            int col_idx = 0;
+            ((extract_column_fast<Is>(stmt, obj, col_idx)), ...);
         }
 
         // Entry point: extract all columns into obj using field_indices_t

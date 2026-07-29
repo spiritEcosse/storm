@@ -486,6 +486,531 @@ export namespace storm::orm::schema {
             return sql_type_for<cls, D, nullable>();
         }
 
+        // ---- Composite-FK column/constraint DDL (#504) ----
+        // A composite-FK member (fk<> whose target has a multi-column primary key, #500)
+        // cannot be expressed as one column-level "<name>_id ... REFERENCES ..." the way a
+        // single-column FK is (append_fk_column_def): SQLite/PG column-level REFERENCES only
+        // ever names one column. Instead: one plain column PER target PK part
+        // (append_composite_fk_columns, "<name>_<part> <TYPE> [NOT NULL], ..."), plus a
+        // SEPARATE table-level FOREIGN KEY (...) REFERENCES <Related>(...) constraint tying
+        // them back to the target (append_composite_fk_constraint) — the same two-piece shape
+        // append_composite_pk_clause already uses for a composite PRIMARY KEY. Free-standing
+        // functions (not SchemaStatement methods): SchemaStatement is at its S1448 method
+        // ceiling (see append_composite_pk_clause's own comment), and these need only the FK
+        // member's own reflection plus its target's PK member list — the target's own
+        // BaseStatement<RelatedType>, not SchemaStatement<T>'s Base.
+
+        // Append ONE column of a composite-FK target's part: "<name>_<part> <TYPE> [NOT
+        // NULL]" (omits NOT NULL for a nullable FK member, matching append_fk_column_def's
+        // own [nullable] dispatch). `PartMember` is the TARGET's own primary-key-part
+        // reflection (e.g. OrderLineWithShipments::order_id) — its OWN declared type drives
+        // the SQL storage CLASS (Integer/Text/...) via the same storage_class_of dispatch
+        // sql_col_def uses internally. Single-level only, matching the FKFieldOf/
+        // ValidForeignKey precedent (#412): a part that is ITSELF an FK field is not
+        // resolved recursively — it falls through to its declared C++ type's storage class
+        // (that shape does not occur in the current fixtures).
+        // `FkMember` is the FK member's own reflection (source of the "<name>_" prefix).
+        //
+        // Nullability is NOT delegated to sql_col_def<PartType, D>(): that dispatch reads
+        // is_optional_v<PartType>, and PartType is the TARGET's own PK-part type — a
+        // primary-key part is NEVER std::optional (PKs can't be nullable), so that call
+        // would always return the NOT-NULL variant regardless of whether the FK MEMBER
+        // itself is nullable. The single decision point for nullability must be
+        // FkFieldType's own optionality (mirrors append_fk_column_def's fk_nullable flag,
+        // which reads storm::orm::utilities::is_optional_v<FieldType> where FieldType is
+        // the FK member's type, not the target's) — so this calls sql_type_for directly
+        // with that flag, rather than sql_col_def.
+        template <std::meta::info FkMember, std::meta::info PartMember, Dialect D, typename SqlT>
+        consteval void append_composite_fk_part_column(SqlT& col) {
+            using FkFieldType          = std::remove_cvref_t<typename[:std::meta::type_of(FkMember):]>;
+            using PartType             = std::remove_cvref_t<typename[:std::meta::type_of(PartMember):]>;
+            constexpr StorageClass cls = storage_class_of<PartType>();
+            constexpr bool         nullable =
+                    utilities::is_optional_v<FkFieldType> || cls == StorageClass::Blob || cls == StorageClass::Fallback;
+            col.append(std::meta::identifier_of(FkMember));
+            col.append("_");
+            col.append(std::meta::identifier_of(PartMember));
+            col.append(" ");
+            col.append(sql_type_for<cls, D, nullable>());
+        }
+
+        // The target's PK member list, as a template-argument-usable constexpr value
+        // (NOT a runtime array reference, even a const-ref one): std::meta::info is a
+        // consteval-only type, and `targets[Is]` used as another function's template
+        // argument (see append_composite_fk_part_column below) must itself be a
+        // constant expression — a std::array PARAMETER is not, even when the caller
+        // only ever passes a constexpr local (the parameter's constexpr-ness does not
+        // propagate through the call). Shared by append_composite_fk_columns_impl and
+        // append_composite_fk_constraint_impl below so the RelatedBase/targets lookup
+        // is written once; matches the discipline base.cppm's
+        // bind_fk_parts_impl/extract_fk_parts_impl already use for the identical shape.
+        template <typename RelatedType> consteval auto composite_fk_target_members() {
+            return storm::orm::statements::BaseStatement<RelatedType>::primary_key_members_;
+        }
+
+        template <typename RelatedType, std::meta::info Member, Dialect D, typename SqlT, std::size_t... Is>
+        consteval void append_composite_fk_columns_impl(SqlT& col, std::index_sequence<Is...> /*unused*/) {
+            constexpr auto targets = composite_fk_target_members<RelatedType>();
+            (
+                    [&] {
+                        if constexpr (Is > 0) {
+                            col.append(", ");
+                        }
+                        append_composite_fk_part_column<Member, targets[Is], D>(col);
+                    }(),
+                    ...
+            );
+        }
+
+        // Append every column a composite-FK member emits, comma-joined: one column per
+        // target PK part (#504). Sits in build_column_def's FK branch alongside the
+        // single-column append_fk_column_def.
+        template <typename RelatedType, std::meta::info Member, Dialect D, typename SqlT>
+        consteval void append_composite_fk_columns(SqlT& col) {
+            using RelatedBase = storm::orm::statements::BaseStatement<RelatedType>;
+            append_composite_fk_columns_impl<RelatedType, Member, D>(
+                    col, std::make_index_sequence<RelatedBase::primary_key_column_count_>{}
+            );
+        }
+
+        template <typename RelatedType, std::meta::info Member, Dialect D, typename SqlT, std::size_t... Is>
+        consteval void append_composite_fk_constraint_impl(
+                SqlT& sql, std::string_view related_name, std::index_sequence<Is...> /*unused*/
+        ) {
+            constexpr auto targets = composite_fk_target_members<RelatedType>();
+            sql.append(",\n    FOREIGN KEY (");
+            (
+                    [&] {
+                        if constexpr (Is > 0) {
+                            sql.append(", ");
+                        }
+                        sql.append(std::meta::identifier_of(Member));
+                        sql.append("_");
+                        sql.append(std::meta::identifier_of(targets[Is]));
+                    }(),
+                    ...
+            );
+            sql.append(") REFERENCES ");
+            sql.append(related_name);
+            sql.append("(");
+            (
+                    [&] {
+                        if constexpr (Is > 0) {
+                            sql.append(", ");
+                        }
+                        storm::meta::append_column_name(sql, targets[Is]);
+                    }(),
+                    ...
+            );
+            sql.append(")");
+            if constexpr (constexpr auto action = storm::orm::statements::meta::fk_on_delete_action_of(Member);
+                          action.has_value()) {
+                sql.append(" ON DELETE ");
+                sql.append(storm::orm::statements::meta::ref_action_sql(action.value()));
+            }
+        }
+
+        // Table-level "FOREIGN KEY (<name>_a, <name>_b) REFERENCES <Related>(a, b) [ON
+        // DELETE <action>]" for a composite-FK member (#504) — the multi-column counterpart
+        // of append_fk_column_def's inline column-level REFERENCES, emitted once per
+        // composite-FK member after all columns (same placement as
+        // append_composite_pk_clause). The LOCAL side names the columns
+        // append_composite_fk_columns just defined ("<name>_<part>"); the TARGET side names
+        // the target's own PK part columns via append_column_name (correct even if a target
+        // part is itself an FK, whose own column is "<part>_id").
+        template <typename RelatedType, std::meta::info Member, Dialect D, typename SqlT>
+        consteval void append_composite_fk_constraint(SqlT& sql) {
+            using RelatedBase = storm::orm::statements::BaseStatement<RelatedType>;
+            append_composite_fk_constraint_impl<RelatedType, Member, D>(
+                    sql,
+                    std::meta::identifier_of(std::meta::dealias(^^RelatedType)),
+                    std::make_index_sequence<RelatedBase::primary_key_column_count_>{}
+            );
+        }
+
+        // Byte size of append_composite_fk_columns<RelatedType, Member, D>()'s output —
+        // measured by rendering into the counting sink, mirroring every other exact-size
+        // companion in this file (max_length_clause_len, default_clause_len, ...).
+        template <typename RelatedType, std::meta::info Member, Dialect D>
+        consteval auto composite_fk_columns_size() -> std::size_t {
+            ClauseSizer sizer;
+            append_composite_fk_columns<RelatedType, Member, D>(sizer);
+            return sizer.len;
+        }
+
+        // Byte size of append_composite_fk_constraint<RelatedType, Member, D>()'s output.
+        template <typename RelatedType, std::meta::info Member, Dialect D>
+        consteval auto composite_fk_constraint_size() -> std::size_t {
+            ClauseSizer sizer;
+            append_composite_fk_constraint<RelatedType, Member, D>(sizer);
+            return sizer.len;
+        }
+
+        // ---- Auto-junction table DDL (#203, widened for composite PKs in #504) ----
+        //
+        // The auto-junction was fixed at two columns, "<Owner>_id" and "<Related>_id",
+        // with both sides' FK clauses hardcoded to "REFERENCES <Side>(id)". All three
+        // parts of that shape break when a side's primary key spans several columns
+        // (#500): one column cannot carry an N-part key, the PRIMARY KEY clause must
+        // list every column or the junction rejects legitimate distinct pairs, and
+        // "(id)" names a column a composite-PK model does not have. (SQLite does not
+        // validate FK target columns at CREATE TABLE time so it accepted the broken
+        // DDL silently; PostgreSQL rejected it, which is why such a model could not be
+        // created there at all.)
+        //
+        // Naming follows the composite-FK convention (#504 Task 3): a single-PK side
+        // keeps the exact legacy "<Side>_id" spelling, a composite side emits
+        // "<Side>_<part>" per part. The single-PK spelling is a hardcoded special case,
+        // NOT a degenerate instance of the general rule — same discipline as
+        // append_fk_column_names, so the byte-identical guarantee for existing junctions
+        // cannot drift.
+        //
+        // Free functions rather than SchemaStatement methods: that class is at its
+        // S1448 method ceiling, and these need both sides' own BaseStatement, not
+        // SchemaStatement<T>'s.
+
+        // Column-name writer for one junction side, part `Is`. Single-PK sides ignore
+        // `Is` entirely (they have exactly one part, index 0). The composite branch
+        // routes the part through append_column_name (#422), so an FK key part
+        // (`[[= storm::primary_part]][[= storm::fk<>]] Person warehouse` — the canonical
+        // association-table shape) emits "<Side>_warehouse_id", matching the column
+        // append_junction_side_target_list names on the FK clause's target side.
+        // Naming the bare member would produce a junction column referencing a column
+        // that does not exist on the target.
+        template <typename SideType, std::size_t Is, typename SqlT>
+        consteval void append_junction_side_column_name(SqlT& sql, std::string_view side_name) {
+            using SideBase = storm::orm::statements::BaseStatement<SideType>;
+            sql.append(side_name);
+            if constexpr (SideBase::has_composite_pk_) {
+                sql.append("_");
+                storm::meta::append_column_name(sql, SideBase::primary_key_members_[Is]);
+            } else {
+                sql.append("_id");
+            }
+        }
+
+        // The C++ type a composite key part is STORED as. A plain part stores its own
+        // declared type; an FK part stores the REFERENCED row's key, so its storage type
+        // is that key's type, not the whole related struct (which has no storage class at
+        // all — it would fall through to StorageClass::Fallback and trip
+        // not_null_type_for's static_assert from several levels down inside a sizer,
+        // naming neither the model nor the field). Same is_fk_field routing that
+        // BaseStatement::bind_one_pk_part (#501) and TwoQueryJoinBase::append_pk_part_to_key
+        // (#504 Task 8) already use for the identical question. Single-level, matching the
+        // ValidForeignKey precedent (#412): the referenced key is taken as-is, never
+        // resolved recursively if it is ITSELF an FK.
+        template <std::meta::info PartMember> consteval auto pk_part_storage_type() -> std::meta::info {
+            if constexpr (storm::orm::statements::meta::is_fk_field(PartMember)) {
+                using FkFieldType = std::remove_cvref_t<typename[:std::meta::type_of(PartMember):]>;
+                using InnerType   = storm::orm::utilities::optional_inner_type_t<FkFieldType>;
+                return std::meta::type_of(storm::orm::statements::BaseStatement<InnerType>::primary_key_);
+            } else {
+                return std::meta::type_of(PartMember);
+            }
+        }
+
+        // "<Side>_<part> <TYPE> NOT NULL" for one junction column. A junction column is
+        // always NOT NULL (a junction row with a partial key is meaningless), matching
+        // the pre-#504 behaviour. A composite side types each part from that part's OWN
+        // STORED type (int -> INTEGER/BIGINT, string -> TEXT, an FK part -> the referenced
+        // key's type) via the same storage_class_of dispatch every other column uses; a
+        // single-PK side keeps the pre-#504 hardcoded integer type, which is what makes
+        // its output byte-identical.
+        template <typename SideType, std::size_t Is, Dialect D, typename SqlT>
+        consteval void append_junction_side_column_def(SqlT& sql, std::string_view side_name) {
+            using SideBase = storm::orm::statements::BaseStatement<SideType>;
+            append_junction_side_column_name<SideType, Is>(sql, side_name);
+            sql.append(" ");
+            if constexpr (SideBase::has_composite_pk_) {
+                using PartType =
+                        std::remove_cvref_t<typename[:pk_part_storage_type<SideBase::primary_key_members_[Is]>():]>;
+                sql.append(sql_type_for<storage_class_of<PartType>(), D, /*Nullable=*/false>());
+            } else {
+                sql.append((D == Dialect::PostgreSQL) ? "BIGINT NOT NULL" : "INTEGER NOT NULL");
+            }
+        }
+
+        // How many junction columns a side contributes: 1 for a single-column PK,
+        // N for a composite one.
+        template <typename SideType> consteval auto junction_side_column_count() -> std::size_t {
+            return storm::orm::statements::BaseStatement<SideType>::primary_key_column_count_;
+        }
+
+        template <typename SideType, Dialect D, typename SqlT, std::size_t... Is>
+        consteval void append_junction_side_column_defs_impl(
+                SqlT& sql, std::string_view side_name, std::index_sequence<Is...> /*unused*/
+        ) {
+            (
+                    [&] {
+                        if constexpr (Is > 0) {
+                            sql.append(",\n    ");
+                        }
+                        append_junction_side_column_def<SideType, Is, D>(sql, side_name);
+                    }(),
+                    ...
+            );
+        }
+
+        // Every column definition this side contributes, ",\n    "-joined.
+        template <typename SideType, Dialect D, typename SqlT>
+        consteval void append_junction_side_column_defs(SqlT& sql, std::string_view side_name) {
+            append_junction_side_column_defs_impl<SideType, D>(
+                    sql, side_name, std::make_index_sequence<junction_side_column_count<SideType>()>{}
+            );
+        }
+
+        template <typename SideType, typename SqlT, std::size_t... Is>
+        consteval void append_junction_side_column_list_impl(
+                SqlT& sql, std::string_view side_name, std::index_sequence<Is...> /*unused*/
+        ) {
+            (
+                    [&] {
+                        if constexpr (Is > 0) {
+                            sql.append(", ");
+                        }
+                        append_junction_side_column_name<SideType, Is>(sql, side_name);
+                    }(),
+                    ...
+            );
+        }
+
+        // Every column NAME this side contributes, ", "-joined — used by both the
+        // PRIMARY KEY clause and the local side of the FOREIGN KEY clause, so those two
+        // can never disagree about which columns exist.
+        template <typename SideType, typename SqlT>
+        consteval void append_junction_side_column_list(SqlT& sql, std::string_view side_name) {
+            append_junction_side_column_list_impl<SideType>(
+                    sql, side_name, std::make_index_sequence<junction_side_column_count<SideType>()>{}
+            );
+        }
+
+        template <typename SideType, typename SqlT, std::size_t... Is>
+        consteval void append_junction_side_target_list_impl(SqlT& sql, std::index_sequence<Is...> /*unused*/) {
+            using SideBase = storm::orm::statements::BaseStatement<SideType>;
+            (
+                    [&] {
+                        if constexpr (Is > 0) {
+                            sql.append(", ");
+                        }
+                        storm::meta::append_column_name(sql, SideBase::primary_key_members_[Is]);
+                    }(),
+                    ...
+            );
+        }
+
+        // The TARGET side of this side's FOREIGN KEY clause: the referenced model's own
+        // primary-key column names. Composite sides only (#504) — a single-PK side keeps
+        // the literal "(id)" the pre-#504 code emitted, deliberately NOT generalised
+        // here: a single PK named something other than "id" is a pre-existing, separate
+        // bug (#506) and fixing it in this path would change existing junction DDL.
+        // Routed through append_column_name (#422) so an FK part emits "<part>_id".
+        template <typename SideType, typename SqlT> consteval void append_junction_side_target_list(SqlT& sql) {
+            append_junction_side_target_list_impl<SideType>(
+                    sql, std::make_index_sequence<junction_side_column_count<SideType>()>{}
+            );
+        }
+
+        // "FOREIGN KEY (<local cols>) REFERENCES <Side>(<target cols>) ON DELETE <action>"
+        // for one junction side (#412).
+        template <typename SideType, typename SqlT>
+        consteval void append_junction_fk(SqlT& sql, std::string_view side_name, std::string_view action) {
+            using SideBase = storm::orm::statements::BaseStatement<SideType>;
+            sql.append("FOREIGN KEY (");
+            append_junction_side_column_list<SideType>(sql, side_name);
+            sql.append(") REFERENCES ");
+            sql.append(side_name);
+            sql.append("(");
+            if constexpr (SideBase::has_composite_pk_) {
+                append_junction_side_target_list<SideType>(sql);
+            } else {
+                sql.append("id"); // pre-#504 text, kept verbatim — see the note above
+            }
+            sql.append(") ON DELETE ");
+            sql.append(action);
+        }
+
+        // The whole junction CREATE TABLE. Single sink-agnostic writer: the size
+        // companion below runs THIS function against ClauseSizer, so the budget is
+        // measured from the emitting code itself and cannot drift from it.
+        template <typename OwnerType, typename RelatedType, Dialect D, typename SqlT>
+        consteval void append_junction_sql(SqlT& sql, std::string_view action) {
+            constexpr auto owner_name   = std::meta::identifier_of(^^OwnerType);
+            constexpr auto related_name = std::meta::identifier_of(std::meta::dealias(^^RelatedType));
+            sql.append("CREATE TABLE ");
+            sql.append(owner_name);
+            sql.append("_");
+            sql.append(related_name);
+            sql.append(" (\n    ");
+            append_junction_side_column_defs<OwnerType, D>(sql, owner_name);
+            sql.append(",\n    ");
+            append_junction_side_column_defs<RelatedType, D>(sql, related_name);
+            sql.append(",\n    PRIMARY KEY (");
+            append_junction_side_column_list<OwnerType>(sql, owner_name);
+            sql.append(", ");
+            append_junction_side_column_list<RelatedType>(sql, related_name);
+            sql.append("),\n    ");
+            append_junction_fk<OwnerType>(sql, owner_name, action);
+            sql.append(",\n    ");
+            append_junction_fk<RelatedType>(sql, related_name, action);
+            sql.append("\n)");
+        }
+
+        // Exact byte size of append_junction_sql's output, measured by rendering it into
+        // the counting sink — the same technique every other exact-size companion in this
+        // file uses.
+        template <typename OwnerType, typename RelatedType, Dialect D>
+        consteval auto junction_sql_size(std::string_view action) -> std::size_t {
+            ClauseSizer sizer;
+            append_junction_sql<OwnerType, RelatedType, D>(sizer, action);
+            return sizer.len;
+        }
+
+        // ---- Composite-FK sizing helpers (#504) ----
+        //
+        // These live here rather than on SchemaStatement so that class stays under the
+        // 35-method ceiling (S1448); they are the same shape as every other `detail`
+        // helper in this file, with the model's BaseStatement passed in as `Base`
+        // (it supplies all_members_/field_count_) instead of being the enclosing class.
+
+        // True when Base::all_members_[Index] is an FK field whose target has a COMPOSITE
+        // primary key (#500/#504) — the shared gate every composite-FK DDL helper below
+        // (sizing AND emission) branches on, so the "is this member a composite FK" check
+        // is written exactly once. Index-templated (not a runtime-loop predicate): naming
+        // the target's own BaseStatement<RelatedType> needs Index as a template argument,
+        // which a runtime loop variable cannot supply.
+        template <typename Base, std::size_t Index> consteval auto has_composite_fk_target() -> bool {
+            constexpr auto member = Base::all_members_[Index];
+            if constexpr (statements::meta::is_fk_field(member)) {
+                using FieldType   = std::remove_cvref_t<typename[:std::meta::type_of(member):]>;
+                using RelatedType = col_inner_t<FieldType>;
+                return storm::orm::statements::BaseStatement<RelatedType>::has_composite_pk_;
+            } else {
+                return false;
+            }
+        }
+
+        // The (optional-unwrapped) related type of an FK member at Index — only valid to
+        // instantiate under an `if constexpr (statements::meta::is_fk_field(all_members_[Index]))`
+        // guard, paired with has_composite_fk_target<Base, Index>() at every call site so the
+        // two never drift.
+        template <typename Base, std::size_t Index>
+        using composite_fk_related_t =
+                col_inner_t<std::remove_cvref_t<typename[:std::meta::type_of(Base::all_members_[Index]):]>>;
+
+        // Full rendered length of a composite-FK member's column list at compile-time index
+        // (#504) — the WHOLE "<name>_a TYPE, <name>_b TYPE, ..." text, not decomposed into a
+        // name+suffix pair the way a single-column FK is: a composite target's column count
+        // and per-part types make that decomposition impossible to bound with one shared
+        // suffix constant. Zero for anything but an FK field with a composite-PK target.
+        template <typename Base, std::size_t Index, Dialect D>
+        consteval auto composite_fk_columns_len() -> std::size_t {
+            if constexpr (has_composite_fk_target<Base, Index>()) {
+                return composite_fk_columns_size<composite_fk_related_t<Base, Index>, Base::all_members_[Index], D>();
+            } else {
+                return 0;
+            }
+        }
+
+        // Longest composite-FK column-list text across this model's fields, for the given
+        // dialect. Zero when the model has no composite-FK field, so every other model's
+        // buffer size is unchanged.
+        template <typename Base, Dialect D> consteval auto max_composite_fk_columns_len() -> std::size_t {
+            return [&]<std::size_t... Is>(std::index_sequence<Is...> /*unused*/) {
+                std::size_t longest = 0;
+                ((longest = std::max(longest, composite_fk_columns_len<Base, Is, D>())), ...);
+                return longest;
+            }(std::make_index_sequence<Base::field_count_>{});
+        }
+
+        // Byte size of one composite-FK member's table-level FOREIGN KEY (...) constraint
+        // clause at compile-time index (#504); 0 for anything but an FK field with a
+        // composite-PK target — the emission-side counterpart of composite_fk_columns_len.
+        template <typename Base, std::size_t Index, Dialect D>
+        consteval auto composite_fk_constraint_len() -> std::size_t {
+            if constexpr (has_composite_fk_target<Base, Index>()) {
+                return composite_fk_constraint_size<
+                        composite_fk_related_t<Base, Index>,
+                        Base::all_members_[Index],
+                        D>();
+            } else {
+                return 0;
+            }
+        }
+
+        // Sum of every composite-FK member's table-level FOREIGN KEY (...) constraint clause
+        // (#504), for the given dialect — one clause per such member, appended after every
+        // column (see append_composite_pk_clause's placement). Zero when the model has no
+        // composite-FK field.
+        template <typename Base, Dialect D> consteval auto composite_fk_constraints_size() -> std::size_t {
+            return [&]<std::size_t... Is>(std::index_sequence<Is...> /*unused*/) {
+                std::size_t total = 0;
+                ((total += composite_fk_constraint_len<Base, Is, D>()), ...);
+                return total;
+            }(std::make_index_sequence<Base::field_count_>{});
+        }
+
+        // Dispatches calculate_column_defs_size's runtime loop index i to the
+        // Index-templated composite_fk_columns_len<Base, Index, D>() / the caller's
+        // fk_suffix budget — a plain `if` (not `if constexpr`) chain over the same fold
+        // pattern col_def_buffer/max_composite_fk_columns_len already use, since a runtime
+        // loop variable cannot itself be spliced as a template argument. Reuses
+        // has_composite_fk_target<Base, Is>()/composite_fk_columns_len<Base, Is, D>() rather
+        // than re-deriving RelatedType, so the composite-vs-single-column FK test stays
+        // single-sourced. `fk_suffix` is passed in (not recomputed) because the sole caller
+        // already holds the whole ColumnSizeBudget in scope.
+        template <typename Base, Dialect D, std::size_t... Is>
+        consteval auto
+        fk_column_size_at_dispatch(std::size_t i, std::size_t fk_suffix, std::index_sequence<Is...> /*unused*/)
+                -> std::size_t {
+            std::size_t result = 0;
+            (
+                    [&] {
+                        if (i == Is) {
+                            if constexpr (has_composite_fk_target<Base, Is>()) {
+                                result = composite_fk_columns_len<Base, Is, D>();
+                            } else {
+                                result = std::meta::identifier_of(Base::all_members_[Is]).size() + fk_suffix;
+                            }
+                        }
+                    }(),
+                    ...
+            );
+            return result;
+        }
+
+        template <typename Base, Dialect D>
+        consteval auto fk_column_size_at(std::size_t i, std::size_t fk_suffix) -> std::size_t {
+            return fk_column_size_at_dispatch<Base, D>(i, fk_suffix, std::make_index_sequence<Base::field_count_>{});
+        }
+
+        // A composite-FK member's index (#504) names N columns ("<name>_a, <name>_b, ...")
+        // instead of the single "<name>_id" index_sql_buffer's (name+3+2)*2 term budgets
+        // for; this is the per-member extra, 0 for every other member.
+        template <typename Base, std::size_t Index> consteval auto composite_fk_index_extra_len() -> std::size_t {
+            if constexpr (has_composite_fk_target<Base, Index>()) {
+                using RelatedBase       = storm::orm::statements::BaseStatement<composite_fk_related_t<Base, Index>>;
+                constexpr auto targets  = RelatedBase::primary_key_members_;
+                const auto     name_len = std::meta::identifier_of(Base::all_members_[Index]).size();
+                std::size_t    total    = 0;
+                for (std::size_t i = 0; i < targets.size(); ++i) {
+                    total += name_len + 1 + std::meta::identifier_of(targets[i]).size() + 2; // "_part, "
+                }
+                return total * 2; // once for the idx name, once for the column list
+            } else {
+                return 0;
+            }
+        }
+
+        // Sum of composite_fk_index_extra_len across every field — the whole extra
+        // index_sql_buffer must add for composite-FK members. Zero for models without one.
+        template <typename Base> consteval auto composite_fk_index_extra_size() -> std::size_t {
+            return [&]<std::size_t... Is>(std::index_sequence<Is...> /*unused*/) {
+                std::size_t total = 0;
+                ((total += composite_fk_index_extra_len<Base, Is>()), ...);
+                return total;
+            }(std::make_index_sequence<Base::field_count_>{});
+        }
+
     } // namespace detail
 
     template <typename T> class SchemaStatement : private storm::orm::statements::BaseStatement<T> {
@@ -600,7 +1125,14 @@ export namespace storm::orm::schema {
             // whose name IS the longest field and is itself an FK (e.g. CascadeChild::owner
             // with an ON DELETE clause, #431) makes max_name_len + max_fixed_suffix an exact
             // fit, so N must exceed len by 2, not 1.
-            return max_name_len + max_fixed_suffix + 2;
+            //
+            // A composite-FK member's column list (#504) does not decompose into this
+            // name+suffix model at all — it is N whole "<name>_<part> <TYPE>" columns,
+            // comma-joined, in ONE build_column_def<Index>() buffer. max_composite_fk_columns_len
+            // measures that text directly, so it is taken as an independent floor rather than
+            // folded into max_fixed_suffix (which is added to max_name_len — double-counting
+            // the name would still under-size a two-part-or-more composite target).
+            return std::max(max_name_len + max_fixed_suffix, detail::max_composite_fk_columns_len<Base, D>()) + 2;
         }
 
         // True when the model's PK opted into the SQLite never-reuse guarantee
@@ -728,8 +1260,17 @@ export namespace storm::orm::schema {
             if constexpr (!Base::has_composite_pk_ && Base::all_members_[Index] == Base::primary_key_) {
                 append_single_pk_column_def<D>(col);
             }
-            // FK field — "<name>_id INTEGER/BIGINT [NOT NULL] REFERENCES <Related>(<pk>)" (#412).
-            else if constexpr (Base::is_fk_field(member)) {
+            // FK field — "<name>_id INTEGER/BIGINT [NOT NULL] REFERENCES <Related>(<pk>)" (#412),
+            // where <pk> is the target's real PK member identifier (#506).
+            // A composite-PK target (#504) has no single PK column to reference, so it
+            // takes a DIFFERENT shape: one plain column per target PK part here
+            // (append_composite_fk_columns), plus a table-level FOREIGN KEY (...) constraint
+            // appended after every column (build_sql_impl, mirroring the composite-PK clause).
+            // Checked BEFORE the single-column FK branch: append_fk_column_def's
+            // find_fk_primary_key names one column, which a composite target does not have.
+            else if constexpr (detail::has_composite_fk_target<Base, Index>()) {
+                detail::append_composite_fk_columns<detail::composite_fk_related_t<Base, Index>, member, D>(col);
+            } else if constexpr (Base::is_fk_field(member)) {
                 append_fk_column_def<member, D>(col);
             }
             // full_unsigned field (#436) — order-preserving NUMERIC(20,0)/TEXT, regardless
@@ -783,13 +1324,17 @@ export namespace storm::orm::schema {
                     // pk_size no longer bundles the column name (#506) — add the PK
                     // member's own identifier length, same as every other column shape.
                     size += std::meta::identifier_of(Base::all_members_[i]).size() + budget.pk_size;
+                } else if (statements::meta::is_fk_field(Base::all_members_[i])) {
+                    // A composite-FK-target column (#504) is sized directly by its own
+                    // whole-list text (composite_fk_columns_len), not name+fk_suffix: that
+                    // decomposition assumes exactly one "_id" column, which a composite
+                    // target never has. fk_column_size_at adds the member's own identifier
+                    // length for the single-column case, so the name is counted exactly once
+                    // on both paths.
+                    size += detail::fk_column_size_at<Base, D>(i, budget.fk_suffix);
                 } else {
                     size += std::meta::identifier_of(Base::all_members_[i]).size();
-                    if (statements::meta::is_fk_field(Base::all_members_[i])) {
-                        size += budget.fk_suffix;
-                    } else {
-                        size += budget.regular_suffix;
-                    }
+                    size += budget.regular_suffix;
                 }
             }
             return size;
@@ -797,7 +1342,8 @@ export namespace storm::orm::schema {
 
         template <Dialect D = Dialect::SQLite> static consteval auto calculate_create_table_sql_size() -> std::size_t {
             return 13 + Base::table_name_.size() + 3 + calculate_column_defs_size<D>() +
-                   detail::composite_pk_clause_size(Base::primary_key_members_, Base::has_composite_pk_) + 2;
+                   detail::composite_pk_clause_size(Base::primary_key_members_, Base::has_composite_pk_) +
+                   detail::composite_fk_constraints_size<Base, D>() + 2;
         }
 
         // Build the full CREATE TABLE SQL at compile-time using index sequence fold
@@ -822,6 +1368,20 @@ export namespace storm::orm::schema {
              ...);
 
             detail::append_composite_pk_clause(sql, Base::primary_key_members_, Base::has_composite_pk_);
+            // One table-level FOREIGN KEY (...) constraint per composite-FK member (#504),
+            // in declaration order — the multi-column counterpart of the column-level
+            // REFERENCES a single-column FK gets inline in build_column_def.
+            (
+                    [&] {
+                        if constexpr (detail::has_composite_fk_target<Base, Is>()) {
+                            detail::append_composite_fk_constraint<
+                                    detail::composite_fk_related_t<Base, Is>,
+                                    Base::all_members_[Is],
+                                    D>(sql);
+                        }
+                    }(),
+                    ...
+            );
             sql.append("\n)");
             // Whole-SQL backstop, mirroring the per-column one in build_column_def (#361).
             // The per-column check cannot catch a shortfall in calculate_column_defs_size
@@ -854,12 +1414,17 @@ export namespace storm::orm::schema {
         // name x2 (+"_id"+", " worst case), strictly bounding both the single-field
         // and composite builders; 64 covers table*2 + "CREATE UNIQUE INDEX ... ON
         // (...)" scaffolding + '\0'. Correct-by-construction — no truncation possible.
+        //
+        // A composite-FK member's index (#504) names N columns ("<name>_a, <name>_b, ...")
+        // instead of the single "<name>_id" the (name+3+2)*2 term budgets for — folded in
+        // via detail::composite_fk_index_extra_size<Base>(), 0 for every non-composite member.
         static consteval auto index_sql_buffer() -> std::size_t {
             std::size_t names = 0;
             for (std::size_t i = 0; i < Base::field_count_; ++i) {
                 names += (std::meta::identifier_of(Base::all_members_[i]).size() + 3 + 2) * 2;
             }
-            return (Base::table_name_.size() * 2) + names + 64;
+            std::size_t composite_extra = detail::composite_fk_index_extra_size<Base>();
+            return (Base::table_name_.size() * 2) + names + composite_extra + 64;
         }
         static constexpr std::size_t INDEX_SQL_BUFFER = index_sql_buffer();
 
@@ -884,6 +1449,33 @@ export namespace storm::orm::schema {
             sql.append(")");
         }
 
+        // Append "CREATE INDEX IF NOT EXISTS idx_<table>_<name> ON <table>(<name>_a,
+        // <name>_b, ...)" for a composite-FK member (#504) — the multi-column
+        // counterpart of append_index_sql's single "<name>_id" column. All N target PK
+        // parts share one index (matching the composite-PK table-level PRIMARY KEY's own
+        // shape, rather than one single-column index per part).
+        template <std::size_t Index, typename SqlT> static consteval void append_composite_fk_index_sql(SqlT& sql) {
+            using RelatedBase      = storm::orm::statements::BaseStatement<detail::composite_fk_related_t<Base, Index>>;
+            constexpr auto member  = Base::all_members_[Index];
+            constexpr auto targets = RelatedBase::primary_key_members_;
+            sql.append("CREATE INDEX IF NOT EXISTS idx_");
+            sql.append(Base::table_name_);
+            sql.append("_");
+            sql.append(std::meta::identifier_of(member));
+            sql.append(" ON ");
+            sql.append(Base::table_name_);
+            sql.append("(");
+            for (std::size_t i = 0; i < targets.size(); ++i) {
+                if (i > 0) {
+                    sql.append(", ");
+                }
+                sql.append(std::meta::identifier_of(member));
+                sql.append("_");
+                sql.append(std::meta::identifier_of(targets[i]));
+            }
+            sql.append(")");
+        }
+
         // Build CREATE INDEX SQL for a single field at compile-time
         template <std::size_t Index> static consteval auto build_create_index_sql() {
             ConstexprString<INDEX_SQL_BUFFER> sql;
@@ -893,6 +1485,8 @@ export namespace storm::orm::schema {
                 return sql;
             } else if constexpr (Base::is_unique_field(member)) {
                 append_index_sql(sql, "CREATE UNIQUE INDEX IF NOT EXISTS idx_", std::meta::identifier_of(member), "");
+            } else if constexpr (detail::has_composite_fk_target<Base, Index>()) {
+                append_composite_fk_index_sql<Index>(sql);
             } else if constexpr (Base::is_fk_field(member)) {
                 append_index_sql(sql, "CREATE INDEX IF NOT EXISTS idx_", std::meta::identifier_of(member), "_id");
             } else {
@@ -1006,55 +1600,34 @@ export namespace storm::orm::schema {
             return members;
         }();
 
-        // Append "FOREIGN KEY (<name>_id) REFERENCES <name>(id) ON DELETE <action>" for one
-        // junction side (#412). The default action is CASCADE — an orphaned junction row is
-        // meaningless once its owner/related entity is gone — but it is overridable per m2m
-        // field via many_to_many<RefAction::...> (#431), applied to both sides.
-        template <typename SqlT>
-        static consteval void append_junction_fk(SqlT& sql, std::string_view name, std::string_view action) {
-            sql.append("FOREIGN KEY (");
-            sql.append(name);
-            sql.append("_id) REFERENCES ");
-            sql.append(name);
-            sql.append("(id) ON DELETE ");
-            sql.append(action);
-        }
-
         // Junction DDL: <T>_<Related> (<T>_id, <Related>_id, PRIMARY KEY (both),
         // FOREIGN KEY each side ON DELETE <action>). The composite PK rejects duplicate
         // relation pairs and doubles as the index; the FKs enforce referential integrity (#412).
         // The ON DELETE action is CASCADE unless the m2m field carries
         // many_to_many<RefAction::...> (#431), which overrides BOTH sides.
+        //
+        // Composite-PK sides (#504): a side whose model has a multi-column primary key
+        // (#500) contributes ONE junction column PER key part instead of a single
+        // "<Side>_id" — see detail::append_junction_side_column_name for the naming and the
+        // reason the single-PK spelling stays a hardcoded special case rather than a
+        // degenerate instance of the general rule.
         template <Dialect D, std::meta::info Member> static consteval auto build_junction_sql() {
-            constexpr auto related      = statements::meta::related_type_from_container(std::meta::type_of(Member));
-            constexpr auto owner_name   = std::meta::identifier_of(^^T);
-            constexpr auto related_name = std::meta::identifier_of(related);
-            constexpr std::string_view id_type =
-                    (D == Dialect::PostgreSQL) ? "_id BIGINT NOT NULL" : "_id INTEGER NOT NULL";
+            constexpr auto related = statements::meta::related_type_from_container(std::meta::type_of(Member));
             constexpr std::string_view action =
                     statements::meta::ref_action_sql(statements::meta::m2m_junction_on_delete_of(Member));
-            // owner/related names each appear 5× (column ×2, PK ×2, FK clause once more);
-            // 256 fixed covers the CREATE/FOREIGN KEY/REFERENCES/ON DELETE <action> scaffolding.
-            ConstexprString<((owner_name.size() + related_name.size()) * 5) + 256> sql;
-            sql.append("CREATE TABLE ");
-            sql.append(owner_name);
-            sql.append("_");
-            sql.append(related_name);
-            sql.append(" (\n    ");
-            sql.append(owner_name);
-            sql.append(id_type);
-            sql.append(",\n    ");
-            sql.append(related_name);
-            sql.append(id_type);
-            sql.append(",\n    PRIMARY KEY (");
-            sql.append(owner_name);
-            sql.append("_id, ");
-            sql.append(related_name);
-            sql.append("_id),\n    ");
-            append_junction_fk(sql, owner_name, action);
-            sql.append(",\n    ");
-            append_junction_fk(sql, related_name, action);
-            sql.append("\n)");
+            using RelatedType = typename[:related:];
+            // Exact budget: the writer is run against the counting sink (ClauseSizer),
+            // so the buffer is measured from the SAME code that fills it. The pre-#504
+            // "5x name length + 256" heuristic had no term scaling with PK part count or
+            // part-identifier length, and ConstexprString truncates SILENTLY on overflow.
+            //
+            // The +1 is ConstexprString's NUL terminator: its append stops at
+            // `len < N - 1`, so a buffer of exactly the rendered length holds one byte
+            // FEWER than it needs and silently drops the final character. Caught by the
+            // single-PK byte-identical regression test, which lost its closing ")".
+            constexpr std::size_t size = detail::junction_sql_size<T, RelatedType, D>(action) + 1;
+            ConstexprString<size> sql;
+            detail::append_junction_sql<T, RelatedType, D>(sql, action);
             return sql;
         }
 

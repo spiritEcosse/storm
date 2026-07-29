@@ -5,6 +5,7 @@ module;
 // coroutine step-loop).
 
 #include <meta>
+#include <cassert>
 #include <plf_hive/plf_hive.h>
 
 export module storm_orm_statements_select;
@@ -665,23 +666,19 @@ export namespace storm::orm::statements {
             }
             plf::hive<T> results = std::move(*q1);
 
-            // Build stitch map keyed on PkKeyType (int64_t or UUID) — #507
-            std::unordered_map<PkKeyType, T*> by_pk;
+            // Key type is picked at compile time (see StitchMapKey): a single-column
+            // PK — integer or storm::UUID (#507) — narrows back to one uint64_t word,
+            // a composite PK (#504) keeps the full StitchKey buffer.
+            std::unordered_map<StitchMapKey, T*> by_pk;
             by_pk.reserve(results.size());
             for (T& obj : results) {
-                PkKeyType key;
-                if constexpr (std::is_same_v<PkKeyType, std::int64_t>) {
-                    key = static_cast<std::int64_t>(obj.[:Base::primary_key_:]);
-                } else if constexpr (std::is_same_v<PkKeyType, storm::orm::utilities::UUID>) {
-                    key = obj.[:Base::primary_key_:]; // UUID member, no cast needed
-                }
-                by_pk.emplace(key, &obj);
+                by_pk.emplace(narrow_stitch_key(build_owner_stitch_key(obj)), &obj);
             }
 
             // Q2 per relation (#392) — related rows, stitched into their owner's
             // container through the shared map.
             for (const auto& rel : wrapper.m2m_relations) {
-                if (auto stitched = run_q2_stitch<PkKeyType>(rel, c, by_pk); !stitched) {
+                if (auto stitched = run_q2_stitch(rel, c, by_pk); !stitched) {
                     return std::unexpected(stitched.error());
                 }
             }
@@ -693,6 +690,97 @@ export namespace storm::orm::statements {
                 return std::unexpected(committed.error());
             }
             return std::move(results);
+        }
+
+        // The stitch map's key type (#504 perf). Both the Q1 insert and the Q2 probe
+        // build a StitchKey, but a SINGLE-column PK — the overwhelmingly common shape
+        // — fills exactly one 8-byte word of it, so the map is keyed on that word
+        // instead of the 33-byte class. That is not a micro-optimization: it restores
+        // libc++'s identity std::hash<integral> (which compiles to nothing) in place
+        // of hash<StitchKey>'s FNV loop, and an inlined one-instruction operator== in
+        // place of an out-of-line word-compare call. Both run once per Q2 row, and
+        // together they were the entire +3.95% the StitchKey migration cost the
+        // single-PK path. Composite models keep the full key — correctness there is
+        // never traded for the narrowing (see narrow_stitch_key).
+        static constexpr bool narrow_stitch_key_ = Base::primary_key_column_count_ == 1;
+
+        using StitchMapKey = std::conditional_t<narrow_stitch_key_, std::uint64_t, storm::orm::utilities::StitchKey>;
+
+        // Narrow a built StitchKey to the map's key type. For a composite PK this is
+        // the identity — every part is retained, so distinct composite keys stay
+        // distinct and can never mis-stitch. Only the provably single-part case takes
+        // the word (StitchKey::first_word asserts that in debug).
+        [[nodiscard]] static auto narrow_stitch_key(const storm::orm::utilities::StitchKey& key) noexcept
+                -> StitchMapKey {
+            if constexpr (narrow_stitch_key_) {
+                return key.first_word();
+            } else {
+                return key;
+            }
+        }
+
+        // Read a Q2 row's owner key through whichever extractor the descriptor carries.
+        // make_relation_descriptor populates exactly one of the pair, keyed on the same
+        // PK width narrow_stitch_key_ tests, so the branch taken here always matches the
+        // one that was set — asserted rather than left implicit, since calling the null
+        // one would be a null-fn-pointer jump.
+        [[nodiscard]] static auto extract_owner_key(const M2MRelation& rel, Statement* stmt) noexcept -> StitchMapKey {
+            if constexpr (narrow_stitch_key_) {
+                assert(rel.extract_q2_owner_pk_word_fn != nullptr);
+                return rel.extract_q2_owner_pk_word_fn(stmt);
+            } else {
+                assert(rel.extract_q2_owner_pk_fn != nullptr);
+                return rel.extract_q2_owner_pk_fn(stmt);
+            }
+        }
+
+        // Build the Q1 hash-map key for `obj`'s own primary key (#504 Task 8) — the
+        // SAME logical key TwoQueryJoinBase::extract_q2_owner_pk builds from a Q2
+        // row's owner-key columns, so a matching row stitches correctly. Each PK
+        // part is dispatched to append_int64/append_string by ITS OWN stored type
+        // (mirrors bind_one_pk_part in base.cppm and the statement-side extractor in
+        // join.cppm); an FK part's stitch value is the referenced row's own key
+        // (matching the "<name>_id" column both sides key on), not the FK member's
+        // whole C++ object.
+        [[nodiscard]] static auto build_owner_stitch_key(const T& obj) noexcept -> storm::orm::utilities::StitchKey {
+            storm::orm::utilities::StitchKey key;
+            build_owner_stitch_key_impl(key, obj, std::make_index_sequence<Base::primary_key_members_.size()>{});
+            return key;
+        }
+
+        template <std::size_t... Is>
+        static void build_owner_stitch_key_impl(
+                storm::orm::utilities::StitchKey& key, const T& obj, std::index_sequence<Is...> /*unused*/
+        ) noexcept {
+            (append_obj_pk_part_to_key<Base::primary_key_members_[Is]>(key, obj), ...);
+        }
+
+        template <std::meta::info Member>
+        static void append_obj_pk_part_to_key(storm::orm::utilities::StitchKey& key, const T& obj) noexcept {
+            if constexpr (Base::is_fk_field(Member)) {
+                using FKType         = std::remove_cvref_t<typename[:std::meta::type_of(Member):]>;
+                using InnerFK        = utilities::optional_inner_type_t<FKType>;
+                constexpr auto fk_pk = Base::template find_fk_primary_key<FKType>();
+                using PartType       = std::remove_cvref_t<decltype(std::declval<InnerFK>().[:fk_pk:])>;
+                append_obj_dispatched_part<PartType>(key, obj.[:Member:].[:fk_pk:]);
+            } else {
+                using PartType = std::remove_cvref_t<typename[:std::meta::type_of(Member):]>;
+                append_obj_dispatched_part<PartType>(key, obj.[:Member:]);
+            }
+        }
+
+        // Mirrors TwoQueryJoinBase::append_dispatched_part's arms exactly — the two
+        // must agree byte-for-byte or a Q2 row never finds its Q1 owner. storm::UUID
+        // (#507) belongs with the text types: it is stored as TEXT/UUID, and its
+        // implicit operator std::string_view feeds append_string directly.
+        template <typename PartType>
+        static void append_obj_dispatched_part(storm::orm::utilities::StitchKey& key, const auto& value) noexcept {
+            if constexpr (std::same_as<PartType, std::string> || std::same_as<PartType, std::string_view> ||
+                          std::same_as<PartType, storm::orm::utilities::UUID>) {
+                key.append_string(value);
+            } else {
+                key.append_int64(static_cast<std::int64_t>(value));
+            }
         }
 
         // Prepare a clause-built SQL (cached), reset it, and bind the WHERE params
@@ -728,10 +816,10 @@ export namespace storm::orm::statements {
 
         // Q2: prepare one relation's junction⋈related query, bind the SAME WHERE
         // (its IN-subquery), step rows, append each related object to its owner.
-        // Template on PkKeyType to support both int64_t and UUID keys (#507).
-        template <typename KeyType>
+        // No key template parameter (#504): every PK shape — integer, storm::UUID
+        // (#507), and composite — keys the map on the single StitchKey type.
         [[nodiscard]] auto run_q2_stitch(
-                const M2MRelation<KeyType>& rel, const QueryClauses& c, std::unordered_map<KeyType, T*>& by_pk
+                const M2MRelation& rel, const QueryClauses& c, std::unordered_map<StitchMapKey, T*>& by_pk
         ) noexcept -> std::expected<void, Error> {
             auto prep = prepare_clause_sql(rel.build_q2_sql_fn, c);
             if (!prep) {
@@ -740,7 +828,7 @@ export namespace storm::orm::statements {
             Statement* stmt        = *prep;
             int        step_result = 0;
             while ((step_result = stmt->step_raw()) == Statement::ROW_AVAILABLE) {
-                const KeyType owner = rel.extract_q2_owner_pk_fn(stmt);
+                const auto owner = extract_owner_key(rel, stmt);
                 if (auto it = by_pk.find(owner); it != by_pk.end()) {
                     rel.append_related_q2_fn(stmt, it->second);
                 }
@@ -761,7 +849,7 @@ export namespace storm::orm::statements {
                 -> void {
             for (auto it = results.begin(); it != results.end();) {
                 T&         obj  = *it;
-                const bool drop = std::ranges::any_of(wrapper.m2m_relations, [&obj](const M2MRelation<PkKeyType>& rel) {
+                const bool drop = std::ranges::any_of(wrapper.m2m_relations, [&obj](const M2MRelation& rel) {
                     return !rel.is_left && rel.container_empty_fn(&obj);
                 });
                 if (drop) {
