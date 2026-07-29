@@ -62,10 +62,14 @@ export namespace storm::orm::statements {
                    !meta::is_relation_field(Member);
         }
 
-        // True when `member` carries auto_update (#209) and is NOT in the explicit pack.
+        // True when `member` carries auto_update (#209), is not a primary-key member, and
+        // is NOT in the explicit pack. The PK gate mirrors is_settable_member above and the
+        // UpdateGrammar twin (#511) — an auto_update key would otherwise be stamped now()
+        // in the DO UPDATE tail, rewriting the key the conflict target matched on.
+        // ModelTimestampPkValid<T> already rejects such a model; this is defence in depth.
         template <std::meta::info... SetCols>
         static consteval auto is_unlisted_auto_update(std::meta::info member) -> bool {
-            return meta::is_auto_update(member) && ((member != SetCols) && ...);
+            return meta::is_auto_update(member) && !Base::is_pk_member(member) && ((member != SetCols) && ...);
         }
 
         // "col=excluded.col, ..." for the explicit SetCols pack, then any

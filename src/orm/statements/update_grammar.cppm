@@ -93,15 +93,16 @@ export namespace storm::orm::statements {
 
         // Is `member` an auto_update field NOT already present in the explicit pack?
         //
-        // Unlike is_settable_member above, this does NOT exclude primary-key members, so
-        // an auto_update PK would be appended to the SET clause and stamped now() —
-        // rewriting the key the statement matches on. Pre-existing and narrow (it needs a
-        // time_point PK carrying auto_update, a shape no in-tree model has); tracked as
-        // #511, which also has to decide between silently excluding it and rejecting the
-        // model outright. Left alone here rather than widened as a side effect of #501.
+        // Excludes primary-key members exactly as is_settable_member above does (#511):
+        // without that gate an auto_update PK was appended to the SET clause and stamped
+        // now(), rewriting the key the statement matches on. ModelTimestampPkValid<T>
+        // rejects such a model outright, so this gate is unreachable for any model that
+        // instantiates a statement — it is kept as defence in depth, so the SET clause
+        // cannot emit a key column if that concept is ever loosened. is_pk_member covers
+        // composite primary_part members too (#500).
         template <std::meta::info... Members>
         static consteval auto is_unlisted_auto_update(std::meta::info member) -> bool {
-            return is_auto_update_field(member) && ((member != Members) && ...);
+            return is_auto_update_field(member) && !Base::is_pk_member(member) && ((member != Members) && ...);
         }
 
         // Build the SET clause for the explicit Members... pack, then append any

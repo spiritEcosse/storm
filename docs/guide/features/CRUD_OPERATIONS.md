@@ -193,6 +193,18 @@ QuerySet<TimestampedRecord>()
     .execute();          // UPDATE ... SET name=?, updated_at=? WHERE id=?
 ```
 
+A **primary-key** member may not carry `auto_create` or `auto_update` (#511) — an
+auto-stamped key would be rewritten by the very statement matching on it. This is a
+compile-time error (`ModelTimestampPkValid`), and it covers composite `primary_part`
+members as well as a single `primary`:
+
+```cpp
+struct Bad {
+    [[= storm::primary]] [[= storm::auto_update]]      // ERROR: constraint not satisfied
+    std::chrono::system_clock::time_point id{};
+};
+```
+
 **Safety — empty WHERE is refused.** Calling `update<...>()` with **no** `where()`
 filter would write the whole table, so it is rejected at `execute()`/`to_sql()` time
 with `std::unexpected(Error)`:

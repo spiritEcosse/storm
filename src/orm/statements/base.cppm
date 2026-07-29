@@ -492,6 +492,42 @@ export namespace storm::orm::statements {
             [](std::meta::info m) consteval { return !meta::max_length_of(m).has_value() || meta::is_text_member(m); }
     );
 
+    // Concept: no primary-key member of T carries auto_create or auto_update (#511).
+    //
+    // An auto-stamped key rewrites itself: auto_update on a PK put that column into the
+    // SET clause of qs.where(...).update<...>(), so the statement stamped now() over the
+    // very key it was matching on (the #501 class of bug, for the implicit timestamp tail
+    // rather than the explicit SET targets). auto_create is rejected on the same grounds —
+    // it makes the key value un-supplied by the caller on INSERT, so a composite key part
+    // could not be chosen at all.
+    //
+    // DECIDED 2026-07-29: reject the model rather than silently drop the annotation, so a
+    // wrong PK annotation is a NAMED error — the same frame as ModelPrimaryKeyValid (#500),
+    // which rejects nullable and relation-container PKs. The is_unlisted_auto_update
+    // predicates in update_grammar/upsert_grammar ALSO gate on is_pk_member, so the SET
+    // clause stays correct by construction even if this concept is later loosened; this
+    // concept is the diagnostic, that gate is the defence.
+    //
+    // NOTE TO A FUTURE EDITOR: those two gates are currently UNREACHABLE — a model that
+    // would exercise them cannot instantiate BaseStatement while this concept is on the
+    // constraint list, so no test discriminates them (the test file says so explicitly
+    // rather than asserting something vacuous). If you ever remove or narrow this concept,
+    // the gates become load-bearing and you inherit the obligation to give them a
+    // discriminating test.
+    //
+    // Covers composite keys: is_primary_member matches primary_part (#500), which is the
+    // path that was genuinely unprotected — PrimaryKeyType (#505) exempts primary_part
+    // members entirely, and only blocks a SINGLE time_point PK incidentally, by that type
+    // falling off the end of its integral/UUID whitelist. Members are read directly from
+    // nonstatic_data_members_of(^^T) (BMI-safe, #262), matching the sibling concepts above.
+    template <typename T>
+    concept ModelTimestampPkValid = std::ranges::all_of(
+            std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()),
+            [](std::meta::info m) consteval {
+                return !meta::is_primary_member(m) || (!meta::is_auto_create(m) && !meta::is_auto_update(m));
+            }
+    );
+
     // A field carrying auto_create/auto_update must be a system_clock::time_point (#209).
     // Referenced by a static_assert in bind_field_at_index so a wrong-typed timestamp field
     // fails to compile with a clear message rather than deep inside parameter binding.
@@ -676,7 +712,7 @@ export namespace storm::orm::statements {
     template <typename T>
         requires storm::meta::Entity<T> && ModelWithPrimaryKey<T> && PrimaryKeyType<T> && ModelStorageAnnotated<T> &&
                  ModelFkPoliciesValid<T> && ModelAnnotationsValid<T> && ModelMaxLengthValid<T> &&
-                 ModelPrimaryKeyValid<T>
+                 ModelPrimaryKeyValid<T> && ModelTimestampPkValid<T>
     class BaseStatement {
       public:
         // Compile-time accessor for table name (used in SQL generation)
