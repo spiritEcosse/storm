@@ -663,7 +663,7 @@ export namespace storm::orm::utilities {
         static constexpr std::size_t CAPACITY = 32;
 
         void append_int64(std::int64_t v) noexcept {
-            append_bytes(&v, sizeof(v));
+            append_word(static_cast<std::uint64_t>(v));
         }
 
         // Both loops below read whole 8-byte words, so every appender must write
@@ -672,8 +672,7 @@ export namespace storm::orm::utilities {
         static_assert(sizeof(std::size_t) == sizeof(std::uint64_t), "StitchKey assumes a 64-bit std::size_t");
 
         void append_string(std::string_view v) noexcept {
-            const std::size_t h = std::hash<std::string_view>{}(v);
-            append_bytes(&h, sizeof(h));
+            append_word(std::hash<std::string_view>{}(v));
         }
 
         // Word-wise compare, inline. This runs on EVERY hash-map probe of the m2m
@@ -705,13 +704,12 @@ export namespace storm::orm::utilities {
         // per Q2 related row, where the bare std::int64_t key this replaced used
         // the identity hash.
         //
-        // Reads whole words, which is safe ONLY because len_ is always a multiple
-        // of 8: append_bytes is private and both public appenders write exactly 8
-        // (append_int64 an int64, append_string a size_t hash). A part type of any
-        // other width would leave a tail outside this loop, contributing nothing
+        // Reads whole words, which is safe because len_ is always a multiple of 8:
+        // the only writer is append_word, which is private and takes a whole
+        // std::uint64_t, so a part of any other width is not expressible. Were one
+        // ever added, its tail would fall outside this loop and contribute nothing
         // to the hash — not a correctness bug (operator== still separates such
-        // keys, so the map resolves it) but a silent collision cliff. Revisit the
-        // loop before adding an appender of a different width.
+        // keys, so the map resolves it) but a silent collision cliff.
         [[nodiscard]] auto hash() const noexcept -> std::size_t {
             constexpr std::uint64_t FNV_OFFSET = 1469598103934665603ULL;
             constexpr std::uint64_t FNV_PRIME  = 1099511628211ULL;
@@ -742,10 +740,14 @@ export namespace storm::orm::utilities {
         }
 
       private:
-        void append_bytes(const void* src, std::size_t n) noexcept {
-            assert(len_ + n <= CAPACITY && "StitchKey: append exceeds fixed CAPACITY");
-            std::memcpy(bytes_.data() + len_, src, n);
-            len_ += n;
+        // Takes a whole word rather than a (pointer, size) pair: the "every part is
+        // exactly 8 bytes" invariant that hash() and operator== both read whole words
+        // on is then enforced by the signature instead of resting on each caller
+        // passing sizeof correctly.
+        void append_word(std::uint64_t word) noexcept {
+            assert(len_ + sizeof(word) <= CAPACITY && "StitchKey: append exceeds fixed CAPACITY");
+            std::memcpy(bytes_.data() + len_, &word, sizeof(word));
+            len_ += sizeof(word);
         }
 
         std::array<std::byte, CAPACITY> bytes_{};

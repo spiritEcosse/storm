@@ -865,22 +865,24 @@ export namespace storm::orm::schema {
             return sizer.len;
         }
 
-    } // namespace detail
+        // ---- Composite-FK sizing helpers (#504) ----
+        //
+        // These live here rather than on SchemaStatement so that class stays under the
+        // 35-method ceiling (S1448); they are the same shape as every other `detail`
+        // helper in this file, with the model's BaseStatement passed in as `Base`
+        // (it supplies all_members_/field_count_) instead of being the enclosing class.
 
-    template <typename T> class SchemaStatement : private storm::orm::statements::BaseStatement<T> {
-        using Base = storm::orm::statements::BaseStatement<T>;
-
-        // True when all_members_[Index] is an FK field whose target has a COMPOSITE
+        // True when Base::all_members_[Index] is an FK field whose target has a COMPOSITE
         // primary key (#500/#504) — the shared gate every composite-FK DDL helper below
         // (sizing AND emission) branches on, so the "is this member a composite FK" check
         // is written exactly once. Index-templated (not a runtime-loop predicate): naming
         // the target's own BaseStatement<RelatedType> needs Index as a template argument,
         // which a runtime loop variable cannot supply.
-        template <std::size_t Index> static consteval auto has_composite_fk_target() -> bool {
+        template <typename Base, std::size_t Index> consteval auto has_composite_fk_target() -> bool {
             constexpr auto member = Base::all_members_[Index];
-            if constexpr (Base::is_fk_field(member)) {
+            if constexpr (statements::meta::is_fk_field(member)) {
                 using FieldType   = std::remove_cvref_t<typename[:std::meta::type_of(member):]>;
-                using RelatedType = detail::col_inner_t<FieldType>;
+                using RelatedType = col_inner_t<FieldType>;
                 return storm::orm::statements::BaseStatement<RelatedType>::has_composite_pk_;
             } else {
                 return false;
@@ -888,12 +890,131 @@ export namespace storm::orm::schema {
         }
 
         // The (optional-unwrapped) related type of an FK member at Index — only valid to
-        // instantiate under an `if constexpr (Base::is_fk_field(all_members_[Index]))` guard,
-        // paired with has_composite_fk_target<Index>() at every call site below so the two
-        // never drift.
-        template <std::size_t Index>
+        // instantiate under an `if constexpr (statements::meta::is_fk_field(all_members_[Index]))`
+        // guard, paired with has_composite_fk_target<Base, Index>() at every call site so the
+        // two never drift.
+        template <typename Base, std::size_t Index>
         using composite_fk_related_t =
-                detail::col_inner_t<std::remove_cvref_t<typename[:std::meta::type_of(Base::all_members_[Index]):]>>;
+                col_inner_t<std::remove_cvref_t<typename[:std::meta::type_of(Base::all_members_[Index]):]>>;
+
+        // Full rendered length of a composite-FK member's column list at compile-time index
+        // (#504) — the WHOLE "<name>_a TYPE, <name>_b TYPE, ..." text, not decomposed into a
+        // name+suffix pair the way a single-column FK is: a composite target's column count
+        // and per-part types make that decomposition impossible to bound with one shared
+        // suffix constant. Zero for anything but an FK field with a composite-PK target.
+        template <typename Base, std::size_t Index, Dialect D>
+        consteval auto composite_fk_columns_len() -> std::size_t {
+            if constexpr (has_composite_fk_target<Base, Index>()) {
+                return composite_fk_columns_size<composite_fk_related_t<Base, Index>, Base::all_members_[Index], D>();
+            } else {
+                return 0;
+            }
+        }
+
+        // Longest composite-FK column-list text across this model's fields, for the given
+        // dialect. Zero when the model has no composite-FK field, so every other model's
+        // buffer size is unchanged.
+        template <typename Base, Dialect D> consteval auto max_composite_fk_columns_len() -> std::size_t {
+            return [&]<std::size_t... Is>(std::index_sequence<Is...> /*unused*/) {
+                std::size_t longest = 0;
+                ((longest = std::max(longest, composite_fk_columns_len<Base, Is, D>())), ...);
+                return longest;
+            }(std::make_index_sequence<Base::field_count_>{});
+        }
+
+        // Byte size of one composite-FK member's table-level FOREIGN KEY (...) constraint
+        // clause at compile-time index (#504); 0 for anything but an FK field with a
+        // composite-PK target — the emission-side counterpart of composite_fk_columns_len.
+        template <typename Base, std::size_t Index, Dialect D>
+        consteval auto composite_fk_constraint_len() -> std::size_t {
+            if constexpr (has_composite_fk_target<Base, Index>()) {
+                return composite_fk_constraint_size<
+                        composite_fk_related_t<Base, Index>,
+                        Base::all_members_[Index],
+                        D>();
+            } else {
+                return 0;
+            }
+        }
+
+        // Sum of every composite-FK member's table-level FOREIGN KEY (...) constraint clause
+        // (#504), for the given dialect — one clause per such member, appended after every
+        // column (see append_composite_pk_clause's placement). Zero when the model has no
+        // composite-FK field.
+        template <typename Base, Dialect D> consteval auto composite_fk_constraints_size() -> std::size_t {
+            return [&]<std::size_t... Is>(std::index_sequence<Is...> /*unused*/) {
+                std::size_t total = 0;
+                ((total += composite_fk_constraint_len<Base, Is, D>()), ...);
+                return total;
+            }(std::make_index_sequence<Base::field_count_>{});
+        }
+
+        // Dispatches calculate_column_defs_size's runtime loop index i to the
+        // Index-templated composite_fk_columns_len<Base, Index, D>() / the caller's
+        // fk_suffix budget — a plain `if` (not `if constexpr`) chain over the same fold
+        // pattern col_def_buffer/max_composite_fk_columns_len already use, since a runtime
+        // loop variable cannot itself be spliced as a template argument. Reuses
+        // has_composite_fk_target<Base, Is>()/composite_fk_columns_len<Base, Is, D>() rather
+        // than re-deriving RelatedType, so the composite-vs-single-column FK test stays
+        // single-sourced. `fk_suffix` is passed in (not recomputed) because the sole caller
+        // already holds the whole ColumnSizeBudget in scope.
+        template <typename Base, Dialect D, std::size_t... Is>
+        consteval auto
+        fk_column_size_at_dispatch(std::size_t i, std::size_t fk_suffix, std::index_sequence<Is...> /*unused*/)
+                -> std::size_t {
+            std::size_t result = 0;
+            (
+                    [&] {
+                        if (i == Is) {
+                            if constexpr (has_composite_fk_target<Base, Is>()) {
+                                result = composite_fk_columns_len<Base, Is, D>();
+                            } else {
+                                result = std::meta::identifier_of(Base::all_members_[Is]).size() + fk_suffix;
+                            }
+                        }
+                    }(),
+                    ...
+            );
+            return result;
+        }
+
+        template <typename Base, Dialect D>
+        consteval auto fk_column_size_at(std::size_t i, std::size_t fk_suffix) -> std::size_t {
+            return fk_column_size_at_dispatch<Base, D>(i, fk_suffix, std::make_index_sequence<Base::field_count_>{});
+        }
+
+        // A composite-FK member's index (#504) names N columns ("<name>_a, <name>_b, ...")
+        // instead of the single "<name>_id" index_sql_buffer's (name+3+2)*2 term budgets
+        // for; this is the per-member extra, 0 for every other member.
+        template <typename Base, std::size_t Index> consteval auto composite_fk_index_extra_len() -> std::size_t {
+            if constexpr (has_composite_fk_target<Base, Index>()) {
+                using RelatedBase       = storm::orm::statements::BaseStatement<composite_fk_related_t<Base, Index>>;
+                constexpr auto targets  = RelatedBase::primary_key_members_;
+                const auto     name_len = std::meta::identifier_of(Base::all_members_[Index]).size();
+                std::size_t    total    = 0;
+                for (std::size_t i = 0; i < targets.size(); ++i) {
+                    total += name_len + 1 + std::meta::identifier_of(targets[i]).size() + 2; // "_part, "
+                }
+                return total * 2; // once for the idx name, once for the column list
+            } else {
+                return 0;
+            }
+        }
+
+        // Sum of composite_fk_index_extra_len across every field — the whole extra
+        // index_sql_buffer must add for composite-FK members. Zero for models without one.
+        template <typename Base> consteval auto composite_fk_index_extra_size() -> std::size_t {
+            return [&]<std::size_t... Is>(std::index_sequence<Is...> /*unused*/) {
+                std::size_t total = 0;
+                ((total += composite_fk_index_extra_len<Base, Is>()), ...);
+                return total;
+            }(std::make_index_sequence<Base::field_count_>{});
+        }
+
+    } // namespace detail
+
+    template <typename T> class SchemaStatement : private storm::orm::statements::BaseStatement<T> {
+        using Base = storm::orm::statements::BaseStatement<T>;
 
         // Per-column buffer size — derived from the same data the table-level
         // estimator uses (max reflected identifier length + the largest fixed
@@ -935,54 +1056,6 @@ export namespace storm::orm::schema {
                 std::size_t longest = 0;
                 ((longest = std::max(longest, fk_references_len<Is>())), ...);
                 return longest;
-            }(std::make_index_sequence<Base::field_count_>{});
-        }
-
-        // Full rendered length of a composite-FK member's column list at compile-time index
-        // (#504) — the WHOLE "<name>_a TYPE, <name>_b TYPE, ..." text, not decomposed into a
-        // name+suffix pair the way a single-column FK is: a composite target's column count
-        // and per-part types make that decomposition impossible to bound with one shared
-        // suffix constant. Zero for anything but an FK field with a composite-PK target.
-        template <std::size_t Index, Dialect D> static consteval auto composite_fk_columns_len() -> std::size_t {
-            if constexpr (has_composite_fk_target<Index>()) {
-                return detail::composite_fk_columns_size<composite_fk_related_t<Index>, Base::all_members_[Index], D>();
-            } else {
-                return 0;
-            }
-        }
-
-        // Longest composite-FK column-list text across this model's fields, for the given
-        // dialect. Zero when the model has no composite-FK field, so every other model's
-        // buffer size is unchanged.
-        template <Dialect D> static consteval auto max_composite_fk_columns_len() -> std::size_t {
-            return [&]<std::size_t... Is>(std::index_sequence<Is...> /*unused*/) {
-                std::size_t longest = 0;
-                ((longest = std::max(longest, composite_fk_columns_len<Is, D>())), ...);
-                return longest;
-            }(std::make_index_sequence<Base::field_count_>{});
-        }
-
-        // Byte size of one composite-FK member's table-level FOREIGN KEY (...) constraint
-        // clause at compile-time index (#504); 0 for anything but an FK field with a
-        // composite-PK target — the emission-side counterpart of composite_fk_columns_len.
-        template <std::size_t Index, Dialect D> static consteval auto composite_fk_constraint_len() -> std::size_t {
-            if constexpr (has_composite_fk_target<Index>()) {
-                return detail::
-                        composite_fk_constraint_size<composite_fk_related_t<Index>, Base::all_members_[Index], D>();
-            } else {
-                return 0;
-            }
-        }
-
-        // Sum of every composite-FK member's table-level FOREIGN KEY (...) constraint clause
-        // (#504), for the given dialect — one clause per such member, appended after every
-        // column (see append_composite_pk_clause's placement). Zero when the model has no
-        // composite-FK field.
-        template <Dialect D> static consteval auto composite_fk_constraints_size() -> std::size_t {
-            return [&]<std::size_t... Is>(std::index_sequence<Is...> /*unused*/) {
-                std::size_t total = 0;
-                ((total += composite_fk_constraint_len<Is, D>()), ...);
-                return total;
             }(std::make_index_sequence<Base::field_count_>{});
         }
 
@@ -1059,7 +1132,7 @@ export namespace storm::orm::schema {
             // measures that text directly, so it is taken as an independent floor rather than
             // folded into max_fixed_suffix (which is added to max_name_len — double-counting
             // the name would still under-size a two-part-or-more composite target).
-            return std::max(max_name_len + max_fixed_suffix, max_composite_fk_columns_len<D>()) + 2;
+            return std::max(max_name_len + max_fixed_suffix, detail::max_composite_fk_columns_len<Base, D>()) + 2;
         }
 
         // True when the model's PK opted into the SQLite never-reuse guarantee
@@ -1195,8 +1268,8 @@ export namespace storm::orm::schema {
             // appended after every column (build_sql_impl, mirroring the composite-PK clause).
             // Checked BEFORE the single-column FK branch: append_fk_column_def's
             // find_fk_primary_key names one column, which a composite target does not have.
-            else if constexpr (has_composite_fk_target<Index>()) {
-                detail::append_composite_fk_columns<composite_fk_related_t<Index>, member, D>(col);
+            else if constexpr (detail::has_composite_fk_target<Base, Index>()) {
+                detail::append_composite_fk_columns<detail::composite_fk_related_t<Base, Index>, member, D>(col);
             } else if constexpr (Base::is_fk_field(member)) {
                 append_fk_column_def<member, D>(col);
             }
@@ -1258,7 +1331,7 @@ export namespace storm::orm::schema {
                     // target never has. fk_column_size_at adds the member's own identifier
                     // length for the single-column case, so the name is counted exactly once
                     // on both paths.
-                    size += fk_column_size_at<D>(i);
+                    size += detail::fk_column_size_at<Base, D>(i, budget.fk_suffix);
                 } else {
                     size += std::meta::identifier_of(Base::all_members_[i]).size();
                     size += budget.regular_suffix;
@@ -1267,42 +1340,10 @@ export namespace storm::orm::schema {
             return size;
         }
 
-        // Dispatches calculate_column_defs_size's runtime loop index i to the
-        // Index-templated composite_fk_columns_len<Index, D>() / column_size_budget's
-        // fk_suffix path — a plain `if` (not `if constexpr`) chain over the same fold
-        // pattern col_def_buffer/max_composite_fk_columns_len already use, since a runtime
-        // loop variable cannot itself be spliced as a template argument. Reuses
-        // has_composite_fk_target<Is>()/composite_fk_columns_len<Is, D>() rather than
-        // re-deriving RelatedType, so the composite-vs-single-column FK test stays
-        // single-sourced.
-        template <Dialect D, std::size_t... Is>
-        static consteval auto fk_column_size_at_dispatch(std::size_t i, std::index_sequence<Is...> /*unused*/)
-                -> std::size_t {
-            std::size_t result = 0;
-            (
-                    [&] {
-                        if (i == Is) {
-                            if constexpr (has_composite_fk_target<Is>()) {
-                                result = composite_fk_columns_len<Is, D>();
-                            } else {
-                                result = std::meta::identifier_of(Base::all_members_[Is]).size() +
-                                         column_size_budget<D>().fk_suffix;
-                            }
-                        }
-                    }(),
-                    ...
-            );
-            return result;
-        }
-
-        template <Dialect D> static consteval auto fk_column_size_at(std::size_t i) -> std::size_t {
-            return fk_column_size_at_dispatch<D>(i, std::make_index_sequence<Base::field_count_>{});
-        }
-
         template <Dialect D = Dialect::SQLite> static consteval auto calculate_create_table_sql_size() -> std::size_t {
             return 13 + Base::table_name_.size() + 3 + calculate_column_defs_size<D>() +
                    detail::composite_pk_clause_size(Base::primary_key_members_, Base::has_composite_pk_) +
-                   composite_fk_constraints_size<D>() + 2;
+                   detail::composite_fk_constraints_size<Base, D>() + 2;
         }
 
         // Build the full CREATE TABLE SQL at compile-time using index sequence fold
@@ -1332,9 +1373,9 @@ export namespace storm::orm::schema {
             // REFERENCES a single-column FK gets inline in build_column_def.
             (
                     [&] {
-                        if constexpr (has_composite_fk_target<Is>()) {
+                        if constexpr (detail::has_composite_fk_target<Base, Is>()) {
                             detail::append_composite_fk_constraint<
-                                    composite_fk_related_t<Is>,
+                                    detail::composite_fk_related_t<Base, Is>,
                                     Base::all_members_[Is],
                                     D>(sql);
                         }
@@ -1376,32 +1417,13 @@ export namespace storm::orm::schema {
         //
         // A composite-FK member's index (#504) names N columns ("<name>_a, <name>_b, ...")
         // instead of the single "<name>_id" the (name+3+2)*2 term budgets for — folded in
-        // via composite_fk_index_extra_len<Index>(), 0 for every other member.
-        template <std::size_t Index> static consteval auto composite_fk_index_extra_len() -> std::size_t {
-            if constexpr (has_composite_fk_target<Index>()) {
-                using RelatedBase       = storm::orm::statements::BaseStatement<composite_fk_related_t<Index>>;
-                constexpr auto targets  = RelatedBase::primary_key_members_;
-                const auto     name_len = std::meta::identifier_of(Base::all_members_[Index]).size();
-                std::size_t    total    = 0;
-                for (std::size_t i = 0; i < targets.size(); ++i) {
-                    total += name_len + 1 + std::meta::identifier_of(targets[i]).size() + 2; // "_part, "
-                }
-                return total * 2; // once for the idx name, once for the column list
-            } else {
-                return 0;
-            }
-        }
-
+        // via detail::composite_fk_index_extra_size<Base>(), 0 for every non-composite member.
         static consteval auto index_sql_buffer() -> std::size_t {
             std::size_t names = 0;
             for (std::size_t i = 0; i < Base::field_count_; ++i) {
                 names += (std::meta::identifier_of(Base::all_members_[i]).size() + 3 + 2) * 2;
             }
-            std::size_t composite_extra = [&]<std::size_t... Is>(std::index_sequence<Is...> /*unused*/) {
-                std::size_t total = 0;
-                ((total += composite_fk_index_extra_len<Is>()), ...);
-                return total;
-            }(std::make_index_sequence<Base::field_count_>{});
+            std::size_t composite_extra = detail::composite_fk_index_extra_size<Base>();
             return (Base::table_name_.size() * 2) + names + composite_extra + 64;
         }
         static constexpr std::size_t INDEX_SQL_BUFFER = index_sql_buffer();
@@ -1433,7 +1455,7 @@ export namespace storm::orm::schema {
         // parts share one index (matching the composite-PK table-level PRIMARY KEY's own
         // shape, rather than one single-column index per part).
         template <std::size_t Index, typename SqlT> static consteval void append_composite_fk_index_sql(SqlT& sql) {
-            using RelatedBase      = storm::orm::statements::BaseStatement<composite_fk_related_t<Index>>;
+            using RelatedBase      = storm::orm::statements::BaseStatement<detail::composite_fk_related_t<Base, Index>>;
             constexpr auto member  = Base::all_members_[Index];
             constexpr auto targets = RelatedBase::primary_key_members_;
             sql.append("CREATE INDEX IF NOT EXISTS idx_");
@@ -1463,7 +1485,7 @@ export namespace storm::orm::schema {
                 return sql;
             } else if constexpr (Base::is_unique_field(member)) {
                 append_index_sql(sql, "CREATE UNIQUE INDEX IF NOT EXISTS idx_", std::meta::identifier_of(member), "");
-            } else if constexpr (has_composite_fk_target<Index>()) {
+            } else if constexpr (detail::has_composite_fk_target<Base, Index>()) {
                 append_composite_fk_index_sql<Index>(sql);
             } else if constexpr (Base::is_fk_field(member)) {
                 append_index_sql(sql, "CREATE INDEX IF NOT EXISTS idx_", std::meta::identifier_of(member), "_id");
