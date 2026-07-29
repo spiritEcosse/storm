@@ -251,6 +251,83 @@ FK members make good parts — `[[= storm::primary_part]] [[= storm::fk<>]] Ware
 is the canonical association-table key, and the clause names the FK's actual column
 (`PRIMARY KEY (warehouse_id, sku)`).
 
+#### Part types (#517)
+
+Every `primary_part` member's type is checked at compile time by `PrimaryKeyType<T>`
+(a `BaseStatement<T>` constraint):
+
+| Part type | Verdict |
+|---|---|
+| `short`, `int`, `long`, `long long` + `std::int16_t`/`int32_t`/`int64_t` | ✅ accepted |
+| `std::uint64_t` / `unsigned long` / `unsigned long long` | ✅ **only** with `[[= storm::signed_storage]]` |
+| `storm::UUID` | ✅ accepted |
+| `std::string` | ✅ accepted — **composite parts only** |
+| `std::string_view` | ✅ accepted, but see the note below — it cannot be read back |
+| An FK member (`[[= storm::fk<>]] Related`) whose target has a well-typed **single** PK (e.g. `[[= storm::primary]] int id`) | ✅ accepted |
+| An FK member whose target has **no** primary key | ❌ rejected |
+| An FK member whose target's single PK is itself a rejected type (e.g. `double`, `std::string`) | ❌ rejected |
+| An FK member whose target is itself **composite-keyed** | ❌ rejected — needs a multi-column FK (#504), out of scope here |
+| `bool`, `char` | ❌ a two-valued or 1-byte identity is not a key |
+| `std::optional<T>` | ❌ a nullable key is not a key |
+| `unsigned int` and other bare unsigned types | ❌ not in the allowed set |
+| `std::uint64_t` with `[[= storm::full_unsigned]]` | ❌ stores as zero-padded TEXT, unreadable through the int64 PK paths |
+| `double`, `std::vector<uint8_t>` (BLOB) | ❌ not a key type |
+
+**An FK part is validated through its target's primary key, not its own declared type**
+— it binds the *referenced* row's key (`bind_one_pk_part` splices
+`find_fk_primary_key<FKType>()`), so the member's own type is not the right question.
+This is the subtlest rule in the table, and it cuts both ways:
+
+- The check is **strictly stronger** than "does the target have a PK at all"
+  (`ValidForeignKey`, used for ordinary FK fields and `join<>()`). Here, the target's
+  PK must *also* pass the single-PK allowlist (#505) — an FK part pointing at a model
+  whose PK is `double` is rejected, even though `join<^^T::fk>()` on that same field
+  would be fine.
+- **TEXT does not reach through an FK.** The parts-only TEXT widening applies to the
+  FK member's *own* declared type, but an FK's declared type is never TEXT — it is the
+  related model type. So an FK part pointing at a `std::string`-PK model is rejected:
+  that target's single PK already fails #505 on its own terms, and the FK part
+  inherits that rejection rather than acquiring a new TEXT allowance.
+- **A composite-keyed target is refused outright** — not because composite FKs are
+  unsupported (#504 shipped those for ordinary FK fields), but because the PK-part bind
+  path still binds a single column: `bind_one_pk_part` splices the single-column
+  `find_fk_primary_key`, so an FK part pointing at an N-part key would bind one column
+  for a key spanning N. Supporting it means widening that bind path first.
+
+> **`std::string_view` parts bind but cannot be read back.** The concept accepts a
+> `std::string_view` part, and it generates DDL and binds correctly — but
+> `ColumnExtractor` has no `std::string_view` arm, so SELECTing a model that contains one
+> is a compile error. This is a project-wide limitation of `std::string_view` fields, not
+> something specific to composite keys. **Prefer `std::string` for any part you intend to
+> read back.**
+
+**TEXT is allowed for a composite part but not for a single primary key.** That split
+tracks a real distinction rather than an arbitrary one. A single PK still flows through
+Storm's integer-identity machinery (`RETURNING id`, `last_insert_rowid`, the int64 PK
+paths in `select.cppm`/`join.cppm`/`insert.cppm`), which is what makes a TEXT single PK
+a problem here. A composite key is **never DB-generated** (#502 — no `AUTOINCREMENT`, no
+`IDENTITY`, no `RETURNING`; the caller always supplies every part), so none of that
+machinery applies to a part.
+
+This also matches SQL itself and the wider ecosystem — SQLAlchemy's
+`Column(String(50), primary_key=True)`, Django's `CharField(primary_key=True)` and JPA's
+`@Id String` are all ordinary. The rule these systems actually enforce is not "primary
+keys must be integers" but *"auto-generated primary keys must be integers"*, which is
+exactly where Storm's line falls too.
+
+```cpp
+struct Inventory {
+    [[= storm::primary_part]] int         warehouse;   // ✅
+    [[= storm::primary_part]] std::string sku;         // ✅ TEXT part
+    int on_hand;
+};
+
+struct Broken {
+    [[= storm::primary_part]] int    id;
+    [[= storm::primary_part]] double amount;           // ❌ compile error
+};
+```
+
 > `indexed` on a part is currently a no-op: the PK already indexes the parts, so the
 > per-column index is suppressed for every PK member, as it is for a single-column PK.
 
@@ -456,6 +533,11 @@ QuerySet<OrderLine>().insert(line).execute();  // → std::expected<void, Error>
 ```
 
 Composite keys follow the same rules as integer composites (#500): every part is caller-supplied, `AUTOINCREMENT`/`IDENTITY` is not emitted, and INSERT returns `void`.
+
+`storm::UUID` is one option for a text-shaped part, not the only one — a plain
+`std::string` part is equally valid (#517). Use `storm::UUID` when you want RFC 4122
+validation on every write; use `std::string` for natural keys like a SKU or country code.
+See [Part types](#part-types-517).
 
 **Q: Can I upsert on a UUID PK?**
 

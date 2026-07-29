@@ -8,12 +8,17 @@ import std;
 
 #include "test_models.h" // NOSONAR cpp:S954
 
-// Tests for the PrimaryKeyType<T> concept (#505): a compile-time gate on the type
-// of a model's primary-key member. Independent of #90 (composite PK); found while
-// scoping it. DECIDED 2026-07-22: the allowed set is every signed integral type
-// except bool — short/int/long/long long and their fixed-width spellings. Rejected:
-// bool, std::optional<T>, unsigned types (unless storm::signed_storage), and
-// text/UUID (storm::UUID PKs are a "not yet" — filed as #507).
+// Tests for the PrimaryKeyType<T> concept (#505, widened for composite parts in #517):
+// a compile-time gate on the type of a model's primary-key member(s). DECIDED
+// 2026-07-22 for single PKs: every signed integral type except bool — short/int/long/
+// long long and their fixed-width spellings. Rejected: bool, std::optional<T>, unsigned
+// types (unless storm::signed_storage), and text. storm::UUID was admitted by #507.
+// DECIDED 2026-07-29 for composite parts (#517): the same allowlist WIDENED WITH TEXT
+// (std::string / std::string_view), because a composite key is never DB-generated (#502)
+// — so #505's int64-identity rationale (RETURNING id / last_insert_rowid) does not reach
+// parts. A TEXT SINGLE PK stays rejected. An FK part routes through valid_fk_key_target:
+// it binds the TARGET's key, so the target's PK must itself be well-typed — the widening
+// does not reach through an FK.
 
 // ============================================================================
 // Test models (local to this TU)
@@ -89,6 +94,123 @@ namespace {
         [[= storm::primary]] storm::UUID id{};
     };
 
+    // ---- Composite PK parts (#517) ----
+    // Accepted: the #505 scalar allowlist, widened with TEXT for parts only.
+    struct PartsAllInt {
+        [[= storm::primary_part]] int order_id{};
+        [[= storm::primary_part]] int product_id{};
+    };
+    struct PartsIntAndText {
+        [[= storm::primary_part]] int         warehouse{};
+        [[= storm::primary_part]] std::string sku;
+    };
+    struct PartsThreeMixed {
+        [[= storm::primary_part]] int          region{};
+        [[= storm::primary_part]] std::string  account;
+        [[= storm::primary_part]] std::int64_t period{};
+    };
+    struct PartsStringView {
+        [[= storm::primary_part]] int              id{};
+        [[= storm::primary_part]] std::string_view code;
+    };
+    struct PartsUuid {
+        [[= storm::primary_part]] storm::UUID order_id{};
+        [[= storm::primary_part]] int         product_id{};
+    };
+    struct PartsUint64SignedStorage {
+        [[= storm::primary_part]] int                                      id{};
+        [[ = storm::primary_part, = storm::signed_storage ]] std::uint64_t big{};
+    };
+    // An FK part is validated through its TARGET's primary key, not its own declared
+    // type — it binds the referenced row's key (bind_one_pk_part's is_fk_field branch).
+    struct PartFkTarget {
+        [[= storm::primary]] int id{};
+    };
+    struct PartsFkAndInt {
+        [[= storm::primary_part]][[= storm::fk<>]] PartFkTarget warehouse;
+        [[= storm::primary_part]] int                           sku{};
+    };
+
+    // Rejected part types.
+    struct PartsBool {
+        [[= storm::primary_part]] int  id{};
+        [[= storm::primary_part]] bool flag{};
+    };
+    struct PartsChar {
+        [[= storm::primary_part]] int  id{};
+        [[= storm::primary_part]] char code{};
+    };
+    struct PartsOptionalInt {
+        [[= storm::primary_part]] int                id{};
+        [[= storm::primary_part]] std::optional<int> maybe{};
+    };
+    // Guards the is_text_member optional-unwrap trap: is_text_member looks THROUGH
+    // std::optional<>, so a naive TEXT check would accept this nullable part.
+    struct PartsOptionalText {
+        [[= storm::primary_part]] int                        id{};
+        [[= storm::primary_part]] std::optional<std::string> maybe;
+    };
+    struct PartsUnsignedInt {
+        [[= storm::primary_part]] int          id{};
+        [[= storm::primary_part]] unsigned int u{};
+    };
+    struct PartsUint64FullUnsigned {
+        [[= storm::primary_part]] int                                     id{};
+        [[ = storm::primary_part, = storm::full_unsigned ]] std::uint64_t big{};
+    };
+    struct PartsDouble {
+        [[= storm::primary_part]] int    id{};
+        [[= storm::primary_part]] double amount{};
+    };
+    struct PartsBlob {
+        [[= storm::primary_part]] int                       id{};
+        [[= storm::primary_part]] std::vector<std::uint8_t> data;
+    };
+    // An FK part whose target has NO primary key — valid_fk_key_target must reject it.
+    struct NoPkTarget {
+        int value{};
+    };
+    struct PartsFkNoPkTarget {
+        [[= storm::primary_part]][[= storm::fk<>]] NoPkTarget bad;
+        [[= storm::primary_part]] int                         sku{};
+    };
+    // An FK part whose target HAS a PK, but of a type the policy rejects. The part binds
+    // the TARGET's key (bind_one_pk_part splices find_fk_primary_key), so a double would
+    // land in the composite key column — the policy must not be circumventable one hop
+    // away. Checking PK presence alone (valid_fk_target) would wrongly accept this.
+    struct BadPkTarget {
+        [[= storm::primary]] double id{};
+    };
+    struct PartsFkBadPkTarget {
+        [[= storm::primary_part]][[= storm::fk<>]] BadPkTarget bad;
+        [[= storm::primary_part]] int                          sku{};
+    };
+    // An FK part whose target is itself COMPOSITE-keyed. Not merely unsupported — #504
+    // shipped composite FKs for ordinary FK fields — but bind_one_pk_part still splices
+    // the single-column find_fk_primary_key, so such a part would bind ONE column for an
+    // N-column key. Refused outright rather than validated on its first part alone. Also
+    // guards the is_primary_member subsumption trap: is_primary_member matches
+    // primary_part too, so testing it first would accept this model after checking only
+    // `warehouse`, never seeing `sku`.
+    struct CompositeKeyTarget {
+        [[= storm::primary_part]] int         warehouse{};
+        [[= storm::primary_part]] std::string sku;
+    };
+    struct PartsFkCompositeTarget {
+        [[= storm::primary_part]][[= storm::fk<>]] CompositeKeyTarget ref;
+        [[= storm::primary_part]] int                                 n{};
+    };
+    // The parts-only TEXT widening does NOT reach through an FK: what binds here is the
+    // target's own single PK, and #505 rejects a std::string single PK. So an FK part
+    // pointing at a TEXT-keyed model inherits that rejection.
+    struct TextPkTarget {
+        [[= storm::primary]] std::string id;
+    };
+    struct PartsFkTextPkTarget {
+        [[= storm::primary_part]][[= storm::fk<>]] TextPkTarget ref;
+        [[= storm::primary_part]] int                           sku{};
+    };
+
 } // namespace
 
 // ============================================================================
@@ -128,6 +250,50 @@ static_assert(
 static_assert(!storm::orm::statements::PrimaryKeyType<PkText>, "std::string PK must be rejected");
 // UUID PKs are now supported (#507) — caller must provide the UUID explicitly
 static_assert(storm::orm::statements::PrimaryKeyType<PkUuid>, "storm::UUID primary keys should be accepted");
+
+// ---- Composite PK parts (#517) ----
+// Accepted
+static_assert(storm::orm::statements::PrimaryKeyType<PartsAllInt>, "all-int composite parts must be accepted");
+static_assert(storm::orm::statements::PrimaryKeyType<PartsIntAndText>, "a TEXT composite part must be accepted");
+static_assert(storm::orm::statements::PrimaryKeyType<PartsThreeMixed>, "3-part mixed int/TEXT/int64 must be accepted");
+static_assert(storm::orm::statements::PrimaryKeyType<PartsStringView>, "a string_view part must be accepted");
+static_assert(storm::orm::statements::PrimaryKeyType<PartsUuid>, "a storm::UUID part must be accepted");
+static_assert(
+        storm::orm::statements::PrimaryKeyType<PartsUint64SignedStorage>,
+        "a signed_storage uint64 part must be accepted"
+);
+static_assert(storm::orm::statements::PrimaryKeyType<PartsFkAndInt>, "an FK part with a PK'd target must be accepted");
+
+// Rejected
+static_assert(!storm::orm::statements::PrimaryKeyType<PartsBool>, "a bool part must be rejected");
+static_assert(!storm::orm::statements::PrimaryKeyType<PartsChar>, "a char part must be rejected");
+static_assert(!storm::orm::statements::PrimaryKeyType<PartsOptionalInt>, "a nullable part must be rejected");
+static_assert(
+        !storm::orm::statements::PrimaryKeyType<PartsOptionalText>,
+        "optional<string> must be rejected — is_text_member looks through optional"
+);
+static_assert(!storm::orm::statements::PrimaryKeyType<PartsUnsignedInt>, "an unsigned int part must be rejected");
+static_assert(
+        !storm::orm::statements::PrimaryKeyType<PartsUint64FullUnsigned>,
+        "a full_unsigned uint64 part must be rejected — it stores as zero-padded TEXT"
+);
+static_assert(!storm::orm::statements::PrimaryKeyType<PartsDouble>, "a double part must be rejected");
+static_assert(!storm::orm::statements::PrimaryKeyType<PartsBlob>, "a blob part must be rejected");
+static_assert(
+        !storm::orm::statements::PrimaryKeyType<PartsFkNoPkTarget>, "an FK part whose target has no PK must be rejected"
+);
+static_assert(
+        !storm::orm::statements::PrimaryKeyType<PartsFkBadPkTarget>,
+        "an FK part whose target PK is a rejected type must be rejected — the part binds that key"
+);
+static_assert(
+        !storm::orm::statements::PrimaryKeyType<PartsFkTextPkTarget>,
+        "the parts-only TEXT widening must not reach through an FK to a std::string single PK"
+);
+static_assert(
+        !storm::orm::statements::PrimaryKeyType<PartsFkCompositeTarget>,
+        "an FK part pointing at a composite-keyed target needs a multi-column FK (#504) — refuse it"
+);
 
 // ============================================================================
 // Positive path — accepted PK types remain queryable end to end
