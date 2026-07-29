@@ -185,11 +185,13 @@ namespace {
         [[= storm::primary_part]][[= storm::fk<>]] BadPkTarget bad;
         [[= storm::primary_part]] int                          sku{};
     };
-    // An FK part whose target is itself COMPOSITE-keyed. Referencing it needs a
-    // multi-column FK (#504) — out of scope here, so it must be refused outright rather
-    // than validated on its first part alone. Guards the is_primary_member subsumption
-    // trap: is_primary_member matches primary_part too, so testing it first would accept
-    // this model after checking only `warehouse`, never seeing `sku`.
+    // An FK part whose target is itself COMPOSITE-keyed. Not merely unsupported — #504
+    // shipped composite FKs for ordinary FK fields — but bind_one_pk_part still splices
+    // the single-column find_fk_primary_key, so such a part would bind ONE column for an
+    // N-column key. Refused outright rather than validated on its first part alone. Also
+    // guards the is_primary_member subsumption trap: is_primary_member matches
+    // primary_part too, so testing it first would accept this model after checking only
+    // `warehouse`, never seeing `sku`.
     struct CompositeKeyTarget {
         [[= storm::primary_part]] int         warehouse{};
         [[= storm::primary_part]] std::string sku;

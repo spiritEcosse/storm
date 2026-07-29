@@ -261,7 +261,8 @@ Every `primary_part` member's type is checked at compile time by `PrimaryKeyType
 | `short`, `int`, `long`, `long long` + `std::int16_t`/`int32_t`/`int64_t` | ✅ accepted |
 | `std::uint64_t` / `unsigned long` / `unsigned long long` | ✅ **only** with `[[= storm::signed_storage]]` |
 | `storm::UUID` | ✅ accepted |
-| `std::string`, `std::string_view` | ✅ accepted — **composite parts only** |
+| `std::string` | ✅ accepted — **composite parts only** |
+| `std::string_view` | ✅ accepted, but see the note below — it cannot be read back |
 | An FK member (`[[= storm::fk<>]] Related`) whose target has a well-typed **single** PK (e.g. `[[= storm::primary]] int id`) | ✅ accepted |
 | An FK member whose target has **no** primary key | ❌ rejected |
 | An FK member whose target's single PK is itself a rejected type (e.g. `double`, `std::string`) | ❌ rejected |
@@ -287,10 +288,18 @@ This is the subtlest rule in the table, and it cuts both ways:
   related model type. So an FK part pointing at a `std::string`-PK model is rejected:
   that target's single PK already fails #505 on its own terms, and the FK part
   inherits that rejection rather than acquiring a new TEXT allowance.
-- **A composite-keyed target is refused outright**, even if the FK part could
-  theoretically reference just the first column. Referencing a composite key
-  correctly needs a multi-column FK (binding every part together), which is #504's
-  territory.
+- **A composite-keyed target is refused outright** — not because composite FKs are
+  unsupported (#504 shipped those for ordinary FK fields), but because the PK-part bind
+  path still binds a single column: `bind_one_pk_part` splices the single-column
+  `find_fk_primary_key`, so an FK part pointing at an N-part key would bind one column
+  for a key spanning N. Supporting it means widening that bind path first.
+
+> **`std::string_view` parts bind but cannot be read back.** The concept accepts a
+> `std::string_view` part, and it generates DDL and binds correctly — but
+> `ColumnExtractor` has no `std::string_view` arm, so SELECTing a model that contains one
+> is a compile error. This is a project-wide limitation of `std::string_view` fields, not
+> something specific to composite keys. **Prefer `std::string` for any part you intend to
+> read back.**
 
 **TEXT is allowed for a composite part but not for a single primary key.** That split
 tracks a real distinction rather than an arbitrary one. A single PK still flows through

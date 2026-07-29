@@ -282,14 +282,20 @@ export namespace storm::orm::statements {
         // BaseStatement<Target> is only instantiated when the target is separately used as
         // a model in its own right.
         //
-        // A COMPOSITE-keyed target is refused outright. Referencing one needs a
-        // multi-column FK (several referencing columns bound together), which is #504's
-        // territory and out of scope here; the alternative — checking only the target's
-        // first part — silently accepts a key it never validated. The is_primary_part_member
-        // test MUST come first: is_primary_member subsumes it (field_attr.cppm), so testing
-        // is_primary_member first would route a composite target's first part into the
-        // SINGLE-PK allowlist and answer wrongly in both directions (accepting an int-first
-        // composite whose later parts were never seen; rejecting a legitimate TEXT-first one).
+        // A COMPOSITE-keyed target is refused outright — and NOT merely because composite
+        // FKs are unsupported: #504 shipped them for ordinary FK fields. The blocker is
+        // specific to the PK-part path. bind_one_pk_part still splices the SINGLE-column
+        // find_fk_primary_key<FKType>() (see below in this file), so an FK part whose
+        // target has an N-part key would bind ONE column for a key that spans N — a
+        // silently wrong key, not a missing feature. Lifting this restriction means
+        // widening bind_one_pk_part to find_fk_primary_key_members first; until then the
+        // guard must stay, so do not delete it on the grounds that #504 has landed.
+        //
+        // The is_primary_part_member test MUST come first: is_primary_member subsumes it
+        // (field_attr.cppm), so testing is_primary_member first would route a composite
+        // target's first part into the SINGLE-PK allowlist and answer wrongly in both
+        // directions — accepting an int-first composite whose later parts were never seen,
+        // and rejecting a legitimate TEXT-first one.
         //
         // Deliberately a SEPARATE helper rather than tightening valid_fk_target: that one
         // is shared with FKFieldOf (#474), where an ordinary (non-key) FK field has no
@@ -300,7 +306,7 @@ export namespace storm::orm::statements {
             const std::meta::info target = unwrap_optional_type(fk_type);
             for (auto m : std::meta::nonstatic_data_members_of(target, std::meta::access_context::unchecked())) {
                 if (storm::meta::is_primary_part_member(m)) {
-                    return false; // composite-keyed target: needs a multi-column FK (#504)
+                    return false; // composite-keyed target: bind_one_pk_part binds only 1 column
                 }
                 if (storm::meta::is_primary_member(m)) {
                     return is_primary_key_typed_member(m);
@@ -585,10 +591,13 @@ export namespace storm::orm::statements {
     // the gates become load-bearing and you inherit the obligation to give them a
     // discriminating test.
     //
-    // Covers composite keys: is_primary_member matches primary_part (#500), which is the
-    // path that was genuinely unprotected — PrimaryKeyType (#505) exempts primary_part
-    // members entirely, and only blocks a SINGLE time_point PK incidentally, by that type
-    // falling off the end of its integral/UUID whitelist. Members are read directly from
+    // Covers composite keys: is_primary_member matches primary_part (#500), which was the
+    // genuinely unprotected path when this concept landed — PrimaryKeyType (#505) exempted
+    // primary_part members entirely back then, and blocked a SINGLE time_point PK only
+    // incidentally, by that type falling off the end of its integral/UUID whitelist. #517
+    // has since removed that exemption, so a time_point part is now rejected by both
+    // concepts independently; this one keeps naming the timestamp case explicitly, which is
+    // the clearer diagnostic. Members are read directly from
     // nonstatic_data_members_of(^^T) (BMI-safe, #262), matching the sibling concepts above.
     template <typename T>
     concept ModelTimestampPkValid = std::ranges::all_of(
