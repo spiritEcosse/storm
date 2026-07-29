@@ -17,15 +17,26 @@ import std;
 
 namespace {
 
-    // Controls MockPoolConnection behavior (global, not thread-safe — tests are sequential)
+    // Controls MockPoolConnection behavior.
+    //
+    // INVARIANT: every field except open_call_count must be written only while no pool
+    // thread is live (i.e. before the first std::thread is spawned, or after join()).
+    // The threaded tests rely on the std::thread constructor to publish those writes;
+    // mutating one while a thread is parked inside open() is a data race. open_call_count
+    // is exempt — open() bumps it from every opening thread, so it is atomic (TSAN runs
+    // on every PR).
     struct MockConfig {
-        bool        open_should_fail = false;
-        bool        is_open_returns  = true;
-        int         open_fail_after  = -1; // fail after N successful opens (-1 = never)
-        int         open_call_count  = 0;
-        int         open_delay_ms    = 0;       // artificial delay in open() to test race conditions
-        std::latch* open_entered     = nullptr; // counted down on entry to open() (lock already released)
-        std::latch* open_release     = nullptr; // if set, open() blocks on it before returning
+        bool             open_should_fail = false;
+        bool             is_open_returns  = true;
+        int              open_fail_after  = -1; // fail after N successful opens (-1 = never)
+        std::atomic<int> open_call_count  = 0;
+        int              open_delay_ms    = 0;       // artificial delay in open() to test race conditions
+        std::latch*      open_entered     = nullptr; // counted down on entry to open() (lock already released)
+        std::latch*      open_release     = nullptr; // if set, open() blocks on it before returning
+        // Which open() call the open_entered/open_release handshake applies to (1-based;
+        // 0 = every call). Needed when a test must let a SECOND thread open a connection
+        // while the first is parked inside open() — see Checkout_RaceMaxReachedWithIdle.
+        int open_gate_call = 0;
     };
 
     inline auto mock_config() -> MockConfig& {
@@ -82,16 +93,23 @@ struct MockPoolConnection {
     [[nodiscard]] static auto open(std::string_view /*unused*/, Config /*unused*/ = {})
             -> std::expected<MockPoolConnection, Error> {
         auto& cfg = mock_config();
-        ++cfg.open_call_count;
+        // open_call_count is read (not just written) by the gate below, and open() runs
+        // concurrently on several threads in the race tests — increment atomically and
+        // keep this call's own 1-based number.
+        int const this_call = ++cfg.open_call_count;
+        // The handshake applies to every open() by default, or to one specific call when
+        // open_gate_call is set — a test that needs a second thread to open a connection
+        // while the first is parked in open() must not park the second one too.
+        bool const gated = cfg.open_gate_call == 0 || cfg.open_gate_call == this_call;
         // Signal that open() was entered — the caller has already released the pool
         // lock at this point, so a waiter can deterministically acquire it (e.g. to
         // call shutdown() before this open() returns). See Checkout_ShutdownDuringGrow.
-        if (cfg.open_entered != nullptr) {
+        if (gated && cfg.open_entered != nullptr) {
             cfg.open_entered->count_down();
         }
         // Optional handshake: block until the test releases us (e.g. after it has run
         // shutdown() while we hold no lock). Deterministic alternative to open_delay_ms.
-        if (cfg.open_release != nullptr) {
+        if (gated && cfg.open_release != nullptr) {
             cfg.open_release->wait();
         }
         if (cfg.open_delay_ms > 0) {
@@ -100,7 +118,7 @@ struct MockPoolConnection {
         if (cfg.open_should_fail) {
             return std::unexpected(Error{-1, "Mock open failure"});
         }
-        if (cfg.open_fail_after >= 0 && cfg.open_call_count > cfg.open_fail_after) {
+        if (cfg.open_fail_after >= 0 && this_call > cfg.open_fail_after) {
             return std::unexpected(Error{-1, "Mock open failure after threshold"});
         }
         return MockPoolConnection{};
@@ -134,13 +152,26 @@ struct MockPoolConnection {
     Statement cached_stmt_;
 };
 
-// Guard to reset mock config after each test
+// Guard to reset mock config after each test. Field-by-field rather than
+// `= MockConfig{}` because the atomic member deletes MockConfig's copy-assignment
+// operator, so the struct is no longer assignable at all.
 struct MockConfigGuard {
+    static auto reset() -> void {
+        auto& cfg            = mock_config();
+        cfg.open_should_fail = false;
+        cfg.is_open_returns  = true;
+        cfg.open_fail_after  = -1;
+        cfg.open_call_count.store(0);
+        cfg.open_delay_ms  = 0;
+        cfg.open_entered   = nullptr;
+        cfg.open_release   = nullptr;
+        cfg.open_gate_call = 0;
+    }
     MockConfigGuard() {
-        mock_config() = MockConfig{};
+        reset();
     }
     ~MockConfigGuard() {
-        mock_config() = MockConfig{};
+        reset();
     }
 };
 
@@ -1089,6 +1120,115 @@ TEST_F(MockPoolTest, Checkout_RaceConditionMaxReached) {
     EXPECT_EQ(success_count, 0);
     EXPECT_EQ(failure_count, num_threads);
     EXPECT_EQ(pool->size(), 2);
+}
+
+// try_grow re-check: pool hit max during the open() unlock window AND an idle entry
+// exists → the grower adopts that idle entry instead of exceeding max (#544).
+//
+// This branch used to be covered only incidentally, by the 10-thread scramble in
+// Checkout_RaceConditionMaxReached above, so whether it was hit depended on the
+// scheduler — it made the CI 100%-line-coverage gate flake at 99.9% (see #544, first
+// seen on PR #541, which touched nothing under src/db/). Forced deterministically here:
+//
+//   1. grower calls checkout() on an empty pool → try_grow sees 0 < max, releases the
+//      lock and enters open(), which signals `in_open` and parks on `open_release`.
+//      open_gate_call = 1 confines that handshake to THIS open() — step 2 must not park.
+//   2. main (lock free) checks out c1 → grows the pool to max_connections = 1, opens
+//      the second connection unimpeded, and releases it, leaving one IDLE entry.
+//   3. open_release lets the grower's open() return. It relocks, sees size() >= max,
+//      and find_idle() hands it the entry main just returned — the branch under test.
+//
+// The grower must therefore SUCCEED, and the pool must never exceed max. Asserting the
+// success (not merely "no crash") is what keeps this test from silently degrading into
+// a no-op if the branch is reordered away.
+TEST_F(MockPoolTest, Checkout_RaceMaxReachedWithIdle) {
+    std::latch in_open{1};
+    std::latch open_release{1};
+    auto&      cfg     = mock_config();
+    cfg.open_entered   = &in_open;
+    cfg.open_release   = &open_release;
+    cfg.open_gate_call = 1; // only the grower's open() parks
+
+    auto pool = storm::db::ConnectionPool<MockPoolConnection>::create(
+            "mock://db", {.min_connections = 0, .max_connections = 1, .checkout_timeout_ms = 0}
+    );
+    ASSERT_TRUE(pool.has_value());
+
+    std::atomic<bool>                grower_ok{false};
+    std::atomic<MockPoolConnection*> grower_raw{nullptr};
+    std::thread                      grower([&pool, &grower_ok, &grower_raw] {
+        auto c    = pool->checkout();
+        grower_ok = c.has_value();
+        if (c.has_value()) {
+            grower_raw = c->get();
+        }
+    });
+
+    in_open.wait(); // grower is inside open(), pool lock released
+
+    // NO ASSERT_* between the spawn above and the count_down() below: ASSERT_* returns
+    // from the test body, which would leave the grower parked on open_release forever
+    // and destroy a joinable std::thread (→ std::terminate, and a dangling latch). Use
+    // EXPECT_* here and let the flow reach the release + join.
+    MockPoolConnection* main_raw = nullptr;
+    {
+        auto c1 = pool->checkout(); // grows to max (1) — its own open() is not gated
+        EXPECT_TRUE(c1.has_value());
+        main_raw = c1.has_value() ? c1->get() : nullptr;
+    } // checkin → that entry is now idle, and entries_.size() == max_connections
+
+    open_release.count_down(); // grower relocks, hits the re-check + find_idle() branch
+    grower.join();
+
+    EXPECT_TRUE(grower_ok);                             // adopted the idle entry, not an error
+    EXPECT_EQ(grower_raw.load(), main_raw);             // ...specifically the one main returned
+    EXPECT_EQ(pool->size(), 1);                         // never exceeded max_connections
+    EXPECT_EQ(pool->in_use(), 0);                       // grower's shared_ptr died with its lambda
+    EXPECT_EQ(mock_config().open_call_count.load(), 2); // one open() per thread, no more
+}
+
+// The sibling arm of the same race: pool hit max during the open() unlock window and
+// every slot is IN USE, so there is nothing to adopt. try_grow returns nullopt and the
+// caller falls through to the wait/timeout path (#544).
+//
+// Same handshake as Checkout_RaceMaxReachedWithIdle, except main HOLDS the connection it
+// opens instead of returning it — so find_idle() finds nothing. With checkout_timeout_ms
+// = 0 the grower then fails fast, which is the observable signal that it took this arm.
+TEST_F(MockPoolTest, Checkout_RaceMaxReachedNoIdle) {
+    std::latch in_open{1};
+    std::latch open_release{1};
+    auto&      cfg     = mock_config();
+    cfg.open_entered   = &in_open;
+    cfg.open_release   = &open_release;
+    cfg.open_gate_call = 1; // only the grower's open() parks
+
+    auto pool = storm::db::ConnectionPool<MockPoolConnection>::create(
+            "mock://db", {.min_connections = 0, .max_connections = 1, .checkout_timeout_ms = 0}
+    );
+    ASSERT_TRUE(pool.has_value());
+
+    std::atomic<bool> grower_exhausted{false};
+    std::thread       grower([&pool, &grower_exhausted] {
+        auto c           = pool->checkout();
+        grower_exhausted = !c.has_value() && c.error().message().contains("exhausted");
+    });
+
+    in_open.wait(); // grower is inside open(), pool lock released
+
+    // EXPECT_*, not ASSERT_*: see Checkout_RaceMaxReachedWithIdle — an early return here
+    // would strand the grower on open_release and destroy a joinable thread. Worse in
+    // this test, since open_release would then go out of scope under the parked thread.
+    auto c1 = pool->checkout(); // grows to max (1) and KEEPS it — no idle entry
+    EXPECT_TRUE(c1.has_value());
+
+    open_release.count_down(); // grower relocks → size() >= max, find_idle() == nullptr
+    grower.join();
+
+    // Assert the *exhausted* error specifically, not merely "an error": an open()
+    // failure would also return one, silently turning this test into a no-op.
+    EXPECT_TRUE(grower_exhausted);
+    EXPECT_EQ(pool->size(), 1);   // never exceeded max_connections
+    EXPECT_EQ(pool->in_use(), 1); // c1 still held
 }
 
 // Bad config: negative timeouts
