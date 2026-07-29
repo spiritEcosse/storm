@@ -524,6 +524,20 @@ FKs (e.g. `^^Bug::author` vs `^^Bug::reviewer`). See
 mutated; re-SELECT to read the value). UPDATE preserves `created_at` by binding the object's stored
 value, so pass the original `created_at` when updating. Zero cost on models without timestamp fields.
 
+**No auto-timestamp on a primary key (#511)**: `auto_create`/`auto_update` on a PK member is a
+**compile-time error** (`ModelTimestampPkValid<T>`, ANDed into the `BaseStatement` constraint list).
+An auto-stamped key is rewritten by the statement matching on it — the #501 bug class, for the
+implicit timestamp tail rather than the explicit SET targets. Detection routes through
+`is_primary_member`, so it covers composite `primary_part` members too, which is the path that was
+genuinely unprotected: `PrimaryKeyType` (#505) exempts `primary_part` entirely and only blocked a
+single `time_point` PK *incidentally*, by that type falling off the end of its integral/UUID
+whitelist. DECIDED 2026-07-29 in favour of rejection over silent exclusion, matching how #500 handles
+nullable and relation-container PKs — breaking for out-of-tree models with that shape, of which there
+are none in-tree. The `is_unlisted_auto_update` predicates in `update_grammar.cppm` AND
+`upsert_grammar.cppm` also gained the `!is_pk_member` gate their four `is_settable_member` siblings
+already had; the concept makes that gate unreachable (a model that would exercise it no longer
+instantiates `BaseStatement`), so it is defence in depth only, retained against a future loosening.
+
 **64-bit unsigned storage (#436)**: a bare `uint64_t` / `unsigned long` / `unsigned long long` field
 is a **compile-time error** (`ModelStorageAnnotated<T>` constraint on `BaseStatement`). Annotate with
 exactly one: `[[= storm::signed_storage]]` keeps today's signed `INTEGER`/`BIGINT` (byte-identical,

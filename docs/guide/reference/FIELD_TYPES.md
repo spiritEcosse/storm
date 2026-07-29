@@ -568,6 +568,10 @@ QuerySet<User>().update(u).execute();
   across every row, so all rows in a batch get the same timestamp.
 - **Type-checked at compile time.** An `auto_create`/`auto_update` field that is not a
   `std::chrono::system_clock::time_point` fails to compile with a clear message.
+- **Never on a primary key** (#511). A key that stamps itself would be rewritten by the
+  statement matching on it, so `auto_create`/`auto_update` on a `primary`,
+  `primary_autoincrement`, or `primary_part` member is a compile-time error
+  (`ModelTimestampPkValid`) rather than a silently ignored annotation.
 - **Zero cost when unused.** Models without any timestamp field do not pay for the
   clock read — the call compiles away.
 
