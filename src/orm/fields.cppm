@@ -50,6 +50,30 @@ export namespace storm::meta {
         requires(ValidFieldInfo<M> && is_relation_field(M))
     struct RelationRef {
         static constexpr std::meta::info member = M;
+
+        // Comparison is DELETED WITH A REASON rather than simply absent. Both
+        // reject `where(fields::Article.tags == x)`, but an absent operator
+        // yields only "invalid operands to binary expression ('const
+        // RelationRef<^^(declaration)>' and 'int')" — which names neither the
+        // member nor the fix. `= delete("...")` puts the guidance in the
+        // diagnostic itself. One template covers every comparison operator; the
+        // rewritten candidates from operator<=> are not synthesised because the
+        // deleted operator is still a declared, selected candidate.
+        //
+        // Comparing a relation to a SCALAR is meaningless and stays rejected.
+        // Filtering THROUGH a relation ("articles having a tag named X") is a
+        // real capability Storm does not have yet — tracked as #553, which would
+        // add a traversal spelling such as .any(expr) emitting an EXISTS
+        // subquery. It would not loosen these operators.
+        template <typename V>
+        auto operator==(const V&) const
+                -> bool = delete ("this member is a relation (many_to_many / reverse_fk), not a column: it cannot be "
+                                  "compared in where(). Use join<fields::Model.relation>() to eager-load it.");
+        template <typename V>
+        auto operator<=>(const V&) const
+                -> std::partial_ordering = delete ("this member is a relation (many_to_many / reverse_fk), not a "
+                                                   "column: it cannot be ordered or compared in where(). Use "
+                                                   "join<fields::Model.relation>() to eager-load it.");
     };
 
     namespace detail {

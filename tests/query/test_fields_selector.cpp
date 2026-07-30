@@ -58,12 +58,36 @@ static_assert(!RelationSelector<std::remove_cvref_t<decltype(fields::FSArticle.t
 // Both resolve to their member for the NTTP positions.
 static_assert(std::meta::identifier_of(selector_info<fields::FSArticle.tags>()) == "tags");
 
-// ── A relation proxy carries NO comparison operators (#408 preserved) ────────
+// ── A relation proxy is NOT usable in a WHERE clause (#408 preserved) ────────
 // This is the load-bearing difference from FieldRef, and the reason RelationRef
-// does not derive from where::Field<M>. WHERE on a relation stays a compile error.
-template <auto S> constexpr bool where_capable = requires { S == 1; };
-static_assert(where_capable<fields::FSPerson.age>);    // a column: comparable
-static_assert(!where_capable<fields::FSArticle.tags>); // a relation: NOT comparable
+// does not derive from where::Field<M>. The comparison operators exist but are
+// `= delete("...")`, so the rejection carries an actionable message naming the
+// fix instead of the bare "invalid operands to binary expression" a missing
+// operator produces. Deleted still means not-viable, so these stay false.
+//
+// SCOPE of these asserts: they guard that a relation stays REJECTED. They cannot
+// distinguish "operator absent" from "operator deleted with a message" — both
+// yield false — so they are not a regression guard on the diagnostic TEXT. That
+// text was verified by compiling a probe TU; if the `= delete("...")` reasons are
+// ever dropped these keep passing, so re-check the message by hand when touching
+// RelationRef's operators.
+template <auto S> constexpr bool where_capable     = requires { S == 1; };
+template <auto S> constexpr bool orderable         = requires { S < 1; };
+template <auto S> constexpr bool inequality_usable = requires { S != 1; };
+static_assert(where_capable<fields::FSPerson.age>);        // a column: comparable
+static_assert(!where_capable<fields::FSArticle.tags>);     // a relation: NOT comparable
+static_assert(!orderable<fields::FSArticle.tags>);         // ...and not orderable
+static_assert(!inequality_usable<fields::FSArticle.tags>); // ...on any comparison
+// The relation proxy also offers none of Field<M>'s named predicates. These go
+// through a template parameter: `requires` on a concrete type whose member does
+// not exist is a hard error at namespace scope, not a soft false.
+template <typename P> constexpr bool has_like    = requires(const P& p) { p.like("x"); };
+template <typename P> constexpr bool has_in      = requires(const P& p) { p.in(1, 2); };
+template <typename P> constexpr bool has_is_null = requires(const P& p) { p.is_null(); };
+static_assert(has_like<decltype(fields::FSPerson.name)>);   // a column HAS them
+static_assert(!has_like<decltype(fields::FSArticle.tags)>); // a relation does NOT
+static_assert(!has_in<decltype(fields::FSArticle.tags)>);
+static_assert(!has_is_null<decltype(fields::FSArticle.tags)>);
 
 // ValidSelector gates the column positions, so it must REJECT a relation proxy.
 static_assert(ValidSelector<fields::FSArticle.title>);
