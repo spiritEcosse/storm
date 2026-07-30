@@ -11,7 +11,6 @@ import std;
 #include "test_seed_helpers.h"
 #include "test_select_runner.h"
 using storm::QuerySet;
-using storm::orm::where::f;
 
 template <typename ConnType> auto insert_test_data(const std::vector<Person>& data) -> void {
     QuerySet<Person, ConnType> qs;

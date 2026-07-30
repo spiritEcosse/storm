@@ -124,7 +124,6 @@ TYPED_TEST_SUITE(FkPolicyTest, DatabaseTypes);
 
 // CASCADE: deleting the parent removes the child rows that reference it.
 TYPED_TEST(FkPolicyTest, CascadeDeletesChildren) {
-    using storm::orm::where::f;
     QuerySet<Person, TypeParam>       person_qs;
     QuerySet<CascadeChild, TypeParam> child_qs;
     int const                         alice_id = TestFixture::seed_person();
@@ -140,7 +139,6 @@ TYPED_TEST(FkPolicyTest, CascadeDeletesChildren) {
 
 // SET NULL: deleting the parent nulls the child FK (child row survives).
 TYPED_TEST(FkPolicyTest, SetNullNullsChildFk) {
-    using storm::orm::where::f;
     QuerySet<Person, TypeParam>       person_qs;
     QuerySet<SetNullChild, TypeParam> child_qs;
     int const                         alice_id = TestFixture::seed_person();
@@ -159,7 +157,6 @@ TYPED_TEST(FkPolicyTest, SetNullNullsChildFk) {
 
 // RESTRICT: deleting a still-referenced parent is rejected.
 TYPED_TEST(FkPolicyTest, RestrictBlocksParentDelete) {
-    using storm::orm::where::f;
     QuerySet<Person, TypeParam>        person_qs;
     QuerySet<RestrictChild, TypeParam> child_qs;
     int const                          alice_id = TestFixture::seed_person();
@@ -257,7 +254,6 @@ TYPED_TEST(ReferentialIntegrityTest, RejectsDeleteOfReferencedParent) {
     ASSERT_TRUE(task_qs.insert(ref).execute().has_value());
 
     // Alice is still referenced by the task — RESTRICT must block the delete.
-    using storm::orm::where::f;
     auto del = user_qs.where(fields::Person.id == alice_id).erase().execute();
     EXPECT_FALSE(del.has_value()) << "Deleting a referenced parent must be rejected (RESTRICT)";
 }

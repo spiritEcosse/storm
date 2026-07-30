@@ -9,7 +9,6 @@ import storm_orm_statements_update_grammar; // UpdateGrammar — SET-target gate
 import std;
 
 using storm::QuerySet;
-using storm::orm::where::f;
 
 #include "test_models.h"            // NOSONAR cpp:S954
 #include "test_reverse_fk_models.h" // NOSONAR cpp:S954
@@ -55,16 +54,17 @@ static_assert(stmt::JoinableFields<RfPerson, ^^RfPerson::tasks>);
 static_assert(stmt::JoinableFields<RfPerson, ^^RfTask::assignee>);
 
 // ============================================================================
-// Compile-time: f<>() rejects reverse_fk relation members (#408)
+// Compile-time: the column proxy rejects reverse_fk relation members (#408)
 // A reverse_fk container is not a persisted column — a WHERE clause on it would
-// reference a non-existent column, so f<>() must fail at the call site.
+// reference a non-existent column, so FieldRef must fail at the call site.
+// (#518: a relation member gets a RelationRef instead — joinable, not comparable.)
 // ============================================================================
 
 template <auto M>
-concept FCallableRfk = requires { storm::orm::where::f<M>(); };
+concept FCallableRfk = requires { storm::meta::FieldRef<M>{}; };
 
-static_assert(!FCallableRfk<^^RfPerson::tasks>, "reverse_fk member rejected by f<>()");
-static_assert(!FCallableRfk<^^RfBoard::notes>, "reverse_fk member rejected by f<>()");
+static_assert(!FCallableRfk<^^RfPerson::tasks>, "reverse_fk member rejected by FieldRef");
+static_assert(!FCallableRfk<^^RfBoard::notes>, "reverse_fk member rejected by FieldRef");
 static_assert(FCallableRfk<^^RfPerson::name>, "persisted column still accepted");
 static_assert(FCallableRfk<^^RfTask::assignee>, "FK column still accepted");
 

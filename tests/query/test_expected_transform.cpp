@@ -11,7 +11,6 @@ import std;
 #include "test_seed_helpers.h"
 
 using storm::QuerySet;
-using storm::orm::where::f;
 
 template <typename ConnType> class ExpectedTransformTest : public StormTestFixture<Person, ConnType> {
   protected:

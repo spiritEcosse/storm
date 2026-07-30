@@ -50,7 +50,6 @@ template <typename ConnType> class QuerySetCrudLifecycleTest : public StormTestF
 TYPED_TEST_SUITE(QuerySetCrudLifecycleTest, DatabaseTypes);
 
 TYPED_TEST(QuerySetCrudLifecycleTest, FullLifecycle) {
-    using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
 
     // 1. Verify empty state
@@ -146,7 +145,6 @@ TYPED_TEST(QuerySetCrudLifecycleTest, BatchLifecycle) {
 
 // All supported field types: int, string, double, bool, optional<int>, optional<string>, blob
 TYPED_TEST(QuerySetCrudLifecycleTest, AllFieldTypesLifecycle) {
-    using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
 
     // 1. Insert with all fields populated
@@ -228,7 +226,6 @@ TYPED_TEST(QuerySetCrudLifecycleTest, BoundaryBatchLifecycle) {
 
 // Insert, selectively update and erase via WHERE, verify unaffected rows unchanged
 TYPED_TEST(QuerySetCrudLifecycleTest, FilteredLifecycle) {
-    using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
 
     // 1. Insert mixed data

@@ -93,7 +93,7 @@ namespace {
     auto newest_flagged_run(std::string_view current_branch, std::string_view current_host) -> ResolvedBaseline {
         return newest_run(
                 storm::QuerySet<bench_dashboard::BenchRun>()
-                        .where(storm::orm::where::f<Flag>() == true)
+                        .where(storm::meta::FieldRef<Flag>{} == true)
                         .where(bench_dashboard::fields::BenchRun.branch == std::string{current_branch})
                         .where(bench_dashboard::fields::BenchRun.hostname == std::string{current_host})
         );

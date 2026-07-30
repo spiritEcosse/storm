@@ -194,7 +194,6 @@ template <typename ConnType> class NonIdPkCrudTest : public StormTestFixture<Wid
 TYPED_TEST_SUITE(NonIdPkCrudTest, DatabaseTypes);
 
 TYPED_TEST(NonIdPkCrudTest, InsertSelectUpdateDeleteRoundTrip) {
-    using storm::orm::where::f;
     QuerySet<Widget, TypeParam> qs;
 
     auto inserted = qs.insert(Widget{.widget_id = 0, .name = "Sprocket"}).execute();

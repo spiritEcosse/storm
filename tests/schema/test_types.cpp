@@ -20,7 +20,6 @@ using std::chrono::system_clock;
 using std::chrono::year;
 using std::chrono::year_month_day;
 using storm::QuerySet;
-using storm::orm::where::f;
 
 // ===== INTEGER TYPES TESTS =====
 

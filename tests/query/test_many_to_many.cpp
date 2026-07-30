@@ -51,10 +51,10 @@ static_assert(storm::orm::statements::M2MFieldOf<Pupil, ^^Pupil::courses>);
 // ============================================================================
 
 template <auto M>
-concept FCallableM2M = requires { storm::orm::where::f<M>(); };
+concept FCallableM2M = requires { storm::meta::FieldRef<M>{}; };
 
-static_assert(!FCallableM2M<^^Student::courses>, "m2m member rejected by f<>()");
-static_assert(!FCallableM2M<^^Pupil::courses>, "m2m_through member rejected by f<>()");
+static_assert(!FCallableM2M<^^Student::courses>, "m2m member rejected by FieldRef");
+static_assert(!FCallableM2M<^^Pupil::courses>, "m2m_through member rejected by FieldRef");
 static_assert(FCallableM2M<^^Student::name>, "persisted column still accepted");
 static_assert(FCallableM2M<^^Student::age>, "persisted column still accepted");
 

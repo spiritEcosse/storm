@@ -15,7 +15,6 @@ using storm::orm::where::ComparisonExpr;
 using storm::orm::where::CompOp;
 using storm::orm::where::Expr;
 using storm::orm::where::ExpressionVariant;
-using storm::orm::where::f;
 
 // Test fixture for WHERE operations — templated on database backend
 template <typename ConnType> class WhereTest : public StormTestFixture<Person, ConnType> {

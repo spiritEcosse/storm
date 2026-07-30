@@ -217,7 +217,6 @@ namespace {
     // consteval grammar with no dialect branch, so the PG run would assert a byte-identical
     // string. Same precedent as tests/query/test_where.cpp's non-typed fixture.
     TEST_F(TimestampPkTest, ConditionalUpdateSetClauseExcludesKeyParts) {
-        using storm::orm::where::f;
         storm::QuerySet<TsCompositeClean, ConnType> qs;
         const auto                                  sql = qs.where(fields::TsCompositeClean.tenant_id == 1)
                                  .update<^^TsCompositeClean::payload>(TsCompositeClean{.payload = 7})
@@ -248,7 +247,6 @@ namespace {
     class TimestampedRecordSqlTest : public StormTestFixture<TimestampedRecord, ConnType> {};
 
     TEST_F(TimestampedRecordSqlTest, ConditionalUpdateSqlUnchanged) {
-        using storm::orm::where::f;
         storm::QuerySet<TimestampedRecord, ConnType> qs;
         const auto                                   sql = qs.where(fields::TimestampedRecord.id == 1)
                                  .update<^^TimestampedRecord::name>(TimestampedRecord{.name = "renamed"})

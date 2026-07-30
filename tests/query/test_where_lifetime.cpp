@@ -11,7 +11,6 @@ import std;
 
 using storm::QuerySet;
 using storm::orm::where::Expr;
-using storm::orm::where::f;
 
 // Lifetime safety for WHERE comparison operands (#352).
 //

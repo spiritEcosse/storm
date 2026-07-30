@@ -7,8 +7,6 @@ import std;
 #include "test_models.h" // NOSONAR cpp:S954
 #include "test_seed_helpers.h"
 
-using storm::orm::where::f;
-
 template <typename ConnType> class ComplexWhereTest : public PersonSeedFixture<ConnType> {};
 
 TYPED_TEST_SUITE(ComplexWhereTest, DatabaseTypes);

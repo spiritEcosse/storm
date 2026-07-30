@@ -120,7 +120,6 @@ template <typename ConnType> auto seed_zed(storm::QuerySet<Person, ConnType>& qs
 // DO NOTHING via the fluent proxy: first insert lands, the conflicting second
 // insert is skipped (no row touched), leaving the original row untouched.
 TYPED_TEST(UpsertTest, DoNothingSkipsOnConflict) {
-    using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
     seed_zed(qs);
 
@@ -138,7 +137,6 @@ TYPED_TEST(UpsertTest, DoNothingSkipsOnConflict) {
 // DO UPDATE via the fluent proxy: the conflicting insert overwrites the listed
 // column (age) on the existing row.
 TYPED_TEST(UpsertTest, DoUpdateOverwritesListedColumn) {
-    using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
     const std::int64_t                 first_id = seed_zed(qs);
 
@@ -219,7 +217,6 @@ template <typename ConnType> class UpsertTimestampTest : public StormTestFixture
 TYPED_TEST_SUITE(UpsertTimestampTest, DatabaseTypes);
 
 TYPED_TEST(UpsertTimestampTest, DoUpdateRefreshesAutoUpdateTimestamp) {
-    using storm::orm::where::f;
     storm::QuerySet<TimestampedUpsertRecord, TypeParam> qs;
 
     TimestampedUpsertRecord const seed{.name = "record"};

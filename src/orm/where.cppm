@@ -12,7 +12,7 @@ import std;
 
 import storm_orm_utilities;     // For ConstexprString
 import storm_orm_field_attr;    // ValidFieldInfo — gate the field-selector NTTP (#478)
-import storm_orm_relation_meta; // is_relation_field — reject m2m/reverse_fk members in f<>() (#408)
+import storm_orm_relation_meta; // is_relation_field — reject m2m/reverse_fk members in Field<M> (#408)
 
 export namespace storm::orm::where {
 
@@ -374,7 +374,7 @@ export namespace storm::orm::where {
     }
 
     // CollatedField proxy - wraps field name with COLLATE clause
-    // Created via f<^^Person::name>().collate(Collate::NoCase)
+    // Created via fields::Person.name.collate(Collate::NoCase)
     // All comparison operators produce SQL like: "name COLLATE NOCASE = ?"
     template <std::meta::info MemberInfo>
         requires(storm::meta::ValidFieldInfo<MemberInfo> && !storm::meta::is_relation_field(MemberInfo))
@@ -464,7 +464,7 @@ export namespace storm::orm::where {
         }
 
         // IN: Returns Expr wrapping VARIANT (no heap allocation for expression itself!)
-        // Usage: f<^^Person::id>().in(100, 200, 300)
+        // Usage: fields::Person.id.in(100, 200, 300)
         // Each value is constructed to FieldType, then routed through normalize_operand so the
         // stored element type matches the variant arm — enums/narrow ints fold to int/int64_t,
         // text to std::string, temporal/UUID keep their own arm (#407, same rules as comparisons).
@@ -529,28 +529,5 @@ export namespace storm::orm::where {
             return where::make_comparison_expr(std::string(field_name_sv), op, std::forward<V>(value));
         }
     };
-
-    // Pure C++26 Reflection-Based Field Helper (No Macro Needed!)
-    // Usage: f<^^Person::id>().in(100, 200, 300)
-    //
-    // Returns Field which provides:
-    // - in() -> Expr (runtime expression, composable with AND/OR)
-    // - Comparison operators (==, >, <, etc.) -> Expr (composable with AND/OR)
-    // - Special methods (like, between) -> Expr (composable with AND/OR)
-    //
-    // All methods return runtime expressions that can be used with QuerySet::where()
-    //
-    // COMPILE-TIME VALIDATION: Uses P2996 to ensure MemberInfo is a valid field
-    template <std::meta::info MemberInfo>
-        requires(storm::meta::ValidFieldInfo<MemberInfo> && !storm::meta::is_relation_field(MemberInfo))
-    // a named, persisted column — not an m2m/reverse_fk relation member (#408)
-    constexpr auto f() {
-        // Additional compile-time validation: field must be accessible
-        static_assert(
-                storm::meta::ValidFieldInfo<MemberInfo>,
-                "f<> requires a non-static data member reflection (use ^^Type::member syntax)"
-        );
-        return Field<MemberInfo>();
-    }
 
 } // namespace storm::orm::where

@@ -19,7 +19,6 @@ using std::chrono::year;
 using std::chrono::year_month_day;
 using storm::QuerySet;
 using storm::UUID;
-using storm::orm::where::f;
 
 namespace {
 

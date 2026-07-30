@@ -8,7 +8,6 @@ import std;
 #include "test_models.h" // NOSONAR cpp:S954
 
 using storm::QuerySet;
-using storm::orm::where::f;
 
 namespace {
 

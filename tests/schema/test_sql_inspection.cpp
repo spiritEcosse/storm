@@ -11,7 +11,6 @@ import std;
 #include "test_models.h"
 
 using storm::QuerySet;
-using storm::orm::where::f;
 
 // ============================================================================
 // Test fixture

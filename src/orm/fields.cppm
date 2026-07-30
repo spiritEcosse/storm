@@ -13,8 +13,9 @@ import storm_orm_where;         // Field<M> — the proxy's base class
 // Field-selector proxies (#518). NOT a leaf module: FieldRef derives from
 // where::Field<M>, so this sits ABOVE storm_orm_where in the layering
 //   field_attr, relation_meta -> where -> fields -> queryset/aggregate/orderby/insert
-// Never make where.cppm import this module — that is a cycle, and it is why f<>
-// stays in where.cppm unwidened (it cannot call selector_info from below).
+// Never make where.cppm import this module — that would be a cycle. (This is why
+// the removed f<> helper could never have been widened to take a proxy: it lived
+// below this module and could not call selector_info.)
 export namespace storm::meta {
 
     // The public field-selector proxy.
@@ -104,12 +105,11 @@ export namespace storm::meta {
     // std::meta::info is consteval-only so it cannot be returned into a runtime
     // expression.
     //
-    // The raw-info branch is transitional scaffolding for one specific window: once
-    // the QuerySet/aggregate/order_by methods are constrained on ValidSelector, the
-    // not-yet-migrated ^^Model::member call sites still have to compile. It is what
-    // lets the widening land WITHOUT the call-site migration in the same commit.
-    // Once every site is migrated and f<> is gone, drop the info branch and this
-    // collapses to `decltype(S)::member`.
+    // The raw-info branch still carries the ~653 un-migrated ^^Model::member NTTP
+    // selector arguments (order_by<>, distinct<>, the aggregates, join<>, ...).
+    // f<> itself is gone, so WHERE clauses are proxy-only; once the NTTP positions
+    // are migrated too this branch can go and the body collapses to
+    // `decltype(S)::member`.
     // CONSTRAINED, deliberately: an unconstrained `else` branch would treat any
     // non-info NTTP as a proxy and hard-error on `::member` deep inside this
     // function. Call sites rely on a bad selector being a SUBSTITUTION FAILURE —
