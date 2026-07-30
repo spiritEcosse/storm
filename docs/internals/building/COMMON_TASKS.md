@@ -229,7 +229,7 @@ void worker_thread() {
     QuerySet<Person> qs{conn};
 
     for (int i = 0; i < 1000; i++) {
-        qs.where(age > 30).distinct<^^Person::name>().execute();
+        qs.where(age > 30).distinct<fields::Person.name>().execute();
     }
 }
 
@@ -257,13 +257,13 @@ auto results = qs.select();  // Returns plf::hive<Person>
 
 ```cpp
 // Single field - returns plf::hive<std::string>
-auto names = qs.distinct<^^Person::name>().execute();
+auto names = qs.distinct<fields::Person.name>().execute();
 
 // Multiple fields - returns plf::hive<std::tuple<std::string, int>>
-auto pairs = qs.distinct<^^Person::name, ^^Person::age>().execute();
+auto pairs = qs.distinct<fields::Person.name, fields::Person.age>().execute();
 
 // values() for specific columns
-auto values = qs.values<^^Person::name, ^^Person::age>().execute();
+auto values = qs.values<fields::Person.name, fields::Person.age>().execute();
 ```
 
 ### Aggregate Mode (via aggregates)
@@ -272,17 +272,17 @@ auto values = qs.values<^^Person::name, ^^Person::age>().execute();
 // Standalone aggregates - return scalar values via execute().
 // MIN/MAX/AVG -> std::optional<double> (nullopt over an empty set, #416);
 // COUNT -> int64_t; SUM -> int64_t (0 over an empty set).
-auto min_age = qs.min<^^Person::age>().execute();   // expected<std::optional<double>>
-auto max_age = qs.max<^^Person::age>().execute();   // expected<std::optional<double>>
+auto min_age = qs.min<fields::Person.age>().execute();   // expected<std::optional<double>>
+auto max_age = qs.max<fields::Person.age>().execute();   // expected<std::optional<double>>
 auto count = qs.count().execute();                  // expected<int64_t>
 
 // GROUP BY + aggregate - returns tuples (MIN/MAX/AVG columns are std::optional<double>)
-auto by_dept = qs.group_by<^^Person::department>().count().execute();
+auto by_dept = qs.group_by<fields::Person.department>().count().execute();
 // Returns: plf::hive<std::tuple<DeptType, int64_t>>
 
 // Multiple GROUP BY fields
-auto by_age_dept = qs.group_by<^^Person::age, ^^Person::department>()
-                     .sum<^^Person::salary>().execute();
+auto by_age_dept = qs.group_by<fields::Person.age, fields::Person.department>()
+                     .sum<fields::Person.salary>().execute();
 ```
 
 ### Available Methods
@@ -316,8 +316,8 @@ Chain methods in any order - SQL clauses are reordered automatically:
 
 ```cpp
 // These produce identical SQL:
-qs.limit(10).where(age > 25).order_by<^^Person::name>().select();
-qs.where(age > 25).order_by<^^Person::name>().limit(10).select();
+qs.limit(10).where(age > 25).order_by<fields::Person.name>().select();
+qs.where(age > 25).order_by<fields::Person.name>().limit(10).select();
 
 // Generated: SELECT ... FROM Person WHERE age > 25 ORDER BY name LIMIT 10
 ```

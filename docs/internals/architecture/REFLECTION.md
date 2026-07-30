@@ -76,7 +76,7 @@ auto field() {
     };
 }
 
-// Usage: f<^^Person::age>() > 30
+// Usage: fields::Person.age > 30
 ```
 
 **No macros needed** - fully module-compatible!

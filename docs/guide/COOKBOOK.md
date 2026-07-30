@@ -7,7 +7,6 @@ Quick-reference patterns for common Storm ORM operations.
 ```cpp
 import storm;
 using namespace storm;
-using namespace storm::orm::where;  // brings f<>() into scope for WHERE filters
 
 // Define a model — reflection maps fields to columns automatically
 struct Person {
@@ -45,12 +44,12 @@ qs.insert(people).execute();
 auto all = qs.select().execute();
 
 // With WHERE
-auto seniors = qs.where(f<^^Person::age>() > 30).select().execute();
+auto seniors = qs.where(fields::Person.age > 30).select().execute();
 
 // With ORDER BY + LIMIT + OFFSET
 auto page = qs
-    .where(f<^^Person::is_active>() == true)
-    .order_by<^^Person::name>()
+    .where(fields::Person.is_active == true)
+    .order_by<fields::Person.name>()
     .limit(10)
     .offset(20)
     .select()
@@ -61,25 +60,25 @@ auto page = qs
 
 ```cpp
 // Comparison operators
-qs.where(f<^^Person::age>() == 30).select().execute();
-qs.where(f<^^Person::age>() != 30).select().execute();
-qs.where(f<^^Person::age>() > 30).select().execute();
-qs.where(f<^^Person::age>() >= 30).select().execute();
-qs.where(f<^^Person::age>() < 30).select().execute();
-qs.where(f<^^Person::age>() <= 30).select().execute();
+qs.where(fields::Person.age == 30).select().execute();
+qs.where(fields::Person.age != 30).select().execute();
+qs.where(fields::Person.age > 30).select().execute();
+qs.where(fields::Person.age >= 30).select().execute();
+qs.where(fields::Person.age < 30).select().execute();
+qs.where(fields::Person.age <= 30).select().execute();
 
 // LIKE
-qs.where(f<^^Person::name>().like("A%")).select().execute();
+qs.where(fields::Person.name.like("A%")).select().execute();
 
 // IN
-qs.where(f<^^Person::age>().in(25, 30, 35)).select().execute();
+qs.where(fields::Person.age.in(25, 30, 35)).select().execute();
 
 // BETWEEN
-qs.where(f<^^Person::age>().between(25, 35)).select().execute();
+qs.where(fields::Person.age.between(25, 35)).select().execute();
 
 // AND / OR
-qs.where(f<^^Person::age>() > 30 && f<^^Person::is_active>() == true).select().execute();
-qs.where(f<^^Person::age>() < 25 || f<^^Person::age>() > 40).select().execute();
+qs.where(fields::Person.age > 30 && fields::Person.is_active == true).select().execute();
+qs.where(fields::Person.age < 25 || fields::Person.age > 40).select().execute();
 ```
 
 ## UPDATE
@@ -101,10 +100,10 @@ qs.update(people).execute();
 ```cpp
 // INSERT ... ON CONFLICT (name) DO UPDATE — conflict target must be a
 // unique field / UniqueIndex (compile-time checked).
-qs.insert(p).on_conflict<^^Person::name>().update<^^Person::age>().execute();
+qs.insert(p).on_conflict<fields::Person.name>().update<fields::Person.age>().execute();
 
 // INSERT ... ON CONFLICT (name) DO NOTHING
-qs.insert(p).on_conflict<^^Person::name>().nothing().execute();
+qs.insert(p).on_conflict<fields::Person.name>().nothing().execute();
 ```
 
 See [reference/FIELD_TYPES.md](reference/FIELD_TYPES.md) and the QuerySet API section of
@@ -144,7 +143,7 @@ fields must be `std::chrono::system_clock::time_point`. See
 qs.erase(p).execute();
 
 // Conditional bulk erase — one DELETE ... WHERE statement (#198)
-qs.where(f<^^Person::is_active>() == false).erase().execute();
+qs.where(fields::Person.is_active == false).erase().execute();
 
 // Erase all (explicit full-table wipe). erase() with no where() is refused.
 qs.erase_all().execute();
@@ -156,11 +155,11 @@ qs.erase_all().execute();
 // Scalar aggregates (no GROUP BY). execute() returns std::expected<T, Error>.
 // COUNT/SUM are never NULL; MIN/MAX/AVG over an empty set are NULL -> nullopt (#416).
 auto count     = qs.count().execute();               // expected<int64_t>
-auto total     = qs.sum<^^Person::salary>().execute(); // expected<double>  (SUM over double/float, #420; 0.0 on empty)
-auto age_total = qs.sum<^^Person::age>().execute();    // expected<int64_t> (SUM over integer; 0 on empty)
-auto avg       = qs.avg<^^Person::salary>().execute(); // expected<std::optional<double>>
-auto lo        = qs.min<^^Person::age>().execute();    // expected<std::optional<double>>
-auto hi        = qs.max<^^Person::age>().execute();    // expected<std::optional<double>>
+auto total     = qs.sum<fields::Person.salary>().execute(); // expected<double>  (SUM over double/float, #420; 0.0 on empty)
+auto age_total = qs.sum<fields::Person.age>().execute();    // expected<int64_t> (SUM over integer; 0 on empty)
+auto avg       = qs.avg<fields::Person.salary>().execute(); // expected<std::optional<double>>
+auto lo        = qs.min<fields::Person.age>().execute();    // expected<std::optional<double>>
+auto hi        = qs.max<fields::Person.age>().execute();    // expected<std::optional<double>>
 
 // MIN/MAX/AVG: nullopt means "no rows" — distinguishable from a genuine 0.
 if (lo && lo->has_value()) {
@@ -170,12 +169,12 @@ if (lo && lo->has_value()) {
 }
 
 // With WHERE
-auto active_count = qs.where(f<^^Person::is_active>() == true).count().execute();
+auto active_count = qs.where(fields::Person.is_active == true).count().execute();
 
 // COUNT(DISTINCT field) — counts distinct values, not distinct rows
-auto distinct_depts = qs.count_distinct<^^Person::department>().execute(); // expected<int64_t>
-auto active_distinct = qs.where(f<^^Person::is_active>() == true)
-    .count_distinct<^^Person::department>()
+auto distinct_depts = qs.count_distinct<fields::Person.department>().execute(); // expected<int64_t>
+auto active_distinct = qs.where(fields::Person.is_active == true)
+    .count_distinct<fields::Person.department>()
     .execute();
 ```
 
@@ -183,12 +182,12 @@ auto active_distinct = qs.where(f<^^Person::is_active>() == true)
 
 ```cpp
 // Group and count
-auto groups = qs.group_by<^^Person::is_active>().count().execute();
+auto groups = qs.group_by<fields::Person.is_active>().count().execute();
 
 // GROUP BY with HAVING
 auto large_groups = qs
-    .group_by<^^Person::age>()
-    .having(f<^^Person::age>() > 30)
+    .group_by<fields::Person.age>()
+    .having(fields::Person.age > 30)
     .count()
     .execute();
 ```
@@ -197,20 +196,20 @@ auto large_groups = qs
 
 ```cpp
 // Single field
-auto names = qs.distinct<^^Person::name>().execute();
+auto names = qs.distinct<fields::Person.name>().execute();
 
 // Multi-field
-auto combos = qs.distinct<^^Person::name, ^^Person::age>().execute();
+auto combos = qs.distinct<fields::Person.name, fields::Person.age>().execute();
 ```
 
 ## Column Projection (VALUES)
 
 ```cpp
 // Single column → hive<T>
-auto names = qs.values<^^Person::name>().execute();  // plf::hive<std::string>
+auto names = qs.values<fields::Person.name>().execute();  // plf::hive<std::string>
 
 // Multiple columns → hive<tuple<...>>
-auto pairs = qs.values<^^Person::name, ^^Person::age>().execute();
+auto pairs = qs.values<fields::Person.name, fields::Person.age>().execute();
 // plf::hive<std::tuple<std::string, int>>
 ```
 
@@ -224,7 +223,7 @@ struct Message {
 };
 
 QuerySet<Message> msg_qs;
-auto results = msg_qs.join<^^Message::sender>().where(...).select().execute();
+auto results = msg_qs.join<fields::Message.sender>().where(...).select().execute();
 ```
 
 ## Set Operations
@@ -233,8 +232,8 @@ auto results = msg_qs.join<^^Message::sender>().where(...).select().execute();
 QuerySet<Person> qs1, qs2;
 
 // UNION (deduplicated)
-auto combined = qs1.where(f<^^Person::age>() > 30)
-    .union_(qs2.where(f<^^Person::is_active>() == true))
+auto combined = qs1.where(fields::Person.age > 30)
+    .union_(qs2.where(fields::Person.is_active == true))
     .select()
     .execute();
 
@@ -282,7 +281,7 @@ and WAL recommendations (#410).
 void worker() {
     QuerySet<Person>::set_default_connection(":memory:");
     QuerySet<Person> qs;
-    qs.where(f<^^Person::age>() > 30).select().execute();
+    qs.where(fields::Person.age > 30).select().execute();
 }
 
 std::jthread t1(worker), t2(worker);

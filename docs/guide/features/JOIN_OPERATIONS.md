@@ -31,7 +31,7 @@ struct Message {
 storm::QuerySet<Message> message_qs(conn);
 
 // Populates sender field fully for each message
-auto result = message_qs.join<^^Message::sender>().select().execute();
+auto result = message_qs.join<fields::Message.sender>().select().execute();
 if (result) {
     for (const auto& msg : result.value()) {
         std::cout << msg.content << " from " << msg.sender.username << std::endl;
@@ -59,7 +59,7 @@ struct Message {
 };
 
 // Populates both sender and receiver fields
-auto result = message_qs.join<^^Message::sender, ^^Message::receiver>().select().execute();
+auto result = message_qs.join<fields::Message.sender, fields::Message.receiver>().select().execute();
 if (result) {
     for (const auto& msg : result.value()) {
         std::cout << msg.sender.username << " → "
@@ -93,7 +93,7 @@ messages pointing at them") is tracked as a reverse-relation feature in #398.
 Only returns rows where FK relationship exists:
 
 ```cpp
-auto result = message_qs.join<^^Message::sender>().select().execute();
+auto result = message_qs.join<fields::Message.sender>().select().execute();
 ```
 
 **Use when**: You only want messages with valid senders
@@ -103,7 +103,7 @@ auto result = message_qs.join<^^Message::sender>().select().execute();
 Returns all base table rows, FK fields may be NULL:
 
 ```cpp
-auto result = message_qs.left_join<^^Message::sender>().select().execute();
+auto result = message_qs.left_join<fields::Message.sender>().select().execute();
 ```
 
 **Use when**: You want all messages, even those without senders
@@ -136,7 +136,7 @@ struct Student {
 
 // Two queries (in one transaction): base students, then their courses, stitched
 // client-side by a pk→entity hash map.
-auto students = QuerySet<Student>().join<^^Student::courses>().select().execute();
+auto students = QuerySet<Student>().join<fields::Student.courses>().select().execute();
 for (const auto& s : *students) {
     // s.courses holds ALL of the student's courses
 }
@@ -150,9 +150,9 @@ for (const auto& s : *students) {
   `<OwnerTable>_<RelatedTable>` with `<Table>_id` columns.
 - The m2m container member is **not a column**: plain `select()`, `insert()`,
   `update()` ignore it entirely (zero cost for models without m2m fields).
-  Explicitly naming it as a SET target — `update<^^Student::courses>(proto)`,
-  `update_all<^^Student::courses>(proto)`, or upsert
-  `.on_conflict<…>().update<^^Student::courses>()` — is **rejected at compile
+  Explicitly naming it as a SET target — `update<fields::Student.courses>(proto)`,
+  `update_all<fields::Student.courses>(proto)`, or upsert
+  `.on_conflict<…>().update<fields::Student.courses>()` — is **rejected at compile
   time** (#486): the `is_settable_member` gate on both grammars ANDs in
   `!is_relation_field(Member)`, so the error fires at the call site as a
   constraint violation instead of at runtime with "no such column". The same
@@ -191,12 +191,12 @@ struct Pupil {
 };
 
 // Simple access — metadata ignored, same two-query eager load
-auto pupils = QuerySet<Pupil>().join<^^Pupil::courses>().select().execute();
+auto pupils = QuerySet<Pupil>().join<fields::Pupil.courses>().select().execute();
 
 // Metadata access — query the junction model directly (regular FK joins)
 auto enrollments = QuerySet<Enrollment>()
-        .join<^^Enrollment::pupil, ^^Enrollment::course>()
-        .where(f<^^Enrollment::grade>() == "A")
+        .join<fields::Enrollment.pupil, fields::Enrollment.course>()
+        .where(fields::Enrollment.grade == "A")
         .select().execute();
 ```
 
@@ -220,7 +220,7 @@ struct Member {
 
 // One Q1 (base members) + one Q2 PER relation, all in one transaction:
 auto members = QuerySet<Member>()
-        .join<^^Member::courses, ^^Member::clubs>()
+        .join<fields::Member.courses, fields::Member.clubs>()
         .select().execute();
 ```
 
@@ -232,7 +232,7 @@ auto members = QuerySet<Member>()
   relation's container independently (Django semantics).
 - `create_table_if_not_exists<Member>` creates **one junction table per
   auto-m2m field** (`Member_Course`, `Member_Club`).
-- Duplicate fields (`join<^^M::courses, ^^M::courses>`) and mixing FK fields
+- Duplicate fields (`join<fields::M.courses, fields::M.courses>`) and mixing FK fields
   with m2m fields in one call are rejected at compile time.
 
 ### Semantics
@@ -299,8 +299,8 @@ cartesian tuples when several relations are joined (#392).
 
 ## Reverse-FK Joins (#398)
 
-Storm's other join selectors start from the base model: FK fields (`^^Task::assignee`)
-or m2m containers (`^^Student::courses`). A **reverse-FK join** starts from the
+Storm's other join selectors start from the base model: FK fields (`fields::Task.assignee`)
+or m2m containers (`fields::Student.courses`). A **reverse-FK join** starts from the
 *related* side: "all Persons, each with the Tasks that point at them". The SQL
 identity is `Task RIGHT JOIN Person ≡ Person LEFT JOIN Task` — Storm expresses the
 right-hand side directly, with the base model (`Person`) on the correct side.
@@ -328,8 +328,8 @@ struct Task {
     [[= storm::fk<>]] Person assignee;   // FK → Person
 };
 
-person_qs.left_join<^^Person::tasks>().select();   // all Persons; .tasks empty when none
-person_qs.join<^^Person::tasks>().select();        // INNER: drops Persons with no Tasks
+person_qs.left_join<fields::Person.tasks>().select();   // all Persons; .tasks empty when none
+person_qs.join<fields::Person.tasks>().select();        // INNER: drops Persons with no Tasks
 ```
 
 The annotation argument is **the owning model type** (`^^Task`), resolved to that
@@ -348,11 +348,11 @@ entities — they absorb the aggregate-over-RIGHT-JOIN capability that `right_jo
 
 ```cpp
 // Tasks per person, INCLUDING persons with zero tasks (LEFT keeps the NULL row)
-QuerySet<Person>().left_join<^^Task::assignee>().count().execute();
+QuerySet<Person>().left_join<fields::Task.assignee>().count().execute();
 
 // Disambiguation: when the owner has several FKs to the base, name the exact field
-QuerySet<Reporter>().join<^^Bug::author>().count().execute();    // ON t2.author_id = t1.id
-QuerySet<Reporter>().join<^^Bug::reviewer>().count().execute();  // ON t2.reviewer_id = t1.id
+QuerySet<Reporter>().join<fields::Bug.author>().count().execute();    // ON t2.author_id = t1.id
+QuerySet<Reporter>().join<fields::Bug.reviewer>().count().execute();  // ON t2.reviewer_id = t1.id
 ```
 
 ### Execution & semantics
@@ -372,7 +372,7 @@ the modifier-free complete SQL `Person t1 <KW> Owner t2 ON t2.<fk>_id = t1.<pk>`
   the destination annotation must use the owner *type* (the reference cycle forbids a
   member splice), so the owner must have exactly **one** FK back at the base.
   Multi-FK disambiguation is available only on the aggregate/filter selector path
-  (`^^Bug::author` vs `^^Bug::reviewer`), which has no container and no cycle.
+  (`fields::Bug.author` vs `fields::Bug.reviewer`), which has no container and no cycle.
 - Eager only (no lazy loading), no tuple/pair result shapes, no `right_join`-style
   base rows with defaulted fields (removed in #397).
 - The annotation spelling carries the owner type, not `reverse_fk<>` —
@@ -633,12 +633,11 @@ Current 50-70% efficiency is **respectable for a full ORM** with reflection-base
 JOIN operations can be combined with WHERE clauses:
 
 ```cpp
-using namespace storm::orm::where;
 
 // Filter on both base table and joined table
-auto result = message_qs.join<^^Message::sender>()
-                        .where(f<^^User::level>() > 5 and
-                               f<^^Message::content>().like("%urgent%"))
+auto result = message_qs.join<fields::Message.sender>()
+                        .where(fields::User.level > 5 and
+                               fields::Message.content.like("%urgent%"))
                         .select();
 ```
 
