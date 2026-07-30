@@ -131,7 +131,7 @@ TYPED_TEST_SUITE(ReverseFKTest, DatabaseTypes);
 
 // Plain CRUD ignores the reverse_fk container.
 TYPED_TEST(ReverseFKTest, PlainSelectDoesNotPopulateReverseContainer) {
-    auto rows = QuerySet<RfPerson, TypeParam>().template order_by<^^RfPerson::id>().select().execute();
+    auto rows = QuerySet<RfPerson, TypeParam>().template order_by<fields::RfPerson.id>().select().execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     ASSERT_EQ(rows->size(), 3U);
     for (const auto& p : *rows) {
@@ -165,7 +165,7 @@ TYPED_TEST(ReverseFKTest, BulkUpdateIgnoresReverseContainer) {
     auto upd = qs.update(std::span<const RfPerson>(updated)).execute();
     ASSERT_TRUE(upd.has_value()) << upd.error().message();
 
-    auto rows = qs.template order_by<^^RfPerson::id>().limit(2).select().execute();
+    auto rows = qs.template order_by<fields::RfPerson.id>().limit(2).select().execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     ASSERT_EQ(rows->size(), 2U);
     auto it = rows->begin();
@@ -179,8 +179,8 @@ TYPED_TEST(ReverseFKTest, BulkUpdateIgnoresReverseContainer) {
 // LEFT join: every person, container filled (empty when none).
 TYPED_TEST(ReverseFKTest, LeftJoinPopulatesAndKeepsEmpty) {
     auto rows = QuerySet<RfPerson, TypeParam>()
-                        .template left_join<^^RfPerson::tasks>()
-                        .template order_by<^^RfPerson::id>()
+                        .template left_join<fields::RfPerson.tasks>()
+                        .template order_by<fields::RfPerson.id>()
                         .select()
                         .execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
@@ -196,8 +196,8 @@ TYPED_TEST(ReverseFKTest, LeftJoinPopulatesAndKeepsEmpty) {
 // INNER join: drops persons with no tasks.
 TYPED_TEST(ReverseFKTest, InnerJoinDropsZeroRelationEntities) {
     auto rows = QuerySet<RfPerson, TypeParam>()
-                        .template join<^^RfPerson::tasks>()
-                        .template order_by<^^RfPerson::id>()
+                        .template join<fields::RfPerson.tasks>()
+                        .template order_by<fields::RfPerson.id>()
                         .select()
                         .execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
@@ -209,7 +209,7 @@ TYPED_TEST(ReverseFKTest, InnerJoinDropsZeroRelationEntities) {
 TYPED_TEST(ReverseFKTest, OwnerColumnsExtracted) {
     auto rows = QuerySet<RfPerson, TypeParam>()
                         .where(fields::RfPerson.id == 1)
-                        .template left_join<^^RfPerson::tasks>()
+                        .template left_join<fields::RfPerson.tasks>()
                         .select()
                         .execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
@@ -229,8 +229,8 @@ TYPED_TEST(ReverseFKTest, OwnerColumnsExtracted) {
 TYPED_TEST(ReverseFKTest, WhereAppliesToBaseEntities) {
     auto rows = QuerySet<RfPerson, TypeParam>()
                         .where(fields::RfPerson.age < 25)
-                        .template left_join<^^RfPerson::tasks>()
-                        .template order_by<^^RfPerson::id>()
+                        .template left_join<fields::RfPerson.tasks>()
+                        .template order_by<fields::RfPerson.id>()
                         .select()
                         .execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
@@ -241,8 +241,8 @@ TYPED_TEST(ReverseFKTest, WhereAppliesToBaseEntities) {
 // LIMIT bounds base entities.
 TYPED_TEST(ReverseFKTest, LimitBoundsBaseEntities) {
     auto rows = QuerySet<RfPerson, TypeParam>()
-                        .template left_join<^^RfPerson::tasks>()
-                        .template order_by<^^RfPerson::id>()
+                        .template left_join<fields::RfPerson.tasks>()
+                        .template order_by<fields::RfPerson.id>()
                         .limit(1)
                         .select()
                         .execute();
@@ -254,7 +254,7 @@ TYPED_TEST(ReverseFKTest, LimitBoundsBaseEntities) {
 
 // Aggregate over the cross-model FK selector: tasks-per-person including zeros.
 TYPED_TEST(ReverseFKTest, LeftJoinAggregateCountIncludesZeroGroups) {
-    auto total = QuerySet<RfPerson, TypeParam>().template left_join<^^RfTask::assignee>().count().execute();
+    auto total = QuerySet<RfPerson, TypeParam>().template left_join<fields::RfTask.assignee>().count().execute();
     ASSERT_TRUE(total.has_value()) << total.error().message();
     // 3 task rows + 1 NULL row for Carol (LEFT) = 4.
     EXPECT_EQ(*total, 4);
@@ -287,11 +287,11 @@ TYPED_TEST_SUITE(ReverseFKDisambigTest, DatabaseTypes);
 // base: counting over RfBug::author vs RfBug::reviewer keys on different columns
 // (here both have 2 rows, but the selector picks distinct FK columns in the SQL).
 TYPED_TEST(ReverseFKDisambigTest, SelectorDisambiguatesFkInAggregate) {
-    auto by_author = QuerySet<RfReporter, TypeParam>().template join<^^RfBug::author>().count().execute();
+    auto by_author = QuerySet<RfReporter, TypeParam>().template join<fields::RfBug.author>().count().execute();
     ASSERT_TRUE(by_author.has_value()) << by_author.error().message();
     EXPECT_EQ(*by_author, 2); // two bugs, each with an author
 
-    auto by_reviewer = QuerySet<RfReporter, TypeParam>().template join<^^RfBug::reviewer>().count().execute();
+    auto by_reviewer = QuerySet<RfReporter, TypeParam>().template join<fields::RfBug.reviewer>().count().execute();
     ASSERT_TRUE(by_reviewer.has_value()) << by_reviewer.error().message();
     EXPECT_EQ(*by_reviewer, 2); // two bugs, each with a reviewer
 }

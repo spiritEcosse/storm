@@ -400,7 +400,7 @@ TYPED_TEST_SUITE(QueryResetTest, DatabaseTypes);
 TYPED_TEST(QueryResetTest, ResetClearsAllState) {
     auto filtered = this->qs->where(fields::Person.age > 25);
 
-    auto result1 = filtered.template order_by<^^Person::name>().limit(2).offset(1).select().execute();
+    auto result1 = filtered.template order_by<fields::Person.name>().limit(2).offset(1).select().execute();
     ASSERT_TRUE(result1.has_value());
     EXPECT_LE(result1.value().size(), 2);
 
@@ -433,27 +433,27 @@ TYPED_TEST(QueryResetTest, ResetBetweenDifferentOperations) {
 
     (*this->qs).reset();
 
-    auto sum1 = this->qs->template sum<^^Person::age>().execute();
+    auto sum1 = this->qs->template sum<fields::Person.age>().execute();
     ASSERT_TRUE(sum1.has_value());
     EXPECT_EQ(sum1.value(), 829);
 
     (*this->qs).reset();
 
-    auto avg1 = this->qs->template avg<^^Person::age>().execute();
+    auto avg1 = this->qs->template avg<fields::Person.age>().execute();
     ASSERT_TRUE(avg1.has_value());
     ASSERT_TRUE(avg1.value().has_value());
     EXPECT_NEAR(avg1.value().value(), 33.16, 0.01);
 
     (*this->qs).reset();
 
-    auto min1 = this->qs->template min<^^Person::age>().execute();
+    auto min1 = this->qs->template min<fields::Person.age>().execute();
     ASSERT_TRUE(min1.has_value());
     ASSERT_TRUE(min1.value().has_value());
     EXPECT_EQ(min1.value().value(), 22);
 
     (*this->qs).reset();
 
-    auto max1 = this->qs->template max<^^Person::age>().execute();
+    auto max1 = this->qs->template max<fields::Person.age>().execute();
     ASSERT_TRUE(max1.has_value());
     ASSERT_TRUE(max1.value().has_value());
     EXPECT_EQ(max1.value().value(), 48);
@@ -466,7 +466,7 @@ TYPED_TEST(QueryResetTest, AggregatesWithWhere) {
 
     (*this->qs).reset();
 
-    auto sum = this->qs->where(fields::Person.age >= 35).template sum<^^Person::age>().execute();
+    auto sum = this->qs->where(fields::Person.age >= 35).template sum<fields::Person.age>().execute();
     ASSERT_TRUE(sum.has_value());
     EXPECT_EQ(sum.value(), 442);
 }

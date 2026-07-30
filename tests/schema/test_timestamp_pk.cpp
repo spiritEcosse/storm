@@ -219,7 +219,7 @@ namespace {
     TEST_F(TimestampPkTest, ConditionalUpdateSetClauseExcludesKeyParts) {
         storm::QuerySet<TsCompositeClean, ConnType> qs;
         const auto                                  sql = qs.where(fields::TsCompositeClean.tenant_id == 1)
-                                 .update<^^TsCompositeClean::payload>(TsCompositeClean{.payload = 7})
+                                 .update<fields::TsCompositeClean.payload>(TsCompositeClean{.payload = 7})
                                  .to_sql();
         ASSERT_TRUE(sql.has_value());
 
@@ -249,7 +249,7 @@ namespace {
     TEST_F(TimestampedRecordSqlTest, ConditionalUpdateSqlUnchanged) {
         storm::QuerySet<TimestampedRecord, ConnType> qs;
         const auto                                   sql = qs.where(fields::TimestampedRecord.id == 1)
-                                 .update<^^TimestampedRecord::name>(TimestampedRecord{.name = "renamed"})
+                                 .update<fields::TimestampedRecord.name>(TimestampedRecord{.name = "renamed"})
                                  .to_sql();
         ASSERT_TRUE(sql.has_value());
 

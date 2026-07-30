@@ -181,6 +181,17 @@ struct MemberT;
 consteval { std::meta::define_aggregate(^^MemberT, storm::field_specs_for(^^Member)); }
 inline constexpr MemberT Member{};
 
+struct AlbumT;
+consteval { std::meta::define_aggregate(^^AlbumT, storm::field_specs_for(^^Album)); }
+inline constexpr AlbumT Album{};
+
+struct PlaylistT;
+consteval { std::meta::define_aggregate(^^PlaylistT, storm::field_specs_for(^^Playlist)); }
+inline constexpr PlaylistT Playlist{};
+
+struct TutorT;
+consteval { std::meta::define_aggregate(^^TutorT, storm::field_specs_for(^^Tutor)); }
+inline constexpr TutorT Tutor{};
 } // namespace fields
 
 #endif // TESTS_QUERY_TEST_M2M_MODELS_H

@@ -213,7 +213,7 @@ struct StorageBin {
 // "5x name length + 256" budget has no term that scales with PK part count or
 // part identifier length).
 // The SECOND m2m field makes this the only composite-PK owner with more than
-// one relation, which is what #392's multi-relation join<^^T::a, ^^T::b>()
+// one relation, which is what #392's multi-relation join<fields::T.a, fields::T.b>()
 // needs to be exercised over a composite key: relation Is takes junction alias
 // 2+2*Is and related alias 3+2*Is, and with a composite owner EACH relation's
 // ON clause now AND-joins one equality per owner PK part. A single-relation
@@ -255,6 +255,29 @@ struct StockEntryT;
 consteval { std::meta::define_aggregate(^^StockEntryT, storm::field_specs_for(^^StockEntry)); }
 inline constexpr StockEntryT StockEntry{};
 
+struct LedgerWithTagsT;
+consteval { std::meta::define_aggregate(^^LedgerWithTagsT, storm::field_specs_for(^^LedgerWithTags)); }
+inline constexpr LedgerWithTagsT LedgerWithTags{};
+
+struct OptionalShipmentT;
+consteval { std::meta::define_aggregate(^^OptionalShipmentT, storm::field_specs_for(^^OptionalShipment)); }
+inline constexpr OptionalShipmentT OptionalShipment{};
+
+struct OrderLineWithShipmentsT;
+consteval { std::meta::define_aggregate(^^OrderLineWithShipmentsT, storm::field_specs_for(^^OrderLineWithShipments)); }
+inline constexpr OrderLineWithShipmentsT OrderLineWithShipments{};
+
+struct ShelfAssignmentT;
+consteval { std::meta::define_aggregate(^^ShelfAssignmentT, storm::field_specs_for(^^ShelfAssignment)); }
+inline constexpr ShelfAssignmentT ShelfAssignment{};
+
+struct ShipmentT;
+consteval { std::meta::define_aggregate(^^ShipmentT, storm::field_specs_for(^^Shipment)); }
+inline constexpr ShipmentT Shipment{};
+
+struct TagRegistryT;
+consteval { std::meta::define_aggregate(^^TagRegistryT, storm::field_specs_for(^^TagRegistry)); }
+inline constexpr TagRegistryT TagRegistry{};
 } // namespace fields
 
 #endif // STORM_TESTS_TEST_COMPOSITE_PK_MODELS_H

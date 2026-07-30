@@ -31,56 +31,64 @@ namespace {
         }
     };
 
+    // Pinned SQL text, not proxy-vs-^^ comparison: the ^^ spelling is gone from
+    // these positions, and a comparison whose two sides were both migrated
+    // degrades into EXPECT_EQ(x, x) — passing even if relation joins break
+    // entirely. The eager load is TWO statements (Q1 base rows; Q2 the relation),
+    // so the Q2 half is what actually proves the relation was resolved.
+    constexpr std::string_view STUDENT_Q2 =
+            "SELECT t2.Student_id, t3.id, t3.title FROM Student_Course t2 INNER JOIN Course t3 ON t2.Course_id = "
+            "t3.id WHERE t2.Student_id IN (SELECT id FROM Student)";
+
     TEST_F(FieldsRelationJoin, AutoJunctionM2MJoin) {
         EXPECT_EQ(
-                student_qs().join<^^Student::courses>().select().sql(),
-                student_qs().join<fields::Student.courses>().select().sql()
+                student_qs().join<fields::Student.courses>().select().sql(),
+                std::format("SELECT id, name, age FROM Student; {}", STUDENT_Q2)
         );
     }
 
     TEST_F(FieldsRelationJoin, AutoJunctionM2MLeftJoin) {
         EXPECT_EQ(
-                student_qs().left_join<^^Student::courses>().select().sql(),
-                student_qs().left_join<fields::Student.courses>().select().sql()
+                student_qs().left_join<fields::Student.courses>().select().sql(),
+                std::format("SELECT id, name, age FROM Student; {}", STUDENT_Q2)
         );
     }
 
     TEST_F(FieldsRelationJoin, ThroughModelM2MJoin) {
-        // many_to_many_through<Enrollment> — the explicit-junction spelling.
+        // many_to_many_through<Enrollment> — the junction is the explicit model,
+        // so Q2 names Enrollment and its own FK columns rather than Student_Course.
         EXPECT_EQ(
-                pupil_qs().join<^^Pupil::courses>().select().sql(),
-                pupil_qs().join<fields::Pupil.courses>().select().sql()
+                pupil_qs().join<fields::Pupil.courses>().select().sql(),
+                "SELECT id, name, age FROM Pupil; SELECT t2.pupil_id, t3.id, t3.title FROM Enrollment t2 INNER JOIN "
+                "Course t3 ON t2.course_id = t3.id WHERE t2.pupil_id IN (SELECT id FROM Pupil)"
         );
     }
 
     TEST_F(FieldsRelationJoin, ReverseFkJoin) {
         // reverse_fk goes through the same RelationRef path as m2m, but its Q2
-        // hits the owner table directly (no junction) — asserted separately so
-        // the claim is tested rather than inferred from the m2m cases.
-        EXPECT_EQ(
-                rf_qs().join<^^RfPerson::tasks>().select().sql(), rf_qs().join<fields::RfPerson.tasks>().select().sql()
-        );
-        EXPECT_EQ(
-                rf_qs().left_join<^^RfPerson::tasks>().select().sql(),
-                rf_qs().left_join<fields::RfPerson.tasks>().select().sql()
-        );
+        // hits the OWNER TABLE DIRECTLY — no junction table and no second JOIN.
+        // That structural difference is what this pinned text asserts.
+        constexpr std::string_view rfk =
+                "SELECT id, name, age FROM RfPerson; SELECT t2.assignee_id, t2.id, t2.title, t2.assignee_id FROM "
+                "RfTask t2 WHERE t2.assignee_id IN (SELECT id FROM RfPerson)";
+        EXPECT_EQ(rf_qs().join<fields::RfPerson.tasks>().select().sql(), rfk);
+        EXPECT_EQ(rf_qs().left_join<fields::RfPerson.tasks>().select().sql(), rfk);
     }
 
     TEST_F(FieldsRelationJoin, RelationJoinCombinedWithWhereAndOrderBy) {
-        // The relation proxy must compose with column proxies in one chain.
+        // A relation proxy must compose with column proxies in one chain, and the
+        // WHERE/ORDER BY must reach BOTH queries — Q2's IN-subquery repeats them
+        // so the relation is only loaded for the base rows that survived.
         EXPECT_EQ(
-                student_qs()
-                        .join<^^Student::courses>()
-                        .where(fields::Student.age > 20)
-                        .order_by<^^Student::name>()
-                        .select()
-                        .sql(),
                 student_qs()
                         .join<fields::Student.courses>()
                         .where(fields::Student.age > 20)
                         .order_by<fields::Student.name>()
                         .select()
-                        .sql()
+                        .sql(),
+                "SELECT id, name, age FROM Student WHERE age > ? ORDER BY name ASC; SELECT t2.Student_id, t3.id, "
+                "t3.title FROM Student_Course t2 INNER JOIN Course t3 ON t2.Course_id = t3.id WHERE t2.Student_id IN "
+                "(SELECT id FROM Student WHERE age > ? ORDER BY name ASC)"
         );
     }
 

@@ -43,7 +43,7 @@ TYPED_TEST_SUITE(M2MThroughTest, DatabaseTypes);
 
 TYPED_TEST(M2MThroughTest, ThroughSqlUsesJunctionModel) {
     QuerySet<Pupil, TypeParam> qs;
-    auto                       sql = qs.template join<^^Pupil::courses>().select().sql();
+    auto                       sql = qs.template join<fields::Pupil.courses>().select().sql();
     // Two-query shape (#391): junction = the through model's table; FK columns
     // come from its field names. Q1 selects the base pupils; Q2 the junction⋈course.
     EXPECT_TRUE(sql.contains("SELECT id, name, age FROM Pupil; ")) << sql;
@@ -75,7 +75,7 @@ TYPED_TEST(M2MThroughTest, BulkUpdateIgnoresThroughField) {
     auto upd = qs.update(std::span<const Pupil>(updated)).execute();
     ASSERT_TRUE(upd.has_value()) << upd.error().message();
 
-    auto rows = qs.template order_by<^^Pupil::id>().select().execute();
+    auto rows = qs.template order_by<fields::Pupil.id>().select().execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     ASSERT_EQ(rows->size(), 2U);
     auto it = rows->begin();
@@ -88,7 +88,7 @@ TYPED_TEST(M2MThroughTest, BulkUpdateIgnoresThroughField) {
 
 TYPED_TEST(M2MThroughTest, ThroughEagerLoadIgnoresMetadata) {
     QuerySet<Pupil, TypeParam> qs;
-    auto                       rows = qs.template join<^^Pupil::courses>().select().execute();
+    auto                       rows = qs.template join<fields::Pupil.courses>().select().execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     ASSERT_EQ(rows->size(), 2U);
 
@@ -107,9 +107,9 @@ TYPED_TEST(M2MThroughTest, ThroughEagerLoadIgnoresMetadata) {
 
 TYPED_TEST(M2MThroughTest, ThroughWithWhereOrderAndLimit) {
     QuerySet<Pupil, TypeParam> qs;
-    auto                       rows = qs.template join<^^Pupil::courses>()
+    auto                       rows = qs.template join<fields::Pupil.courses>()
                         .where(fields::Pupil.age >= 11)
-                        .template order_by<^^Pupil::name, false>()
+                        .template order_by<fields::Pupil.name, false>()
                         .limit(1)
                         .select()
                         .execute();
@@ -122,7 +122,7 @@ TYPED_TEST(M2MThroughTest, ThroughWithWhereOrderAndLimit) {
 // Metadata access: query the junction model directly with the existing FK join API.
 TYPED_TEST(M2MThroughTest, JunctionModelQueriedDirectlyForMetadata) {
     QuerySet<Enrollment, TypeParam> qs;
-    auto                            rows = qs.template join<^^Enrollment::pupil, ^^Enrollment::course>()
+    auto                            rows = qs.template join<fields::Enrollment.pupil, fields::Enrollment.course>()
                         .where(fields::Enrollment.grade == "B")
                         .select()
                         .execute();

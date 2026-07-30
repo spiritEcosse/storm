@@ -26,7 +26,7 @@ template <typename ConnType> class M2MModifierTest : public StormTestFixture<Stu
     // Joined SELECT with a WHERE expression — shared by the operator tests.
     auto names_matching(storm::orm::where::ExpressionVariantPtr expr) -> std::vector<std::string> {
         QuerySet<Student, ConnType> qs;
-        auto rows = qs.template join<^^Student::courses>().where(std::move(expr)).select().execute();
+        auto rows = qs.template join<fields::Student.courses>().where(std::move(expr)).select().execute();
         EXPECT_TRUE(rows.has_value());
         std::vector<std::string> names;
         for (const auto& s : *rows) {
@@ -43,7 +43,7 @@ using Names = std::vector<std::string>;
 
 TYPED_TEST(M2MModifierTest, WhereFiltersBaseEntities) {
     QuerySet<Student, TypeParam> qs;
-    auto rows = qs.template join<^^Student::courses>().where(fields::Student.age >= 22).select().execute();
+    auto rows = qs.template join<fields::Student.courses>().where(fields::Student.age >= 22).select().execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     // Carol matches the WHERE but has no courses → dropped by INNER join
     ASSERT_EQ(rows->size(), 1U);
@@ -78,7 +78,10 @@ TYPED_TEST(M2MModifierTest, WhereSpecialExpressionsAndLogic) {
 
 TYPED_TEST(M2MModifierTest, OrderByOrdersStudents) {
     QuerySet<Student, TypeParam> qs;
-    auto rows = qs.template join<^^Student::courses>().template order_by<^^Student::name, false>().select().execute();
+    auto                         rows = qs.template join<fields::Student.courses>()
+                        .template order_by<fields::Student.name, false>()
+                        .select()
+                        .execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     ASSERT_EQ(rows->size(), 2U);
     auto it = rows->begin();
@@ -90,7 +93,11 @@ TYPED_TEST(M2MModifierTest, OrderByOrdersStudents) {
 
 TYPED_TEST(M2MModifierTest, LimitLimitsStudentsNotJoinedRows) {
     QuerySet<Student, TypeParam> qs;
-    auto rows = qs.template join<^^Student::courses>().template order_by<^^Student::name>().limit(1).select().execute();
+    auto                         rows = qs.template join<fields::Student.courses>()
+                        .template order_by<fields::Student.name>()
+                        .limit(1)
+                        .select()
+                        .execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     // LIMIT 1 = one STUDENT (a flat outer LIMIT would have cut Alice's courses)
     ASSERT_EQ(rows->size(), 1U);
@@ -100,8 +107,8 @@ TYPED_TEST(M2MModifierTest, LimitLimitsStudentsNotJoinedRows) {
 
 TYPED_TEST(M2MModifierTest, OffsetSkipsStudents) {
     QuerySet<Student, TypeParam> qs;
-    auto                         rows = qs.template join<^^Student::courses>()
-                        .template order_by<^^Student::name>()
+    auto                         rows = qs.template join<fields::Student.courses>()
+                        .template order_by<fields::Student.name>()
                         .limit(1)
                         .offset(1)
                         .select()
@@ -114,7 +121,8 @@ TYPED_TEST(M2MModifierTest, OffsetSkipsStudents) {
 
 TYPED_TEST(M2MModifierTest, FirstReturnsCompleteEntity) {
     QuerySet<Student, TypeParam> qs;
-    auto first = qs.template join<^^Student::courses>().template order_by<^^Student::name>().first().execute();
+    auto                         first =
+            qs.template join<fields::Student.courses>().template order_by<fields::Student.name>().first().execute();
     ASSERT_TRUE(first.has_value()) << first.error().message();
     ASSERT_TRUE(first->has_value());
     EXPECT_EQ((*first)->name, "Alice");
@@ -123,14 +131,14 @@ TYPED_TEST(M2MModifierTest, FirstReturnsCompleteEntity) {
 
 TYPED_TEST(M2MModifierTest, FirstOnEmptyReturnsNullopt) {
     QuerySet<Student, TypeParam> qs;
-    auto first = qs.template join<^^Student::courses>().where(fields::Student.age > 99).first().execute();
+    auto first = qs.template join<fields::Student.courses>().where(fields::Student.age > 99).first().execute();
     ASSERT_TRUE(first.has_value()) << first.error().message();
     EXPECT_FALSE(first->has_value());
 }
 
 TYPED_TEST(M2MModifierTest, GetReturnsExactlyOne) {
     QuerySet<Student, TypeParam> qs;
-    auto got = qs.template join<^^Student::courses>().where(fields::Student.name == "Bob").get().execute();
+    auto got = qs.template join<fields::Student.courses>().where(fields::Student.name == "Bob").get().execute();
     ASSERT_TRUE(got.has_value()) << got.error().message();
     EXPECT_EQ(got->name, "Bob");
     ASSERT_EQ(got->courses.size(), 1U);
@@ -141,7 +149,7 @@ TYPED_TEST(M2MModifierTest, GetAggregatesMultipleRelationsIntoOneEntity) {
     QuerySet<Student, TypeParam> qs;
     // Alice has TWO courses — two joined rows must aggregate into ONE entity,
     // not trip the "multiple rows" uniqueness check.
-    auto got = qs.template join<^^Student::courses>().where(fields::Student.name == "Alice").get().execute();
+    auto got = qs.template join<fields::Student.courses>().where(fields::Student.name == "Alice").get().execute();
     ASSERT_TRUE(got.has_value()) << got.error().message();
     EXPECT_EQ(got->name, "Alice");
     EXPECT_EQ(got->courses.size(), 2U);
@@ -149,21 +157,21 @@ TYPED_TEST(M2MModifierTest, GetAggregatesMultipleRelationsIntoOneEntity) {
 
 TYPED_TEST(M2MModifierTest, GetZeroRowsIsError) {
     QuerySet<Student, TypeParam> qs;
-    auto got = qs.template join<^^Student::courses>().where(fields::Student.name == "Zed").get().execute();
+    auto got = qs.template join<fields::Student.courses>().where(fields::Student.name == "Zed").get().execute();
     ASSERT_FALSE(got.has_value());
     EXPECT_TRUE(got.error().message().contains("No row found"));
 }
 
 TYPED_TEST(M2MModifierTest, GetMultipleRowsIsError) {
     QuerySet<Student, TypeParam> qs;
-    auto                         got = qs.template join<^^Student::courses>().get().execute();
+    auto                         got = qs.template join<fields::Student.courses>().get().execute();
     ASSERT_FALSE(got.has_value());
     EXPECT_TRUE(got.error().message().contains("Multiple rows found"));
 }
 
 TYPED_TEST(M2MModifierTest, RowsGeneratorYieldsAggregatedEntities) {
     QuerySet<Student, TypeParam> qs;
-    auto                         joined = qs.template join<^^Student::courses>().template order_by<^^Student::name>();
+    auto joined = qs.template join<fields::Student.courses>().template order_by<fields::Student.name>();
 
     std::vector<Student> yielded;
     for (auto&& row : joined.rows()) {
@@ -179,7 +187,7 @@ TYPED_TEST(M2MModifierTest, RowsGeneratorYieldsAggregatedEntities) {
 
 TYPED_TEST(M2MModifierTest, RowsGeneratorOnEmptyYieldsNothing) {
     QuerySet<Student, TypeParam> qs;
-    auto                         joined = qs.template join<^^Student::courses>().where(fields::Student.age > 99);
+    auto                         joined = qs.template join<fields::Student.courses>().where(fields::Student.age > 99);
 
     std::size_t count = 0;
     for (auto&& row : joined.rows()) {
@@ -205,7 +213,7 @@ TYPED_TEST(M2MModifierTest, PlainRowsGeneratorIgnoresM2MField) {
 
 TYPED_TEST(M2MModifierTest, RepeatedQueryUsesStatementCache) {
     QuerySet<Student, TypeParam> qs;
-    auto                         joined    = qs.template join<^^Student::courses>();
+    auto                         joined    = qs.template join<fields::Student.courses>();
     auto                         first_run = joined.select().execute();
     ASSERT_TRUE(first_run.has_value()) << first_run.error().message();
     auto second_run = joined.select().execute(); // same SQL → cached statement
@@ -225,7 +233,7 @@ TYPED_TEST(M2MModifierTest, RepeatedQueryUsesStatementCache) {
 
 TYPED_TEST(M2MModifierTest, JoinIsImmutableOnBaseQuerySet) {
     QuerySet<Student, TypeParam> qs;
-    auto                         joined = qs.template join<^^Student::courses>();
+    auto                         joined = qs.template join<fields::Student.courses>();
     (void)joined;
     // base QuerySet is unaffected by the join (Django-style immutability)
     auto plain = qs.select().execute();

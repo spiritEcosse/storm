@@ -52,7 +52,7 @@ TYPED_TEST_SUITE(MultiM2MSqlTest, DatabaseTypes);
 
 TYPED_TEST(MultiM2MSqlTest, MultiM2MJoinSqlShape) {
     QuerySet<Member, TypeParam> qs;
-    auto                        sql = qs.template join<^^Member::courses, ^^Member::clubs>().select().sql();
+    auto                        sql = qs.template join<fields::Member.courses, fields::Member.clubs>().select().sql();
     // Q1 — base entities, once.
     EXPECT_TRUE(sql.contains("SELECT id, name, age FROM Member; ")) << sql;
     // Q2a — courses relation, filtered by the base subquery.
@@ -66,7 +66,7 @@ TYPED_TEST(MultiM2MSqlTest, MultiM2MJoinSqlShape) {
 
 TYPED_TEST(MultiM2MSqlTest, MultiM2MModifiersBoundTheSharedBaseSet) {
     QuerySet<Member, TypeParam> qs;
-    auto                        sql = qs.template join<^^Member::courses, ^^Member::clubs>()
+    auto                        sql = qs.template join<fields::Member.courses, fields::Member.clubs>()
                        .where(fields::Member.age > 18)
                        .limit(2)
                        .select()
@@ -108,7 +108,7 @@ template <typename Hive> auto find_member(Hive& rows, std::string_view name) -> 
 
 TYPED_TEST(MultiM2MSeededTest, InnerJoinLoadsBothAndDropsEntitiesEmptyInAnyRelation) {
     QuerySet<Member, TypeParam> qs;
-    auto                        rows = qs.template join<^^Member::courses, ^^Member::clubs>().select().execute();
+    auto rows = qs.template join<fields::Member.courses, fields::Member.clubs>().select().execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     // Only Ann is non-empty in BOTH relations.
     ASSERT_EQ(rows->size(), 1U);
@@ -123,7 +123,7 @@ TYPED_TEST(MultiM2MSeededTest, InnerJoinLoadsBothAndDropsEntitiesEmptyInAnyRelat
 
 TYPED_TEST(MultiM2MSeededTest, LeftJoinKeepsAllAndFillsRelationsIndependently) {
     QuerySet<Member, TypeParam> qs;
-    auto                        rows = qs.template left_join<^^Member::courses, ^^Member::clubs>().select().execute();
+    auto rows = qs.template left_join<fields::Member.courses, fields::Member.clubs>().select().execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     ASSERT_EQ(rows->size(), 4U);
 
@@ -149,9 +149,9 @@ TYPED_TEST(MultiM2MSeededTest, LeftJoinKeepsAllAndFillsRelationsIndependently) {
 TYPED_TEST(MultiM2MSeededTest, WhereOrderLimitBoundTheSharedBaseSet) {
     QuerySet<Member, TypeParam> qs;
     // age > 18 keeps all; ORDER BY age + LIMIT 2 bounds the BASE set to Ann, Ben.
-    auto rows = qs.template left_join<^^Member::courses, ^^Member::clubs>()
+    auto rows = qs.template left_join<fields::Member.courses, fields::Member.clubs>()
                         .where(fields::Member.age > 18)
-                        .template order_by<^^Member::age>()
+                        .template order_by<fields::Member.age>()
                         .limit(2)
                         .select()
                         .execute();
@@ -170,22 +170,24 @@ TYPED_TEST(MultiM2MSeededTest, WhereOrderLimitBoundTheSharedBaseSet) {
 
 TYPED_TEST(MultiM2MSeededTest, EmptyResultSet) {
     QuerySet<Member, TypeParam> qs;
-    auto                        rows =
-            qs.template join<^^Member::courses, ^^Member::clubs>().where(fields::Member.age > 99).select().execute();
+    auto                        rows = qs.template join<fields::Member.courses, fields::Member.clubs>()
+                        .where(fields::Member.age > 99)
+                        .select()
+                        .execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     EXPECT_TRUE(rows->empty());
 }
 
 TYPED_TEST(MultiM2MSeededTest, FirstAndGetLoadBothRelations) {
     QuerySet<Member, TypeParam> qs;
-    auto                        first = qs.template join<^^Member::courses, ^^Member::clubs>().first().execute();
+    auto first = qs.template join<fields::Member.courses, fields::Member.clubs>().first().execute();
     ASSERT_TRUE(first.has_value()) << first.error().message();
     ASSERT_TRUE(first->has_value());
     EXPECT_EQ((*first)->name, "Ann");
     EXPECT_EQ((*first)->courses.size(), 2U);
     EXPECT_EQ((*first)->clubs.size(), 1U);
 
-    auto got = qs.template left_join<^^Member::courses, ^^Member::clubs>()
+    auto got = qs.template left_join<fields::Member.courses, fields::Member.clubs>()
                        .where(fields::Member.name == "Cat")
                        .get()
                        .execute();
@@ -196,7 +198,7 @@ TYPED_TEST(MultiM2MSeededTest, FirstAndGetLoadBothRelations) {
 
 TYPED_TEST(MultiM2MSeededTest, RowsGeneratorYieldsBothRelations) {
     QuerySet<Member, TypeParam> qs;
-    auto                        joined        = qs.template left_join<^^Member::courses, ^^Member::clubs>();
+    auto                        joined        = qs.template left_join<fields::Member.courses, fields::Member.clubs>();
     std::size_t                 seen          = 0;
     std::size_t                 total_courses = 0;
     std::size_t                 total_clubs   = 0;
@@ -216,7 +218,7 @@ TYPED_TEST(MultiM2MSeededTest, RowsGeneratorYieldsBothRelations) {
 // single-relation "(base, related) pairs" semantics). Ann: 2 courses × 1 club.
 TYPED_TEST(MultiM2MSeededTest, CountOverMultiM2MCountsCartesianTuples) {
     QuerySet<Member, TypeParam> qs;
-    auto                        count = qs.template join<^^Member::courses, ^^Member::clubs>().count().execute();
+    auto count = qs.template join<fields::Member.courses, fields::Member.clubs>().count().execute();
     ASSERT_TRUE(count.has_value()) << count.error().message();
     EXPECT_EQ(count.value(), 2);
 }
@@ -238,7 +240,7 @@ TYPED_TEST(M2MRelatedFkTest, M2MWithFkRelatedModelLoadsAndCounts) {
     ASSERT_TRUE(conn->execute("INSERT INTO Tutor_Lesson (Tutor_id, Lesson_id) VALUES (1, 1)").has_value());
 
     // Eager load: the related FK extracts as a pk-only Topic object.
-    auto rows = qs.template join<^^Tutor::lessons>().select().execute();
+    auto rows = qs.template join<fields::Tutor.lessons>().select().execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     ASSERT_EQ(rows->size(), 1U);
     ASSERT_EQ(rows->begin()->lessons.size(), 1U);
@@ -246,7 +248,7 @@ TYPED_TEST(M2MRelatedFkTest, M2MWithFkRelatedModelLoadsAndCounts) {
     EXPECT_EQ(rows->begin()->lessons[0].topic.id, 1);
 
     // Aggregate complete SQL emits the related FK column as topic_id.
-    auto count = qs.template join<^^Tutor::lessons>().count().execute();
+    auto count = qs.template join<fields::Tutor.lessons>().count().execute();
     ASSERT_TRUE(count.has_value()) << count.error().message();
     EXPECT_EQ(count.value(), 1);
 }
@@ -255,14 +257,14 @@ TYPED_TEST(M2MRelatedFkTest, M2MWithFkRelatedModelLoadsAndCounts) {
 // (single-relation) query on the same QuerySet.
 TYPED_TEST(MultiM2MSeededTest, RepeatedAndSwitchedQueriesUseCacheCorrectly) {
     QuerySet<Member, TypeParam> qs;
-    auto                        multi     = qs.template join<^^Member::courses, ^^Member::clubs>();
+    auto                        multi     = qs.template join<fields::Member.courses, fields::Member.clubs>();
     auto                        first_run = multi.select().execute();
     ASSERT_TRUE(first_run.has_value()) << first_run.error().message();
     auto second_run = multi.select().execute();
     ASSERT_TRUE(second_run.has_value()) << second_run.error().message();
     EXPECT_EQ(first_run->size(), second_run->size());
 
-    auto single = qs.template join<^^Member::courses>().select().execute();
+    auto single = qs.template join<fields::Member.courses>().select().execute();
     ASSERT_TRUE(single.has_value()) << single.error().message();
     ASSERT_EQ(single->size(), 2U); // Ann, Ben — clubs no longer constrain
     auto* ben = find_member(*single, "Ben");

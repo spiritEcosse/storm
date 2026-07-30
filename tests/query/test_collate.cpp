@@ -48,7 +48,7 @@ TYPED_TEST_SUITE(CollateTest, SqliteTypes);
 TYPED_TEST(CollateTest, OrderByNoCaseAsc) {
     QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.template order_by<^^Person::name, Collate::NoCase>().select().execute();
+    auto result = qs.template order_by<fields::Person.name, Collate::NoCase>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto items = result.value();
@@ -63,7 +63,7 @@ TYPED_TEST(CollateTest, OrderByNoCaseAsc) {
 TYPED_TEST(CollateTest, OrderByNoCaseDesc) {
     QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.template order_by<^^Person::name, Collate::NoCase, false>().select().execute();
+    auto result = qs.template order_by<fields::Person.name, Collate::NoCase, false>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto items = result.value();
@@ -78,7 +78,7 @@ TYPED_TEST(CollateTest, OrderByNoCaseDesc) {
 TYPED_TEST(CollateTest, OrderByBinary) {
     QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.template order_by<^^Person::name, Collate::Binary>().select().execute();
+    auto result = qs.template order_by<fields::Person.name, Collate::Binary>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto items = result.value();
@@ -108,8 +108,9 @@ TYPED_TEST(CollateTest, OrderByRTrim) {
     QuerySet<Person, TypeParam> qs;
 
     // COLLATE RTRIM trims trailing spaces before comparison
-    auto result =
-            qs.template order_by<^^Person::department, Collate::RTrim, true, ^^Person::name, true>().select().execute();
+    auto result = qs.template order_by<fields::Person.department, Collate::RTrim, true, fields::Person.name, true>()
+                          .select()
+                          .execute();
     ASSERT_TRUE(result.has_value());
 
     auto items = result.value();
@@ -120,7 +121,7 @@ TYPED_TEST(CollateTest, OrderByCollateWithBoolDirection) {
     QuerySet<Person, TypeParam> qs;
 
     // Test: field, Collate, bool — both modifiers after field
-    auto result = qs.template order_by<^^Person::name, Collate::NoCase, false>().select().execute();
+    auto result = qs.template order_by<fields::Person.name, Collate::NoCase, false>().select().execute();
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result.value().size(), 8);
 }
@@ -129,7 +130,7 @@ TYPED_TEST(CollateTest, OrderByBoolThenCollate) {
     QuerySet<Person, TypeParam> qs;
 
     // Test: field, bool, Collate — reversed modifier order
-    auto result = qs.template order_by<^^Person::name, false, Collate::NoCase>().select().execute();
+    auto result = qs.template order_by<fields::Person.name, false, Collate::NoCase>().select().execute();
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result.value().size(), 8);
 }
@@ -138,7 +139,8 @@ TYPED_TEST(CollateTest, OrderByMultipleFieldsWithCollate) {
     QuerySet<Person, TypeParam> qs;
 
     // ORDER BY name COLLATE NOCASE ASC, age DESC
-    auto result = qs.template order_by<^^Person::name, Collate::NoCase, ^^Person::age, false>().select().execute();
+    auto result =
+            qs.template order_by<fields::Person.name, Collate::NoCase, fields::Person.age, false>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto items = result.value();
@@ -271,7 +273,7 @@ TYPED_TEST(CollateTest, WhereCollateWithOrderByCollate) {
     QuerySet<Person, TypeParam> qs;
 
     auto result = qs.where(fields::Person.name.collate(Collate::NoCase) >= "bob")
-                          .template order_by<^^Person::name, Collate::NoCase>()
+                          .template order_by<fields::Person.name, Collate::NoCase>()
                           .select()
                           .execute();
     ASSERT_TRUE(result.has_value());
@@ -287,7 +289,7 @@ TYPED_TEST(CollateTest, WhereCollateWithOrderByCollate) {
 TYPED_TEST(CollateTest, OrderByCollateWithLimit) {
     QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.template order_by<^^Person::name, Collate::NoCase>().limit(3).select().execute();
+    auto result = qs.template order_by<fields::Person.name, Collate::NoCase>().limit(3).select().execute();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 3);
 }
@@ -295,7 +297,7 @@ TYPED_TEST(CollateTest, OrderByCollateWithLimit) {
 TYPED_TEST(CollateTest, OrderByCollateWithLimitOffset) {
     QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.template order_by<^^Person::name, Collate::NoCase>().limit(2).offset(3).select().execute();
+    auto result = qs.template order_by<fields::Person.name, Collate::NoCase>().limit(2).offset(3).select().execute();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 2);
 }
@@ -376,7 +378,7 @@ TYPED_TEST(CollateTest, WhereCollateNoMatch) {
 TYPED_TEST(CollateTest, OrderBySqlGeneration) {
     QuerySet<Person, TypeParam> qs;
 
-    auto sql_result = qs.template order_by<^^Person::name, Collate::NoCase>().select().to_sql();
+    auto sql_result = qs.template order_by<fields::Person.name, Collate::NoCase>().select().to_sql();
     ASSERT_TRUE(sql_result.has_value());
     const auto& sql = sql_result.value();
     EXPECT_NE(sql.find("COLLATE NOCASE"), std::string::npos) << "SQL should contain COLLATE NOCASE: " << sql;

@@ -555,8 +555,9 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockPerson> qs;
-        auto                 result =
-                qs.where(fields::MockPerson.age > 30).update<^^MockPerson::name>(MockPerson{.name = "x"}).execute();
+        auto                 result = qs.where(fields::MockPerson.age > 30)
+                              .update<fields::MockPerson.name>(MockPerson{.name = "x"})
+                              .execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -567,8 +568,9 @@ namespace {
         MockSqlite3Config::bind_text_fails_on_call(1, SQLITE_NOMEM);
 
         QuerySet<MockPerson> qs;
-        auto                 result =
-                qs.where(fields::MockPerson.age > 30).update<^^MockPerson::name>(MockPerson{.name = "x"}).execute();
+        auto                 result = qs.where(fields::MockPerson.age > 30)
+                              .update<fields::MockPerson.name>(MockPerson{.name = "x"})
+                              .execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -579,8 +581,9 @@ namespace {
         MockSqlite3Config::bind_int_fails_on_call(1, SQLITE_NOMEM);
 
         QuerySet<MockPerson> qs;
-        auto                 result =
-                qs.where(fields::MockPerson.age > 30).update<^^MockPerson::name>(MockPerson{.name = "x"}).execute();
+        auto                 result = qs.where(fields::MockPerson.age > 30)
+                              .update<fields::MockPerson.name>(MockPerson{.name = "x"})
+                              .execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -590,8 +593,9 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_LOCKED);
 
         QuerySet<MockPerson> qs;
-        auto                 result =
-                qs.where(fields::MockPerson.age > 30).update<^^MockPerson::name>(MockPerson{.name = "x"}).execute();
+        auto                 result = qs.where(fields::MockPerson.age > 30)
+                              .update<fields::MockPerson.name>(MockPerson{.name = "x"})
+                              .execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_LOCKED);
@@ -600,12 +604,12 @@ namespace {
     // Empty WHERE is refused with a client-side error (no DB call) on both paths.
     TEST_F(ORMMockErrorTest, ConditionalUpdateEmptyWhereRefused) {
         QuerySet<MockPerson> qs;
-        auto                 result = qs.update<^^MockPerson::name>(MockPerson{.name = "x"}).execute();
+        auto                 result = qs.update<fields::MockPerson.name>(MockPerson{.name = "x"}).execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), -1);
 
-        auto sql = qs.update<^^MockPerson::name>(MockPerson{.name = "x"}).to_sql();
+        auto sql = qs.update<fields::MockPerson.name>(MockPerson{.name = "x"}).to_sql();
         ASSERT_FALSE(sql.has_value());
         EXPECT_EQ(sql.error().code(), -1);
     }
@@ -628,7 +632,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_MISUSE);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.sum<^^MockPerson::age>().execute();
+        auto                 result = qs.sum<fields::MockPerson.age>().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_MISUSE);
@@ -638,7 +642,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_NOMEM);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.avg<^^MockPerson::age>().execute();
+        auto                 result = qs.avg<fields::MockPerson.age>().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -714,7 +718,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.distinct<^^MockPerson::name>().execute();
+        auto                 result = qs.distinct<fields::MockPerson.name>().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -724,7 +728,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_CORRUPT);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.distinct<^^MockPerson::name>().execute();
+        auto                 result = qs.distinct<fields::MockPerson.name>().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -735,7 +739,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.distinct<^^MockPerson::name>().to_sql();
+        auto                 result = qs.distinct<fields::MockPerson.name>().to_sql();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -747,7 +751,7 @@ namespace {
 
         QuerySet<MockPerson> qs;
         auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
-        auto                 result = qs.where(age > 25).distinct<^^MockPerson::name>().to_sql();
+        auto                 result = qs.where(age > 25).distinct<fields::MockPerson.name>().to_sql();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -782,7 +786,7 @@ namespace {
 
         QuerySet<MockPerson> qs;
         auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
-        auto                 result = qs.group_by<^^MockPerson::age>().having(age > 25).count().to_sql();
+        auto                 result = qs.group_by<fields::MockPerson.age>().having(age > 25).count().to_sql();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -796,7 +800,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.group_by<^^MockPerson::age>().count().execute();
+        auto                 result = qs.group_by<fields::MockPerson.age>().count().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -806,7 +810,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_IOERR);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.group_by<^^MockPerson::name>().sum<^^MockPerson::age>().execute();
+        auto                 result = qs.group_by<fields::MockPerson.name>().sum<fields::MockPerson.age>().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_IOERR);
@@ -992,7 +996,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.min<^^MockPerson::age>().execute();
+        auto                 result = qs.min<fields::MockPerson.age>().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -1002,7 +1006,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_IOERR);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.min<^^MockPerson::age>().execute();
+        auto                 result = qs.min<fields::MockPerson.age>().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_IOERR);
@@ -1012,7 +1016,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.max<^^MockPerson::age>().execute();
+        auto                 result = qs.max<fields::MockPerson.age>().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -1022,7 +1026,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_CORRUPT);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.max<^^MockPerson::age>().execute();
+        auto                 result = qs.max<fields::MockPerson.age>().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -1141,7 +1145,7 @@ namespace {
 
         QuerySet<MockPerson> qs;
         auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
-        auto                 result = qs.where(age > 25).distinct<^^MockPerson::name>().execute();
+        auto                 result = qs.where(age > 25).distinct<fields::MockPerson.name>().execute();
 
         if (!result.has_value()) {
             EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -1152,7 +1156,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_IOERR);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.distinct<^^MockPerson::name, ^^MockPerson::age>().execute();
+        auto                 result = qs.distinct<fields::MockPerson.name, fields::MockPerson.age>().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_IOERR);
@@ -1167,7 +1171,7 @@ namespace {
 
         QuerySet<MockPerson> qs;
         auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
-        auto                 result = qs.where(age > 25).group_by<^^MockPerson::name>().count().execute();
+        auto                 result = qs.where(age > 25).group_by<fields::MockPerson.name>().count().execute();
 
         if (!result.has_value()) {
             EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -1178,7 +1182,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_CORRUPT);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.group_by<^^MockPerson::name>().avg<^^MockPerson::age>().execute();
+        auto                 result = qs.group_by<fields::MockPerson.name>().avg<fields::MockPerson.age>().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -1188,7 +1192,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_NOMEM);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.group_by<^^MockPerson::name>().min<^^MockPerson::age>().execute();
+        auto                 result = qs.group_by<fields::MockPerson.name>().min<fields::MockPerson.age>().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -1198,7 +1202,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_BUSY);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.group_by<^^MockPerson::name>().max<^^MockPerson::age>().execute();
+        auto                 result = qs.group_by<fields::MockPerson.name>().max<fields::MockPerson.age>().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_BUSY);
@@ -1213,7 +1217,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.order_by<^^MockPerson::age>().select().execute();
+        auto                 result = qs.order_by<fields::MockPerson.age>().select().execute();
 
         // Verify prepare error is propagated (error code may differ at ORM layer)
         ASSERT_FALSE(result.has_value());
@@ -1247,7 +1251,7 @@ namespace {
 
         QuerySet<MockPerson> qs;
         auto                 age = storm::orm::where::Field<^^MockPerson::age>{};
-        auto result = qs.where(age > 25).order_by<^^MockPerson::name>().limit(10).offset(5).select().execute();
+        auto result = qs.where(age > 25).order_by<fields::MockPerson.name>().limit(10).offset(5).select().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_IOERR);
@@ -1319,7 +1323,7 @@ namespace {
         MockSqlite3Config::step_returns_sequence({SQLITE_ROW, SQLITE_IOERR});
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.distinct<^^MockPerson::name>().execute();
+        auto                 result = qs.distinct<fields::MockPerson.name>().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_IOERR);
@@ -1393,7 +1397,7 @@ namespace {
 
         QuerySet<MockPerson> qs;
         auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
-        auto                 result = qs.where(age > 25).sum<^^MockPerson::age>().execute();
+        auto                 result = qs.where(age > 25).sum<fields::MockPerson.age>().execute();
 
         if (!result.has_value()) {
             EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -1488,7 +1492,7 @@ namespace {
 
         QuerySet<MockPerson> qs;
         auto                 age = storm::orm::where::Field<^^MockPerson::age>{};
-        auto result = qs.where(age > 25).order_by<^^MockPerson::name>().limit(10).offset(5).select().execute();
+        auto result = qs.where(age > 25).order_by<fields::MockPerson.name>().limit(10).offset(5).select().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -1498,7 +1502,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockPerson> qs;
-        auto result = qs.order_by<^^MockPerson::age>().limit(5).distinct<^^MockPerson::name>().execute();
+        auto result = qs.order_by<fields::MockPerson.age>().limit(5).distinct<fields::MockPerson.name>().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -1521,6 +1525,15 @@ namespace {
         std::string                text;
     };
 
+    // fields:: selector proxies (#518).
+    namespace fields {
+        struct MockMessageT;
+        consteval {
+            std::meta::define_aggregate(^^MockMessageT, storm::field_specs_for(^^MockMessage));
+        }
+        inline constexpr MockMessageT MockMessage{};
+    } // namespace fields
+
     class JoinMockErrorTest : public ::testing::Test {
       protected:
         void SetUp() override {
@@ -1537,7 +1550,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<^^MockMessage::sender>().select().execute();
+        auto                  result = qs.join<fields::MockMessage.sender>().select().execute();
 
         // Verify prepare error is propagated (error code may differ at ORM layer)
         ASSERT_FALSE(result.has_value());
@@ -1548,7 +1561,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_CORRUPT);
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<^^MockMessage::sender>().select().execute();
+        auto                  result = qs.join<fields::MockMessage.sender>().select().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -1559,7 +1572,7 @@ namespace {
 
         QuerySet<MockMessage> qs;
         auto                  id     = storm::orm::where::Field<^^MockMessage::id>{};
-        auto                  result = qs.where(id > 5).join<^^MockMessage::sender>().select().execute();
+        auto                  result = qs.where(id > 5).join<fields::MockMessage.sender>().select().execute();
 
         if (!result.has_value()) {
             EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -1570,7 +1583,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_IOERR);
 
         QuerySet<MockMessage> qs;
-        auto result = qs.join<^^MockMessage::sender>().order_by<^^MockMessage::id>().select().execute();
+        auto result = qs.join<fields::MockMessage.sender>().order_by<fields::MockMessage.id>().select().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_IOERR);
@@ -1604,7 +1617,7 @@ namespace {
         MockSqlite3Config::step_returns_sequence({SQLITE_ROW, SQLITE_ROW, SQLITE_CORRUPT});
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.group_by<^^MockPerson::age>().count().execute();
+        auto                 result = qs.group_by<fields::MockPerson.age>().count().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -1614,7 +1627,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_IOERR);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.order_by<^^MockPerson::age>().count().execute();
+        auto                 result = qs.order_by<fields::MockPerson.age>().count().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_IOERR);
@@ -1901,7 +1914,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.sum<^^MockPerson::age>().execute();
+        auto                 result = qs.sum<fields::MockPerson.age>().execute();
 
         ASSERT_FALSE(result.has_value()) << "Aggregate SUM should fail on prepare error";
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -1911,7 +1924,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_CANTOPEN);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.avg<^^MockPerson::age>().execute();
+        auto                 result = qs.avg<fields::MockPerson.age>().execute();
 
         ASSERT_FALSE(result.has_value()) << "Aggregate AVG should fail on prepare error";
         EXPECT_EQ(result.error().code(), SQLITE_CANTOPEN);
@@ -1921,7 +1934,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_CORRUPT);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.min<^^MockPerson::age>().execute();
+        auto                 result = qs.min<fields::MockPerson.age>().execute();
 
         ASSERT_FALSE(result.has_value()) << "Aggregate MIN should fail on prepare error";
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -1931,7 +1944,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_FULL);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.max<^^MockPerson::age>().execute();
+        auto                 result = qs.max<fields::MockPerson.age>().execute();
 
         ASSERT_FALSE(result.has_value()) << "Aggregate MAX should fail on prepare error";
         EXPECT_EQ(result.error().code(), SQLITE_FULL);
@@ -1946,7 +1959,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_CORRUPT);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.sum<^^MockPerson::age>().execute();
+        auto                 result = qs.sum<fields::MockPerson.age>().execute();
 
         ASSERT_FALSE(result.has_value()) << "Aggregate SUM should fail on step error";
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -1956,7 +1969,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_IOERR);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.min<^^MockPerson::age>().execute();
+        auto                 result = qs.min<fields::MockPerson.age>().execute();
 
         ASSERT_FALSE(result.has_value()) << "Aggregate MIN should fail on step error";
         EXPECT_EQ(result.error().code(), SQLITE_IOERR);
@@ -1966,7 +1979,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_NOTADB);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.max<^^MockPerson::age>().execute();
+        auto                 result = qs.max<fields::MockPerson.age>().execute();
 
         ASSERT_FALSE(result.has_value()) << "Aggregate MAX should fail on step error";
         EXPECT_EQ(result.error().code(), SQLITE_NOTADB);
@@ -1982,7 +1995,7 @@ namespace {
 
         QuerySet<MockPerson> qs;
         auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
-        auto                 result = qs.where(age > 25).sum<^^MockPerson::age>().execute();
+        auto                 result = qs.where(age > 25).sum<fields::MockPerson.age>().execute();
 
         ASSERT_FALSE(result.has_value()) << "Aggregate with WHERE should fail on prepare error";
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -1994,7 +2007,7 @@ namespace {
 
         QuerySet<MockPerson> qs;
         auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
-        auto                 result = qs.where(age > 25).sum<^^MockPerson::age>().execute();
+        auto                 result = qs.where(age > 25).sum<fields::MockPerson.age>().execute();
 
         if (!result.has_value()) {
             EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -2022,7 +2035,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.group_by<^^MockPerson::age>().count().execute();
+        auto                 result = qs.group_by<fields::MockPerson.age>().count().execute();
 
         ASSERT_FALSE(result.has_value()) << "GROUP BY aggregate should fail on prepare error";
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -2033,7 +2046,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_CORRUPT);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.group_by<^^MockPerson::age>().count().execute();
+        auto                 result = qs.group_by<fields::MockPerson.age>().count().execute();
 
         ASSERT_FALSE(result.has_value()) << "GROUP BY aggregate should fail on step error";
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -2043,7 +2056,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_CANTOPEN);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.group_by<^^MockPerson::name>().sum<^^MockPerson::age>().execute();
+        auto                 result = qs.group_by<fields::MockPerson.name>().sum<fields::MockPerson.age>().execute();
 
         ASSERT_FALSE(result.has_value()) << "GROUP BY SUM should fail on prepare error";
         EXPECT_EQ(result.error().code(), SQLITE_CANTOPEN);
@@ -2214,7 +2227,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<^^MockMessage::sender>().sum<^^MockMessage::id>().execute();
+        auto                  result = qs.join<fields::MockMessage.sender>().sum<fields::MockMessage.id>().execute();
 
         ASSERT_FALSE(result.has_value()) << "Aggregate with JOIN should fail on prepare error";
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -2224,7 +2237,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_CORRUPT);
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<^^MockMessage::sender>().count().execute();
+        auto                  result = qs.join<fields::MockMessage.sender>().count().execute();
 
         ASSERT_FALSE(result.has_value()) << "Aggregate with JOIN should fail on step error";
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -2236,7 +2249,7 @@ namespace {
 
         QuerySet<MockMessage> qs;
         auto                  id     = storm::orm::where::Field<^^MockMessage::id>{};
-        auto                  result = qs.where(id > 5).join<^^MockMessage::sender>().count().execute();
+        auto                  result = qs.where(id > 5).join<fields::MockMessage.sender>().count().execute();
 
         ASSERT_FALSE(result.has_value()) << "Aggregate with WHERE+JOIN should fail on prepare error";
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -2248,7 +2261,7 @@ namespace {
 
         QuerySet<MockMessage> qs;
         auto                  id = storm::orm::where::Field<^^MockMessage::id>{};
-        auto result              = qs.where(id > 5).join<^^MockMessage::sender>().sum<^^MockMessage::id>().execute();
+        auto result = qs.where(id > 5).join<fields::MockMessage.sender>().sum<fields::MockMessage.id>().execute();
 
         if (!result.has_value()) {
             EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -2978,7 +2991,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<^^MockMessage::sender>().first().execute();
+        auto                  result = qs.join<fields::MockMessage.sender>().first().execute();
 
         ASSERT_FALSE(result.has_value());
     }
@@ -2987,7 +3000,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<^^MockMessage::sender>().get().execute();
+        auto                  result = qs.join<fields::MockMessage.sender>().get().execute();
 
         ASSERT_FALSE(result.has_value());
     }
@@ -2996,7 +3009,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_CORRUPT);
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<^^MockMessage::sender>().first().execute();
+        auto                  result = qs.join<fields::MockMessage.sender>().first().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -3007,7 +3020,7 @@ namespace {
         MockSqlite3Config::step_returns_sequence({SQLITE_ROW, SQLITE_DONE});
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<^^MockMessage::sender>().first().execute();
+        auto                  result = qs.join<fields::MockMessage.sender>().first().execute();
 
         // Mock returns zeroed data, but the path is exercised
         ASSERT_TRUE(result.has_value());
@@ -3018,7 +3031,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_CORRUPT);
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<^^MockMessage::sender>().get().execute();
+        auto                  result = qs.join<fields::MockMessage.sender>().get().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -3029,7 +3042,7 @@ namespace {
         MockSqlite3Config::step_returns_sequence({SQLITE_ROW, SQLITE_DONE});
 
         QuerySet<MockMessage> qs;
-        auto                  result = qs.join<^^MockMessage::sender>().get().execute();
+        auto                  result = qs.join<fields::MockMessage.sender>().get().execute();
 
         // Mock returns zeroed data, but the path is exercised
         ASSERT_TRUE(result.has_value());
@@ -3350,7 +3363,7 @@ namespace {
 
         QuerySet<MockMessage> qs;
         bool                  got_error = false;
-        for (auto&& result : qs.template join<^^MockMessage::sender>().rows()) {
+        for (auto&& result : qs.template join<fields::MockMessage.sender>().rows()) {
             if (!result.has_value()) {
                 EXPECT_EQ(result.error().code(), SQLITE_IOERR);
                 got_error = true;
@@ -3440,7 +3453,7 @@ namespace {
 
         QuerySet<MockPerson> qs;
         auto                 age = storm::orm::where::Field<^^MockPerson::age>{};
-        auto result              = qs.where(age > 30).group_by<^^MockPerson::age>().having(age > 25).count().execute();
+        auto result = qs.where(age > 30).group_by<fields::MockPerson.age>().having(age > 25).count().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -3453,7 +3466,7 @@ namespace {
 
         QuerySet<MockPerson> qs;
         auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
-        auto                 result = qs.group_by<^^MockPerson::age>().having(age > 25).count().execute();
+        auto                 result = qs.group_by<fields::MockPerson.age>().having(age > 25).count().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -3467,7 +3480,7 @@ namespace {
 
         QuerySet<MockPerson> qs;
         auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
-        auto                 result = qs.group_by<^^MockPerson::age>().having(age > 25).count().execute();
+        auto                 result = qs.group_by<fields::MockPerson.age>().having(age > 25).count().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -3480,7 +3493,7 @@ namespace {
 
         QuerySet<MockPerson> qs;
         auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
-        auto                 result = qs.group_by<^^MockPerson::age>().having(age > 30).count().execute();
+        auto                 result = qs.group_by<fields::MockPerson.age>().having(age > 30).count().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -3517,7 +3530,7 @@ namespace {
 
         QuerySet<MockPerson> qs;
         auto                 age    = storm::orm::where::Field<^^MockPerson::age>{};
-        auto                 result = qs.where(age > 25).sum<^^MockPerson::age>().execute();
+        auto                 result = qs.where(age > 25).sum<fields::MockPerson.age>().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -3777,7 +3790,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_IOERR);
 
         QuerySet<MockStudent> qs;
-        auto                  rows = qs.join<^^MockStudent::courses>().select().execute();
+        auto                  rows = qs.join<fields::MockStudent.courses>().select().execute();
 
         ASSERT_FALSE(rows.has_value());
         EXPECT_EQ(rows.error().code(), SQLITE_IOERR);
@@ -3787,7 +3800,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_IOERR);
 
         QuerySet<MockStudent> qs;
-        auto                  first = qs.join<^^MockStudent::courses>().first().execute();
+        auto                  first = qs.join<fields::MockStudent.courses>().first().execute();
 
         ASSERT_FALSE(first.has_value());
         EXPECT_EQ(first.error().code(), SQLITE_IOERR);
@@ -3797,7 +3810,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_IOERR);
 
         QuerySet<MockStudent> qs;
-        auto                  got = qs.join<^^MockStudent::courses>().get().execute();
+        auto                  got = qs.join<fields::MockStudent.courses>().get().execute();
 
         ASSERT_FALSE(got.has_value());
         EXPECT_EQ(got.error().code(), SQLITE_IOERR);
@@ -3807,7 +3820,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_CORRUPT);
 
         QuerySet<MockStudent> qs;
-        auto                  joined    = qs.join<^^MockStudent::courses>();
+        auto                  joined    = qs.join<fields::MockStudent.courses>();
         bool                  saw_error = false;
         for (auto&& row : joined.rows()) {
             ASSERT_FALSE(row.has_value());
@@ -3827,7 +3840,7 @@ namespace {
         MockSqlite3Config::step_fails_on_call(1, SQLITE_BUSY); // 1st step = BEGIN TRANSACTION
 
         QuerySet<MockStudent> qs;
-        auto                  rows = qs.join<^^MockStudent::courses>().select().execute();
+        auto                  rows = qs.join<fields::MockStudent.courses>().select().execute();
 
         ASSERT_FALSE(rows.has_value()) << "m2m eager load must fail when BEGIN TRANSACTION fails";
         EXPECT_EQ(rows.error().code(), SQLITE_BUSY);
@@ -3842,7 +3855,7 @@ namespace {
         MockSqlite3Config::prepare_fails_on_call(4, SQLITE_NOMEM); // Q1 prepare
 
         QuerySet<MockStudent> qs;
-        auto                  rows = qs.join<^^MockStudent::courses>().select().execute();
+        auto                  rows = qs.join<fields::MockStudent.courses>().select().execute();
 
         ASSERT_FALSE(rows.has_value());
         EXPECT_EQ(rows.error().code(), SQLITE_NOMEM);
@@ -3852,7 +3865,7 @@ namespace {
         MockSqlite3Config::prepare_fails_on_call(5, SQLITE_IOERR); // Q2 prepare
 
         QuerySet<MockStudent> qs;
-        auto                  rows = qs.join<^^MockStudent::courses>().select().execute();
+        auto                  rows = qs.join<fields::MockStudent.courses>().select().execute();
 
         ASSERT_FALSE(rows.has_value());
         EXPECT_EQ(rows.error().code(), SQLITE_IOERR);
@@ -3864,7 +3877,7 @@ namespace {
         MockSqlite3Config::step_fails_on_call(3, SQLITE_CORRUPT);
 
         QuerySet<MockStudent> qs;
-        auto                  rows = qs.join<^^MockStudent::courses>().select().execute();
+        auto                  rows = qs.join<fields::MockStudent.courses>().select().execute();
 
         ASSERT_FALSE(rows.has_value());
         EXPECT_EQ(rows.error().code(), SQLITE_CORRUPT);
@@ -3876,7 +3889,7 @@ namespace {
         MockSqlite3Config::step_fails_on_call(4, SQLITE_FULL);
 
         QuerySet<MockStudent> qs;
-        auto                  rows = qs.join<^^MockStudent::courses>().select().execute();
+        auto                  rows = qs.join<fields::MockStudent.courses>().select().execute();
 
         ASSERT_FALSE(rows.has_value());
         EXPECT_EQ(rows.error().code(), SQLITE_FULL);
@@ -3888,7 +3901,7 @@ namespace {
         MockSqlite3Config::bind_int_returns(SQLITE_RANGE);
 
         QuerySet<MockStudent> qs;
-        auto rows = qs.join<^^MockStudent::courses>().where(fields::MockStudent.id > 0).select().execute();
+        auto rows = qs.join<fields::MockStudent.courses>().where(fields::MockStudent.id > 0).select().execute();
 
         ASSERT_FALSE(rows.has_value());
         EXPECT_EQ(rows.error().code(), SQLITE_RANGE);
@@ -3910,6 +3923,15 @@ namespace {
         [[= storm::many_to_many<>]] std::vector<MockClub>   clubs;
     };
 
+    // fields:: selector proxies (#518).
+    namespace fields {
+        struct MockMemberT;
+        consteval {
+            std::meta::define_aggregate(^^MockMemberT, storm::field_specs_for(^^MockMember));
+        }
+        inline constexpr MockMemberT MockMember{};
+    } // namespace fields
+
     // Prepare order: calls 1-3 = connection/BEGIN bring-up, 4 = Q1, 5 = Q2a
     // (courses), 6 = Q2b (clubs). Failing call 6 exercises the per-relation Q2
     // loop's error branch for a relation after the first.
@@ -3917,7 +3939,7 @@ namespace {
         MockSqlite3Config::prepare_fails_on_call(6, SQLITE_IOERR);
 
         QuerySet<MockMember> qs;
-        auto                 rows = qs.join<^^MockMember::courses, ^^MockMember::clubs>().select().execute();
+        auto                 rows = qs.join<fields::MockMember.courses, fields::MockMember.clubs>().select().execute();
 
         ASSERT_FALSE(rows.has_value());
         EXPECT_EQ(rows.error().code(), SQLITE_IOERR);
@@ -3930,7 +3952,7 @@ namespace {
         MockSqlite3Config::step_fails_on_call(4, SQLITE_CORRUPT);
 
         QuerySet<MockMember> qs;
-        auto                 rows = qs.join<^^MockMember::courses, ^^MockMember::clubs>().select().execute();
+        auto                 rows = qs.join<fields::MockMember.courses, fields::MockMember.clubs>().select().execute();
 
         ASSERT_FALSE(rows.has_value());
         EXPECT_EQ(rows.error().code(), SQLITE_CORRUPT);
@@ -3941,7 +3963,7 @@ namespace {
         MockSqlite3Config::step_fails_on_call(5, SQLITE_FULL);
 
         QuerySet<MockMember> qs;
-        auto                 rows = qs.join<^^MockMember::courses, ^^MockMember::clubs>().select().execute();
+        auto                 rows = qs.join<fields::MockMember.courses, fields::MockMember.clubs>().select().execute();
 
         ASSERT_FALSE(rows.has_value());
         EXPECT_EQ(rows.error().code(), SQLITE_FULL);

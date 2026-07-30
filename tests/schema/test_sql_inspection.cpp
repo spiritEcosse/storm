@@ -93,7 +93,7 @@ TYPED_TEST(SqlInspectionTest, SelectWithOffsetToSql) {
 
 TYPED_TEST(SqlInspectionTest, SelectWithOrderByToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.template order_by<^^Person::age>().select().to_sql();
+    auto                        result = qs.template order_by<fields::Person.age>().select().to_sql();
     ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -210,7 +210,7 @@ TYPED_TEST(SqlInspectionTest, FirstWithWhereToSql) {
 
 TYPED_TEST(SqlInspectionTest, FirstWithOrderByToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.template order_by<^^Person::age>().first().to_sql();
+    auto                        result = qs.template order_by<fields::Person.age>().first().to_sql();
     ASSERT_TRUE(result.has_value()) << "first().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -591,7 +591,7 @@ TYPED_TEST(SqlInspectionTest, ToSqlDoubleByBackend) {
 
 TYPED_TEST(SqlInspectionTest, DistinctBareToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.template distinct<^^Person::name>().to_sql();
+    auto                        result = qs.template distinct<fields::Person.name>().to_sql();
     ASSERT_TRUE(result.has_value()) << "distinct().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -603,7 +603,7 @@ TYPED_TEST(SqlInspectionTest, DistinctBareToSql) {
 
 TYPED_TEST(SqlInspectionTest, DistinctWithWhereToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.where(fields::Person.age > 30).template distinct<^^Person::name>().to_sql();
+    auto result = qs.where(fields::Person.age > 30).template distinct<fields::Person.name>().to_sql();
     ASSERT_TRUE(result.has_value()) << "distinct().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -614,7 +614,7 @@ TYPED_TEST(SqlInspectionTest, DistinctWithWhereToSql) {
 
 TYPED_TEST(SqlInspectionTest, ValuesBareToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.template values<^^Person::name, ^^Person::age>().to_sql();
+    auto                        result = qs.template values<fields::Person.name, fields::Person.age>().to_sql();
     ASSERT_TRUE(result.has_value()) << "values().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -626,7 +626,7 @@ TYPED_TEST(SqlInspectionTest, ValuesBareToSql) {
 
 TYPED_TEST(SqlInspectionTest, ValuesWithWhereToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto result = qs.where(fields::Person.name == "Alice").template values<^^Person::age>().to_sql();
+    auto result = qs.where(fields::Person.name == "Alice").template values<fields::Person.age>().to_sql();
     ASSERT_TRUE(result.has_value()) << "values().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -662,7 +662,7 @@ TYPED_TEST(SqlInspectionTest, CountWithWhereToSql) {
 
 TYPED_TEST(SqlInspectionTest, SumWithWhereToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.where(fields::Person.age >= 25).template sum<^^Person::age>().to_sql();
+    auto                        result = qs.where(fields::Person.age >= 25).template sum<fields::Person.age>().to_sql();
     ASSERT_TRUE(result.has_value()) << "sum().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -673,7 +673,7 @@ TYPED_TEST(SqlInspectionTest, SumWithWhereToSql) {
 
 TYPED_TEST(SqlInspectionTest, GroupByCountToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.template group_by<^^Person::age>().count().to_sql();
+    auto                        result = qs.template group_by<fields::Person.age>().count().to_sql();
     ASSERT_TRUE(result.has_value()) << "group_by().count().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -684,7 +684,7 @@ TYPED_TEST(SqlInspectionTest, GroupByCountToSql) {
 
 TYPED_TEST(SqlInspectionTest, GroupByHavingCountToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto result = qs.template group_by<^^Person::age>().having(fields::Person.age > 30).count().to_sql();
+    auto result = qs.template group_by<fields::Person.age>().having(fields::Person.age > 30).count().to_sql();
     ASSERT_TRUE(result.has_value()) << "group_by().having().count().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -696,7 +696,7 @@ TYPED_TEST(SqlInspectionTest, GroupByHavingCountToSql) {
 // Other chaining position: count() before having().
 TYPED_TEST(SqlInspectionTest, GroupByCountHavingToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto result = qs.template group_by<^^Person::age>().count().having(fields::Person.age > 30).to_sql();
+    auto result = qs.template group_by<fields::Person.age>().count().having(fields::Person.age > 30).to_sql();
     ASSERT_TRUE(result.has_value()) << "group_by().count().having().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();

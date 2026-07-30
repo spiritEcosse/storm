@@ -104,7 +104,7 @@ TYPED_TEST(RowsTest, WithLimitOffset) {
 TYPED_TEST(RowsTest, WithOrderBy) {
     QuerySet<Person, TypeParam> qs;
     int                         prev_age = -1;
-    for (auto&& result : qs.template order_by<^^Person::age>().rows()) {
+    for (auto&& result : qs.template order_by<fields::Person.age>().rows()) {
         ASSERT_TRUE(result.has_value());
         EXPECT_GE(result.value().age, prev_age);
         prev_age = result.value().age;
@@ -116,7 +116,7 @@ TYPED_TEST(RowsTest, WithAllModifiers) {
     int                         count    = 0;
     int                         prev_age = -1;
     for (auto&& result :
-         qs.where(fields::Person.age > 25).template order_by<^^Person::age>().limit(5).offset(2).rows()) {
+         qs.where(fields::Person.age > 25).template order_by<fields::Person.age>().limit(5).offset(2).rows()) {
         ASSERT_TRUE(result.has_value());
         EXPECT_GT(result.value().age, 25);
         EXPECT_GE(result.value().age, prev_age);
@@ -217,7 +217,7 @@ TYPED_TEST(RowsTest, DifferentQueries) {
 TYPED_TEST(RowsTest, CollectToVector) {
     QuerySet<Person, TypeParam> qs;
     std::vector<Person>         people;
-    for (auto&& result : qs.template order_by<^^Person::name>().rows()) {
+    for (auto&& result : qs.template order_by<fields::Person.name>().rows()) {
         ASSERT_TRUE(result.has_value());
         people.push_back(std::move(result.value()));
     }
@@ -237,7 +237,7 @@ template <typename ConnType> class RowsJoinTest : public StormTestFixture<Messag
         )));
 
         QuerySet<Person, ConnType> pqs;
-        auto                       people_result = pqs.template order_by<^^Person::name>().select().execute();
+        auto                       people_result = pqs.template order_by<fields::Person.name>().select().execute();
         ASSERT_TRUE(people_result.has_value());
         std::array<int, 4> sender_ids{};
         for (const auto& p : people_result.value()) {
@@ -270,7 +270,7 @@ TYPED_TEST_SUITE(RowsJoinTest, DatabaseTypes);
 TYPED_TEST(RowsJoinTest, WithJoin) {
     QuerySet<Message, TypeParam> qs;
     int                          count = 0;
-    for (auto&& result : qs.template join<^^Message::sender>().rows()) {
+    for (auto&& result : qs.template join<fields::Message.sender>().rows()) {
         ASSERT_TRUE(result.has_value());
         ++count;
     }
@@ -280,7 +280,7 @@ TYPED_TEST(RowsJoinTest, WithJoin) {
 TYPED_TEST(RowsJoinTest, WithJoinAndWhere) {
     QuerySet<Message, TypeParam> qs;
     int                          count = 0;
-    for (auto&& result : qs.template join<^^Message::sender>().where(fields::Message.value > 30).rows()) {
+    for (auto&& result : qs.template join<fields::Message.sender>().where(fields::Message.value > 30).rows()) {
         ASSERT_TRUE(result.has_value());
         EXPECT_GT(result.value().value, 30);
         ++count;

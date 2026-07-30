@@ -19,7 +19,7 @@ TYPED_TEST_SUITE(AggregateTest, DatabaseTypes);
 TYPED_TEST(AggregateTest, GroupByWithCount) {
     this->insert_test_data();
 
-    auto result = this->qs->template group_by<^^Person::years_experience>().count().execute();
+    auto result = this->qs->template group_by<fields::Person.years_experience>().count().execute();
     ASSERT_TRUE(result.has_value()) << "GROUP BY + COUNT failed: " << result.error().message();
 
     auto& results = result.value();
@@ -35,7 +35,8 @@ TYPED_TEST(AggregateTest, GroupByWithCount) {
 TYPED_TEST(AggregateTest, GroupByWithSum) {
     this->insert_test_data();
 
-    auto result = this->qs->template group_by<^^Person::years_experience>().template sum<^^Person::age>().execute();
+    auto result =
+            this->qs->template group_by<fields::Person.years_experience>().template sum<fields::Person.age>().execute();
     ASSERT_TRUE(result.has_value()) << "GROUP BY + SUM failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 3);
 
@@ -49,7 +50,9 @@ TYPED_TEST(AggregateTest, GroupByWithSum) {
 TYPED_TEST(AggregateTest, GroupByWithAvg) {
     this->insert_test_data();
 
-    auto result = this->qs->template group_by<^^Person::years_experience>().template avg<^^Person::salary>().execute();
+    auto result = this->qs->template group_by<fields::Person.years_experience>()
+                          .template avg<fields::Person.salary>()
+                          .execute();
     ASSERT_TRUE(result.has_value()) << "GROUP BY + AVG failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 3);
 
@@ -67,7 +70,9 @@ TYPED_TEST(AggregateTest, GroupByWithAvg) {
 TYPED_TEST(AggregateTest, GroupByWithMin) {
     this->insert_test_data();
 
-    auto result = this->qs->template group_by<^^Person::years_experience>().template min<^^Person::salary>().execute();
+    auto result = this->qs->template group_by<fields::Person.years_experience>()
+                          .template min<fields::Person.salary>()
+                          .execute();
     ASSERT_TRUE(result.has_value()) << "GROUP BY + MIN failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 3);
 
@@ -85,7 +90,8 @@ TYPED_TEST(AggregateTest, GroupByWithMin) {
 TYPED_TEST(AggregateTest, GroupByWithMax) {
     this->insert_test_data();
 
-    auto result = this->qs->template group_by<^^Person::years_experience>().template max<^^Person::age>().execute();
+    auto result =
+            this->qs->template group_by<fields::Person.years_experience>().template max<fields::Person.age>().execute();
     ASSERT_TRUE(result.has_value()) << "GROUP BY + MAX failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 3);
 
@@ -103,9 +109,9 @@ TYPED_TEST(AggregateTest, GroupByWithMax) {
 TYPED_TEST(AggregateTest, GroupByWithJoinAndSum) {
     this->insert_join_test_data();
 
-    auto result = this->msg_qs->template join<^^Message::sender>()
-                          .template group_by<^^Message::content>()
-                          .template sum<^^Message::value>()
+    auto result = this->msg_qs->template join<fields::Message.sender>()
+                          .template group_by<fields::Message.content>()
+                          .template sum<fields::Message.value>()
                           .execute();
     ASSERT_TRUE(result.has_value()) << "JOIN + GROUP BY + SUM failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 6);
@@ -121,14 +127,14 @@ TYPED_TEST(AggregateTest, GroupByRepeatedQueries) {
     this->insert_test_data();
 
     for (int i = 0; i < 50; ++i) {
-        auto result = this->qs->template group_by<^^Person::years_experience>().count().execute();
+        auto result = this->qs->template group_by<fields::Person.years_experience>().count().execute();
         ASSERT_TRUE(result.has_value()) << "Iteration " << i << " failed";
         EXPECT_EQ(result.value().size(), 3);
     }
 }
 
 TYPED_TEST(AggregateTest, GroupByEmptyTable) {
-    auto result = this->qs->template group_by<^^Person::years_experience>().count().execute();
+    auto result = this->qs->template group_by<fields::Person.years_experience>().count().execute();
     ASSERT_TRUE(result.has_value()) << "GROUP BY on empty table failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 0);
 }
@@ -137,8 +143,8 @@ TYPED_TEST(AggregateTest, GroupByFullChain_Count) {
     this->insert_full_chain_data();
 
     auto count_result = this->msg_qs->where(fields::Message.value >= 20)
-                                .template join<^^Message::sender>()
-                                .template group_by<^^Message::value>()
+                                .template join<fields::Message.sender>()
+                                .template group_by<fields::Message.value>()
                                 .count()
                                 .execute();
     ASSERT_TRUE(count_result.has_value()) << "Full chain COUNT failed: " << count_result.error().message();
@@ -152,9 +158,9 @@ TYPED_TEST(AggregateTest, GroupByFullChain_SumAndAvg) {
     this->insert_full_chain_data();
 
     auto sum_result = this->msg_qs->where(fields::Message.value < 50)
-                              .template join<^^Message::sender>()
-                              .template group_by<^^Message::content>()
-                              .template sum<^^Message::value>()
+                              .template join<fields::Message.sender>()
+                              .template group_by<fields::Message.content>()
+                              .template sum<fields::Message.value>()
                               .execute();
     ASSERT_TRUE(sum_result.has_value()) << "Full chain SUM failed: " << sum_result.error().message();
     EXPECT_EQ(sum_result.value().size(), 7);
@@ -162,9 +168,9 @@ TYPED_TEST(AggregateTest, GroupByFullChain_SumAndAvg) {
     (*this->msg_qs).reset();
 
     auto avg_result = this->msg_qs->where(fields::Message.value >= 10 && fields::Message.value <= 70)
-                              .template join<^^Message::sender>()
-                              .template group_by<^^Message::value>()
-                              .template avg<^^Message::value>()
+                              .template join<fields::Message.sender>()
+                              .template group_by<fields::Message.value>()
+                              .template avg<fields::Message.value>()
                               .execute();
     ASSERT_TRUE(avg_result.has_value()) << "Full chain AVG failed: " << avg_result.error().message();
     EXPECT_EQ(avg_result.value().size(), 8);
@@ -187,7 +193,7 @@ TYPED_TEST(AggregateTest, CountDistinctWithDuplicates) {
             {.id = 0, .name = "Eve", .age = 35, .salary = 90000.0, .years_experience = 15},
     })));
 
-    auto result = this->qs->template count_distinct<^^Person::age>().execute();
+    auto result = this->qs->template count_distinct<fields::Person.age>().execute();
     ASSERT_TRUE(result.has_value()) << "COUNT(DISTINCT) with duplicates failed";
     EXPECT_EQ(result.value(), 2);
 }
@@ -195,8 +201,9 @@ TYPED_TEST(AggregateTest, CountDistinctWithDuplicates) {
 TYPED_TEST(AggregateTest, CountDistinctWithJoin) {
     this->insert_join_test_data();
 
-    auto result =
-            this->msg_qs->template join<^^Message::sender>().template count_distinct<^^Message::value>().execute();
+    auto result = this->msg_qs->template join<fields::Message.sender>()
+                          .template count_distinct<fields::Message.value>()
+                          .execute();
     ASSERT_TRUE(result.has_value()) << "COUNT(DISTINCT) with JOIN failed";
     EXPECT_EQ(result.value(), 6);
 }
@@ -205,7 +212,7 @@ TYPED_TEST(AggregateTest, CountDistinctRepeatedQueries) {
     this->insert_test_data();
 
     for (int i = 0; i < 50; ++i) {
-        auto result = this->qs->template count_distinct<^^Person::years_experience>().execute();
+        auto result = this->qs->template count_distinct<fields::Person.years_experience>().execute();
         ASSERT_TRUE(result.has_value()) << "Iteration " << i << " failed";
         EXPECT_EQ(result.value(), 3);
     }

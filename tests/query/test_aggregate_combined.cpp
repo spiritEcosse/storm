@@ -59,8 +59,8 @@ TYPED_TEST(AggregateTest, FullChain_WhereJoinOrderByLimitOffset) {
     // Values >= 20 ordered DESC: 75,70,65,60,55,50,45,40,35,30,25,20
     // After OFFSET 2: 65,60,55,50,45,...  After LIMIT 5: 65,60,55,50,45
     auto result = this->msg_qs->where(fields::Message.value >= 20)
-                          .template join<^^Message::sender>()
-                          .template order_by<^^Message::value, false>()
+                          .template join<fields::Message.sender>()
+                          .template order_by<fields::Message.value, false>()
                           .limit(5)
                           .offset(2)
                           .select()
@@ -75,8 +75,8 @@ TYPED_TEST(AggregateTest, FullChain_WhereJoinOrderByAscLimit) {
     insert_full_chain_14_messages<TypeParam>();
 
     auto result = this->msg_qs->where(fields::Message.value >= 20)
-                          .template join<^^Message::sender>()
-                          .template order_by<^^Message::value, true>()
+                          .template join<fields::Message.sender>()
+                          .template order_by<fields::Message.value, true>()
                           .limit(3)
                           .offset(0)
                           .select()
@@ -91,7 +91,7 @@ TYPED_TEST(AggregateTest, FullChain_JoinResolvesCorrectSender) {
     insert_full_chain_14_messages<TypeParam>();
 
     auto result =
-            this->msg_qs->where(fields::Message.value == 75).template join<^^Message::sender>().select().execute();
+            this->msg_qs->where(fields::Message.value == 75).template join<fields::Message.sender>().select().execute();
 
     ASSERT_TRUE(result.has_value()) << "JOIN verification query failed";
     ASSERT_EQ(result.value().size(), 1);
@@ -100,7 +100,7 @@ TYPED_TEST(AggregateTest, FullChain_JoinResolvesCorrectSender) {
 
 template <typename ConnType> auto verify_group_by_counts(QuerySet<Person, ConnType>& qs) -> void {
     const std::map<int, std::int64_t> expected_counts = {{5, 10}, {10, 8}, {15, 7}};
-    auto                              result = qs.template group_by<^^Person::years_experience>().count().execute();
+    auto result = qs.template group_by<fields::Person.years_experience>().count().execute();
     ASSERT_TRUE(result.has_value()) << "GROUP BY + COUNT failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 3);
     for (const auto& [ye, count_val] : result.value()) {
@@ -130,7 +130,7 @@ template <typename ConnType> auto verify_group_by_sum_avg_min_max(QuerySet<Perso
     const std::map<int, double>       exp_max = {{5, 36.0}, {10, 48.0}, {15, 45.0}};
 
     qs.reset();
-    auto sum = qs.template group_by<^^Person::years_experience>().template sum<^^Person::age>().execute();
+    auto sum = qs.template group_by<fields::Person.years_experience>().template sum<fields::Person.age>().execute();
     ASSERT_TRUE(sum.has_value());
     for (const auto& [ye, v] : sum.value()) {
         if (auto it = exp_sum.find(ye); it != exp_sum.end()) {
@@ -139,17 +139,17 @@ template <typename ConnType> auto verify_group_by_sum_avg_min_max(QuerySet<Perso
     }
 
     qs.reset();
-    auto avg = qs.template group_by<^^Person::years_experience>().template avg<^^Person::age>().execute();
+    auto avg = qs.template group_by<fields::Person.years_experience>().template avg<fields::Person.age>().execute();
     ASSERT_TRUE(avg.has_value());
     verify_optional_agg_groups(avg.value(), exp_avg);
 
     qs.reset();
-    auto mn = qs.template group_by<^^Person::years_experience>().template min<^^Person::age>().execute();
+    auto mn = qs.template group_by<fields::Person.years_experience>().template min<fields::Person.age>().execute();
     ASSERT_TRUE(mn.has_value());
     verify_optional_agg_groups(mn.value(), exp_min);
 
     qs.reset();
-    auto mx = qs.template group_by<^^Person::years_experience>().template max<^^Person::age>().execute();
+    auto mx = qs.template group_by<fields::Person.years_experience>().template max<fields::Person.age>().execute();
     ASSERT_TRUE(mx.has_value());
     verify_optional_agg_groups(mx.value(), exp_max);
 }
@@ -161,8 +161,8 @@ TYPED_TEST(AggregateTest, GroupByWithAllAggregateTypes) {
 
     (*this->qs).reset();
     auto filtered_sum = this->qs->where(fields::Person.years_experience == 5)
-                                .template group_by<^^Person::years_experience>()
-                                .template sum<^^Person::age>()
+                                .template group_by<fields::Person.years_experience>()
+                                .template sum<fields::Person.age>()
                                 .execute();
     ASSERT_TRUE(filtered_sum.has_value()) << "WHERE + GROUP BY + SUM failed";
     EXPECT_EQ(filtered_sum.value().size(), 1);
@@ -178,8 +178,8 @@ TYPED_TEST(AggregateTest, GroupByWithAllAggregateTypes) {
 TYPED_TEST(AggregateTest, GroupByWithOrderBy) {
     this->insert_test_data();
 
-    auto result = this->qs->template order_by<^^Person::years_experience>()
-                          .template group_by<^^Person::years_experience>()
+    auto result = this->qs->template order_by<fields::Person.years_experience>()
+                          .template group_by<fields::Person.years_experience>()
                           .count()
                           .execute();
     ASSERT_TRUE(result.has_value()) << "GROUP BY + ORDER BY failed: " << result.error().message();
@@ -198,8 +198,8 @@ TYPED_TEST(AggregateTest, GroupByWithOrderBy) {
 TYPED_TEST(AggregateTest, GroupByWithOrderByDesc) {
     this->insert_test_data();
 
-    auto result = this->qs->template order_by<^^Person::years_experience, false>()
-                          .template group_by<^^Person::years_experience>()
+    auto result = this->qs->template order_by<fields::Person.years_experience, false>()
+                          .template group_by<fields::Person.years_experience>()
                           .count()
                           .execute();
     ASSERT_TRUE(result.has_value()) << "GROUP BY + ORDER BY DESC failed: " << result.error().message();
@@ -216,10 +216,10 @@ TYPED_TEST(AggregateTest, GroupByWithOrderByDesc) {
 TYPED_TEST(AggregateTest, GroupByWithLimitOffset) {
     this->insert_test_data();
 
-    auto result = this->qs->template order_by<^^Person::years_experience>()
+    auto result = this->qs->template order_by<fields::Person.years_experience>()
                           .limit(2)
                           .offset(1)
-                          .template group_by<^^Person::years_experience>()
+                          .template group_by<fields::Person.years_experience>()
                           .count()
                           .execute();
     ASSERT_TRUE(result.has_value()) << "GROUP BY + LIMIT + OFFSET failed: " << result.error().message();
@@ -236,7 +236,7 @@ TYPED_TEST(AggregateTest, GroupByWithLimitOffset) {
 TYPED_TEST(AggregateTest, GroupByMultipleFields) {
     this->insert_test_data();
 
-    auto result = this->qs->template group_by<^^Person::age, ^^Person::years_experience>().count().execute();
+    auto result = this->qs->template group_by<fields::Person.age, fields::Person.years_experience>().count().execute();
     ASSERT_TRUE(result.has_value()) << "Multi-field GROUP BY failed: " << result.error().message();
 
     std::int64_t total = 0; // NOLINT(misc-const-correctness) - modified in loop
@@ -261,9 +261,9 @@ TYPED_TEST(AggregateTest, GroupByMultipleFieldsWithOrderByLimit) {
             {.name = "Eve", .age = 30, .salary = 90000.0, .years_experience = 10},
     })));
 
-    auto result = this->qs->template order_by<^^Person::age>()
+    auto result = this->qs->template order_by<fields::Person.age>()
                           .limit(2)
-                          .template group_by<^^Person::age, ^^Person::years_experience>()
+                          .template group_by<fields::Person.age, fields::Person.years_experience>()
                           .count()
                           .execute();
     ASSERT_TRUE(result.has_value()) << "Multi-field GROUP BY + ORDER BY + LIMIT failed";

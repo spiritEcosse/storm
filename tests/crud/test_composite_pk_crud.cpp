@@ -740,8 +740,10 @@ TYPED_TEST_SUITE(OrderLineUpsertTest, DatabaseTypes);
 TYPED_TEST(OrderLineUpsertTest, DoNothingSkipsOnConflict) {
     storm::QuerySet<OrderLine, TypeParam> qs;
     const OrderLine                       first{.order_id = 1, .product_id = 10, .quantity = 5, .note = "a"};
-    auto                                  inserted =
-            qs.insert(first).template on_conflict<^^OrderLine::order_id, ^^OrderLine::product_id>().nothing().execute();
+    auto                                  inserted = qs.insert(first)
+                            .template on_conflict<fields::OrderLine.order_id, fields::OrderLine.product_id>()
+                            .nothing()
+                            .execute();
     static_assert(
             std::is_same_v<decltype(inserted), std::expected<void, typename TypeParam::Error>>,
             "a composite key has nothing to RETURN, even for DO NOTHING"
@@ -751,7 +753,7 @@ TYPED_TEST(OrderLineUpsertTest, DoNothingSkipsOnConflict) {
 
     const OrderLine conflicting{.order_id = 1, .product_id = 10, .quantity = 99, .note = "b"};
     auto            skipped = qs.insert(conflicting)
-                           .template on_conflict<^^OrderLine::order_id, ^^OrderLine::product_id>()
+                           .template on_conflict<fields::OrderLine.order_id, fields::OrderLine.product_id>()
                            .nothing()
                            .execute();
     ASSERT_TRUE(skipped.has_value());
@@ -766,15 +768,15 @@ TYPED_TEST(OrderLineUpsertTest, DoUpdateOverwritesListedColumn) {
     storm::QuerySet<OrderLine, TypeParam> qs;
     const OrderLine                       first{.order_id = 2, .product_id = 20, .quantity = 5, .note = "a"};
     auto                                  seeded = qs.insert(first)
-                          .template on_conflict<^^OrderLine::order_id, ^^OrderLine::product_id>()
-                          .template update<^^OrderLine::quantity>()
+                          .template on_conflict<fields::OrderLine.order_id, fields::OrderLine.product_id>()
+                          .template update<fields::OrderLine.quantity>()
                           .execute();
     ASSERT_TRUE(seeded.has_value());
 
     const OrderLine conflicting{.order_id = 2, .product_id = 20, .quantity = 99, .note = "b"};
     auto            updated = qs.insert(conflicting)
-                           .template on_conflict<^^OrderLine::order_id, ^^OrderLine::product_id>()
-                           .template update<^^OrderLine::quantity>()
+                           .template on_conflict<fields::OrderLine.order_id, fields::OrderLine.product_id>()
+                           .template update<fields::OrderLine.quantity>()
                            .execute();
     static_assert(
             std::is_same_v<decltype(updated), std::expected<void, typename TypeParam::Error>>,
@@ -793,13 +795,15 @@ TYPED_TEST(OrderLineUpsertTest, DoUpdateOverwritesListedColumn) {
 TYPED_TEST(OrderLineUpsertTest, PartialKeyMatchIsNotAConflict) {
     storm::QuerySet<OrderLine, TypeParam> qs;
     const OrderLine                       first{.order_id = 3, .product_id = 30, .quantity = 1, .note = "a"};
-    auto                                  first_result =
-            qs.insert(first).template on_conflict<^^OrderLine::order_id, ^^OrderLine::product_id>().nothing().execute();
+    auto                                  first_result = qs.insert(first)
+                                .template on_conflict<fields::OrderLine.order_id, fields::OrderLine.product_id>()
+                                .nothing()
+                                .execute();
     ASSERT_TRUE(first_result.has_value());
 
     const OrderLine same_order{.order_id = 3, .product_id = 31, .quantity = 2, .note = "b"};
     auto            second_result = qs.insert(same_order)
-                                 .template on_conflict<^^OrderLine::order_id, ^^OrderLine::product_id>()
+                                 .template on_conflict<fields::OrderLine.order_id, fields::OrderLine.product_id>()
                                  .nothing()
                                  .execute();
     ASSERT_TRUE(second_result.has_value());
@@ -818,15 +822,15 @@ TYPED_TEST(InventoryUpsertTest, DoUpdateOverwritesListedColumnWithTextKeyPart) {
     storm::QuerySet<Inventory, TypeParam> qs;
     const Inventory                       first{.warehouse = 1, .sku = "apple", .on_hand = 5};
     auto                                  seeded = qs.insert(first)
-                          .template on_conflict<^^Inventory::warehouse, ^^Inventory::sku>()
-                          .template update<^^Inventory::on_hand>()
+                          .template on_conflict<fields::Inventory.warehouse, fields::Inventory.sku>()
+                          .template update<fields::Inventory.on_hand>()
                           .execute();
     ASSERT_TRUE(seeded.has_value());
 
     const Inventory conflicting{.warehouse = 1, .sku = "apple", .on_hand = 900};
     auto            updated = qs.insert(conflicting)
-                           .template on_conflict<^^Inventory::warehouse, ^^Inventory::sku>()
-                           .template update<^^Inventory::on_hand>()
+                           .template on_conflict<fields::Inventory.warehouse, fields::Inventory.sku>()
+                           .template update<fields::Inventory.on_hand>()
                            .execute();
     static_assert(
             std::is_same_v<decltype(updated), std::expected<void, typename TypeParam::Error>>,
@@ -843,13 +847,17 @@ TYPED_TEST(InventoryUpsertTest, DoUpdateOverwritesListedColumnWithTextKeyPart) {
 TYPED_TEST(InventoryUpsertTest, DoNothingSkipsOnConflictWithTextKeyPart) {
     storm::QuerySet<Inventory, TypeParam> qs;
     const Inventory                       first{.warehouse = 2, .sku = "pear", .on_hand = 3};
-    auto                                  inserted =
-            qs.insert(first).template on_conflict<^^Inventory::warehouse, ^^Inventory::sku>().nothing().execute();
+    auto                                  inserted = qs.insert(first)
+                            .template on_conflict<fields::Inventory.warehouse, fields::Inventory.sku>()
+                            .nothing()
+                            .execute();
     ASSERT_TRUE(inserted.has_value());
 
     const Inventory conflicting{.warehouse = 2, .sku = "pear", .on_hand = 999};
-    auto            skipped =
-            qs.insert(conflicting).template on_conflict<^^Inventory::warehouse, ^^Inventory::sku>().nothing().execute();
+    auto            skipped = qs.insert(conflicting)
+                           .template on_conflict<fields::Inventory.warehouse, fields::Inventory.sku>()
+                           .nothing()
+                           .execute();
     ASSERT_TRUE(skipped.has_value());
 
     auto row = this->find_one(fields::Inventory.warehouse == 2 && fields::Inventory.sku == std::string("pear"));

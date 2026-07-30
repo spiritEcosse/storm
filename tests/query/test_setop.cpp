@@ -139,7 +139,7 @@ TYPED_TEST(SetOpTest, UnionWithOrderBy) {
 
     auto result = qs_left.where(fields::Person.department == "Engineering")
                           .union_(qs_right.where(fields::Person.department == "Sales"))
-                          .template order_by<^^Person::name>()
+                          .template order_by<fields::Person.name>()
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     ASSERT_EQ(result->size(), 11);
@@ -161,7 +161,7 @@ TYPED_TEST(SetOpTest, UnionWithOrderByAndLimit) {
 
     auto result = qs_left.where(fields::Person.department == "Engineering")
                           .union_(qs_right.where(fields::Person.department == "Sales"))
-                          .template order_by<^^Person::name>()
+                          .template order_by<fields::Person.name>()
                           .limit(3)
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
@@ -178,7 +178,7 @@ TYPED_TEST(SetOpTest, UnionWithOrderByLimitOffset) {
 
     auto result = qs_left.where(fields::Person.department == "Engineering")
                           .union_(qs_right.where(fields::Person.department == "Sales"))
-                          .template order_by<^^Person::name>()
+                          .template order_by<fields::Person.name>()
                           .limit(3)
                           .offset(2)
                           .execute();
@@ -396,7 +396,7 @@ TYPED_TEST(SetOpTest, ToSqlWithModifiers) {
 
     auto sql = qs_left.where(fields::Person.age > 30)
                        .union_(qs_right.where(fields::Person.age < 25))
-                       .template order_by<^^Person::name>()
+                       .template order_by<fields::Person.name>()
                        .limit(5)
                        .to_sql();
     ASSERT_TRUE(sql.has_value()) << sql.error().message();
@@ -565,7 +565,7 @@ TYPED_TEST(SetOpTest, UnionWithOrderByDesc) {
 
     auto result = qs_left.where(fields::Person.department == "Engineering")
                           .union_(qs_right.where(fields::Person.department == "Sales"))
-                          .template order_by<^^Person::age, false>()
+                          .template order_by<fields::Person.age, false>()
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     ASSERT_EQ(result->size(), 11);
@@ -771,7 +771,7 @@ static_assert(!CanCaptureOperand<FinalizedQS>);
 // limit/offset/order_by return finalized QS (not void) — [[nodiscard]] makes discard a warning
 static_assert(!std::is_void_v<decltype(std::declval<NormalQS>().limit(1))>);
 static_assert(!std::is_void_v<decltype(std::declval<NormalQS>().offset(1))>);
-static_assert(!std::is_void_v<decltype(std::declval<NormalQS>().template order_by<^^Person::name>())>);
+static_assert(!std::is_void_v<decltype(std::declval<NormalQS>().template order_by<fields::Person.name>())>);
 
 // Non-finalized QuerySet MUST still have set-op methods (positive checks)
 static_assert(CanUnion<NormalQS, NormalQS>);

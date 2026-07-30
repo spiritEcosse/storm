@@ -89,6 +89,11 @@ namespace fields {
     }
     inline constexpr WidgetT Widget{};
 
+    struct ItemT;
+    consteval {
+        std::meta::define_aggregate(^^ItemT, storm::field_specs_for(^^Item));
+    }
+    inline constexpr ItemT Item{};
 } // namespace fields
 
 // ============================================================================
@@ -208,7 +213,7 @@ TYPED_TEST(NonIdPkCrudTest, InsertSelectUpdateDeleteRoundTrip) {
     EXPECT_EQ(selected->begin()->name, "Sprocket");
 
     auto updated = qs.where(fields::Widget.widget_id == new_id)
-                           .template update<^^Widget::name>(Widget{.name = "Cog"})
+                           .template update<fields::Widget.name>(Widget{.name = "Cog"})
                            .execute();
     ASSERT_TRUE(updated.has_value()) << "Update by widget_id failed: "
                                      << (updated.has_value() ? std::string{} : updated.error().message());
@@ -249,7 +254,7 @@ TYPED_TEST(FkTargetNonIdPkTest, InsertWithFkToNonIdPkTargetSucceeds) {
     ASSERT_TRUE(item_result.has_value()) << "Item insert (FK to non-id PK target) failed: "
                                          << (item_result.has_value() ? std::string{} : item_result.error().message());
 
-    auto joined = item_qs.template join<^^Item::owner>().select().execute();
+    auto joined = item_qs.template join<fields::Item.owner>().select().execute();
     ASSERT_TRUE(joined.has_value()) << "Join on FK to non-id PK target failed: "
                                     << (joined.has_value() ? std::string{} : joined.error().message());
     ASSERT_EQ(joined->size(), 1U);

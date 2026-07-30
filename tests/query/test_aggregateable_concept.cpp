@@ -70,15 +70,15 @@ static_assert(!NumericAggregateable<std::array<int, 3>>);
 // hard error (the #472 wrapper trick).
 
 template <typename QS>
-concept min_name_ok = requires(QS qs) { qs.template min<^^Person::name>(); };
+concept min_name_ok = requires(QS qs) { qs.template min<fields::Person.name>(); };
 template <typename QS>
-concept min_age_ok = requires(QS qs) { qs.template min<^^Person::age>(); };
+concept min_age_ok = requires(QS qs) { qs.template min<fields::Person.age>(); };
 template <typename QS>
-concept sum_avatar_ok = requires(QS qs) { qs.template sum<^^Person::avatar>(); };
+concept sum_avatar_ok = requires(QS qs) { qs.template sum<fields::Person.avatar>(); };
 template <typename QS>
-concept sum_salary_ok = requires(QS qs) { qs.template sum<^^Person::salary>(); };
+concept sum_salary_ok = requires(QS qs) { qs.template sum<fields::Person.salary>(); };
 template <typename QS>
-concept max_active_ok = requires(QS qs) { qs.template max<^^Person::is_active>(); };
+concept max_active_ok = requires(QS qs) { qs.template max<fields::Person.is_active>(); };
 
 using PersonQS = storm::QuerySet<Person>;
 
@@ -93,7 +93,7 @@ static_assert(!max_active_ok<PersonQS>); // bool
 
 // count / count_distinct stay unconstrained — any field type is countable.
 template <typename QS>
-concept count_distinct_name_ok = requires(QS qs) { qs.template count_distinct<^^Person::name>(); };
+concept count_distinct_name_ok = requires(QS qs) { qs.template count_distinct<fields::Person.name>(); };
 static_assert(count_distinct_name_ok<PersonQS>);
 
 TEST(AggregateableConceptTest, CompileTimeOnly) {

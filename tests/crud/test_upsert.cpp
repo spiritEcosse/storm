@@ -16,6 +16,17 @@ struct CompositeUpsertRecord {
     int                      age{};
 };
 
+// fields:: selector proxies (#518).
+namespace fields {
+
+    struct CompositeUpsertRecordT;
+    consteval {
+        std::meta::define_aggregate(^^CompositeUpsertRecordT, storm::field_specs_for(^^CompositeUpsertRecord));
+    }
+    inline constexpr CompositeUpsertRecordT CompositeUpsertRecord{};
+
+} // namespace fields
+
 template <> struct storm::Indexes<CompositeUpsertRecord> {
     using type = std::tuple<storm::UniqueIndex<^^CompositeUpsertRecord::name, ^^CompositeUpsertRecord::department>>;
 };
@@ -111,7 +122,7 @@ TYPED_TEST_SUITE(CompositeUpsertTest, DatabaseTypes);
 // Shared by both conflict tests below so each only adds its own conflicting insert.
 template <typename ConnType> auto seed_zed(storm::QuerySet<Person, ConnType>& qs) -> std::int64_t {
     Person const first{.name = "Zed", .age = 1, .department = "X"};
-    auto         first_id = qs.insert(first).template on_conflict<^^Person::name>().nothing().execute();
+    auto         first_id = qs.insert(first).template on_conflict<fields::Person.name>().nothing().execute();
     EXPECT_TRUE(first_id.has_value());
     EXPECT_TRUE(first_id.value().has_value());
     return first_id.value().value();
@@ -124,7 +135,7 @@ TYPED_TEST(UpsertTest, DoNothingSkipsOnConflict) {
     seed_zed(qs);
 
     Person const conflicting{.name = "Zed", .age = 99, .department = "Y"};
-    auto         second = qs.insert(conflicting).template on_conflict<^^Person::name>().nothing().execute();
+    auto         second = qs.insert(conflicting).template on_conflict<fields::Person.name>().nothing().execute();
     ASSERT_TRUE(second.has_value());
     EXPECT_FALSE(second.value().has_value()); // skipped — no row touched
 
@@ -141,8 +152,10 @@ TYPED_TEST(UpsertTest, DoUpdateOverwritesListedColumn) {
     const std::int64_t                 first_id = seed_zed(qs);
 
     Person const conflicting{.name = "Zed", .age = 99, .department = "Y"};
-    auto         updated_id =
-            qs.insert(conflicting).template on_conflict<^^Person::name>().template update<^^Person::age>().execute();
+    auto         updated_id = qs.insert(conflicting)
+                              .template on_conflict<fields::Person.name>()
+                              .template update<fields::Person.age>()
+                              .execute();
     ASSERT_TRUE(updated_id.has_value());
     EXPECT_EQ(updated_id.value(), first_id);
 
@@ -156,7 +169,7 @@ TYPED_TEST(UpsertTest, DoUpdateOverwritesListedColumn) {
 TYPED_TEST(UpsertTest, SqlGoldenNothing) {
     storm::QuerySet<Person, TypeParam> qs;
     Person const                       row{.name = "Q", .age = 1, .department = "X"};
-    const std::string                  sql = qs.insert(row).template on_conflict<^^Person::name>().nothing().sql();
+    const std::string                  sql = qs.insert(row).template on_conflict<fields::Person.name>().nothing().sql();
     EXPECT_NE(sql.find("ON CONFLICT (name) DO NOTHING"), std::string::npos) << sql;
 }
 
@@ -165,14 +178,18 @@ TYPED_TEST(CompositeUpsertTest, CompositeConflictTarget) {
     storm::QuerySet<CompositeUpsertRecord, TypeParam> qs;
     CompositeUpsertRecord const                       rec{.name = "Cara", .department = "Eng", .age = 20};
     auto                                              first = qs.insert(rec)
-                         .template on_conflict<^^CompositeUpsertRecord::name, ^^CompositeUpsertRecord::department>()
-                         .template update<^^CompositeUpsertRecord::age>()
+                         .template on_conflict<
+                                 fields::CompositeUpsertRecord.name,
+                                 fields::CompositeUpsertRecord.department>()
+                         .template update<fields::CompositeUpsertRecord.age>()
                          .execute();
     ASSERT_TRUE(first.has_value()) << first.error().message();
     CompositeUpsertRecord const upd{.name = "Cara", .department = "Eng", .age = 21};
     auto                        second = qs.insert(upd)
-                          .template on_conflict<^^CompositeUpsertRecord::name, ^^CompositeUpsertRecord::department>()
-                          .template update<^^CompositeUpsertRecord::age>()
+                          .template on_conflict<
+                                  fields::CompositeUpsertRecord.name,
+                                  fields::CompositeUpsertRecord.department>()
+                          .template update<fields::CompositeUpsertRecord.age>()
                           .execute();
     ASSERT_TRUE(second.has_value()) << second.error().message();
     EXPECT_EQ(second.value(), first.value());
@@ -183,14 +200,14 @@ TYPED_TEST(UpsertTest, DoUpdateMultipleColumns) {
     storm::QuerySet<Person, TypeParam> qs;
     Person const                       rec{.name = "Dan", .age = 10, .salary = 100.0, .department = "Eng"};
     auto                               first = qs.insert(rec)
-                         .template on_conflict<^^Person::name>()
-                         .template update<^^Person::age, ^^Person::salary>()
+                         .template on_conflict<fields::Person.name>()
+                         .template update<fields::Person.age, fields::Person.salary>()
                          .execute();
     ASSERT_TRUE(first.has_value()) << first.error().message();
     Person const upd{.name = "Dan", .age = 11, .salary = 200.0, .department = "Eng"};
     auto         r = qs.insert(upd)
-                     .template on_conflict<^^Person::name>()
-                     .template update<^^Person::age, ^^Person::salary>()
+                     .template on_conflict<fields::Person.name>()
+                     .template update<fields::Person.age, fields::Person.salary>()
                      .execute();
     ASSERT_TRUE(r.has_value()) << r.error().message();
     EXPECT_EQ(r.value(), first.value());
@@ -204,7 +221,7 @@ TYPED_TEST(UpsertTest, DoUpdateMultipleColumns) {
 TYPED_TEST(UpsertTest, ToSqlInlinesParams) {
     storm::QuerySet<Person, TypeParam> qs;
     Person const                       rec{.name = "Eve", .age = 5, .department = "X"};
-    auto                               r = qs.insert(rec).template on_conflict<^^Person::name>().nothing().to_sql();
+    auto r = qs.insert(rec).template on_conflict<fields::Person.name>().nothing().to_sql();
     ASSERT_TRUE(r.has_value());
     EXPECT_NE(r.value().find("ON CONFLICT (name) DO NOTHING"), std::string::npos) << r.value();
 }
@@ -221,8 +238,8 @@ TYPED_TEST(UpsertTimestampTest, DoUpdateRefreshesAutoUpdateTimestamp) {
 
     TimestampedUpsertRecord const seed{.name = "record"};
     auto                          inserted = qs.insert(seed)
-                            .template on_conflict<^^TimestampedUpsertRecord::name>()
-                            .template update<^^TimestampedUpsertRecord::name>()
+                            .template on_conflict<fields::TimestampedUpsertRecord.name>()
+                            .template update<fields::TimestampedUpsertRecord.name>()
                             .execute();
     ASSERT_TRUE(inserted.has_value());
 
@@ -237,8 +254,8 @@ TYPED_TEST(UpsertTimestampTest, DoUpdateRefreshesAutoUpdateTimestamp) {
 
     TimestampedUpsertRecord const conflicting{.name = "record"};
     auto                          updated = qs.insert(conflicting)
-                           .template on_conflict<^^TimestampedUpsertRecord::name>()
-                           .template update<^^TimestampedUpsertRecord::name>()
+                           .template on_conflict<fields::TimestampedUpsertRecord.name>()
+                           .template update<fields::TimestampedUpsertRecord.name>()
                            .execute();
     ASSERT_TRUE(updated.has_value());
 

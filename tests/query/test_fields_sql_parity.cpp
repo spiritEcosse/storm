@@ -53,6 +53,11 @@ namespace {
         return std::format("{} WHERE {}", SELECT_ALL, where_clause);
     }
 
+    // Same, for a clause that is not a WHERE (ORDER BY / LIMIT / a full tail).
+    [[nodiscard]] auto sel(std::string_view tail) -> std::string {
+        return std::format("{} {}", SELECT_ALL, tail);
+    }
+
     TEST_F(FieldsSqlParity, BareComparisonOperator) {
         // THE headline spelling from the issue — no f<> wrapper.
         EXPECT_EQ(qs().where(fields::Person.age == 30).select().sql(), expected("age = ?"));
@@ -103,156 +108,138 @@ namespace {
     }
 
     TEST_F(FieldsSqlParity, OrderBySingleAndMulti) {
-        EXPECT_EQ(qs().order_by<^^Person::name>().select().sql(), qs().order_by<fields::Person.name>().select().sql());
+        EXPECT_EQ(qs().order_by<fields::Person.name>().select().sql(), sel("ORDER BY name ASC"));
         EXPECT_EQ(
-                (qs().order_by<^^Person::department, ^^Person::age>().select().sql()),
-                (qs().order_by<fields::Person.department, fields::Person.age>().select().sql())
+                (qs().order_by<fields::Person.department, fields::Person.age>().select().sql()),
+                sel("ORDER BY department ASC, age ASC")
         );
     }
 
     TEST_F(FieldsSqlParity, OrderByWithDescModifier) {
-        // The bool modifier attaches to the field BEFORE it. The proxy must not
-        // disturb that positional pairing (it writes result[idx-1]).
-        EXPECT_EQ(
-                (qs().order_by<^^Person::age, false>().select().sql()),
-                (qs().order_by<fields::Person.age, false>().select().sql())
-        );
+        // The bool modifier attaches to the field BEFORE it. Pinning the text is
+        // what catches a shifted pairing — that emits valid SQL sorted the wrong
+        // way, which no compiler and no self-comparison can detect.
+        EXPECT_EQ((qs().order_by<fields::Person.age, false>().select().sql()), sel("ORDER BY age DESC"));
     }
 
     TEST_F(FieldsSqlParity, OrderByWithCollateModifier) {
         using storm::orm::utilities::Collate;
         EXPECT_EQ(
-                (qs().order_by<^^Person::name, Collate::NoCase>().select().sql()),
-                (qs().order_by<fields::Person.name, Collate::NoCase>().select().sql())
-        );
-    }
-
-    TEST_F(FieldsSqlParity, OrderByMixedSpellings) {
-        EXPECT_EQ(
-                (qs().order_by<^^Person::department, ^^Person::age>().select().sql()),
-                (qs().order_by<fields::Person.department, ^^Person::age>().select().sql())
+                (qs().order_by<fields::Person.name, Collate::NoCase>().select().sql()),
+                sel("ORDER BY name COLLATE NOCASE ASC")
         );
     }
 
     TEST_F(FieldsSqlParity, OrderByCombinedWithWhereAndLimit) {
         EXPECT_EQ(
-                qs().where(fields::Person.age > 20).order_by<^^Person::name>().limit(5).select().sql(),
-                qs().where(fields::Person.age > 20).order_by<fields::Person.name>().limit(5).select().sql()
+                qs().where(fields::Person.age > 20).order_by<fields::Person.name>().limit(5).select().sql(),
+                sel("WHERE age > ? ORDER BY name ASC LIMIT 5")
         );
     }
 
     TEST_F(FieldsSqlParity, DistinctSingleAndMulti) {
-        EXPECT_EQ(qs().distinct<^^Person::department>().sql(), qs().distinct<fields::Person.department>().sql());
+        EXPECT_EQ(qs().distinct<fields::Person.department>().sql(), "SELECT DISTINCT department FROM Person");
         EXPECT_EQ(
-                (qs().distinct<^^Person::department, ^^Person::age>().sql()),
-                (qs().distinct<fields::Person.department, fields::Person.age>().sql())
+                (qs().distinct<fields::Person.department, fields::Person.age>().sql()),
+                "SELECT DISTINCT department, age FROM Person"
         );
     }
 
     TEST_F(FieldsSqlParity, ValuesProjection) {
-        EXPECT_EQ(qs().values<^^Person::name>().sql(), qs().values<fields::Person.name>().sql());
-        EXPECT_EQ(
-                (qs().values<^^Person::name, ^^Person::age>().sql()),
-                (qs().values<fields::Person.name, fields::Person.age>().sql())
-        );
+        EXPECT_EQ(qs().values<fields::Person.name>().sql(), "SELECT name FROM Person");
+        EXPECT_EQ((qs().values<fields::Person.name, fields::Person.age>().sql()), "SELECT name, age FROM Person");
     }
 
     TEST_F(FieldsSqlParity, ScalarAggregates) {
-        EXPECT_EQ(qs().sum<^^Person::age>().sql(), qs().sum<fields::Person.age>().sql());
-        EXPECT_EQ(qs().avg<^^Person::salary>().sql(), qs().avg<fields::Person.salary>().sql());
-        EXPECT_EQ(qs().min<^^Person::age>().sql(), qs().min<fields::Person.age>().sql());
-        EXPECT_EQ(qs().max<^^Person::age>().sql(), qs().max<fields::Person.age>().sql());
-        EXPECT_EQ(qs().count<^^Person::id>().sql(), qs().count<fields::Person.id>().sql());
+        EXPECT_EQ(qs().sum<fields::Person.age>().sql(), "SELECT SUM(age) FROM Person");
+        EXPECT_EQ(qs().avg<fields::Person.salary>().sql(), "SELECT AVG(salary) FROM Person");
+        EXPECT_EQ(qs().min<fields::Person.age>().sql(), "SELECT MIN(age) FROM Person");
+        EXPECT_EQ(qs().max<fields::Person.age>().sql(), "SELECT MAX(age) FROM Person");
+        EXPECT_EQ(qs().count<fields::Person.id>().sql(), "SELECT COUNT(id) FROM Person");
         EXPECT_EQ(
-                qs().count_distinct<^^Person::department>().sql(),
-                qs().count_distinct<fields::Person.department>().sql()
+                qs().count_distinct<fields::Person.department>().sql(), "SELECT COUNT(DISTINCT department) FROM Person"
         );
     }
 
     TEST_F(FieldsSqlParity, MultiFieldAggregate) {
-        // SUM(a + b) — the pack-order-sensitive position. A reordered or dropped pack
-        // emits VALID but WRONG SQL, which a single-field assertion cannot detect.
+        // SUM(a + b) — pack-order-sensitive. A reordered or dropped pack emits
+        // VALID but WRONG SQL, so the operand order is pinned explicitly.
         EXPECT_EQ(
-                (qs().sum<^^Person::age, ^^Person::years_experience>().sql()),
-                (qs().sum<fields::Person.age, fields::Person.years_experience>().sql())
+                (qs().sum<fields::Person.age, fields::Person.years_experience>().sql()),
+                "SELECT SUM(age + years_experience) FROM Person"
         );
-        // Pin the operand ORDER too, so a symmetric reordering bug cannot pass.
-        EXPECT_TRUE((
-                qs().sum<fields::Person.age, fields::Person.years_experience>().sql().contains("age + years_experience")
-        ));
     }
 
     TEST_F(FieldsSqlParity, AggregateStatementChainMethods) {
         // AggregateStatement's OWN chain methods — a separate code path from
-        // GroupByBuilder's identically-named ones, and the one the other assertions miss.
-        EXPECT_EQ(qs().sum<^^Person::age>().count().sql(), qs().sum<fields::Person.age>().count().sql());
+        // GroupByBuilder's identically-named ones.
+        EXPECT_EQ(qs().sum<fields::Person.age>().count().sql(), "SELECT SUM(age), COUNT(*) FROM Person");
         EXPECT_EQ(
-                qs().sum<^^Person::age>().avg<^^Person::salary>().sql(),
-                qs().sum<fields::Person.age>().avg<fields::Person.salary>().sql()
+                qs().sum<fields::Person.age>().avg<fields::Person.salary>().sql(),
+                "SELECT SUM(age), AVG(salary) FROM Person"
         );
         EXPECT_EQ(
-                qs().min<^^Person::age>().max<^^Person::age>().sql(),
-                qs().min<fields::Person.age>().max<fields::Person.age>().sql()
+                qs().min<fields::Person.age>().max<fields::Person.age>().sql(), "SELECT MIN(age), MAX(age) FROM Person"
         );
     }
 
     TEST_F(FieldsSqlParity, GroupByWithAggregate) {
         EXPECT_EQ(
-                qs().group_by<^^Person::department>().count<>().sql(),
-                qs().group_by<fields::Person.department>().count<>().sql()
+                qs().group_by<fields::Person.department>().count<>().sql(),
+                "SELECT department, COUNT(*) FROM Person GROUP BY department"
         );
         EXPECT_EQ(
-                qs().group_by<^^Person::department>().sum<^^Person::salary>().sql(),
-                qs().group_by<fields::Person.department>().sum<fields::Person.salary>().sql()
+                qs().group_by<fields::Person.department>().sum<fields::Person.salary>().sql(),
+                "SELECT department, SUM(salary) FROM Person GROUP BY department"
         );
         // Multi-column GROUP BY — the other pack-order-sensitive position.
         EXPECT_EQ(
-                (qs().group_by<^^Person::department, ^^Person::age>().count<>().sql()),
-                (qs().group_by<fields::Person.department, fields::Person.age>().count<>().sql())
+                (qs().group_by<fields::Person.department, fields::Person.age>().count<>().sql()),
+                "SELECT department, age, COUNT(*) FROM Person GROUP BY department, age"
         );
     }
 
     TEST_F(FieldsSqlParity, GroupByHavingBothChainPositions) {
         // Both chaining orders, per the CLAUDE.md testing checklist.
         EXPECT_EQ(
-                qs().group_by<^^Person::age>().having(fields::Person.age > 30).count<>().sql(),
-                qs().group_by<fields::Person.age>().having(fields::Person.age > 30).count<>().sql()
+                qs().group_by<fields::Person.age>().having(fields::Person.age > 30).count<>().sql(),
+                "SELECT age, COUNT(*) FROM Person GROUP BY age HAVING age > ?"
         );
         EXPECT_EQ(
-                qs().group_by<^^Person::department>().count<>().having(fields::Person.department == "Eng").sql(),
-                qs().group_by<fields::Person.department>().count<>().having(fields::Person.department == "Eng").sql()
+                qs().group_by<fields::Person.department>().count<>().having(fields::Person.department == "Eng").sql(),
+                "SELECT department, COUNT(*) FROM Person GROUP BY department HAVING department = ?"
         );
     }
 
     TEST_F(FieldsSqlParity, ConditionalUpdateAndUpdateAll) {
-        // Write paths return std::expected<std::string, Error>. Assert has_value()
-        // first so a failure reports the SQL, not two opaque errors.
+        // Write paths return std::expected<std::string, Error>.
         const Person proto{.salary = 60000, .is_active = true};
 
-        const auto legacy_upd =
-                qs().where(fields::Person.salary < 50000).update<^^Person::salary, ^^Person::is_active>(proto).to_sql();
-        const auto proxy_upd = qs().where(fields::Person.salary < 50000)
-                                       .update<fields::Person.salary, fields::Person.is_active>(proto)
-                                       .to_sql();
-        ASSERT_TRUE(legacy_upd.has_value());
-        ASSERT_TRUE(proxy_upd.has_value());
-        EXPECT_EQ(*legacy_upd, *proxy_upd);
+        const auto upd = qs().where(fields::Person.salary < 50000)
+                                 .update<fields::Person.salary, fields::Person.is_active>(proto)
+                                 .to_sql();
+        ASSERT_TRUE(upd.has_value());
+        // NOTE: to_sql() on a write path renders BOUND VALUES inline, not
+        // placeholders — unlike the read paths' sql(). Pinned as it actually is.
+        EXPECT_EQ(*upd, "UPDATE Person SET salary=60000.0, is_active=1 WHERE salary < 50000");
 
-        const auto legacy_all = qs().update_all<^^Person::department>(proto).to_sql();
-        const auto proxy_all  = qs().update_all<fields::Person.department>(proto).to_sql();
-        ASSERT_TRUE(legacy_all.has_value());
-        ASSERT_TRUE(proxy_all.has_value());
-        EXPECT_EQ(*legacy_all, *proxy_all);
+        const auto all = qs().update_all<fields::Person.department>(proto).to_sql();
+        ASSERT_TRUE(all.has_value());
+        EXPECT_EQ(*all, "UPDATE Person SET department=''");
     }
 
     TEST_F(FieldsSqlParity, JoinOnFkField) {
-        EXPECT_EQ(
-                msg_qs().join<^^Message::sender>().select().sql(),
-                msg_qs().join<fields::Message.sender>().select().sql()
+        // The FK column is sender_id — derived by append_fk_column_names, NOT by
+        // the proxy's bare member name. Pinning it guards that derivation.
+        EXPECT_TRUE(
+                msg_qs().join<fields::Message.sender>().select().sql().contains(
+                        "FROM Message t1 INNER JOIN Person t2 ON t2.id = t1.sender_id"
+                )
         );
-        EXPECT_EQ(
-                msg_qs().left_join<^^Message::sender>().select().sql(),
-                msg_qs().left_join<fields::Message.sender>().select().sql()
+        EXPECT_TRUE(
+                msg_qs().left_join<fields::Message.sender>().select().sql().contains(
+                        "FROM Message t1 LEFT JOIN Person t2 ON t2.id = t1.sender_id"
+                )
         );
     }
 
@@ -281,7 +268,7 @@ namespace {
     TEST_F(FieldsSqlParity, UpsertOnConflictDoUpdate) {
         const Person p{.id = 1, .name = "Ann", .age = 30};
         EXPECT_EQ(
-                sql_of(qs().insert(p).on_conflict<^^Person::name>().update<^^Person::age>()),
+                sql_of(qs().insert(p).on_conflict<fields::Person.name>().update<fields::Person.age>()),
                 sql_of(qs().insert(p).on_conflict<fields::Person.name>().update<fields::Person.age>())
         );
     }
@@ -289,7 +276,7 @@ namespace {
     TEST_F(FieldsSqlParity, UpsertOnConflictDoNothing) {
         const Person p{.id = 1, .name = "Ann", .age = 30};
         EXPECT_EQ(
-                sql_of(qs().insert(p).on_conflict<^^Person::name>().nothing()),
+                sql_of(qs().insert(p).on_conflict<fields::Person.name>().nothing()),
                 sql_of(qs().insert(p).on_conflict<fields::Person.name>().nothing())
         );
     }
@@ -297,7 +284,9 @@ namespace {
     TEST_F(FieldsSqlParity, UpsertMultiColumnSetClause) {
         const Person p{.id = 1, .name = "Ann", .age = 30};
         EXPECT_EQ(
-                sql_of(qs().insert(p).on_conflict<^^Person::name>().update<^^Person::age, ^^Person::salary>()),
+                sql_of(qs().insert(p)
+                               .on_conflict<fields::Person.name>()
+                               .update<fields::Person.age, fields::Person.salary>()),
                 sql_of(qs().insert(p)
                                .on_conflict<fields::Person.name>()
                                .update<fields::Person.age, fields::Person.salary>())

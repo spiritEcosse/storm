@@ -46,7 +46,7 @@ template <typename ConnType> auto insert_5_people_ye() -> void {
 TYPED_TEST(AggregateTest, HavingOnGroupByBuilder) {
     insert_5_people_ye<TypeParam>();
 
-    auto result = this->qs->template group_by<^^Person::years_experience>()
+    auto result = this->qs->template group_by<fields::Person.years_experience>()
                           .having(fields::Person.years_experience > 5)
                           .count()
                           .execute();
@@ -56,7 +56,7 @@ TYPED_TEST(AggregateTest, HavingOnGroupByBuilder) {
 TYPED_TEST(AggregateTest, HavingOnAggregateStatement) {
     insert_5_people_ye<TypeParam>();
 
-    auto result = this->qs->template group_by<^^Person::years_experience>()
+    auto result = this->qs->template group_by<fields::Person.years_experience>()
                           .count()
                           .having(fields::Person.years_experience > 5)
                           .execute();
@@ -66,8 +66,8 @@ TYPED_TEST(AggregateTest, HavingOnAggregateStatement) {
 TYPED_TEST(AggregateTest, HavingWithJoin) {
     this->insert_join_test_data();
 
-    auto result = this->msg_qs->template join<^^Message::sender>()
-                          .template group_by<^^Message::value>()
+    auto result = this->msg_qs->template join<fields::Message.sender>()
+                          .template group_by<fields::Message.value>()
                           .having(fields::Message.value > 30)
                           .count()
                           .execute();
@@ -79,7 +79,8 @@ TYPED_TEST(AggregateTest, HavingRepeatedQueries) {
     this->insert_test_data();
 
     for (int i = 0; i < 50; ++i) {
-        auto result = this->qs->template group_by<^^Person::age>().having(fields::Person.age > 30).count().execute();
+        auto result =
+                this->qs->template group_by<fields::Person.age>().having(fields::Person.age > 30).count().execute();
         ASSERT_TRUE(result.has_value()) << "Iteration " << i << " failed";
         EXPECT_EQ(result.value().size(), 8);
     }
@@ -88,9 +89,9 @@ TYPED_TEST(AggregateTest, HavingRepeatedQueries) {
 TYPED_TEST(AggregateTest, HavingWithSum) {
     this->insert_test_data();
 
-    auto result = this->qs->template group_by<^^Person::years_experience>()
+    auto result = this->qs->template group_by<fields::Person.years_experience>()
                           .having(fields::Person.years_experience == 5)
-                          .template sum<^^Person::age>()
+                          .template sum<fields::Person.age>()
                           .execute();
     ASSERT_TRUE(result.has_value()) << "HAVING + SUM failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 1);
@@ -116,8 +117,8 @@ TYPED_TEST(AggregateTest, HavingWithWhereAndJoin) {
     // WHERE value >= 20 + JOIN + GROUP BY value HAVING value > 25
     // After WHERE: 20,30,50,70 → After HAVING > 25: 30,50,70 → 3 groups
     auto result = this->msg_qs->where(fields::Message.value >= 20)
-                          .template join<^^Message::sender>()
-                          .template group_by<^^Message::value>()
+                          .template join<fields::Message.sender>()
+                          .template group_by<fields::Message.value>()
                           .having(fields::Message.value > 25)
                           .count()
                           .execute();
@@ -128,7 +129,7 @@ TYPED_TEST(AggregateTest, HavingWithWhereAndJoin) {
 // ----- HAVING with all ExpressionVariant types -----
 
 TYPED_TEST(AggregateTest, HavingWithNotEqual) {
-    auto result = this->qs->template group_by<^^Person::age>().having(fields::Person.age != 30).count().execute();
+    auto result = this->qs->template group_by<fields::Person.age>().having(fields::Person.age != 30).count().execute();
     ASSERT_TRUE(result.has_value()) << "HAVING != failed: " << result.error().message();
     for (const auto& [age, count] : result.value()) {
         EXPECT_NE(age, 30);
@@ -136,7 +137,7 @@ TYPED_TEST(AggregateTest, HavingWithNotEqual) {
 }
 
 TYPED_TEST(AggregateTest, HavingWithLessThan) {
-    auto result = this->qs->template group_by<^^Person::age>().having(fields::Person.age < 30).count().execute();
+    auto result = this->qs->template group_by<fields::Person.age>().having(fields::Person.age < 30).count().execute();
     ASSERT_TRUE(result.has_value()) << "HAVING < failed: " << result.error().message();
     for (const auto& [age, count] : result.value()) {
         EXPECT_LT(age, 30);
@@ -144,7 +145,7 @@ TYPED_TEST(AggregateTest, HavingWithLessThan) {
 }
 
 TYPED_TEST(AggregateTest, HavingWithLessEqual) {
-    auto result = this->qs->template group_by<^^Person::age>().having(fields::Person.age <= 30).count().execute();
+    auto result = this->qs->template group_by<fields::Person.age>().having(fields::Person.age <= 30).count().execute();
     ASSERT_TRUE(result.has_value()) << "HAVING <= failed: " << result.error().message();
     for (const auto& [age, count] : result.value()) {
         EXPECT_LE(age, 30);
@@ -152,7 +153,7 @@ TYPED_TEST(AggregateTest, HavingWithLessEqual) {
 }
 
 TYPED_TEST(AggregateTest, HavingWithGreaterEqual) {
-    auto result = this->qs->template group_by<^^Person::age>().having(fields::Person.age >= 30).count().execute();
+    auto result = this->qs->template group_by<fields::Person.age>().having(fields::Person.age >= 30).count().execute();
     ASSERT_TRUE(result.has_value()) << "HAVING >= failed: " << result.error().message();
     for (const auto& [age, count] : result.value()) {
         EXPECT_GE(age, 30);
@@ -160,8 +161,10 @@ TYPED_TEST(AggregateTest, HavingWithGreaterEqual) {
 }
 
 TYPED_TEST(AggregateTest, HavingWithIn) {
-    auto result =
-            this->qs->template group_by<^^Person::age>().having(fields::Person.age.in(25, 30, 35)).count().execute();
+    auto result = this->qs->template group_by<fields::Person.age>()
+                          .having(fields::Person.age.in(25, 30, 35))
+                          .count()
+                          .execute();
     ASSERT_TRUE(result.has_value()) << "HAVING IN failed: " << result.error().message();
     for (const auto& [age, count] : result.value()) {
         EXPECT_TRUE(age == 25 || age == 30 || age == 35) << "HAVING IN: unexpected age " << age;
@@ -169,8 +172,10 @@ TYPED_TEST(AggregateTest, HavingWithIn) {
 }
 
 TYPED_TEST(AggregateTest, HavingWithBetween) {
-    auto result =
-            this->qs->template group_by<^^Person::age>().having(fields::Person.age.between(25, 35)).count().execute();
+    auto result = this->qs->template group_by<fields::Person.age>()
+                          .having(fields::Person.age.between(25, 35))
+                          .count()
+                          .execute();
     ASSERT_TRUE(result.has_value()) << "HAVING BETWEEN failed: " << result.error().message();
     for (const auto& [age, count] : result.value()) {
         EXPECT_GE(age, 25);
@@ -180,7 +185,7 @@ TYPED_TEST(AggregateTest, HavingWithBetween) {
 
 TYPED_TEST(AggregateTest, HavingWithLike) {
     auto result =
-            this->qs->template group_by<^^Person::name>().having(fields::Person.name.like("A%")).count().execute();
+            this->qs->template group_by<fields::Person.name>().having(fields::Person.name.like("A%")).count().execute();
     ASSERT_TRUE(result.has_value()) << "HAVING LIKE failed: " << result.error().message();
     for (const auto& [name, count] : result.value()) {
         EXPECT_TRUE(name.starts_with('A')) << "HAVING LIKE 'A%': unexpected name " << name;
@@ -188,7 +193,7 @@ TYPED_TEST(AggregateTest, HavingWithLike) {
 }
 
 TYPED_TEST(AggregateTest, HavingWithLogicalAnd) {
-    auto result = this->qs->template group_by<^^Person::age>()
+    auto result = this->qs->template group_by<fields::Person.age>()
                           .having(fields::Person.age > 20 && fields::Person.age < 40)
                           .count()
                           .execute();
@@ -197,7 +202,7 @@ TYPED_TEST(AggregateTest, HavingWithLogicalAnd) {
 }
 
 TYPED_TEST(AggregateTest, HavingWithLogicalOr) {
-    auto result = this->qs->template group_by<^^Person::age>()
+    auto result = this->qs->template group_by<fields::Person.age>()
                           .having(fields::Person.age < 25 || fields::Person.age > 35)
                           .count()
                           .execute();
@@ -208,7 +213,7 @@ TYPED_TEST(AggregateTest, HavingWithLogicalOr) {
 }
 
 TYPED_TEST(AggregateTest, HavingWithComplexLogical) {
-    auto result = this->qs->template group_by<^^Person::age>()
+    auto result = this->qs->template group_by<fields::Person.age>()
                           .having((fields::Person.age >= 25 && fields::Person.age <= 35) || fields::Person.age == 50)
                           .count()
                           .execute();
@@ -220,7 +225,7 @@ TYPED_TEST(AggregateTest, HavingWithComplexLogical) {
 
 TYPED_TEST(AggregateTest, HavingWithWhereAndIn) {
     auto result = this->qs->where(fields::Person.salary > 50000.0)
-                          .template group_by<^^Person::age>()
+                          .template group_by<fields::Person.age>()
                           .having(fields::Person.age.in(25, 30, 35))
                           .count()
                           .execute();
@@ -232,7 +237,7 @@ TYPED_TEST(AggregateTest, HavingWithWhereAndIn) {
 
 TYPED_TEST(AggregateTest, HavingWithWhereAndBetween) {
     auto result = this->qs->where(fields::Person.salary > 30000.0)
-                          .template group_by<^^Person::years_experience>()
+                          .template group_by<fields::Person.years_experience>()
                           .having(fields::Person.years_experience.between(3, 8))
                           .count()
                           .execute();
@@ -245,7 +250,7 @@ TYPED_TEST(AggregateTest, HavingWithWhereAndBetween) {
 
 TYPED_TEST(AggregateTest, HavingWithWhereAndLogicalAnd) {
     auto result = this->qs->where(fields::Person.salary > 30000.0)
-                          .template group_by<^^Person::age>()
+                          .template group_by<fields::Person.age>()
                           .having(fields::Person.age > 20 && fields::Person.age < 40)
                           .count()
                           .execute();
@@ -254,7 +259,8 @@ TYPED_TEST(AggregateTest, HavingWithWhereAndLogicalAnd) {
 }
 
 TYPED_TEST(AggregateTest, HavingInOnAggregateStatement) {
-    auto result = this->qs->template group_by<^^Person::age>().count().having(fields::Person.age.in(25, 30)).execute();
+    auto result =
+            this->qs->template group_by<fields::Person.age>().count().having(fields::Person.age.in(25, 30)).execute();
     ASSERT_TRUE(result.has_value()) << "HAVING IN on AggregateStatement failed: " << result.error().message();
     for (const auto& [age, count] : result.value()) {
         EXPECT_TRUE(age == 25 || age == 30) << "HAVING IN on AggregateStatement: unexpected age " << age;
@@ -262,8 +268,8 @@ TYPED_TEST(AggregateTest, HavingInOnAggregateStatement) {
 }
 
 TYPED_TEST(AggregateTest, HavingBetweenOnAggregateStatement) {
-    auto result = this->qs->template group_by<^^Person::age>()
-                          .template sum<^^Person::salary>()
+    auto result = this->qs->template group_by<fields::Person.age>()
+                          .template sum<fields::Person.salary>()
                           .having(fields::Person.age.between(25, 35))
                           .execute();
     ASSERT_TRUE(result.has_value()) << "HAVING BETWEEN on AggregateStatement failed: " << result.error().message();
@@ -274,8 +280,8 @@ TYPED_TEST(AggregateTest, HavingBetweenOnAggregateStatement) {
 }
 
 TYPED_TEST(AggregateTest, HavingLogicalOnAggregateStatement) {
-    auto result = this->qs->template group_by<^^Person::age>()
-                          .template avg<^^Person::salary>()
+    auto result = this->qs->template group_by<fields::Person.age>()
+                          .template avg<fields::Person.salary>()
                           .having(fields::Person.age >= 25 && fields::Person.age <= 40)
                           .execute();
     ASSERT_TRUE(result.has_value()) << "HAVING AND on AggregateStatement failed: " << result.error().message();
@@ -294,8 +300,8 @@ template <typename ConnType> class GroupByOrderByTest : public PersonSeedFixture
 TYPED_TEST_SUITE(GroupByOrderByTest, DatabaseTypes);
 
 TYPED_TEST(GroupByOrderByTest, GroupByWithOrderByAscending) {
-    auto result = this->qs->template order_by<^^Person::department>()
-                          .template group_by<^^Person::department>()
+    auto result = this->qs->template order_by<fields::Person.department>()
+                          .template group_by<fields::Person.department>()
                           .count()
                           .execute();
 
@@ -313,8 +319,8 @@ TYPED_TEST(GroupByOrderByTest, GroupByWithOrderByAscending) {
 }
 
 TYPED_TEST(GroupByOrderByTest, GroupByWithOrderByDescending) {
-    auto result = this->qs->template order_by<^^Person::department, false>()
-                          .template group_by<^^Person::department>()
+    auto result = this->qs->template order_by<fields::Person.department, false>()
+                          .template group_by<fields::Person.department>()
                           .count()
                           .execute();
 
@@ -333,8 +339,8 @@ TYPED_TEST(GroupByOrderByTest, GroupByWithOrderByDescending) {
 
 TYPED_TEST(GroupByOrderByTest, GroupByRepeatedExecution) {
     for (int i = 0; i < 5; ++i) {
-        auto result = this->qs->template order_by<^^Person::department>()
-                              .template group_by<^^Person::department>()
+        auto result = this->qs->template order_by<fields::Person.department>()
+                              .template group_by<fields::Person.department>()
                               .count()
                               .execute();
 
@@ -344,13 +350,15 @@ TYPED_TEST(GroupByOrderByTest, GroupByRepeatedExecution) {
 }
 
 TYPED_TEST(GroupByOrderByTest, GroupByWithDifferentAggregatesSequentially) {
-    auto count_result = this->qs->template group_by<^^Person::department>().count().execute();
+    auto count_result = this->qs->template group_by<fields::Person.department>().count().execute();
     ASSERT_TRUE(count_result.has_value());
 
-    auto sum_result = this->qs->template group_by<^^Person::department>().template sum<^^Person::salary>().execute();
+    auto sum_result =
+            this->qs->template group_by<fields::Person.department>().template sum<fields::Person.salary>().execute();
     ASSERT_TRUE(sum_result.has_value());
 
-    auto avg_result = this->qs->template group_by<^^Person::department>().template avg<^^Person::age>().execute();
+    auto avg_result =
+            this->qs->template group_by<fields::Person.department>().template avg<fields::Person.age>().execute();
     ASSERT_TRUE(avg_result.has_value());
 
     EXPECT_EQ(count_result.value().size(), sum_result.value().size());
@@ -362,9 +370,9 @@ TYPED_TEST(GroupByOrderByTest, GroupByWithDifferentAggregatesSequentially) {
 // ============================================================================
 
 TYPED_TEST(AggregateTest, HavingWithOrderByAndLimit) {
-    auto result = this->qs->template order_by<^^Person::age>()
+    auto result = this->qs->template order_by<fields::Person.age>()
                           .limit(3)
-                          .template group_by<^^Person::age>()
+                          .template group_by<fields::Person.age>()
                           .having(fields::Person.age > 25)
                           .count()
                           .execute();
@@ -382,8 +390,8 @@ TYPED_TEST(AggregateTest, HavingWithOrderByAndLimit) {
 }
 
 TYPED_TEST(AggregateTest, HavingWithOrderByOnly) {
-    auto result = this->qs->template order_by<^^Person::age, false>()
-                          .template group_by<^^Person::age>()
+    auto result = this->qs->template order_by<fields::Person.age, false>()
+                          .template group_by<fields::Person.age>()
                           .having(fields::Person.age > 30)
                           .count()
                           .execute();
@@ -399,15 +407,21 @@ TYPED_TEST(AggregateTest, HavingWithOrderByOnly) {
 }
 
 TYPED_TEST(AggregateTest, HavingWithLimitOnly) {
-    auto result =
-            this->qs->limit(2).template group_by<^^Person::age>().having(fields::Person.age > 25).count().execute();
+    auto result = this->qs->limit(2)
+                          .template group_by<fields::Person.age>()
+                          .having(fields::Person.age > 25)
+                          .count()
+                          .execute();
     ASSERT_TRUE(result.has_value()) << "HAVING + LIMIT failed: " << result.error().message();
     EXPECT_LE(result.value().size(), 2);
 }
 
 TYPED_TEST(AggregateTest, HavingWithOffsetOnly) {
-    auto result =
-            this->qs->offset(1).template group_by<^^Person::age>().having(fields::Person.age > 25).count().execute();
+    auto result = this->qs->offset(1)
+                          .template group_by<fields::Person.age>()
+                          .having(fields::Person.age > 25)
+                          .count()
+                          .execute();
     ASSERT_TRUE(result.has_value()) << "HAVING + OFFSET failed: " << result.error().message();
 }
 

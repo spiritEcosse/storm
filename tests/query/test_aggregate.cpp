@@ -19,7 +19,7 @@ TYPED_TEST_SUITE(AggregateTest, DatabaseTypes);
 TYPED_TEST(AggregateTest, SumMultipleFields) {
     this->insert_test_data();
 
-    auto result = this->qs->template sum<^^Person::age, ^^Person::years_experience>().execute();
+    auto result = this->qs->template sum<fields::Person.age, fields::Person.years_experience>().execute();
     ASSERT_TRUE(result.has_value()) << "SUM multi-field failed: " << result.error().message();
     EXPECT_EQ(result.value(), 1064);
 }
@@ -27,7 +27,7 @@ TYPED_TEST(AggregateTest, SumMultipleFields) {
 TYPED_TEST(AggregateTest, AvgMultipleFields) {
     this->insert_test_data();
 
-    auto result = this->qs->template avg<^^Person::age, ^^Person::years_experience>().execute();
+    auto result = this->qs->template avg<fields::Person.age, fields::Person.years_experience>().execute();
     ASSERT_TRUE(result.has_value()) << "AVG multi-field failed: " << result.error().message();
     ASSERT_TRUE(result.value().has_value());
     EXPECT_NEAR(result.value().value(), 42.56, 0.01);
@@ -36,7 +36,7 @@ TYPED_TEST(AggregateTest, AvgMultipleFields) {
 TYPED_TEST(AggregateTest, MinMultipleFields) {
     this->insert_test_data();
 
-    auto result = this->qs->template min<^^Person::age, ^^Person::years_experience>().execute();
+    auto result = this->qs->template min<fields::Person.age, fields::Person.years_experience>().execute();
     ASSERT_TRUE(result.has_value()) << "MIN multi-field failed: " << result.error().message();
     ASSERT_TRUE(result.value().has_value());
     EXPECT_DOUBLE_EQ(result.value().value(), 27.0);
@@ -45,7 +45,7 @@ TYPED_TEST(AggregateTest, MinMultipleFields) {
 TYPED_TEST(AggregateTest, MaxMultipleFields) {
     this->insert_test_data();
 
-    auto result = this->qs->template max<^^Person::age, ^^Person::years_experience>().execute();
+    auto result = this->qs->template max<fields::Person.age, fields::Person.years_experience>().execute();
     ASSERT_TRUE(result.has_value()) << "MAX multi-field failed: " << result.error().message();
     ASSERT_TRUE(result.value().has_value());
     EXPECT_DOUBLE_EQ(result.value().value(), 60.0);
@@ -58,7 +58,7 @@ TYPED_TEST(AggregateTest, MaxMultipleFields) {
 TYPED_TEST(AggregateTest, DirectChain_TypeSafety) {
     this->insert_test_data();
 
-    auto result = this->qs->template sum<^^Person::age>().count().execute();
+    auto result = this->qs->template sum<fields::Person.age>().count().execute();
     ASSERT_TRUE(result.has_value());
     static_assert(
             std::is_same_v<std::remove_reference_t<decltype(result.value())>, std::tuple<std::int64_t, std::int64_t>>,
@@ -70,8 +70,8 @@ TYPED_TEST(AggregateTest, SingleAggregates_WithWhereAndJoin) {
     this->insert_join_test_data();
 
     auto sum_result = this->msg_qs->where(fields::Message.value > 25)
-                              .template join<^^Message::sender>()
-                              .template sum<^^Message::value>()
+                              .template join<fields::Message.sender>()
+                              .template sum<fields::Message.value>()
                               .execute();
     ASSERT_TRUE(sum_result.has_value()) << "SUM with WHERE+JOIN failed: " << sum_result.error().message();
     EXPECT_EQ(sum_result.value(), 180);
@@ -79,15 +79,15 @@ TYPED_TEST(AggregateTest, SingleAggregates_WithWhereAndJoin) {
     (*this->msg_qs).reset();
 
     auto count_result =
-            this->msg_qs->where(fields::Message.value > 25).template join<^^Message::sender>().count().execute();
+            this->msg_qs->where(fields::Message.value > 25).template join<fields::Message.sender>().count().execute();
     ASSERT_TRUE(count_result.has_value()) << "COUNT with WHERE+JOIN failed: " << count_result.error().message();
     EXPECT_EQ(count_result.value(), 4);
 
     (*this->msg_qs).reset();
 
     auto min_result = this->msg_qs->where(fields::Message.value > 25)
-                              .template join<^^Message::sender>()
-                              .template min<^^Message::value>()
+                              .template join<fields::Message.sender>()
+                              .template min<fields::Message.value>()
                               .execute();
     ASSERT_TRUE(min_result.has_value()) << "MIN with WHERE+JOIN failed: " << min_result.error().message();
     ASSERT_TRUE(min_result.value().has_value());
@@ -100,7 +100,7 @@ TYPED_TEST(AggregateTest, SingleRow_AllAggregates) {
                     .execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    auto sum = this->qs->template sum<^^Person::age>().execute();
+    auto sum = this->qs->template sum<fields::Person.age>().execute();
     ASSERT_TRUE(sum.has_value());
     EXPECT_EQ(sum.value(), 25);
 
@@ -108,17 +108,17 @@ TYPED_TEST(AggregateTest, SingleRow_AllAggregates) {
     ASSERT_TRUE(count.has_value());
     EXPECT_EQ(count.value(), 1);
 
-    auto avg = this->qs->template avg<^^Person::age>().execute();
+    auto avg = this->qs->template avg<fields::Person.age>().execute();
     ASSERT_TRUE(avg.has_value());
     ASSERT_TRUE(avg.value().has_value());
     EXPECT_DOUBLE_EQ(avg.value().value(), 25.0);
 
-    auto min_val = this->qs->template min<^^Person::age>().execute();
+    auto min_val = this->qs->template min<fields::Person.age>().execute();
     ASSERT_TRUE(min_val.has_value());
     ASSERT_TRUE(min_val.value().has_value());
     EXPECT_DOUBLE_EQ(min_val.value().value(), 25.0);
 
-    auto max_val = this->qs->template max<^^Person::age>().execute();
+    auto max_val = this->qs->template max<fields::Person.age>().execute();
     ASSERT_TRUE(max_val.has_value());
     ASSERT_TRUE(max_val.value().has_value());
     EXPECT_DOUBLE_EQ(max_val.value().value(), 25.0);
@@ -139,7 +139,7 @@ TYPED_TEST(AggregateTest, LargeDataset_Sum) {
     auto batch_result = this->qs->insert(std::span<const Person>(people)).execute();
     ASSERT_TRUE(batch_result.has_value()) << "Batch insert failed: " << batch_result.error().message();
 
-    auto result = this->qs->template sum<^^Person::age>().execute();
+    auto result = this->qs->template sum<fields::Person.age>().execute();
     ASSERT_TRUE(result.has_value()) << "SUM large dataset failed: " << result.error().message();
     EXPECT_EQ(result.value(), 500500);
 }
@@ -167,7 +167,7 @@ TYPED_TEST(AggregateTest, LargeDataset_Count) {
 TYPED_TEST(AggregateTest, TypeSafety_IntegerResult) {
     this->insert_test_data();
 
-    auto result = this->qs->template sum<^^Person::age>().execute();
+    auto result = this->qs->template sum<fields::Person.age>().execute();
     ASSERT_TRUE(result.has_value());
     static_assert(
             std::is_same_v<std::remove_reference_t<decltype(result.value())>, std::int64_t>, "SUM should return int64_t"
@@ -177,7 +177,7 @@ TYPED_TEST(AggregateTest, TypeSafety_IntegerResult) {
 TYPED_TEST(AggregateTest, TypeSafety_OptionalDoubleResult) {
     this->insert_test_data();
 
-    auto result = this->qs->template avg<^^Person::age>().execute();
+    auto result = this->qs->template avg<fields::Person.age>().execute();
     ASSERT_TRUE(result.has_value());
     static_assert(
             std::is_same_v<std::remove_reference_t<decltype(result.value())>, std::optional<double>>,
@@ -190,7 +190,7 @@ TYPED_TEST(AggregateTest, TypeSafety_OptionalDoubleResult) {
 // ============================================================================
 
 TYPED_TEST(AggregateTest, SumDoubleField_ReturnsDouble) {
-    auto result = this->qs->template sum<^^Person::salary>().execute();
+    auto result = this->qs->template sum<fields::Person.salary>().execute();
     ASSERT_TRUE(result.has_value());
     static_assert(
             std::is_same_v<std::remove_reference_t<decltype(result.value())>, double>,
@@ -202,7 +202,7 @@ TYPED_TEST(AggregateTest, SumDoubleField_PreservesFraction) {
     ASSERT_TRUE(this->qs->insert(Person{.id = 0, .name = "A", .age = 1, .salary = 100.25}).execute().has_value());
     ASSERT_TRUE(this->qs->insert(Person{.id = 0, .name = "B", .age = 1, .salary = 200.50}).execute().has_value());
 
-    auto result = this->qs->template sum<^^Person::salary>().execute();
+    auto result = this->qs->template sum<fields::Person.salary>().execute();
     ASSERT_TRUE(result.has_value());
     EXPECT_DOUBLE_EQ(result.value(), 300.75);
 }
@@ -211,7 +211,7 @@ TYPED_TEST(AggregateTest, SumMultiField_PromotesToDoubleIfAnyFloating) {
     ASSERT_TRUE(this->qs->insert(Person{.id = 0, .name = "A", .age = 10, .salary = 100.50}).execute().has_value());
     ASSERT_TRUE(this->qs->insert(Person{.id = 0, .name = "B", .age = 20, .salary = 200.25}).execute().has_value());
 
-    auto result = this->qs->template sum<^^Person::age, ^^Person::salary>().execute();
+    auto result = this->qs->template sum<fields::Person.age, fields::Person.salary>().execute();
     ASSERT_TRUE(result.has_value());
     static_assert(
             std::is_same_v<std::remove_reference_t<decltype(result.value())>, double>,
@@ -239,7 +239,7 @@ TYPED_TEST(AggregateTest, StatementCaching_DifferentAggregates) {
     this->insert_test_data();
 
     for (int i = 0; i < 10; ++i) {
-        auto sum = this->qs->template sum<^^Person::age>().execute();
+        auto sum = this->qs->template sum<fields::Person.age>().execute();
         ASSERT_TRUE(sum.has_value());
         EXPECT_EQ(sum.value(), 829);
 
@@ -247,7 +247,7 @@ TYPED_TEST(AggregateTest, StatementCaching_DifferentAggregates) {
         ASSERT_TRUE(count.has_value());
         EXPECT_EQ(count.value(), 25);
 
-        auto avg = this->qs->template avg<^^Person::salary>().execute();
+        auto avg = this->qs->template avg<fields::Person.salary>().execute();
         ASSERT_TRUE(avg.has_value());
         ASSERT_TRUE(avg.value().has_value());
         EXPECT_NEAR(avg.value().value(), 68080.0, 0.01);
@@ -275,7 +275,7 @@ TYPED_TEST(AggregateTest, Integration_AfterInsert) {
         EXPECT_EQ(count.value(), i);
     }
 
-    auto sum = this->qs->template sum<^^Person::age>().execute();
+    auto sum = this->qs->template sum<fields::Person.age>().execute();
     ASSERT_TRUE(sum.has_value());
     EXPECT_EQ(sum.value(), 10 + 20 + 30 + 40 + 50);
 }
@@ -292,7 +292,7 @@ TYPED_TEST(AggregateTest, Integration_AfterUpdate) {
         ASSERT_TRUE(update_result.has_value());
     }
 
-    auto sum = this->qs->template sum<^^Person::age>().execute();
+    auto sum = this->qs->template sum<fields::Person.age>().execute();
     ASSERT_TRUE(sum.has_value());
     EXPECT_EQ(sum.value(), 750);
 }
@@ -323,7 +323,7 @@ TYPED_TEST(AggregateTest, WhereWithMultiFieldSum) {
     this->insert_test_data();
 
     auto result = this->qs->where(fields::Person.age >= 35)
-                          .template sum<^^Person::age, ^^Person::years_experience>()
+                          .template sum<fields::Person.age, fields::Person.years_experience>()
                           .execute();
     ASSERT_TRUE(result.has_value()) << "WHERE + SUM(multi-field) failed: " << result.error().message();
     EXPECT_EQ(result.value(), 582);
@@ -367,8 +367,10 @@ TYPED_TEST(AggregateTest, WhereJoinRepeatedQueries) {
     this->insert_join_test_data();
 
     for (int i = 0; i < 50; ++i) {
-        auto result =
-                this->msg_qs->where(fields::Message.value > 20).template join<^^Message::sender>().count().execute();
+        auto result = this->msg_qs->where(fields::Message.value > 20)
+                              .template join<fields::Message.sender>()
+                              .count()
+                              .execute();
         ASSERT_TRUE(result.has_value()) << "Iteration " << i << " failed: " << result.error().message();
         EXPECT_EQ(result.value(), 4);
     }

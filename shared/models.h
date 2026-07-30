@@ -181,6 +181,9 @@ struct ExtendedTypesT;
 consteval { std::meta::define_aggregate(^^ExtendedTypesT, storm::field_specs_for(^^ExtendedTypes)); }
 inline constexpr ExtendedTypesT ExtendedTypes{};
 
+struct TaskT;
+consteval { std::meta::define_aggregate(^^TaskT, storm::field_specs_for(^^Task)); }
+inline constexpr TaskT Task{};
 } // namespace fields
 
 // =============================================================================

@@ -47,7 +47,7 @@ template <typename ConnType> class AggregateTest : public StormTestFixture<Perso
             std::vector<Person>(storm::test::PEOPLE_25.begin(), storm::test::PEOPLE_25.end()))));
 
         QuerySet<Person, ConnType> pqs;
-        auto people_result = pqs.template order_by<^^Person::name>().select().execute();
+        auto people_result = pqs.template order_by<fields::Person.name>().select().execute();
         ASSERT_TRUE(people_result.has_value()) << people_result.error().message();
         ASSERT_EQ(people_result.value().size(), 25u);
         std::array<int, 3> sender_ids{};

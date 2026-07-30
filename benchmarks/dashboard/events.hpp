@@ -184,7 +184,7 @@ namespace {
         return materialise_select<bench_dashboard::BenchResult>(
                 storm::QuerySet<bench_dashboard::BenchResult>()
                         .where(bench_dashboard::fields::BenchResult.run_id == run_id)
-                        .order_by<^^bench_dashboard::BenchResult::id>()
+                        .order_by<bench_dashboard::fields::BenchResult.id>()
         );
     }
 
@@ -206,7 +206,7 @@ namespace {
         state.sessions.clear();
 
         auto runs = storm::QuerySet<bench_dashboard::BenchRun>()
-                            .order_by<^^bench_dashboard::BenchRun::id, false>()
+                            .order_by<bench_dashboard::fields::BenchRun.id, false>()
                             .select()
                             .execute()
                             .transform(hive_to_vector_lambda<bench_dashboard::BenchRun>());
