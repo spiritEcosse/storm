@@ -18,6 +18,7 @@ import storm_orm_statements_join;
 import storm_orm_statements_orderby;
 import storm_orm_utilities;
 import storm_orm_where;
+import storm_orm_fields; // selector_info / ValidSelector — #518 proxy selectors
 
 export namespace storm::orm::statements {
 
@@ -275,32 +276,46 @@ export namespace storm::orm::statements {
         // sum/avg/min/max share one body — chain_op<Type>() — differing only by
         // AggregateType; the numeric methods gate their target fields through
         // AllNumericAggregateable, count() accepts any field (COUNT is type-agnostic).
-        template <std::meta::info... FieldInfos>
-            requires AllNumericAggregateable<FieldInfos...>
+        template <auto... S>
+            requires(
+                    (storm::meta::ValidSelector<S> && ...) &&
+                    AllNumericAggregateable<storm::meta::selector_info<S>()...>
+            )
         [[nodiscard]] auto sum() {
-            return chain_op<AggregateType::SUM, FieldInfos...>();
+            return chain_op<AggregateType::SUM, storm::meta::selector_info<S>()...>();
         }
 
-        template <std::meta::info... FieldInfos> [[nodiscard]] auto count() {
-            return chain_op<AggregateType::COUNT, FieldInfos...>();
+        template <auto... S>
+            requires((storm::meta::ValidSelector<S> && ...))
+        [[nodiscard]] auto count() {
+            return chain_op<AggregateType::COUNT, storm::meta::selector_info<S>()...>();
         }
 
-        template <std::meta::info... FieldInfos>
-            requires AllNumericAggregateable<FieldInfos...>
+        template <auto... S>
+            requires(
+                    (storm::meta::ValidSelector<S> && ...) &&
+                    AllNumericAggregateable<storm::meta::selector_info<S>()...>
+            )
         [[nodiscard]] auto avg() {
-            return chain_op<AggregateType::AVG, FieldInfos...>();
+            return chain_op<AggregateType::AVG, storm::meta::selector_info<S>()...>();
         }
 
-        template <std::meta::info... FieldInfos>
-            requires AllNumericAggregateable<FieldInfos...>
+        template <auto... S>
+            requires(
+                    (storm::meta::ValidSelector<S> && ...) &&
+                    AllNumericAggregateable<storm::meta::selector_info<S>()...>
+            )
         [[nodiscard]] auto min() {
-            return chain_op<AggregateType::MIN, FieldInfos...>();
+            return chain_op<AggregateType::MIN, storm::meta::selector_info<S>()...>();
         }
 
-        template <std::meta::info... FieldInfos>
-            requires AllNumericAggregateable<FieldInfos...>
+        template <auto... S>
+            requires(
+                    (storm::meta::ValidSelector<S> && ...) &&
+                    AllNumericAggregateable<storm::meta::selector_info<S>()...>
+            )
         [[nodiscard]] auto max() {
-            return chain_op<AggregateType::MAX, FieldInfos...>();
+            return chain_op<AggregateType::MAX, storm::meta::selector_info<S>()...>();
         }
 
         // Return the SQL that would be executed (for testing/debugging). Assembles
@@ -742,36 +757,52 @@ export namespace storm::orm::statements {
         // count/count_distinct accept any field type (COUNT is type-agnostic);
         // sum/avg/min/max gate their target fields through AllNumericAggregateable.
         // All delegate to grouped_op<Type>(), which appends one AggregateOp.
-        template <std::meta::info... FieldInfos> [[nodiscard]] auto count() {
-            return grouped_op<AggregateType::COUNT, FieldInfos...>();
+        template <auto... S>
+            requires((storm::meta::ValidSelector<S> && ...))
+        [[nodiscard]] auto count() {
+            return grouped_op<AggregateType::COUNT, storm::meta::selector_info<S>()...>();
         }
 
-        template <std::meta::info... FieldInfos> [[nodiscard]] auto count_distinct() {
-            return grouped_op<AggregateType::COUNT_DISTINCT, FieldInfos...>();
+        template <auto... S>
+            requires((storm::meta::ValidSelector<S> && ...))
+        [[nodiscard]] auto count_distinct() {
+            return grouped_op<AggregateType::COUNT_DISTINCT, storm::meta::selector_info<S>()...>();
         }
 
-        template <std::meta::info... FieldInfos>
-            requires AllNumericAggregateable<FieldInfos...>
+        template <auto... S>
+            requires(
+                    (storm::meta::ValidSelector<S> && ...) &&
+                    AllNumericAggregateable<storm::meta::selector_info<S>()...>
+            )
         [[nodiscard]] auto sum() {
-            return grouped_op<AggregateType::SUM, FieldInfos...>();
+            return grouped_op<AggregateType::SUM, storm::meta::selector_info<S>()...>();
         }
 
-        template <std::meta::info... FieldInfos>
-            requires AllNumericAggregateable<FieldInfos...>
+        template <auto... S>
+            requires(
+                    (storm::meta::ValidSelector<S> && ...) &&
+                    AllNumericAggregateable<storm::meta::selector_info<S>()...>
+            )
         [[nodiscard]] auto avg() {
-            return grouped_op<AggregateType::AVG, FieldInfos...>();
+            return grouped_op<AggregateType::AVG, storm::meta::selector_info<S>()...>();
         }
 
-        template <std::meta::info... FieldInfos>
-            requires AllNumericAggregateable<FieldInfos...>
+        template <auto... S>
+            requires(
+                    (storm::meta::ValidSelector<S> && ...) &&
+                    AllNumericAggregateable<storm::meta::selector_info<S>()...>
+            )
         [[nodiscard]] auto min() {
-            return grouped_op<AggregateType::MIN, FieldInfos...>();
+            return grouped_op<AggregateType::MIN, storm::meta::selector_info<S>()...>();
         }
 
-        template <std::meta::info... FieldInfos>
-            requires AllNumericAggregateable<FieldInfos...>
+        template <auto... S>
+            requires(
+                    (storm::meta::ValidSelector<S> && ...) &&
+                    AllNumericAggregateable<storm::meta::selector_info<S>()...>
+            )
         [[nodiscard]] auto max() {
-            return grouped_op<AggregateType::MAX, FieldInfos...>();
+            return grouped_op<AggregateType::MAX, storm::meta::selector_info<S>()...>();
         }
 
       private:

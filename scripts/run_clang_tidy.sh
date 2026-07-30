@@ -137,8 +137,18 @@ echo ""
 #   tests/test_models.h, tests/test_seed_helpers.h, tests/test_select_runner.h,
 #   tests/test_write_runner.h, tests/test_yaml_register.h,
 #   tests/query/test_aggregate_fixture.h, tests/query/test_m2m_models.h,
-#   tests/crud/test_composite_pk_models.h,
-#   tests/test_parser.hpp, tests/tools/storm_schema/models.h
+#   tests/query/test_fields_models.h, tests/crud/test_composite_pk_models.h,
+#   tests/test_parser.hpp, tests/tools/storm_schema/models.h,
+#   shared/models.h
+#
+#   The last two entries joined the list with the fields:: proxies (#518). Both
+#   call storm::field_specs_for inside a `consteval` block, which is a harder
+#   dependency on `import storm;` than the [[= storm::*]] annotations alone —
+#   shared/models.h parsed standalone before that and does not now. Their
+#   #include <meta> also drags libc++'s own <meta> into a non-C++26 parse, which
+#   reports `unknown type name 'concept'` against the TOOLCHAIN header; skipping
+#   at the source stops that too, without a post-hoc output filter that would
+#   also mask a genuinely malformed concept in Storm's own code.
 #
 #   benchmarks/bench_register.h — includes benchmark/benchmark.h which
 #   clang-tidy cannot parse (gbench macro / linkage issue).
@@ -162,6 +172,7 @@ is_known_unparseable() {
     local file="$1"
     case "$file" in
         src/orm/query_builder.hpp) return 0 ;;
+        shared/models.h) return 0 ;;
         tests/test_models.h) return 0 ;;
         tests/test_seed_helpers.h) return 0 ;;
         tests/test_select_runner.h) return 0 ;;
@@ -169,6 +180,7 @@ is_known_unparseable() {
         tests/test_yaml_register.h) return 0 ;;
         tests/query/test_aggregate_fixture.h) return 0 ;;
         tests/query/test_m2m_models.h) return 0 ;;
+        tests/query/test_fields_models.h) return 0 ;;
         tests/crud/test_composite_pk_models.h) return 0 ;;
         tests/test_parser.hpp) return 0 ;;
         tests/tools/storm_schema/models.h) return 0 ;;

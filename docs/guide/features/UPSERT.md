@@ -15,8 +15,8 @@ updated.
 
 ```cpp
 auto result = qs.insert(user)
-    .on_conflict<^^User::email>()
-    .update<^^User::name, ^^User::age>()
+    .on_conflict<fields::User.email>()
+    .update<fields::User.name, fields::User.age>()
     .execute();  // std::expected<int64_t, storm::db::Error>
 ```
 
@@ -40,7 +40,7 @@ exists.
 
 ```cpp
 auto result = qs.insert(user)
-    .on_conflict<^^User::email>()
+    .on_conflict<fields::User.email>()
     .nothing()
     .execute();  // std::expected<std::optional<int64_t>, storm::db::Error>
 ```
@@ -72,8 +72,8 @@ composite key is not unique on its own. A composite key is never DB-generated
 
 ```cpp
 auto result = qs.insert(order_item)
-    .on_conflict<^^OrderItem::order_id, ^^OrderItem::product_id>()
-    .update<^^OrderItem::quantity>()
+    .on_conflict<fields::OrderItem.order_id, fields::OrderItem.product_id>()
+    .update<fields::OrderItem.quantity>()
     .execute();  // std::expected<void, storm::db::Error> — no RETURNING
 ```
 

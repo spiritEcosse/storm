@@ -130,14 +130,14 @@ export namespace storm::meta {
 
     // Issue #478: ValidFieldInfo is the compile-time gate that a std::meta::info
     // NTTP names a real field — a non-static data member with an identifier — the
-    // exact precondition the field selector f<> and every flag predicate below
+    // exact precondition the field selectors (FieldRef/RelationRef) and every flag predicate below
     // assume of their `member` argument. It gives that precondition a name so a bad
     // NTTP (a static member, a member function, or a whole type reflection) fails at
     // the named constraint instead of deep inside identifier_of/type_of. Unlike the
     // Entity structural gate, the requirements here are load-bearing on this
     // clang-p2996 build: is_nonstatic_data_member(^^int) and
     // is_nonstatic_data_member(^^Type::static_member) are both false, so the concept
-    // genuinely rejects. has_identifier mirrors the f<> precondition and guards the
+    // genuinely rejects. has_identifier mirrors the selector precondition and guards the
     // identifier_of use in the field proxies against an unnamed member — a case not
     // reachable through a ^^ NTTP today, but named so the contract is explicit.
     template <std::meta::info MemberInfo>

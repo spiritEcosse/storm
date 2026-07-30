@@ -36,8 +36,8 @@ export namespace storm::orm::statements {
     // - Instance-level caching eliminates per-call TLS access and object construction
     //
     // API: Use ^^ operator to pass reflected field information directly
-    // Example: qs.distinct<^^Person::name>().execute()
-    //          qs.values<^^Person::name, ^^Person::age>().execute()
+    // Example: qs.distinct<fields::Person.name>().execute()
+    //          qs.values<fields::Person.name, fields::Person.age>().execute()
     template <typename T, storm::db::DatabaseConnection ConnType, ProjectionMode Mode, std::meta::info... FieldInfos>
         requires(sizeof...(FieldInfos) > 0)
     class ProjectionStatement : private BaseStatement<T> {

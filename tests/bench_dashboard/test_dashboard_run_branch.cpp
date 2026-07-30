@@ -28,7 +28,7 @@ namespace {
     // Materialise every BenchRun row ordered by id, ascending.
     auto all_runs() -> std::vector<bench_dashboard::BenchRun> {
         auto rows = storm::QuerySet<bench_dashboard::BenchRun>()
-                            .order_by<^^bench_dashboard::BenchRun::id>()
+                            .order_by<bench_dashboard::fields::BenchRun.id>()
                             .select()
                             .execute()
                             .transform([](auto&& hive) {

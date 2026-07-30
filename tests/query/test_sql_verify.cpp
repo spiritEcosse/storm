@@ -7,7 +7,6 @@ import storm;
 import std;
 
 using storm::QuerySet;
-using storm::orm::where::f;
 
 #include "test_models.h" // NOSONAR cpp:S954
 
@@ -64,7 +63,7 @@ TYPED_TEST(SqlVerifyTest, SelectSimple) {
 
 TYPED_TEST(SqlVerifyTest, SelectWithWhere) {
     QuerySet<Person, TypeParam> qs;
-    auto                        sql = qs.where(f<^^Person::age>() > 30).select().sql();
+    auto                        sql = qs.where(fields::Person.age > 30).select().sql();
     EXPECT_EQ(
             sql,
             "SELECT id, name, age, salary, is_active, years_experience, department, score, nickname, avatar"
@@ -74,7 +73,7 @@ TYPED_TEST(SqlVerifyTest, SelectWithWhere) {
 
 TYPED_TEST(SqlVerifyTest, SelectWithJoin) {
     QuerySet<Message, TypeParam> qs;
-    auto                         sql = qs.template join<^^Message::sender>().select().sql();
+    auto                         sql = qs.template join<fields::Message.sender>().select().sql();
     EXPECT_EQ(
             sql,
             "SELECT t1.id, t1.content, t1.value, t2.id, t2.name, t2.age, t2.salary,"
@@ -85,7 +84,7 @@ TYPED_TEST(SqlVerifyTest, SelectWithJoin) {
 
 TYPED_TEST(SqlVerifyTest, SelectWithJoinAndWhere) {
     QuerySet<Message, TypeParam> qs;
-    auto sql = qs.template join<^^Message::sender>().where(f<^^Message::value>() > 10).select().sql();
+    auto sql = qs.template join<fields::Message.sender>().where(fields::Message.value > 10).select().sql();
     EXPECT_EQ(
             sql,
             "SELECT t1.id, t1.content, t1.value, t2.id, t2.name, t2.age, t2.salary,"
@@ -96,7 +95,7 @@ TYPED_TEST(SqlVerifyTest, SelectWithJoinAndWhere) {
 
 TYPED_TEST(SqlVerifyTest, SelectWithOrderBy) {
     QuerySet<Person, TypeParam> qs;
-    auto                        sql = qs.template order_by<^^Person::name>().select().sql();
+    auto                        sql = qs.template order_by<fields::Person.name>().select().sql();
     EXPECT_EQ(
             sql,
             std::format(
@@ -109,7 +108,7 @@ TYPED_TEST(SqlVerifyTest, SelectWithOrderBy) {
 
 TYPED_TEST(SqlVerifyTest, SelectWithOrderByDesc) {
     QuerySet<Person, TypeParam> qs;
-    auto                        sql = qs.template order_by<^^Person::age, false>().select().sql();
+    auto                        sql = qs.template order_by<fields::Person.age, false>().select().sql();
     EXPECT_EQ(
             sql,
             std::format(
@@ -145,9 +144,9 @@ TYPED_TEST(SqlVerifyTest, SelectWithOffsetOnly) {
 
 TYPED_TEST(SqlVerifyTest, SelectFullCombo) {
     QuerySet<Message, TypeParam> qs;
-    auto                         sql = qs.template join<^^Message::sender>()
-                       .where(f<^^Message::value>() > 10)
-                       .template order_by<^^Message::content>()
+    auto                         sql = qs.template join<fields::Message.sender>()
+                       .where(fields::Message.value > 10)
+                       .template order_by<fields::Message.content>()
                        .limit(5)
                        .offset(2)
                        .select()
@@ -180,7 +179,7 @@ TYPED_TEST(SqlVerifyTest, FirstSimple) {
 
 TYPED_TEST(SqlVerifyTest, FirstWithWhere) {
     QuerySet<Person, TypeParam> qs;
-    auto                        sql = qs.where(f<^^Person::age>() > 30).first().sql();
+    auto                        sql = qs.where(fields::Person.age > 30).first().sql();
     EXPECT_EQ(
             sql,
             "SELECT id, name, age, salary, is_active, years_experience, department, score, nickname, avatar"
@@ -200,7 +199,7 @@ TYPED_TEST(SqlVerifyTest, GetSimple) {
 
 TYPED_TEST(SqlVerifyTest, GetWithWhere) {
     QuerySet<Person, TypeParam> qs;
-    auto                        sql = qs.where(f<^^Person::id>() == 1).get().sql();
+    auto                        sql = qs.where(fields::Person.id == 1).get().sql();
     EXPECT_EQ(
             sql,
             "SELECT id, name, age, salary, is_active, years_experience, department, score, nickname, avatar"
@@ -358,49 +357,49 @@ TYPED_TEST(SqlVerifyTest, AggregateCountSimple) {
 
 TYPED_TEST(SqlVerifyTest, AggregateCountWithWhere) {
     QuerySet<Person, TypeParam> qs;
-    auto                        sql = qs.where(f<^^Person::age>() > 30).count().sql();
+    auto                        sql = qs.where(fields::Person.age > 30).count().sql();
     EXPECT_EQ(sql, "SELECT COUNT(*) FROM Person WHERE age > ?");
 }
 
 TYPED_TEST(SqlVerifyTest, AggregateSumField) {
     QuerySet<Person, TypeParam> qs;
-    auto                        sql = qs.template sum<^^Person::salary>().sql();
+    auto                        sql = qs.template sum<fields::Person.salary>().sql();
     EXPECT_EQ(sql, "SELECT SUM(salary) FROM Person");
 }
 
 TYPED_TEST(SqlVerifyTest, AggregateAvgField) {
     QuerySet<Person, TypeParam> qs;
-    auto                        sql = qs.template avg<^^Person::age>().sql();
+    auto                        sql = qs.template avg<fields::Person.age>().sql();
     EXPECT_EQ(sql, "SELECT AVG(age) FROM Person");
 }
 
 TYPED_TEST(SqlVerifyTest, AggregateMinField) {
     QuerySet<Person, TypeParam> qs;
-    auto                        sql = qs.template min<^^Person::age>().sql();
+    auto                        sql = qs.template min<fields::Person.age>().sql();
     EXPECT_EQ(sql, "SELECT MIN(age) FROM Person");
 }
 
 TYPED_TEST(SqlVerifyTest, AggregateMaxField) {
     QuerySet<Person, TypeParam> qs;
-    auto                        sql = qs.template max<^^Person::salary>().sql();
+    auto                        sql = qs.template max<fields::Person.salary>().sql();
     EXPECT_EQ(sql, "SELECT MAX(salary) FROM Person");
 }
 
 TYPED_TEST(SqlVerifyTest, AggregateChainedOps) {
     QuerySet<Person, TypeParam> qs;
-    auto                        sql = qs.template sum<^^Person::age>().template count<>().sql();
+    auto                        sql = qs.template sum<fields::Person.age>().template count<>().sql();
     EXPECT_EQ(sql, "SELECT SUM(age), COUNT(*) FROM Person");
 }
 
 TYPED_TEST(SqlVerifyTest, AggregateCountWithJoin) {
     QuerySet<Message, TypeParam> qs;
-    auto                         sql = qs.template join<^^Message::sender>().count().sql();
+    auto                         sql = qs.template join<fields::Message.sender>().count().sql();
     EXPECT_EQ(sql, "SELECT COUNT(*) FROM Message t1 INNER JOIN Person t2 ON t2.id = t1.sender_id");
 }
 
 TYPED_TEST(SqlVerifyTest, AggregateCountWithJoinAndWhere) {
     QuerySet<Message, TypeParam> qs;
-    auto sql = qs.template join<^^Message::sender>().where(f<^^Message::value>() > 10).count().sql();
+    auto sql = qs.template join<fields::Message.sender>().where(fields::Message.value > 10).count().sql();
     EXPECT_EQ(sql, "SELECT COUNT(*) FROM Message t1 INNER JOIN Person t2 ON t2.id = t1.sender_id WHERE value > ?");
 }
 
@@ -410,20 +409,20 @@ TYPED_TEST(SqlVerifyTest, AggregateCountWithJoinAndWhere) {
 
 TYPED_TEST(SqlVerifyTest, GroupByCount) {
     QuerySet<Person, TypeParam> qs;
-    auto                        sql = qs.template group_by<^^Person::department>().template count<>().sql();
+    auto                        sql = qs.template group_by<fields::Person.department>().template count<>().sql();
     EXPECT_EQ(sql, "SELECT department, COUNT(*) FROM Person GROUP BY department");
 }
 
 TYPED_TEST(SqlVerifyTest, GroupBySum) {
     QuerySet<Person, TypeParam> qs;
-    auto sql = qs.template group_by<^^Person::department>().template sum<^^Person::salary>().sql();
+    auto sql = qs.template group_by<fields::Person.department>().template sum<fields::Person.salary>().sql();
     EXPECT_EQ(sql, "SELECT department, SUM(salary) FROM Person GROUP BY department");
 }
 
 TYPED_TEST(SqlVerifyTest, GroupByWithWhere) {
     QuerySet<Person, TypeParam> qs;
-    auto                        sql = qs.where(f<^^Person::is_active>() == true)
-                       .template group_by<^^Person::department>()
+    auto                        sql = qs.where(fields::Person.is_active == true)
+                       .template group_by<fields::Person.department>()
                        .template count<>()
                        .sql();
     EXPECT_EQ(sql, "SELECT department, COUNT(*) FROM Person WHERE is_active = ? GROUP BY department");
@@ -431,27 +430,27 @@ TYPED_TEST(SqlVerifyTest, GroupByWithWhere) {
 
 TYPED_TEST(SqlVerifyTest, GroupByWithHaving) {
     QuerySet<Person, TypeParam> qs;
-    auto                        sql = qs.template group_by<^^Person::department>()
+    auto                        sql = qs.template group_by<fields::Person.department>()
                        .template count<>()
-                       .having(f<^^Person::department>() == "Engineering")
+                       .having(fields::Person.department == "Engineering")
                        .sql();
     EXPECT_EQ(sql, "SELECT department, COUNT(*) FROM Person GROUP BY department HAVING department = ?");
 }
 
 TYPED_TEST(SqlVerifyTest, GroupByWithWhereAndHaving) {
     QuerySet<Person, TypeParam> qs;
-    auto                        sql = qs.where(f<^^Person::age>() > 25)
-                       .template group_by<^^Person::department>()
+    auto                        sql = qs.where(fields::Person.age > 25)
+                       .template group_by<fields::Person.department>()
                        .template count<>()
-                       .having(f<^^Person::department>() == "Engineering")
+                       .having(fields::Person.department == "Engineering")
                        .sql();
     EXPECT_EQ(sql, "SELECT department, COUNT(*) FROM Person WHERE age > ? GROUP BY department HAVING department = ?");
 }
 
 TYPED_TEST(SqlVerifyTest, GroupByWithOrderBy) {
     QuerySet<Person, TypeParam> qs;
-    auto                        sql = qs.template order_by<^^Person::department>()
-                       .template group_by<^^Person::department>()
+    auto                        sql = qs.template order_by<fields::Person.department>()
+                       .template group_by<fields::Person.department>()
                        .template count<>()
                        .sql();
     EXPECT_EQ(
@@ -465,19 +464,22 @@ TYPED_TEST(SqlVerifyTest, GroupByWithOrderBy) {
 
 TYPED_TEST(SqlVerifyTest, GroupByWithLimitOffset) {
     QuerySet<Person, TypeParam> qs;
-    auto sql = qs.limit(3).offset(1).template group_by<^^Person::department>().template count<>().sql();
+    auto sql = qs.limit(3).offset(1).template group_by<fields::Person.department>().template count<>().sql();
     EXPECT_EQ(sql, "SELECT department, COUNT(*) FROM Person GROUP BY department LIMIT 3 OFFSET 1");
 }
 
 TYPED_TEST(SqlVerifyTest, GroupByMultiField) {
     QuerySet<Person, TypeParam> qs;
-    auto sql = qs.template group_by<^^Person::department, ^^Person::is_active>().template count<>().sql();
+    auto sql = qs.template group_by<fields::Person.department, fields::Person.is_active>().template count<>().sql();
     EXPECT_EQ(sql, "SELECT department, is_active, COUNT(*) FROM Person GROUP BY department, is_active");
 }
 
 TYPED_TEST(SqlVerifyTest, GroupByWithJoin) {
     QuerySet<Message, TypeParam> qs;
-    auto sql = qs.template join<^^Message::sender>().template group_by<^^Message::content>().template count<>().sql();
+    auto                         sql = qs.template join<fields::Message.sender>()
+                       .template group_by<fields::Message.content>()
+                       .template count<>()
+                       .sql();
     EXPECT_EQ(
             sql,
             "SELECT content, COUNT(*) FROM Message t1 INNER JOIN Person t2 ON t2.id = t1.sender_id"
@@ -492,7 +494,7 @@ TYPED_TEST(SqlVerifyTest, GroupByWithJoin) {
 TYPED_TEST(SqlVerifyTest, UnionSimple) {
     QuerySet<Person, TypeParam> qs1;
     QuerySet<Person, TypeParam> qs2;
-    auto sql = qs1.where(f<^^Person::age>() > 40).union_(qs2.where(f<^^Person::age>() < 25)).sql();
+    auto sql = qs1.where(fields::Person.age > 40).union_(qs2.where(fields::Person.age < 25)).sql();
     EXPECT_EQ(
             sql,
             "SELECT id, name, age, salary, is_active, years_experience, department, score, nickname, avatar"
@@ -505,7 +507,7 @@ TYPED_TEST(SqlVerifyTest, UnionSimple) {
 TYPED_TEST(SqlVerifyTest, UnionAllSimple) {
     QuerySet<Person, TypeParam> qs1;
     QuerySet<Person, TypeParam> qs2;
-    auto sql = qs1.where(f<^^Person::age>() > 40).union_all(qs2.where(f<^^Person::age>() < 25)).sql();
+    auto sql = qs1.where(fields::Person.age > 40).union_all(qs2.where(fields::Person.age < 25)).sql();
     EXPECT_EQ(
             sql,
             "SELECT id, name, age, salary, is_active, years_experience, department, score, nickname, avatar"
@@ -518,7 +520,7 @@ TYPED_TEST(SqlVerifyTest, UnionAllSimple) {
 TYPED_TEST(SqlVerifyTest, ExceptSimple) {
     QuerySet<Person, TypeParam> qs1;
     QuerySet<Person, TypeParam> qs2;
-    auto                        sql = qs1.except_(qs2.where(f<^^Person::age>() < 25)).sql();
+    auto                        sql = qs1.except_(qs2.where(fields::Person.age < 25)).sql();
     EXPECT_EQ(
             sql,
             "SELECT id, name, age, salary, is_active, years_experience, department, score, nickname, avatar"
@@ -531,7 +533,7 @@ TYPED_TEST(SqlVerifyTest, ExceptSimple) {
 TYPED_TEST(SqlVerifyTest, IntersectSimple) {
     QuerySet<Person, TypeParam> qs1;
     QuerySet<Person, TypeParam> qs2;
-    auto sql = qs1.where(f<^^Person::age>() > 30).intersect_(qs2.where(f<^^Person::is_active>() == true)).sql();
+    auto sql = qs1.where(fields::Person.age > 30).intersect_(qs2.where(fields::Person.is_active == true)).sql();
     EXPECT_EQ(
             sql,
             "SELECT id, name, age, salary, is_active, years_experience, department, score, nickname, avatar"
@@ -544,9 +546,9 @@ TYPED_TEST(SqlVerifyTest, IntersectSimple) {
 TYPED_TEST(SqlVerifyTest, SetOpWithOrderByAndLimit) {
     QuerySet<Person, TypeParam> qs1;
     QuerySet<Person, TypeParam> qs2;
-    auto                        sql = qs1.where(f<^^Person::age>() > 40)
-                       .union_(qs2.where(f<^^Person::age>() < 25))
-                       .template order_by<^^Person::name>()
+    auto                        sql = qs1.where(fields::Person.age > 40)
+                       .union_(qs2.where(fields::Person.age < 25))
+                       .template order_by<fields::Person.name>()
                        .limit(10)
                        .sql();
     EXPECT_EQ(

@@ -21,6 +21,7 @@
 // model FK selector ^^RfBug::author / ^^RfBug::reviewer names which to reverse.
 
 #include <memory>
+#include <meta>
 #include <plf_hive/plf_hive.h>
 #include <string>
 #include <vector>
@@ -89,5 +90,21 @@ template <typename ConnType> inline auto seed_rf_people() -> void {
 }
 
 } // namespace storm::test
+
+// fields:: selector proxies (#518).
+namespace fields {
+
+struct RfPersonT;
+consteval { std::meta::define_aggregate(^^RfPersonT, storm::field_specs_for(^^RfPerson)); }
+inline constexpr RfPersonT RfPerson{};
+
+struct RfTaskT;
+consteval { std::meta::define_aggregate(^^RfTaskT, storm::field_specs_for(^^RfTask)); }
+inline constexpr RfTaskT RfTask{};
+
+struct RfBugT;
+consteval { std::meta::define_aggregate(^^RfBugT, storm::field_specs_for(^^RfBug)); }
+inline constexpr RfBugT RfBug{};
+} // namespace fields
 
 #endif // TESTS_QUERY_TEST_REVERSE_FK_MODELS_H

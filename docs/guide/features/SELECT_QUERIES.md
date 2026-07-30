@@ -45,14 +45,13 @@ SELECT id, name, age FROM Person
 ### Select with WHERE
 
 ```cpp
-using namespace storm::orm::where;
 
 // Filter results
-auto result = queryset.where(f<^^Person::age>() > 25).select().execute();
+auto result = queryset.where(fields::Person.age > 25).select().execute();
 
 // Complex conditions
-auto result = queryset.where(f<^^Person::age>() > 25 and
-                              f<^^Person::age>() < 50).select().execute();
+auto result = queryset.where(fields::Person.age > 25 and
+                              fields::Person.age < 50).select().execute();
 ```
 
 See [WHERE Clauses](WHERE_CLAUSES.md) for detailed WHERE syntax.
@@ -61,14 +60,14 @@ See [WHERE Clauses](WHERE_CLAUSES.md) for detailed WHERE syntax.
 
 ```cpp
 // Single FK JOIN
-auto result = message_qs.join<^^Message::sender>().select().execute();
+auto result = message_qs.join<fields::Message.sender>().select().execute();
 
 // Multi-FK JOIN
-auto result = message_qs.join<^^Message::sender, ^^Message::receiver>().select().execute();
+auto result = message_qs.join<fields::Message.sender, fields::Message.receiver>().select().execute();
 
 // JOIN with WHERE
-auto result = message_qs.join<^^Message::sender>()
-                        .where(f<^^User::level>() > 5)
+auto result = message_qs.join<fields::Message.sender>()
+                        .where(fields::User.level > 5)
                         .select()
                         .execute();
 ```

@@ -78,6 +78,24 @@ namespace {
 
 } // namespace
 
+// fields:: selector proxies (#518). At global scope, NOT nested inside the
+// anonymous namespace above: a nested `namespace fields` makes every
+// unqualified `fields::` reference in this TU ambiguous against the global one.
+namespace fields {
+
+    struct WidgetT;
+    consteval {
+        std::meta::define_aggregate(^^WidgetT, storm::field_specs_for(^^Widget));
+    }
+    inline constexpr WidgetT Widget{};
+
+    struct ItemT;
+    consteval {
+        std::meta::define_aggregate(^^ItemT, storm::field_specs_for(^^Item));
+    }
+    inline constexpr ItemT Item{};
+} // namespace fields
+
 // ============================================================================
 // DDL — PK column name (SQLite + PostgreSQL)
 // ============================================================================
@@ -181,7 +199,6 @@ template <typename ConnType> class NonIdPkCrudTest : public StormTestFixture<Wid
 TYPED_TEST_SUITE(NonIdPkCrudTest, DatabaseTypes);
 
 TYPED_TEST(NonIdPkCrudTest, InsertSelectUpdateDeleteRoundTrip) {
-    using storm::orm::where::f;
     QuerySet<Widget, TypeParam> qs;
 
     auto inserted = qs.insert(Widget{.widget_id = 0, .name = "Sprocket"}).execute();
@@ -189,28 +206,28 @@ TYPED_TEST(NonIdPkCrudTest, InsertSelectUpdateDeleteRoundTrip) {
                                       << (inserted.has_value() ? std::string{} : inserted.error().message());
     const auto new_id = static_cast<int>(inserted.value());
 
-    auto selected = qs.where(f<^^Widget::widget_id>() == new_id).select().execute();
+    auto selected = qs.where(fields::Widget.widget_id == new_id).select().execute();
     ASSERT_TRUE(selected.has_value()) << "Select by widget_id failed: "
                                       << (selected.has_value() ? std::string{} : selected.error().message());
     ASSERT_EQ(selected->size(), 1U);
     EXPECT_EQ(selected->begin()->name, "Sprocket");
 
-    auto updated = qs.where(f<^^Widget::widget_id>() == new_id)
-                           .template update<^^Widget::name>(Widget{.name = "Cog"})
+    auto updated = qs.where(fields::Widget.widget_id == new_id)
+                           .template update<fields::Widget.name>(Widget{.name = "Cog"})
                            .execute();
     ASSERT_TRUE(updated.has_value()) << "Update by widget_id failed: "
                                      << (updated.has_value() ? std::string{} : updated.error().message());
 
-    auto reselected = qs.where(f<^^Widget::widget_id>() == new_id).select().execute();
+    auto reselected = qs.where(fields::Widget.widget_id == new_id).select().execute();
     ASSERT_TRUE(reselected.has_value());
     ASSERT_EQ(reselected->size(), 1U);
     EXPECT_EQ(reselected->begin()->name, "Cog");
 
-    auto deleted = qs.where(f<^^Widget::widget_id>() == new_id).erase().execute();
+    auto deleted = qs.where(fields::Widget.widget_id == new_id).erase().execute();
     ASSERT_TRUE(deleted.has_value()) << "Delete by widget_id failed: "
                                      << (deleted.has_value() ? std::string{} : deleted.error().message());
 
-    auto empty = qs.where(f<^^Widget::widget_id>() == new_id).select().execute();
+    auto empty = qs.where(fields::Widget.widget_id == new_id).select().execute();
     ASSERT_TRUE(empty.has_value());
     EXPECT_EQ(empty->size(), 0U);
 }
@@ -237,7 +254,7 @@ TYPED_TEST(FkTargetNonIdPkTest, InsertWithFkToNonIdPkTargetSucceeds) {
     ASSERT_TRUE(item_result.has_value()) << "Item insert (FK to non-id PK target) failed: "
                                          << (item_result.has_value() ? std::string{} : item_result.error().message());
 
-    auto joined = item_qs.template join<^^Item::owner>().select().execute();
+    auto joined = item_qs.template join<fields::Item.owner>().select().execute();
     ASSERT_TRUE(joined.has_value()) << "Join on FK to non-id PK target failed: "
                                     << (joined.has_value() ? std::string{} : joined.error().message());
     ASSERT_EQ(joined->size(), 1U);

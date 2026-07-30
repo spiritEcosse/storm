@@ -12,6 +12,7 @@ import std;
 import storm_orm_statements_base;
 import storm_orm_statements_field_names;
 import storm_orm_statements_upsert_grammar;
+import storm_orm_fields; // selector_info — #518 proxy selectors
 import storm_orm_utilities;
 import storm_orm_transaction;
 import storm_db_concept;
@@ -124,9 +125,13 @@ export namespace storm::orm::statements {
         template <typename T, storm::db::DatabaseConnection ConnType, std::meta::info... Target> struct ConflictTarget {
             InsertStatement<T, ConnType> stmt;
             const T&                     obj;
-            template <std::meta::info... SetCols>
-                requires UpsertSettable<T, SetCols...>
-            [[nodiscard]] auto update() -> UpdateUpsertQuery<T, ConnType, ConflictTargetTag<Target...>, SetCols...> {
+            template <auto... S>
+                requires UpsertSettable<T, storm::meta::selector_info<S>()...>
+            [[nodiscard]] auto update() -> UpdateUpsertQuery<
+                    T,
+                    ConnType,
+                    ConflictTargetTag<Target...>,
+                    storm::meta::selector_info<S>()...> {
                 return {std::move(stmt), obj};
             }
             [[nodiscard]] auto nothing() -> NothingUpsertQuery<T, ConnType, Target...> {
@@ -139,9 +144,9 @@ export namespace storm::orm::statements {
         // both proxies offer on_conflict() without duplicating the method body — the derived
         // proxy supplies `stmt`/`obj` via Derived's own members.
         template <typename T, storm::db::DatabaseConnection ConnType, typename Derived> struct OnConflictMixin {
-            template <std::meta::info... Target>
-                requires ConflictTargetUnique<T, Target...>
-            [[nodiscard]] auto on_conflict() -> ConflictTarget<T, ConnType, Target...> {
+            template <auto... S>
+                requires ConflictTargetUnique<T, storm::meta::selector_info<S>()...>
+            [[nodiscard]] auto on_conflict() -> ConflictTarget<T, ConnType, storm::meta::selector_info<S>()...> {
                 auto* self = static_cast<Derived*>(this);
                 return {std::move(self->stmt), self->obj};
             }

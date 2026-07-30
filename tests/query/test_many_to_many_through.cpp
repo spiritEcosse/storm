@@ -8,7 +8,6 @@ import storm;
 import std;
 
 using storm::QuerySet;
-using storm::orm::where::f;
 
 #include "test_models.h"     // NOSONAR cpp:S954
 #include "test_m2m_models.h" // NOSONAR cpp:S954
@@ -44,7 +43,7 @@ TYPED_TEST_SUITE(M2MThroughTest, DatabaseTypes);
 
 TYPED_TEST(M2MThroughTest, ThroughSqlUsesJunctionModel) {
     QuerySet<Pupil, TypeParam> qs;
-    auto                       sql = qs.template join<^^Pupil::courses>().select().sql();
+    auto                       sql = qs.template join<fields::Pupil.courses>().select().sql();
     // Two-query shape (#391): junction = the through model's table; FK columns
     // come from its field names. Q1 selects the base pupils; Q2 the junction⋈course.
     EXPECT_TRUE(sql.contains("SELECT id, name, age FROM Pupil; ")) << sql;
@@ -60,7 +59,7 @@ TYPED_TEST(M2MThroughTest, SingleRowUpdateIgnoresThroughField) {
     auto        upd = qs.update(updated).execute();
     ASSERT_TRUE(upd.has_value()) << upd.error().message();
 
-    auto rows = qs.where(f<^^Pupil::id>() == 1).select().execute();
+    auto rows = qs.where(fields::Pupil.id == 1).select().execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     ASSERT_EQ(rows->size(), 1U);
     EXPECT_EQ(rows->begin()->name, "Dora Updated");
@@ -76,7 +75,7 @@ TYPED_TEST(M2MThroughTest, BulkUpdateIgnoresThroughField) {
     auto upd = qs.update(std::span<const Pupil>(updated)).execute();
     ASSERT_TRUE(upd.has_value()) << upd.error().message();
 
-    auto rows = qs.template order_by<^^Pupil::id>().select().execute();
+    auto rows = qs.template order_by<fields::Pupil.id>().select().execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     ASSERT_EQ(rows->size(), 2U);
     auto it = rows->begin();
@@ -89,7 +88,7 @@ TYPED_TEST(M2MThroughTest, BulkUpdateIgnoresThroughField) {
 
 TYPED_TEST(M2MThroughTest, ThroughEagerLoadIgnoresMetadata) {
     QuerySet<Pupil, TypeParam> qs;
-    auto                       rows = qs.template join<^^Pupil::courses>().select().execute();
+    auto                       rows = qs.template join<fields::Pupil.courses>().select().execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     ASSERT_EQ(rows->size(), 2U);
 
@@ -108,9 +107,9 @@ TYPED_TEST(M2MThroughTest, ThroughEagerLoadIgnoresMetadata) {
 
 TYPED_TEST(M2MThroughTest, ThroughWithWhereOrderAndLimit) {
     QuerySet<Pupil, TypeParam> qs;
-    auto                       rows = qs.template join<^^Pupil::courses>()
-                        .where(f<^^Pupil::age>() >= 11)
-                        .template order_by<^^Pupil::name, false>()
+    auto                       rows = qs.template join<fields::Pupil.courses>()
+                        .where(fields::Pupil.age >= 11)
+                        .template order_by<fields::Pupil.name, false>()
                         .limit(1)
                         .select()
                         .execute();
@@ -123,8 +122,8 @@ TYPED_TEST(M2MThroughTest, ThroughWithWhereOrderAndLimit) {
 // Metadata access: query the junction model directly with the existing FK join API.
 TYPED_TEST(M2MThroughTest, JunctionModelQueriedDirectlyForMetadata) {
     QuerySet<Enrollment, TypeParam> qs;
-    auto                            rows = qs.template join<^^Enrollment::pupil, ^^Enrollment::course>()
-                        .where(f<^^Enrollment::grade>() == "B")
+    auto                            rows = qs.template join<fields::Enrollment.pupil, fields::Enrollment.course>()
+                        .where(fields::Enrollment.grade == "B")
                         .select()
                         .execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();

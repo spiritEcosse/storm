@@ -151,15 +151,14 @@ auto result = queryset.update(std::span<const Person>(people));
 
 Update every row matching a `where()` filter in a single statement — no need to
 SELECT, mutate, and UPDATE row-by-row. Chain `update<Members...>(proto)` onto a
-filtered QuerySet. The `Members...` are member reflections (`^^T::field`) chosen at
+filtered QuerySet. The `Members...` are field selectors (`fields::T.field`) chosen at
 compile time; their new values are read from the `proto` object:
 
 ```cpp
-using storm::orm::where::f;
 
 auto result = QuerySet<Person>()
-    .where(f<^^Person::salary>() < 50000)
-    .update<^^Person::salary, ^^Person::is_active>(Person{.salary = 60000, .is_active = true})
+    .where(fields::Person.salary < 50000)
+    .update<fields::Person.salary, fields::Person.is_active>(Person{.salary = 60000, .is_active = true})
     .execute();          // std::expected<void, Error>
 ```
 
@@ -177,8 +176,8 @@ AND-combined. Bind order is SET parameters first, then WHERE.
 
 ```cpp
 QuerySet<Message>()
-    .where(f<^^Message::id>() == 1)
-    .update<^^Message::sender>(Message{.sender = Person{.id = 7}})
+    .where(fields::Message.id == 1)
+    .update<fields::Message.sender>(Message{.sender = Person{.id = 7}})
     .execute();          // UPDATE Message SET sender_id=? WHERE id=?
 ```
 
@@ -188,8 +187,8 @@ QuerySet<Message>()
 
 ```cpp
 QuerySet<TimestampedRecord>()
-    .where(f<^^TimestampedRecord::id>() == 1)
-    .update<^^TimestampedRecord::name>(TimestampedRecord{.name = "renamed"})
+    .where(fields::TimestampedRecord.id == 1)
+    .update<fields::TimestampedRecord.name>(TimestampedRecord{.name = "renamed"})
     .execute();          // UPDATE ... SET name=?, updated_at=? WHERE id=?
 ```
 
@@ -210,7 +209,7 @@ filter would write the whole table, so it is rejected at `execute()`/`to_sql()` 
 with `std::unexpected(Error)`:
 
 ```cpp
-QuerySet<Person>().update<^^Person::age>(Person{.age = 0}).execute();
+QuerySet<Person>().update<fields::Person.age>(Person{.age = 0}).execute();
 // → std::unexpected: refuses full-table write
 ```
 
@@ -218,7 +217,7 @@ To intentionally update every row, use the explicit `update_all<...>()` (the sym
 counterpart of `erase_all()`):
 
 ```cpp
-QuerySet<Person>().update_all<^^Person::department>(Person{.department = "Global"}).execute();
+QuerySet<Person>().update_all<fields::Person.department>(Person{.department = "Global"}).execute();
 // UPDATE Person SET department=?   (no WHERE — explicit full-table write)
 ```
 
@@ -274,10 +273,9 @@ Delete every row matching a `where()` filter in a single statement — no need t
 SELECT and loop. Chain `erase()` (no argument) onto a filtered QuerySet:
 
 ```cpp
-using storm::orm::where::f;
 
 auto result = QuerySet<Person>()
-    .where(f<^^Person::age>() > 30)
+    .where(fields::Person.age > 30)
     .erase()
     .execute();          // std::expected<void, Error>
 ```
@@ -293,8 +291,8 @@ The full WHERE expression system is reused, so every operator works
 
 ```cpp
 QuerySet<Person>()
-    .where(f<^^Person::department>() == "Legacy")
-    .where(f<^^Person::is_active>() == false)
+    .where(fields::Person.department == "Legacy")
+    .where(fields::Person.is_active == false)
     .erase()
     .execute();          // DELETE FROM Person WHERE (department=? AND is_active=?)
 ```
@@ -332,9 +330,9 @@ INSERT/upsert, UPDATE, DELETE, set operations, **DISTINCT / VALUES**, and the
 `group_by()` / `having()`).
 
 ```cpp
-qs.distinct<^^Person::name>().sql();                  // std::string (template)
-qs.distinct<^^Person::name>().to_sql();               // expected<string, Error> (bound)
-qs.where(f<^^Person::age>() > 30).count().to_sql();   // "SELECT COUNT(*) … WHERE age > 30"
+qs.distinct<fields::Person.name>().sql();                  // std::string (template)
+qs.distinct<fields::Person.name>().to_sql();               // expected<string, Error> (bound)
+qs.where(fields::Person.age > 30).count().to_sql();   // "SELECT COUNT(*) … WHERE age > 30"
 ```
 
 ### `to_sql()` backend behavior (#411)

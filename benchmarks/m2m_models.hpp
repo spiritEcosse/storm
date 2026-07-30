@@ -27,4 +27,16 @@ namespace storm::benchmark::m2m {
         [[= storm::meta::many_to_many<>]] std::vector<BCourse> courses;
     };
 
+    // fields:: selector proxies (#518). <meta> arrives transitively via
+    // benchmarks/models.hpp, which this header must be included after.
+    namespace fields {
+
+        struct BStudentT;
+        consteval {
+            std::meta::define_aggregate(^^BStudentT, storm::field_specs_for(^^BStudent));
+        }
+        inline constexpr BStudentT BStudent{};
+
+    } // namespace fields
+
 } // namespace storm::benchmark::m2m

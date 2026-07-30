@@ -30,6 +30,17 @@ struct WideJoin {
     [[= storm::fk<>]] Person fk9;
 };
 
+// fields:: selector proxies (#518).
+namespace fields {
+
+    struct WideJoinT;
+    consteval {
+        std::meta::define_aggregate(^^WideJoinT, storm::field_specs_for(^^WideJoin));
+    }
+    inline constexpr WideJoinT WideJoin{};
+
+} // namespace fields
+
 template <typename ConnType> class WideJoinTest : public StormTestFixture<Person, ConnType, WideJoin> {};
 
 TYPED_TEST_SUITE(WideJoinTest, DatabaseTypes);
@@ -37,15 +48,15 @@ TYPED_TEST_SUITE(WideJoinTest, DatabaseTypes);
 // Attaches all 9 FK joins to a WideJoin QuerySet (single source for the FK pack).
 template <typename ConnType> auto join_all_nine(const QuerySet<WideJoin, ConnType>& qs) {
     return qs.template join<
-            ^^WideJoin::fk1,
-            ^^WideJoin::fk2,
-            ^^WideJoin::fk3,
-            ^^WideJoin::fk4,
-            ^^WideJoin::fk5,
-            ^^WideJoin::fk6,
-            ^^WideJoin::fk7,
-            ^^WideJoin::fk8,
-            ^^WideJoin::fk9>();
+            fields::WideJoin.fk1,
+            fields::WideJoin.fk2,
+            fields::WideJoin.fk3,
+            fields::WideJoin.fk4,
+            fields::WideJoin.fk5,
+            fields::WideJoin.fk6,
+            fields::WideJoin.fk7,
+            fields::WideJoin.fk8,
+            fields::WideJoin.fk9>();
 }
 
 // SQL structural check: the 9th FK alias must render as t10 (not bare "t").

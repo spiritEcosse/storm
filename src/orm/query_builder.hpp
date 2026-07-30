@@ -11,8 +11,6 @@
 
 namespace storm::orm::query_builder {
 
-    using storm::orm::where::f;
-
     // ========================================================================
     // Field dispatcher — compile-time field lookup by name
     // ========================================================================
@@ -134,9 +132,9 @@ namespace storm::orm::query_builder {
         }
 
         template <auto fi, auto op_str, typename... Ts>
-            requires ValidOperator<op_str, typename std::remove_cvref_t<decltype(f<fi>())>::FieldType>
+            requires ValidOperator<op_str, typename storm::meta::FieldRef<fi>::FieldType>
         static consteval auto resolve_operator() -> std::meta::info {
-            using FE                      = std::remove_cvref_t<decltype(f<fi>())>;
+            using FE                      = storm::meta::FieldRef<fi>;
             using FieldType               = typename FE::FieldType;
             constexpr std::string_view op = op_str.view();
 
@@ -149,10 +147,10 @@ namespace storm::orm::query_builder {
         }
 
         template <auto fi, auto op_str, typename... Ts>
-            requires ValidOperator<op_str, typename std::remove_cvref_t<decltype(f<fi>())>::FieldType>
+            requires ValidOperator<op_str, typename storm::meta::FieldRef<fi>::FieldType>
         static auto build_compare_expr(Ts&&... vs) {
             constexpr auto method = resolve_operator<fi, op_str, std::remove_cvref_t<Ts>...>();
-            return (f<fi>().[:method:](std::forward<Ts>(vs)...));
+            return (storm::meta::FieldRef<fi>{}.[:method:](std::forward<Ts>(vs)...));
         }
 
         // ----------------------------------------------------------------
@@ -233,7 +231,7 @@ namespace storm::orm::query_builder {
             if constexpr (spec.join.enabled) {
                 constexpr std::size_t N = spec.join.fk_count >= 2 ? spec.join.fk_count : std::size_t{1};
                 [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                    dispatch_join_type<fk_resolver(join_fk_name(Is))...>(qs);
+                    dispatch_join_type<storm::meta::selector_for<fk_resolver(join_fk_name(Is))>()...>(qs);
                 }(std::make_index_sequence<N>{});
             }
         }
@@ -270,9 +268,9 @@ namespace storm::orm::query_builder {
                 constexpr bool asc = (ob.direction.view() != "DESC");
                 if constexpr (ob.collate.view() != "") {
                     constexpr auto col = parse_collate(ob.collate.view());
-                    return apply_order_by_impl<I + 1>(qs.template order_by<fi, asc, col>());
+                    return apply_order_by_impl<I + 1>(qs.template order_by<storm::meta::FieldRef<fi>{}, asc, col>());
                 } else {
-                    return apply_order_by_impl<I + 1>(qs.template order_by<fi, asc>());
+                    return apply_order_by_impl<I + 1>(qs.template order_by<storm::meta::FieldRef<fi>{}, asc>());
                 }
             }
         }
@@ -310,7 +308,7 @@ namespace storm::orm::query_builder {
             } else {
                 static_assert(has_field<Model>(spec.aggregate.field.view()), "aggregate field not found on model");
                 constexpr std::string_view func = spec.aggregate.func.view();
-                constexpr auto             fi   = dispatch_field<Model>(spec.aggregate.field.view());
+                constexpr auto fi = storm::meta::selector_for<dispatch_field<Model>(spec.aggregate.field.view())>();
                 if (func == "count")
                     return ^^Stmt::template count<fi>;
                 if (func == "count_distinct")
@@ -334,13 +332,15 @@ namespace storm::orm::query_builder {
 
         static auto build_distinct_stmt(auto& qs) {
             return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                return qs.template distinct<dispatch_field<Model>(spec.distinct.fields[Is].view())...>();
+                return qs.template distinct<
+                        storm::meta::selector_for<dispatch_field<Model>(spec.distinct.fields[Is].view())>()...>();
             }(std::make_index_sequence<spec.distinct.field_count()>{});
         }
 
         static auto build_group_by_query(auto& qs) {
             auto gb = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                return qs.template group_by<dispatch_field<Model>(spec.group_by.fields[Is].view())...>();
+                return qs.template group_by<
+                        storm::meta::selector_for<dispatch_field<Model>(spec.group_by.fields[Is].view())>()...>();
             }(std::make_index_sequence<spec.group_by.field_count()>{});
 
             if constexpr (spec.group_by.having.enabled) {
@@ -385,14 +385,19 @@ namespace storm::orm::query_builder {
         static auto build_setop(auto& /*qs*/) {
             constexpr auto            thr = setop_thresholds();
             QuerySet<Model, ConnType> qs_left_base;
-            auto                      qs_left = qs_left_base.where(f<^^Model::age>() < thr.left);
+            // The split field is resolved by NAME through the same dispatch_field the
+            // rest of this builder uses, rather than splicing ^^Model::age directly:
+            // Model is a template parameter, so `fields::Model.age` cannot be spelled
+            // here (a fields:: proxy is generated per concrete model, #518).
+            constexpr auto            age_fi  = dispatch_field<Model>("age");
+            auto                      qs_left = qs_left_base.where(storm::meta::FieldRef<age_fi>{} < thr.left);
             QuerySet<Model, ConnType> qs_right_base;
-            auto                      qs_right = thr.overlap ? qs_right_base.where(f<^^Model::age>() > thr.right)
-                                                             : qs_right_base.where(f<^^Model::age>() >= thr.right);
-            constexpr auto            method   = resolve_setop();
-            auto                      builder  = qs_left.[:method:](qs_right);
-            builder                            = apply_order_by(std::move(builder));
-            builder                            = apply_limit(std::move(builder));
+            auto           qs_right = thr.overlap ? qs_right_base.where(storm::meta::FieldRef<age_fi>{} > thr.right)
+                                                  : qs_right_base.where(storm::meta::FieldRef<age_fi>{} >= thr.right);
+            constexpr auto method   = resolve_setop();
+            auto           builder  = qs_left.[:method:](qs_right);
+            builder                 = apply_order_by(std::move(builder));
+            builder                 = apply_limit(std::move(builder));
             return builder;
         }
 

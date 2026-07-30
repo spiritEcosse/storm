@@ -11,7 +11,6 @@ import std;
 #include "test_models.h"
 
 using storm::QuerySet;
-using storm::orm::where::f;
 
 // ============================================================================
 // Test fixture
@@ -50,7 +49,7 @@ TYPED_TEST(SqlInspectionTest, SelectBareToSql) {
 
 TYPED_TEST(SqlInspectionTest, SelectWithWhereToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.where(f<^^Person::age>() > 30).select().to_sql();
+    auto                        result = qs.where(fields::Person.age > 30).select().to_sql();
     ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -63,7 +62,7 @@ TYPED_TEST(SqlInspectionTest, SelectWithWhereToSql) {
 
 TYPED_TEST(SqlInspectionTest, SelectWithStringWhereToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.where(f<^^Person::name>() == "Alice").select().to_sql();
+    auto                        result = qs.where(fields::Person.name == "Alice").select().to_sql();
     ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -94,7 +93,7 @@ TYPED_TEST(SqlInspectionTest, SelectWithOffsetToSql) {
 
 TYPED_TEST(SqlInspectionTest, SelectWithOrderByToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.template order_by<^^Person::age>().select().to_sql();
+    auto                        result = qs.template order_by<fields::Person.age>().select().to_sql();
     ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -104,7 +103,7 @@ TYPED_TEST(SqlInspectionTest, SelectWithOrderByToSql) {
 
 TYPED_TEST(SqlInspectionTest, SelectWithWhereAndLimitToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.where(f<^^Person::age>() > 25).limit(5).select().to_sql();
+    auto                        result = qs.where(fields::Person.age > 25).limit(5).select().to_sql();
     ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -118,12 +117,12 @@ TYPED_TEST(SqlInspectionTest, SelectOperatorsToSql) {
     QuerySet<Person, TypeParam> qs;
 
     // Test all comparison operators generate proper SQL
-    auto r_eq = qs.where(f<^^Person::age>() == 30).select().to_sql();
-    auto r_ne = qs.where(f<^^Person::age>() != 30).select().to_sql();
-    auto r_gt = qs.where(f<^^Person::age>() > 30).select().to_sql();
-    auto r_ge = qs.where(f<^^Person::age>() >= 30).select().to_sql();
-    auto r_lt = qs.where(f<^^Person::age>() < 30).select().to_sql();
-    auto r_le = qs.where(f<^^Person::age>() <= 30).select().to_sql();
+    auto r_eq = qs.where(fields::Person.age == 30).select().to_sql();
+    auto r_ne = qs.where(fields::Person.age != 30).select().to_sql();
+    auto r_gt = qs.where(fields::Person.age > 30).select().to_sql();
+    auto r_ge = qs.where(fields::Person.age >= 30).select().to_sql();
+    auto r_lt = qs.where(fields::Person.age < 30).select().to_sql();
+    auto r_le = qs.where(fields::Person.age <= 30).select().to_sql();
 
     ASSERT_TRUE(r_eq.has_value());
     ASSERT_TRUE(r_ne.has_value());
@@ -142,7 +141,7 @@ TYPED_TEST(SqlInspectionTest, SelectOperatorsToSql) {
 
 TYPED_TEST(SqlInspectionTest, SelectWithInToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.where(f<^^Person::age>().in(20, 25, 30)).select().to_sql();
+    auto                        result = qs.where(fields::Person.age.in(20, 25, 30)).select().to_sql();
     ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -154,7 +153,7 @@ TYPED_TEST(SqlInspectionTest, SelectWithInToSql) {
 
 TYPED_TEST(SqlInspectionTest, SelectWithBetweenToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.where(f<^^Person::age>().between(20, 40)).select().to_sql();
+    auto                        result = qs.where(fields::Person.age.between(20, 40)).select().to_sql();
     ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -165,7 +164,7 @@ TYPED_TEST(SqlInspectionTest, SelectWithBetweenToSql) {
 
 TYPED_TEST(SqlInspectionTest, SelectWithLikeToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.where(f<^^Person::name>().like("A%")).select().to_sql();
+    auto                        result = qs.where(fields::Person.name.like("A%")).select().to_sql();
     ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -175,7 +174,7 @@ TYPED_TEST(SqlInspectionTest, SelectWithLikeToSql) {
 
 TYPED_TEST(SqlInspectionTest, SelectWithAndOrToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto result = qs.where((f<^^Person::age>() > 25) && (f<^^Person::age>() < 50)).select().to_sql();
+    auto result = qs.where((fields::Person.age > 25) && (fields::Person.age < 50)).select().to_sql();
     ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -200,7 +199,7 @@ TYPED_TEST(SqlInspectionTest, FirstBareToSql) {
 
 TYPED_TEST(SqlInspectionTest, FirstWithWhereToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.where(f<^^Person::age>() > 25).first().to_sql();
+    auto                        result = qs.where(fields::Person.age > 25).first().to_sql();
     ASSERT_TRUE(result.has_value()) << "first().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -211,7 +210,7 @@ TYPED_TEST(SqlInspectionTest, FirstWithWhereToSql) {
 
 TYPED_TEST(SqlInspectionTest, FirstWithOrderByToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.template order_by<^^Person::age>().first().to_sql();
+    auto                        result = qs.template order_by<fields::Person.age>().first().to_sql();
     ASSERT_TRUE(result.has_value()) << "first().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -235,7 +234,7 @@ TYPED_TEST(SqlInspectionTest, GetBareToSql) {
 
 TYPED_TEST(SqlInspectionTest, GetWithWhereToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.where(f<^^Person::id>() == 42).get().to_sql();
+    auto                        result = qs.where(fields::Person.id == 42).get().to_sql();
     ASSERT_TRUE(result.has_value()) << "get().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -491,7 +490,7 @@ TYPED_TEST(SqlInspectionTest, RemoveEmptySpanToSql) {
 // the same; only the quoting differs. Pin each backend's output.
 TYPED_TEST(SqlInspectionTest, ToSqlIntByBackend) {
     QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.where(f<^^Person::age>() == 30).select().to_sql();
+    auto                        result = qs.where(fields::Person.age == 30).select().to_sql();
     ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -507,7 +506,7 @@ TYPED_TEST(SqlInspectionTest, ToSqlIntByBackend) {
 TYPED_TEST(SqlInspectionTest, ToSqlBoolByBackend) {
     QuerySet<Person, TypeParam> qs;
     const bool                  active = true; // bound value (avoid bare literal in the predicate)
-    auto                        result = qs.where(f<^^Person::is_active>() == active).select().to_sql();
+    auto                        result = qs.where(fields::Person.is_active == active).select().to_sql();
     ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -534,7 +533,7 @@ TYPED_TEST(SqlInspectionTest, ToSqlNullParity) {
 // Embedded single quote is escaped by doubling on both backends ('O''Brien').
 TYPED_TEST(SqlInspectionTest, ToSqlEmbeddedQuoteParity) {
     QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.where(f<^^Person::name>() == "O'Brien").select().to_sql();
+    auto                        result = qs.where(fields::Person.name == "O'Brien").select().to_sql();
     ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -545,7 +544,7 @@ TYPED_TEST(SqlInspectionTest, ToSqlEmbeddedQuoteParity) {
 // escaping check from #411). Both backends preserve it verbatim.
 TYPED_TEST(SqlInspectionTest, ToSqlLiteralQuestionMarkParity) {
     QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.where(f<^^Person::name>() == "a?b").select().to_sql();
+    auto                        result = qs.where(fields::Person.name == "a?b").select().to_sql();
     ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -577,7 +576,7 @@ TYPED_TEST(SqlInspectionTest, ToSqlBlobDivergesByBackend) {
 // uses %.17g. Pin that the value is present in each backend's rendering.
 TYPED_TEST(SqlInspectionTest, ToSqlDoubleByBackend) {
     QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.where(f<^^Person::salary>() == 1234.5).select().to_sql();
+    auto                        result = qs.where(fields::Person.salary == 1234.5).select().to_sql();
     ASSERT_TRUE(result.has_value()) << "to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -592,7 +591,7 @@ TYPED_TEST(SqlInspectionTest, ToSqlDoubleByBackend) {
 
 TYPED_TEST(SqlInspectionTest, DistinctBareToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.template distinct<^^Person::name>().to_sql();
+    auto                        result = qs.template distinct<fields::Person.name>().to_sql();
     ASSERT_TRUE(result.has_value()) << "distinct().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -604,7 +603,7 @@ TYPED_TEST(SqlInspectionTest, DistinctBareToSql) {
 
 TYPED_TEST(SqlInspectionTest, DistinctWithWhereToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.where(f<^^Person::age>() > 30).template distinct<^^Person::name>().to_sql();
+    auto result = qs.where(fields::Person.age > 30).template distinct<fields::Person.name>().to_sql();
     ASSERT_TRUE(result.has_value()) << "distinct().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -615,7 +614,7 @@ TYPED_TEST(SqlInspectionTest, DistinctWithWhereToSql) {
 
 TYPED_TEST(SqlInspectionTest, ValuesBareToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.template values<^^Person::name, ^^Person::age>().to_sql();
+    auto                        result = qs.template values<fields::Person.name, fields::Person.age>().to_sql();
     ASSERT_TRUE(result.has_value()) << "values().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -627,7 +626,7 @@ TYPED_TEST(SqlInspectionTest, ValuesBareToSql) {
 
 TYPED_TEST(SqlInspectionTest, ValuesWithWhereToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto result = qs.where(f<^^Person::name>() == "Alice").template values<^^Person::age>().to_sql();
+    auto result = qs.where(fields::Person.name == "Alice").template values<fields::Person.age>().to_sql();
     ASSERT_TRUE(result.has_value()) << "values().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -652,7 +651,7 @@ TYPED_TEST(SqlInspectionTest, CountBareToSql) {
 
 TYPED_TEST(SqlInspectionTest, CountWithWhereToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.where(f<^^Person::age>() > 30).count().to_sql();
+    auto                        result = qs.where(fields::Person.age > 30).count().to_sql();
     ASSERT_TRUE(result.has_value()) << "count().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -663,7 +662,7 @@ TYPED_TEST(SqlInspectionTest, CountWithWhereToSql) {
 
 TYPED_TEST(SqlInspectionTest, SumWithWhereToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.where(f<^^Person::age>() >= 25).template sum<^^Person::age>().to_sql();
+    auto                        result = qs.where(fields::Person.age >= 25).template sum<fields::Person.age>().to_sql();
     ASSERT_TRUE(result.has_value()) << "sum().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -674,7 +673,7 @@ TYPED_TEST(SqlInspectionTest, SumWithWhereToSql) {
 
 TYPED_TEST(SqlInspectionTest, GroupByCountToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto                        result = qs.template group_by<^^Person::age>().count().to_sql();
+    auto                        result = qs.template group_by<fields::Person.age>().count().to_sql();
     ASSERT_TRUE(result.has_value()) << "group_by().count().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -685,7 +684,7 @@ TYPED_TEST(SqlInspectionTest, GroupByCountToSql) {
 
 TYPED_TEST(SqlInspectionTest, GroupByHavingCountToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto result = qs.template group_by<^^Person::age>().having(f<^^Person::age>() > 30).count().to_sql();
+    auto result = qs.template group_by<fields::Person.age>().having(fields::Person.age > 30).count().to_sql();
     ASSERT_TRUE(result.has_value()) << "group_by().having().count().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();
@@ -697,7 +696,7 @@ TYPED_TEST(SqlInspectionTest, GroupByHavingCountToSql) {
 // Other chaining position: count() before having().
 TYPED_TEST(SqlInspectionTest, GroupByCountHavingToSql) {
     QuerySet<Person, TypeParam> qs;
-    auto result = qs.template group_by<^^Person::age>().count().having(f<^^Person::age>() > 30).to_sql();
+    auto result = qs.template group_by<fields::Person.age>().count().having(fields::Person.age > 30).to_sql();
     ASSERT_TRUE(result.has_value()) << "group_by().count().having().to_sql() failed: " << result.error().message();
 
     const std::string& sql = result.value();

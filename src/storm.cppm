@@ -23,6 +23,7 @@ export import storm_orm_statements_join;
 export import storm_orm_statements_setop;
 export import storm_orm_statements_orderby;
 export import storm_orm_where;
+export import storm_orm_fields;
 export import storm_orm_queryset;
 export import storm_orm_indexes;
 export import storm_orm_schema;
@@ -144,6 +145,24 @@ export namespace storm {
     using meta::RefAction;            // NOLINT(misc-unused-using-decls)
     using meta::reverse_fk;           // NOLINT(misc-unused-using-decls)
     using meta::ReverseFk;            // NOLINT(misc-unused-using-decls)
+
+    // Field-selector proxies (#518). field_specs_for drives the 2-line per-model
+    // `fields::` declaration; FieldRef is the proxy type it generates.
+    // selector_info/ValidSelector/FieldSelector are re-exported alongside them so
+    // the whole selector vocabulary is reachable under one spelling — the methods
+    // widened to accept proxies constrain on ValidSelector and convert through
+    // selector_info.
+    // A relation member (m2m / reverse_fk) gets RelationRef instead — a join
+    // target with no comparison operators, so WHERE on it stays a compile error.
+    using meta::AnySelector;      // NOLINT(misc-unused-using-decls)
+    using meta::field_specs_for;  // NOLINT(misc-unused-using-decls)
+    using meta::FieldRef;         // NOLINT(misc-unused-using-decls)
+    using meta::FieldSelector;    // NOLINT(misc-unused-using-decls)
+    using meta::RelationRef;      // NOLINT(misc-unused-using-decls)
+    using meta::RelationSelector; // NOLINT(misc-unused-using-decls)
+    using meta::selector_for;     // NOLINT(misc-unused-using-decls)
+    using meta::selector_info;    // NOLINT(misc-unused-using-decls)
+    using meta::ValidSelector;    // NOLINT(misc-unused-using-decls)
 
     // Returns the compile-time generated CREATE TABLE SQL for model T and dialect D.
     template <typename T, orm::schema::Dialect D = orm::schema::Dialect::SQLite>

@@ -10,7 +10,6 @@ import std;
 #include "test_models.h" // NOSONAR cpp:S954
 using storm::QuerySet;
 using storm::orm::utilities::Collate;
-using storm::orm::where::f;
 
 // SQLite-only: COLLATE NOCASE/BINARY/RTRIM are SQLite-specific collation sequences.
 // PostgreSQL uses different syntax (COLLATE "C", COLLATE "en_US").
@@ -49,7 +48,7 @@ TYPED_TEST_SUITE(CollateTest, SqliteTypes);
 TYPED_TEST(CollateTest, OrderByNoCaseAsc) {
     QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.template order_by<^^Person::name, Collate::NoCase>().select().execute();
+    auto result = qs.template order_by<fields::Person.name, Collate::NoCase>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto items = result.value();
@@ -64,7 +63,7 @@ TYPED_TEST(CollateTest, OrderByNoCaseAsc) {
 TYPED_TEST(CollateTest, OrderByNoCaseDesc) {
     QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.template order_by<^^Person::name, Collate::NoCase, false>().select().execute();
+    auto result = qs.template order_by<fields::Person.name, Collate::NoCase, false>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto items = result.value();
@@ -79,7 +78,7 @@ TYPED_TEST(CollateTest, OrderByNoCaseDesc) {
 TYPED_TEST(CollateTest, OrderByBinary) {
     QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.template order_by<^^Person::name, Collate::Binary>().select().execute();
+    auto result = qs.template order_by<fields::Person.name, Collate::Binary>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto items = result.value();
@@ -109,8 +108,9 @@ TYPED_TEST(CollateTest, OrderByRTrim) {
     QuerySet<Person, TypeParam> qs;
 
     // COLLATE RTRIM trims trailing spaces before comparison
-    auto result =
-            qs.template order_by<^^Person::department, Collate::RTrim, true, ^^Person::name, true>().select().execute();
+    auto result = qs.template order_by<fields::Person.department, Collate::RTrim, true, fields::Person.name, true>()
+                          .select()
+                          .execute();
     ASSERT_TRUE(result.has_value());
 
     auto items = result.value();
@@ -121,7 +121,7 @@ TYPED_TEST(CollateTest, OrderByCollateWithBoolDirection) {
     QuerySet<Person, TypeParam> qs;
 
     // Test: field, Collate, bool — both modifiers after field
-    auto result = qs.template order_by<^^Person::name, Collate::NoCase, false>().select().execute();
+    auto result = qs.template order_by<fields::Person.name, Collate::NoCase, false>().select().execute();
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result.value().size(), 8);
 }
@@ -130,7 +130,7 @@ TYPED_TEST(CollateTest, OrderByBoolThenCollate) {
     QuerySet<Person, TypeParam> qs;
 
     // Test: field, bool, Collate — reversed modifier order
-    auto result = qs.template order_by<^^Person::name, false, Collate::NoCase>().select().execute();
+    auto result = qs.template order_by<fields::Person.name, false, Collate::NoCase>().select().execute();
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result.value().size(), 8);
 }
@@ -139,7 +139,8 @@ TYPED_TEST(CollateTest, OrderByMultipleFieldsWithCollate) {
     QuerySet<Person, TypeParam> qs;
 
     // ORDER BY name COLLATE NOCASE ASC, age DESC
-    auto result = qs.template order_by<^^Person::name, Collate::NoCase, ^^Person::age, false>().select().execute();
+    auto result =
+            qs.template order_by<fields::Person.name, Collate::NoCase, fields::Person.age, false>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto items = result.value();
@@ -154,7 +155,7 @@ TYPED_TEST(CollateTest, WhereEqualNoCase) {
     QuerySet<Person, TypeParam> qs;
 
     // Case-insensitive equality: "alice" should match "alice", "Alice", "ALICE"
-    auto result = qs.where(f<^^Person::name>().collate(Collate::NoCase) == "alice").select().execute();
+    auto result = qs.where(fields::Person.name.collate(Collate::NoCase) == "alice").select().execute();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 3);
 }
@@ -163,7 +164,7 @@ TYPED_TEST(CollateTest, WhereNotEqualNoCase) {
     QuerySet<Person, TypeParam> qs;
 
     // Case-insensitive not-equal: exclude all "alice" variants → 5 remaining
-    auto result = qs.where(f<^^Person::name>().collate(Collate::NoCase) != "alice").select().execute();
+    auto result = qs.where(fields::Person.name.collate(Collate::NoCase) != "alice").select().execute();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 5);
 }
@@ -173,7 +174,7 @@ TYPED_TEST(CollateTest, WhereGreaterNoCase) {
 
     // Case-insensitive greater: names > "bob" → charlie variants + leading-space bob
     // Actually "  bob" < "bob" even with NOCASE since space < 'b'
-    auto result = qs.where(f<^^Person::name>().collate(Collate::NoCase) > "bob").select().execute();
+    auto result = qs.where(fields::Person.name.collate(Collate::NoCase) > "bob").select().execute();
     ASSERT_TRUE(result.has_value());
     // "charlie", "Charlie" are > "bob" (case-insensitive)
     EXPECT_EQ(result.value().size(), 2);
@@ -182,7 +183,7 @@ TYPED_TEST(CollateTest, WhereGreaterNoCase) {
 TYPED_TEST(CollateTest, WhereGreaterEqualNoCase) {
     QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.where(f<^^Person::name>().collate(Collate::NoCase) >= "bob").select().execute();
+    auto result = qs.where(fields::Person.name.collate(Collate::NoCase) >= "bob").select().execute();
     ASSERT_TRUE(result.has_value());
     // "bob", "BOB", "charlie", "Charlie" = 4
     EXPECT_EQ(result.value().size(), 4);
@@ -191,7 +192,7 @@ TYPED_TEST(CollateTest, WhereGreaterEqualNoCase) {
 TYPED_TEST(CollateTest, WhereLessNoCase) {
     QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.where(f<^^Person::name>().collate(Collate::NoCase) < "bob").select().execute();
+    auto result = qs.where(fields::Person.name.collate(Collate::NoCase) < "bob").select().execute();
     ASSERT_TRUE(result.has_value());
     // "alice", "Alice", "ALICE", "  bob" = 4
     EXPECT_EQ(result.value().size(), 4);
@@ -200,7 +201,7 @@ TYPED_TEST(CollateTest, WhereLessNoCase) {
 TYPED_TEST(CollateTest, WhereLessEqualNoCase) {
     QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.where(f<^^Person::name>().collate(Collate::NoCase) <= "bob").select().execute();
+    auto result = qs.where(fields::Person.name.collate(Collate::NoCase) <= "bob").select().execute();
     ASSERT_TRUE(result.has_value());
     // "alice" x3, "bob" x2, "  bob" = 6
     EXPECT_EQ(result.value().size(), 6);
@@ -214,7 +215,7 @@ TYPED_TEST(CollateTest, WhereLikeNoCase) {
     QuerySet<Person, TypeParam> qs;
 
     // LIKE with NOCASE: "A%" should match alice, Alice, ALICE
-    auto result = qs.where(f<^^Person::name>().collate(Collate::NoCase).like("a%")).select().execute();
+    auto result = qs.where(fields::Person.name.collate(Collate::NoCase).like("a%")).select().execute();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 3);
 }
@@ -228,7 +229,7 @@ TYPED_TEST(CollateTest, WhereBetweenNoCase) {
 
     // BETWEEN with NOCASE: names between "alice" and "bob" (inclusive)
     auto result =
-            qs.where(f<^^Person::name>().collate(Collate::NoCase).between(std::string("alice"), std::string("bob")))
+            qs.where(fields::Person.name.collate(Collate::NoCase).between(std::string("alice"), std::string("bob")))
                     .select()
                     .execute();
     ASSERT_TRUE(result.has_value());
@@ -245,7 +246,7 @@ TYPED_TEST(CollateTest, WhereInNoCase) {
 
     // IN with NOCASE: match "alice" (case-insensitive) and "bob" (case-insensitive)
     // Note: IN comparisons in SQLite still use the collation of the left-hand operand
-    auto result = qs.where(f<^^Person::name>().collate(Collate::NoCase).in("alice", "bob")).select().execute();
+    auto result = qs.where(fields::Person.name.collate(Collate::NoCase).in("alice", "bob")).select().execute();
     ASSERT_TRUE(result.has_value());
     // "alice" x3, "bob" x2 = 5 (not "  bob" — it's "  bob" not "bob")
     EXPECT_EQ(result.value().size(), 5);
@@ -259,7 +260,7 @@ TYPED_TEST(CollateTest, WhereEqualBinary) {
     QuerySet<Person, TypeParam> qs;
 
     // COLLATE BINARY: exact case match
-    auto result = qs.where(f<^^Person::name>().collate(Collate::Binary) == "alice").select().execute();
+    auto result = qs.where(fields::Person.name.collate(Collate::Binary) == "alice").select().execute();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 1); // Only lowercase "alice"
 }
@@ -271,8 +272,8 @@ TYPED_TEST(CollateTest, WhereEqualBinary) {
 TYPED_TEST(CollateTest, WhereCollateWithOrderByCollate) {
     QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.where(f<^^Person::name>().collate(Collate::NoCase) >= "bob")
-                          .template order_by<^^Person::name, Collate::NoCase>()
+    auto result = qs.where(fields::Person.name.collate(Collate::NoCase) >= "bob")
+                          .template order_by<fields::Person.name, Collate::NoCase>()
                           .select()
                           .execute();
     ASSERT_TRUE(result.has_value());
@@ -288,7 +289,7 @@ TYPED_TEST(CollateTest, WhereCollateWithOrderByCollate) {
 TYPED_TEST(CollateTest, OrderByCollateWithLimit) {
     QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.template order_by<^^Person::name, Collate::NoCase>().limit(3).select().execute();
+    auto result = qs.template order_by<fields::Person.name, Collate::NoCase>().limit(3).select().execute();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 3);
 }
@@ -296,7 +297,7 @@ TYPED_TEST(CollateTest, OrderByCollateWithLimit) {
 TYPED_TEST(CollateTest, OrderByCollateWithLimitOffset) {
     QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.template order_by<^^Person::name, Collate::NoCase>().limit(2).offset(3).select().execute();
+    auto result = qs.template order_by<fields::Person.name, Collate::NoCase>().limit(2).offset(3).select().execute();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 2);
 }
@@ -308,7 +309,7 @@ TYPED_TEST(CollateTest, OrderByCollateWithLimitOffset) {
 TYPED_TEST(CollateTest, WhereCollateWithAndLogic) {
     QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.where(f<^^Person::name>().collate(Collate::NoCase) == "alice" && f<^^Person::age>() > 30)
+    auto result = qs.where(fields::Person.name.collate(Collate::NoCase) == "alice" && fields::Person.age > 30)
                           .select()
                           .execute();
     ASSERT_TRUE(result.has_value());
@@ -319,8 +320,8 @@ TYPED_TEST(CollateTest, WhereCollateWithAndLogic) {
 TYPED_TEST(CollateTest, WhereCollateWithOrLogic) {
     QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.where(f<^^Person::name>().collate(Collate::NoCase) == "alice" ||
-                           f<^^Person::name>().collate(Collate::NoCase) == "charlie")
+    auto result = qs.where(fields::Person.name.collate(Collate::NoCase) == "alice" ||
+                           fields::Person.name.collate(Collate::NoCase) == "charlie")
                           .select()
                           .execute();
     ASSERT_TRUE(result.has_value());
@@ -336,8 +337,8 @@ TYPED_TEST(CollateTest, RepeatedCollateQueries) {
     QuerySet<Person, TypeParam> qs;
 
     // Same query twice — should get same result (caching correctness)
-    auto r1 = qs.where(f<^^Person::name>().collate(Collate::NoCase) == "bob").select().execute();
-    auto r2 = qs.where(f<^^Person::name>().collate(Collate::NoCase) == "bob").select().execute();
+    auto r1 = qs.where(fields::Person.name.collate(Collate::NoCase) == "bob").select().execute();
+    auto r2 = qs.where(fields::Person.name.collate(Collate::NoCase) == "bob").select().execute();
 
     ASSERT_TRUE(r1.has_value());
     ASSERT_TRUE(r2.has_value());
@@ -348,8 +349,8 @@ TYPED_TEST(CollateTest, DifferentCollateOnSameField) {
     QuerySet<Person, TypeParam> qs;
 
     // NOCASE vs BINARY on same field — different results (cache invalidation)
-    auto r_nocase = qs.where(f<^^Person::name>().collate(Collate::NoCase) == "alice").select().execute();
-    auto r_binary = qs.where(f<^^Person::name>().collate(Collate::Binary) == "alice").select().execute();
+    auto r_nocase = qs.where(fields::Person.name.collate(Collate::NoCase) == "alice").select().execute();
+    auto r_binary = qs.where(fields::Person.name.collate(Collate::Binary) == "alice").select().execute();
 
     ASSERT_TRUE(r_nocase.has_value());
     ASSERT_TRUE(r_binary.has_value());
@@ -365,7 +366,7 @@ TYPED_TEST(CollateTest, DifferentCollateOnSameField) {
 TYPED_TEST(CollateTest, WhereCollateNoMatch) {
     QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.where(f<^^Person::name>().collate(Collate::NoCase) == "nonexistent").select().execute();
+    auto result = qs.where(fields::Person.name.collate(Collate::NoCase) == "nonexistent").select().execute();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 0);
 }
@@ -377,7 +378,7 @@ TYPED_TEST(CollateTest, WhereCollateNoMatch) {
 TYPED_TEST(CollateTest, OrderBySqlGeneration) {
     QuerySet<Person, TypeParam> qs;
 
-    auto sql_result = qs.template order_by<^^Person::name, Collate::NoCase>().select().to_sql();
+    auto sql_result = qs.template order_by<fields::Person.name, Collate::NoCase>().select().to_sql();
     ASSERT_TRUE(sql_result.has_value());
     const auto& sql = sql_result.value();
     EXPECT_NE(sql.find("COLLATE NOCASE"), std::string::npos) << "SQL should contain COLLATE NOCASE: " << sql;
@@ -387,7 +388,7 @@ TYPED_TEST(CollateTest, OrderBySqlGeneration) {
 TYPED_TEST(CollateTest, WhereCollateSqlGeneration) {
     QuerySet<Person, TypeParam> qs;
 
-    auto sql_result = qs.where(f<^^Person::name>().collate(Collate::NoCase) == "test").select().to_sql();
+    auto sql_result = qs.where(fields::Person.name.collate(Collate::NoCase) == "test").select().to_sql();
     ASSERT_TRUE(sql_result.has_value());
     const auto& sql = sql_result.value();
     EXPECT_NE(sql.find("name COLLATE NOCASE"), std::string::npos)

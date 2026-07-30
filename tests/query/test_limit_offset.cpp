@@ -5,7 +5,6 @@ import storm;
 import std;
 
 using storm::QuerySet;
-using storm::orm::where::f;
 
 #include "test_models.h" // NOSONAR cpp:S954
 #include "test_seed_helpers.h"
@@ -27,7 +26,7 @@ TYPED_TEST_SUITE(LimitOffsetTest, DatabaseTypes);
 TYPED_TEST(LimitOffsetTest, LimitOnly) {
     QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.template order_by<^^Person::name>().limit(5).select().execute();
+    auto result = qs.template order_by<fields::Person.name>().limit(5).select().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT with LIMIT failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -46,7 +45,7 @@ TYPED_TEST(LimitOffsetTest, LimitOnly) {
 TYPED_TEST(LimitOffsetTest, OffsetOnly) {
     QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.template order_by<^^Person::name>().offset(10).select().execute();
+    auto result = qs.template order_by<fields::Person.name>().offset(10).select().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT with OFFSET failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -61,7 +60,7 @@ TYPED_TEST(LimitOffsetTest, OffsetOnly) {
 TYPED_TEST(LimitOffsetTest, LimitAndOffset) {
     QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.template order_by<^^Person::name>().limit(5).offset(5).select().execute();
+    auto result = qs.template order_by<fields::Person.name>().limit(5).offset(5).select().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT with LIMIT/OFFSET failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -79,7 +78,7 @@ TYPED_TEST(LimitOffsetTest, LimitOffsetPagination) {
     QuerySet<Person, TypeParam> qs;
 
     // Page 1: names 1-5 (Alice..Eve)
-    auto page1 = qs.template order_by<^^Person::name>().limit(5).offset(0).select().execute();
+    auto page1 = qs.template order_by<fields::Person.name>().limit(5).offset(0).select().execute();
     ASSERT_TRUE(page1.has_value());
     ASSERT_EQ(page1.value().size(), 5);
     EXPECT_EQ(page1.value().begin()->name, "Alice");
@@ -124,7 +123,8 @@ TYPED_TEST(LimitOffsetTest, LimitOffsetPagination) {
 TYPED_TEST(LimitOffsetTest, WhereWithOffsetNoLimit) {
     QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.template order_by<^^Person::name>().where(f<^^Person::age>() < 30).offset(2).select().execute();
+    auto result =
+            qs.template order_by<fields::Person.name>().where(fields::Person.age < 30).offset(2).select().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT WHERE with OFFSET failed: " << result.error().message();
 
     const auto& people = result.value();
@@ -139,7 +139,7 @@ TYPED_TEST(LimitOffsetTest, WhereWithOffsetNoLimit) {
 TYPED_TEST(LimitOffsetTest, DistinctWithLimit) {
     QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.limit(5).template distinct<^^Person::name>().execute();
+    auto result = qs.limit(5).template distinct<fields::Person.name>().execute();
     ASSERT_TRUE(result.has_value()) << "DISTINCT with LIMIT failed: " << result.error().message();
 
     const auto& names = result.value();
@@ -167,7 +167,7 @@ TYPED_TEST(LimitOffsetTest, ReuseLimitOffset) {
     QuerySet<Person, TypeParam> qs;
 
     // Chain ORDER BY + LIMIT/OFFSET — returns finalized QS by value
-    auto finalized = qs.template order_by<^^Person::name>().limit(5).offset(10);
+    auto finalized = qs.template order_by<fields::Person.name>().limit(5).offset(10);
 
     // First query — names 11-15: Karen, Leo, Mia, Nick, Olivia
     auto result1 = finalized.select().execute();
@@ -186,7 +186,7 @@ TYPED_TEST(LimitOffsetTest, OverwriteLimitOffset) {
     QuerySet<Person, TypeParam> qs;
 
     // First LIMIT/OFFSET with ORDER BY
-    auto result1 = qs.template order_by<^^Person::name>().limit(5).offset(0).select().execute();
+    auto result1 = qs.template order_by<fields::Person.name>().limit(5).offset(0).select().execute();
     ASSERT_TRUE(result1.has_value());
     ASSERT_EQ(result1.value().size(), 5);
     EXPECT_EQ(result1.value().begin()->name, "Alice");
@@ -206,7 +206,7 @@ TYPED_TEST(LimitOffsetTest, LimitZeroReturnsNoRows) {
     QuerySet<Person, TypeParam> qs;
 
     // LIMIT 0 is valid SQL — it returns no rows (not "unlimited").
-    auto result = qs.template order_by<^^Person::name>().limit(0).select().execute();
+    auto result = qs.template order_by<fields::Person.name>().limit(0).select().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT with LIMIT 0 failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 0) << "LIMIT 0 must return zero rows";
 }
@@ -215,7 +215,7 @@ TYPED_TEST(LimitOffsetTest, OffsetZeroReturnsAllRows) {
     QuerySet<Person, TypeParam> qs;
 
     // OFFSET 0 is valid — skip nothing.
-    auto result = qs.template order_by<^^Person::name>().offset(0).select().execute();
+    auto result = qs.template order_by<fields::Person.name>().offset(0).select().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT with OFFSET 0 failed: " << result.error().message();
     ASSERT_EQ(result.value().size(), 25) << "OFFSET 0 must return all rows";
     EXPECT_EQ(result.value().begin()->name, "Alice");
@@ -225,7 +225,7 @@ TYPED_TEST(LimitOffsetTest, LimitLargerThanRowCount) {
     QuerySet<Person, TypeParam> qs;
 
     // A LIMIT far above the row count returns every row, not an error.
-    auto result = qs.template order_by<^^Person::name>().limit(1000).select().execute();
+    auto result = qs.template order_by<fields::Person.name>().limit(1000).select().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT with large LIMIT failed: " << result.error().message();
     EXPECT_EQ(result.value().size(), 25) << "LIMIT > row count must return all rows";
 }
@@ -236,11 +236,11 @@ TYPED_TEST(LimitOffsetTest, MethodChainingOrder) {
     QuerySet<Person, TypeParam> qs;
 
     // Methods can be chained in any order — add ORDER BY for deterministic results
-    auto result1 = qs.template order_by<^^Person::name>().limit(5).offset(3).select().execute();
+    auto result1 = qs.template order_by<fields::Person.name>().limit(5).offset(3).select().execute();
     ASSERT_TRUE(result1.has_value());
 
     qs.reset();
-    auto result2 = qs.template order_by<^^Person::name>().offset(3).limit(5).select().execute();
+    auto result2 = qs.template order_by<fields::Person.name>().offset(3).limit(5).select().execute();
     ASSERT_TRUE(result2.has_value());
 
     // Results should be identical

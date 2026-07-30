@@ -505,8 +505,8 @@ still hardcodes `"id"` for both sides — same bug class, out of #506's scope, t
 **Many-to-many (#203)**: `[[= storm::many_to_many<>]]` (auto junction `<Owner>_<Related>`,
 one junction table per field) or `[[= storm::many_to_many_through<Model>]]` on a container
 member (`std::vector<T>`, `plf::hive<T>`, `vector<shared_ptr<T>>`). Not a column — invisible to
-CRUD; eager-loaded via `join<^^T::field>()`, several relations per call via
-`join<^^T::a, ^^T::b>()` (#392). The auto-junction `ON DELETE` defaults to CASCADE on both
+CRUD; eager-loaded via `join<fields::T.field>()`, several relations per call via
+`join<fields::T.a, fields::T.b>()` (#392). The auto-junction `ON DELETE` defaults to CASCADE on both
 sides, overridable via `many_to_many<RefAction::...>` (#431). See
 [docs/guide/features/JOIN_OPERATIONS.md](docs/guide/features/JOIN_OPERATIONS.md).
 
@@ -515,8 +515,8 @@ eager-load destination for "all `<Base>`, each with the `<Owner>`s that point at
 is the OWNER TYPE (resolved to its unique FK back at the base — the Base⟷Owner reference cycle forbids
 a member splice in the annotation, so the owner must have exactly one FK to the base). Not a column.
 `select()` runs the m2m two-query load (Q2 hits the owner table directly, no junction). Aggregate/filter
-chains also accept a cross-model FK selector `join<^^Owner::fk>()`, which disambiguates multiple owner
-FKs (e.g. `^^Bug::author` vs `^^Bug::reviewer`). See
+chains also accept a cross-model FK selector `join<fields::Owner.fk>()`, which disambiguates multiple owner
+FKs (e.g. `fields::Bug.author` vs `fields::Bug.reviewer`). See
 [docs/guide/features/JOIN_OPERATIONS.md](docs/guide/features/JOIN_OPERATIONS.md).
 
 **Auto-timestamps (#209)**: `[[= storm::auto_create]]` / `[[= storm::auto_update]]` on a
@@ -561,6 +561,30 @@ Nullable+bounded works: the SQLite CHECK passes on NULL. Combines with `unique`/
 `ClauseSizer` sizer (`max_max_length_clause_len` folded into `regular_suffix`). No `min_length`/`check<>`
 (separate follow-ups) and no client-side validation — the DB enforces.
 
+**Field selectors — `fields::Model.field` (#518)**: the ONLY selector spelling. Both
+predecessors are removed (BREAKING): `f<^^Person::age>()` is deleted, and a raw
+`^^Model::member` in a selector position is a compile error. Declared per model in two
+mechanical lines that name no fields, so they cannot drift:
+`struct PersonT; consteval { std::meta::define_aggregate(^^PersonT, storm::field_specs_for(^^Person)); }
+inline constexpr PersonT Person{};` — placed AFTER the struct, at namespace scope (a
+`namespace fields` nested in an anonymous namespace makes every unqualified `fields::` in
+that TU ambiguous), in a header that has `#include <meta>` and comes after `import storm;`.
+`field_specs_for` emits ONE OF TWO proxies per member: a column (incl. FK) gets
+`FieldRef<M>`, which derives from the stateless `where::Field<M>` and so inherits the whole
+comparison surface — that inheritance is what makes the bare `fields::Person.age == 30`
+work with no wrapper. An m2m/reverse-FK container gets `RelationRef<M>`, which has NO
+`Field<M>` base and `= delete("...")`'d comparison operators: joinable
+(`join<fields::Article.tags>()`) but never filterable, preserving #408 with an actionable
+message instead of "invalid operands". Filtering THROUGH a relation is #553, not this.
+`selector_info<S>()` recovers the `std::meta::info` at the API boundary; everything below
+(statement classes, grammars, sizers) is unchanged `std::meta::info`. Generic code that
+resolves a member by NAME (the YAML query builder) uses `selector_for<M>()`, the inverse,
+since it cannot spell `fields::Model.member` for a template-parameter `Model`. `^^` remains
+for DECLARATIONS — `storm_indexes`, `reverse_fk<^^Owner>` (names a type), `Indexes<>`:
+**queries use `fields::`, model declarations use `^^`**. Destructuring a proxy works and is
+arity-checked, but is POSITIONAL — reordering model fields silently rebinds with no
+diagnostic. See [docs/guide/reference/FIELD_SELECTORS.md](docs/guide/reference/FIELD_SELECTORS.md).
+
 **Entity concept (#472)**: `storm::meta::Entity<T>` is the compile-time structural gate for model
 types — true iff `T` is a reflectable class (shipped as `std::meta::is_class_type(^^T) && requires
 { nonstatic_data_members_of(^^T, …); identifier_of(^^T); }`). `QuerySet<T>` and `BaseStatement<T>`
@@ -586,13 +610,13 @@ so a mis-typed connection fails at the `begin()` call site. NOT added: `Supports
 
 **ValidFieldInfo concept (#478)**: `storm::meta::ValidFieldInfo<MemberInfo>` is the compile-time gate
 that a `std::meta::info` NTTP names a real field — `std::meta::is_nonstatic_data_member(MemberInfo) &&
-std::meta::has_identifier(MemberInfo)`. It names the precondition the field selector `f<>` (and its
+std::meta::has_identifier(MemberInfo)`. It names the precondition the field selectors (and their
 `Field`/`CollatedField` proxies) assumed inline, so a bad selector (a static member, a member function,
 a whole-type reflection like `^^Person`, or `^^int`) fails at the named constraint instead of deep inside
 `identifier_of`/`type_of`. Both requirements are load-bearing here (unlike `Entity`):
 `is_nonstatic_data_member(^^int)` and `is_nonstatic_data_member(^^Type::static_member)` are both `false`,
 so the concept genuinely rejects. Orthogonal to `Entity` (whole model type) and to `is_relation_field`
-(the `f<>` extra check excluding m2m/reverse_fk members — still ANDed at the call site).
+(the extra check excluding m2m/reverse_fk members from a column proxy — still ANDed at the call site).
 
 See [docs/guide/reference/FIELD_TYPES.md](docs/guide/reference/FIELD_TYPES.md).
 
@@ -657,7 +681,7 @@ just `StatementCacheConfig`). WAL is silently ignored on `:memory:`/temp DBs. Se
 // Fluent chaining
 auto results = QuerySet<Person>()
     .where(age > 30)
-    .order_by<^^Person::name>()
+    .order_by<fields::Person.name>()
     .limit(10)
     .select();
 
@@ -668,10 +692,10 @@ auto old   = base.where(age > 50);    // base still unchanged
 
 // Scalar aggregates (no GROUP BY) → .get()
 qs.count().execute();                          // int64_t
-qs.sum<^^Person::age>().execute();             // int64_t (0 over an empty set)
-qs.avg<^^Person::salary>().execute();          // std::optional<double> — nullopt over empty set (#416)
-qs.min<^^Person::age>().execute();             // std::optional<double> — nullopt over empty set (#416)
-qs.max<^^Person::age>().execute();             // std::optional<double> — nullopt over empty set (#416)
+qs.sum<fields::Person.age>().execute();             // int64_t (0 over an empty set)
+qs.avg<fields::Person.salary>().execute();          // std::optional<double> — nullopt over empty set (#416)
+qs.min<fields::Person.age>().execute();             // std::optional<double> — nullopt over empty set (#416)
+qs.max<fields::Person.age>().execute();             // std::optional<double> — nullopt over empty set (#416)
 // MIN/MAX/AVG of no rows have NO value → std::nullopt, distinguishable from a real 0.
 // GROUP BY MIN/MAX/AVG tuple columns are std::optional<double> too (NULL within a group).
 // sum/avg/min/max require a NumericAggregateable target field (#475): arithmetic and
@@ -680,22 +704,22 @@ qs.max<^^Person::age>().execute();             // std::optional<double> — null
 // count()/count_distinct() are unconstrained — COUNT is type-agnostic.
 
 // GROUP BY with aggregates → .select()
-qs.group_by<^^Person::department>().count().execute();
+qs.group_by<fields::Person.department>().count().execute();
 
 // HAVING (only with GROUP BY) — filters groups after aggregation
-qs.group_by<^^Person::age>().having(f<^^Person::age>() > 30).count().execute();
-qs.group_by<^^Person::dept>().count().having(f<^^Person::dept>() == "Eng").execute();
+qs.group_by<fields::Person.age>().having(fields::Person.age > 30).count().execute();
+qs.group_by<fields::Person.dept>().count().having(fields::Person.dept == "Eng").execute();
 
 // DISTINCT
-qs.distinct<^^Person::name>().execute();
+qs.distinct<fields::Person.name>().execute();
 
 // Column projection (SELECT specific columns, duplicates preserved)
-qs.values<^^Person::name>().execute();                      // plf::hive<std::string>
-qs.values<^^Person::name, ^^Person::age>().execute();       // plf::hive<std::tuple<std::string, int>>
+qs.values<fields::Person.name>().execute();                      // plf::hive<std::string>
+qs.values<fields::Person.name, fields::Person.age>().execute();       // plf::hive<std::tuple<std::string, int>>
 
 // JOIN — FK field selectors use reflection NTTPs like every other field selector
-message_qs.join<^^Message::sender>().where(...).select();
-message_qs.left_join<^^Message::sender, ^^Message::receiver>().select();
+message_qs.join<fields::Message.sender>().where(...).select();
+message_qs.left_join<fields::Message.sender, fields::Message.receiver>().select();
 
 // Many-to-many (#203 model/schema; #391 two-query execution; #392 multi-relation)
 // — container field annotated [[= storm::many_to_many]] (auto junction) or
@@ -705,27 +729,27 @@ message_qs.left_join<^^Message::sender, ^^Message::receiver>().select();
 // WHERE/ORDER BY/LIMIT apply to BASE entities. Cost per extra relation is
 // additive (no cartesian product). 33-46% faster than the old 1-query 3-table
 // join at fan-out >= 10. See docs/guide/features/JOIN_OPERATIONS.md#execution-strategy-391.
-student_qs.join<^^Student::courses>().select();      // students with courses aggregated
-student_qs.left_join<^^Student::courses>().select(); // + students with no courses
-member_qs.join<^^Member::courses, ^^Member::clubs>().select(); // several m2m in one call (#392);
+student_qs.join<fields::Student.courses>().select();      // students with courses aggregated
+student_qs.left_join<fields::Student.courses>().select(); // + students with no courses
+member_qs.join<fields::Member.courses, fields::Member.clubs>().select(); // several m2m in one call (#392);
 // INNER drops members empty in ANY relation, LEFT fills each independently
 
 // Conditional bulk DELETE (#198) — deletes rows matching the current where().
-qs.where(f<^^Person::age>() > 30).erase().execute();   // → std::expected<void, Error>
+qs.where(fields::Person.age > 30).erase().execute();   // → std::expected<void, Error>
 // Empty where() is refused (no full-table wipe); erase_all() is the explicit wipe.
 
 // Conditional bulk UPDATE (#403) — SET columns are compile-time member NTTPs,
 // values come from a prototype; FK cols emit <name>_id; auto_update auto-stamped now().
-qs.where(f<^^Person::salary>() < 50000)
-  .update<^^Person::salary, ^^Person::is_active>(Person{.salary=60000, .is_active=true})
+qs.where(fields::Person.salary < 50000)
+  .update<fields::Person.salary, fields::Person.is_active>(Person{.salary=60000, .is_active=true})
   .execute();                                          // → std::expected<void, Error>
 // Empty where() is refused (no full-table write); update_all<>() is the explicit wipe (#409).
-qs.update_all<^^Person::department>(Person{.department="Global"}).execute(); // UPDATE … SET, no WHERE
+qs.update_all<fields::Person.department>(Person{.department="Global"}).execute(); // UPDATE … SET, no WHERE
 
 // Upsert (#205) — single-row INSERT ... ON CONFLICT (target) DO UPDATE / DO NOTHING.
 // Conflict target must be a unique field / UniqueIndex (compile-time checked).
-qs.insert(p).on_conflict<^^Person::name>().update<^^Person::age>().execute(); // std::expected<int64_t, Error>
-qs.insert(p).on_conflict<^^Person::name>().nothing().execute();                // std::expected<std::optional<int64_t>, Error>
+qs.insert(p).on_conflict<fields::Person.name>().update<fields::Person.age>().execute(); // std::expected<int64_t, Error>
+qs.insert(p).on_conflict<fields::Person.name>().nothing().execute();                // std::expected<std::optional<int64_t>, Error>
 
 // Composite-PK INSERT (#502) — every key part is caller data (a composite key is
 // never DB-generated), so there is nothing to return: no RETURNING is emitted.

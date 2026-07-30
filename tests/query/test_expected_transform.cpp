@@ -11,7 +11,6 @@ import std;
 #include "test_seed_helpers.h"
 
 using storm::QuerySet;
-using storm::orm::where::f;
 
 template <typename ConnType> class ExpectedTransformTest : public StormTestFixture<Person, ConnType> {
   protected:
@@ -49,7 +48,7 @@ TYPED_TEST(ExpectedTransformTest, HiveToVectorViaTransformMoves) {
 TYPED_TEST(ExpectedTransformTest, EmptyResultTransformYieldsEmptyVector) {
     QuerySet<Person, TypeParam> qs;
 
-    auto vec_result = qs.where(f<^^Person::age>() > 10000).select().execute().transform([](auto&& hive) {
+    auto vec_result = qs.where(fields::Person.age > 10000).select().execute().transform([](auto&& hive) {
         return std::forward<decltype(hive)>(hive) | std::views::as_rvalue | std::ranges::to<std::vector<Person>>();
     });
 
@@ -76,7 +75,7 @@ TYPED_TEST(ExpectedTransformTest, ChainViewsInsideTransformMoves) {
 TYPED_TEST(ExpectedTransformTest, TransformPreservesWhereFilter) {
     QuerySet<Person, TypeParam> qs;
 
-    auto vec_result = qs.where(f<^^Person::age>() > 35).select().execute().transform([](auto&& hive) {
+    auto vec_result = qs.where(fields::Person.age > 35).select().execute().transform([](auto&& hive) {
         return std::forward<decltype(hive)>(hive) | std::views::as_rvalue | std::ranges::to<std::vector<Person>>();
     });
 

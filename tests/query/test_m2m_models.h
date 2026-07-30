@@ -11,6 +11,7 @@
 // std module — see COMPILER_ISSUES.md). The includes below are then no-ops.
 
 #include <memory>
+#include <meta>
 #include <plf_hive/plf_hive.h>
 #include <string>
 #include <vector>
@@ -159,5 +160,38 @@ template <typename ConnType> inline auto seed_members() -> void {
 }
 
 } // namespace storm::test
+
+// fields:: selector proxies (#518) — two mechanical lines per model, no field
+// names, so they cannot drift when a model gains or loses a member.
+namespace fields {
+
+struct StudentT;
+consteval { std::meta::define_aggregate(^^StudentT, storm::field_specs_for(^^Student)); }
+inline constexpr StudentT Student{};
+
+struct PupilT;
+consteval { std::meta::define_aggregate(^^PupilT, storm::field_specs_for(^^Pupil)); }
+inline constexpr PupilT Pupil{};
+
+struct EnrollmentT;
+consteval { std::meta::define_aggregate(^^EnrollmentT, storm::field_specs_for(^^Enrollment)); }
+inline constexpr EnrollmentT Enrollment{};
+
+struct MemberT;
+consteval { std::meta::define_aggregate(^^MemberT, storm::field_specs_for(^^Member)); }
+inline constexpr MemberT Member{};
+
+struct AlbumT;
+consteval { std::meta::define_aggregate(^^AlbumT, storm::field_specs_for(^^Album)); }
+inline constexpr AlbumT Album{};
+
+struct PlaylistT;
+consteval { std::meta::define_aggregate(^^PlaylistT, storm::field_specs_for(^^Playlist)); }
+inline constexpr PlaylistT Playlist{};
+
+struct TutorT;
+consteval { std::meta::define_aggregate(^^TutorT, storm::field_specs_for(^^Tutor)); }
+inline constexpr TutorT Tutor{};
+} // namespace fields
 
 #endif // TESTS_QUERY_TEST_M2M_MODELS_H

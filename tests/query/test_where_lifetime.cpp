@@ -11,7 +11,6 @@ import std;
 
 using storm::QuerySet;
 using storm::orm::where::Expr;
-using storm::orm::where::f;
 
 // Lifetime safety for WHERE comparison operands (#352).
 //
@@ -47,7 +46,7 @@ TYPED_TEST(WhereLifetimeTest, StringViewOperandSurvivesDeferredBind) {
     Expr expr = [] {
         auto             owner = std::make_unique<std::string>("Bob");
         std::string_view view  = *owner;
-        return f<^^Person::name>() == view; // node must copy "Bob", not keep a view into *owner
+        return fields::Person.name == view; // node must copy "Bob", not keep a view into *owner
     }();
     // `owner` is freed here; ASAN poisons its buffer.
 
@@ -59,7 +58,7 @@ TYPED_TEST(WhereLifetimeTest, CharPtrOperandSurvivesDeferredBind) {
     Expr expr = [] {
         auto        owner = std::make_unique<std::array<char, 4>>(std::array<char, 4>{'B', 'o', 'b', '\0'});
         const char* ptr   = owner->data();
-        return f<^^Person::name>() == ptr; // node must copy "Bob", not keep the char*
+        return fields::Person.name == ptr; // node must copy "Bob", not keep the char*
     }();
 
     expect_single_bob<TypeParam>(expr);
@@ -81,7 +80,7 @@ TEST_F(WhereLifetimeCollateTest, CollatedStringViewOperandSurvivesDeferredBind) 
     Expr expr = [] {
         auto             owner = std::make_unique<std::string>("bob");
         std::string_view view  = *owner;
-        return f<^^Person::name>().collate(storm::orm::utilities::Collate::NoCase) == view;
+        return fields::Person.name.collate(storm::orm::utilities::Collate::NoCase) == view;
     }();
 
     // Case-insensitive match: "bob" finds "Bob".
@@ -100,7 +99,7 @@ TYPED_TEST(WhereLifetimeTest, BetweenStringOperandSurvivesDeferredBind) {
         auto        hi_owner = std::make_unique<std::array<char, 4>>(std::array<char, 4>{'B', 'o', 'b', '\0'});
         const char* lo       = lo_owner->data();
         const char* hi       = hi_owner->data();
-        return f<^^Person::name>().between(lo, hi); // node must copy, not keep the char*
+        return fields::Person.name.between(lo, hi); // node must copy, not keep the char*
     }();
 
     expect_single_bob<TypeParam>(expr);
@@ -108,7 +107,7 @@ TYPED_TEST(WhereLifetimeTest, BetweenStringOperandSurvivesDeferredBind) {
 
 // Test: between() with a literal compiles and binds correctly (#406 DoD).
 TYPED_TEST(WhereLifetimeTest, BetweenStringLiteralCompilesAndBinds) {
-    Expr expr = f<^^Person::name>().between("Bob", "Bob");
+    Expr expr = fields::Person.name.between("Bob", "Bob");
     expect_single_bob<TypeParam>(expr);
 }
 
@@ -119,7 +118,7 @@ TEST_F(WhereLifetimeCollateTest, CollatedBetweenStringOperandSurvivesDeferredBin
         auto        hi_owner = std::make_unique<std::array<char, 4>>(std::array<char, 4>{'b', 'o', 'b', '\0'});
         const char* lo       = lo_owner->data();
         const char* hi       = hi_owner->data();
-        return f<^^Person::name>().collate(storm::orm::utilities::Collate::NoCase).between(lo, hi);
+        return fields::Person.name.collate(storm::orm::utilities::Collate::NoCase).between(lo, hi);
     }();
 
     // Case-insensitive: "bob" BETWEEN-bounds finds "Bob".

@@ -31,6 +31,7 @@ Documentation for users of Storm ORM — patterns, features, and field/migration
 
 ### Reference
 
+- **[Field Selectors](guide/reference/FIELD_SELECTORS.md)** - The `fields::Model.field` spelling, the per-model declaration recipe, and the column/relation distinction
 - **[Field Types](guide/reference/FIELD_TYPES.md)** - Supported C++ to SQLite/PostgreSQL type mappings
 - **[Migrations](guide/reference/MIGRATIONS.md)** - Atlas-based schema migrations with auto-discovered models
 

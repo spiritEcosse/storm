@@ -265,7 +265,7 @@ for (auto m : std::meta::nonstatic_data_members_of(^^T, std::meta::access_contex
 ```
 
 Found in #388: the `FKFieldOf<T, Member>` concept (base.cppm) constrains
-`join<^^T::field>()` and must work with FK reflections produced by the benchmark
+`join<fields::T.field>()` and must work with FK reflections produced by the benchmark
 registry module (`storm_benchmark_registry::resolve_fk_field`).
 
 ### 11. Explicit Specialization in a Multi-GMF Header — Ambiguous Member Lookup

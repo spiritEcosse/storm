@@ -163,7 +163,7 @@ TYPED_TEST(CompositeOwnerJunctionCreateTest, M2MEagerLoadStitchesOnFullComposite
         ASSERT_TRUE(link.has_value());
     }
 
-    const auto results = ledger_qs.template join<^^LedgerWithTags::tags>().select().execute();
+    const auto results = ledger_qs.template join<fields::LedgerWithTags.tags>().select().execute();
     ASSERT_TRUE(results.has_value());
     ASSERT_EQ(results->size(), 2U);
 
@@ -188,12 +188,12 @@ TYPED_TEST(CompositeOwnerJunctionCreateTest, LeftJoinKeepsCompositeOwnerWithNoTa
                     .execute();
     ASSERT_TRUE(inserted.has_value());
 
-    const auto left = ledger_qs.template left_join<^^LedgerWithTags::tags>().select().execute();
+    const auto left = ledger_qs.template left_join<fields::LedgerWithTags.tags>().select().execute();
     ASSERT_TRUE(left.has_value());
     ASSERT_EQ(left->size(), 1U);
     EXPECT_TRUE(left->begin()->tags.empty());
 
-    const auto inner = ledger_qs.template join<^^LedgerWithTags::tags>().select().execute();
+    const auto inner = ledger_qs.template join<fields::LedgerWithTags.tags>().select().execute();
     ASSERT_TRUE(inner.has_value());
     EXPECT_EQ(inner->size(), 0U) << "INNER drops a composite owner with zero relation rows";
 }
@@ -266,7 +266,7 @@ TYPED_TEST(CompositeRelatedJunctionCreateTest, M2MEagerLoadStitchesOverComposite
     // The registry links ONLY (7, 3) — never (7, 4).
     link_junction_rows(conn, REGISTRY_ENTRY_COLS, std::array{"(1, 7, 3)"});
 
-    const auto results = registry_qs.template join<^^TagRegistry::entries>().select().execute();
+    const auto results = registry_qs.template join<fields::TagRegistry.entries>().select().execute();
     ASSERT_TRUE(results.has_value()) << results.error().message();
     ASSERT_EQ(results->size(), 1U);
     const auto& registry = *results->begin();
@@ -289,7 +289,7 @@ TYPED_TEST(CompositeRelatedJunctionCreateTest, CountOverCompositeRelatedM2MCount
     ASSERT_TRUE(registry_qs.insert(TagRegistry{.label = "featured"}).execute().has_value());
     link_junction_rows(conn, REGISTRY_ENTRY_COLS, std::array{"(1, 7, 3)", "(1, 7, 4)"});
 
-    const auto count = registry_qs.template join<^^TagRegistry::entries>().count().execute();
+    const auto count = registry_qs.template join<fields::TagRegistry.entries>().count().execute();
     ASSERT_TRUE(count.has_value()) << count.error().message();
     EXPECT_EQ(count.value(), 2); // one (registry, entry) pair per junction row
 }
@@ -331,7 +331,7 @@ TYPED_TEST(CompositeBothSidesJunctionCreateTest, M2MEagerLoadStitchesOverBothCom
     // S-1 -> revision 9 only; S-2 -> revision 10 only.
     link_junction_rows(conn, SHELF_BIN_COLS, std::array{"(2, 'S-1', 4, 'B12', 9)", "(2, 'S-2', 4, 'B12', 10)"});
 
-    const auto results = shelf_qs.template join<^^ShelfAssignment::bins>().select().execute();
+    const auto results = shelf_qs.template join<fields::ShelfAssignment.bins>().select().execute();
     ASSERT_TRUE(results.has_value()) << results.error().message();
     ASSERT_EQ(results->size(), 2U);
 
@@ -362,7 +362,7 @@ TYPED_TEST(CompositeBothSidesJunctionCreateTest, CountOverBothCompositeM2MCounts
     ShelfQs shelf_qs;
     link_junction_rows(conn, SHELF_BIN_COLS, std::array{"(2, 'S-1', 4, 'B12', 9)", "(2, 'S-1', 4, 'B12', 10)"});
 
-    const auto count = shelf_qs.template join<^^ShelfAssignment::bins>().count().execute();
+    const auto count = shelf_qs.template join<fields::ShelfAssignment.bins>().count().execute();
     ASSERT_TRUE(count.has_value()) << count.error().message();
     EXPECT_EQ(count.value(), 2);
 }
@@ -374,12 +374,12 @@ TYPED_TEST(CompositeBothSidesJunctionCreateTest, LeftJoinKeepsBothCompositeOwner
                         .execute()
                         .has_value());
 
-    const auto left = shelf_qs.template left_join<^^ShelfAssignment::bins>().select().execute();
+    const auto left = shelf_qs.template left_join<fields::ShelfAssignment.bins>().select().execute();
     ASSERT_TRUE(left.has_value()) << left.error().message();
     ASSERT_EQ(left->size(), 1U);
     EXPECT_TRUE(left->begin()->bins.empty());
 
-    const auto inner = shelf_qs.template join<^^ShelfAssignment::bins>().select().execute();
+    const auto inner = shelf_qs.template join<fields::ShelfAssignment.bins>().select().execute();
     ASSERT_TRUE(inner.has_value()) << inner.error().message();
     EXPECT_EQ(inner->size(), 0U);
 }
@@ -413,7 +413,8 @@ TYPED_TEST(MultiRelationCompositeOwnerTest, TwoRelationsOnACompositeOwnerStitchI
     link_junction_rows(conn, SHELF_TAG_COLS, std::array{"(2, 'S-1', 1)", "(2, 'S-2', 2)"});
 
     ShelfQs    shelf_qs;
-    const auto results = shelf_qs.template join<^^ShelfAssignment::bins, ^^ShelfAssignment::tags>().select().execute();
+    const auto results =
+            shelf_qs.template join<fields::ShelfAssignment.bins, fields::ShelfAssignment.tags>().select().execute();
     ASSERT_TRUE(results.has_value()) << results.error().message();
     ASSERT_EQ(results->size(), 2U);
 
@@ -445,8 +446,9 @@ TYPED_TEST(MultiRelationCompositeOwnerTest, LeftJoinFillsEachRelationIndependent
     link_junction_rows(conn, SHELF_BIN_COLS, std::array{"(2, 'S-1', 4, 'B12', 9)"});
 
     ShelfQs    shelf_qs;
-    const auto results =
-            shelf_qs.template left_join<^^ShelfAssignment::bins, ^^ShelfAssignment::tags>().select().execute();
+    const auto results = shelf_qs.template left_join<fields::ShelfAssignment.bins, fields::ShelfAssignment.tags>()
+                                 .select()
+                                 .execute();
     ASSERT_TRUE(results.has_value()) << results.error().message();
     ASSERT_EQ(results->size(), 1U);
     const auto& shelf = *results->begin();
@@ -474,7 +476,8 @@ TYPED_TEST(MultiRelationCompositeOwnerTest, CountOverTwoRelationsChainsBothJunct
     link_junction_rows(conn, SHELF_TAG_COLS, std::array{"(2, 'S-1', 1)", "(2, 'S-1', 2)"});
 
     ShelfQs    shelf_qs;
-    const auto count = shelf_qs.template join<^^ShelfAssignment::bins, ^^ShelfAssignment::tags>().count().execute();
+    const auto count =
+            shelf_qs.template join<fields::ShelfAssignment.bins, fields::ShelfAssignment.tags>().count().execute();
     ASSERT_TRUE(count.has_value()) << count.error().message();
     EXPECT_EQ(count.value(), 4) << "2 bins x 2 tags for S-1; a shared junction alias breaks the chain";
 }

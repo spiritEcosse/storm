@@ -43,7 +43,7 @@ class storm::test::YamlTestInstance<I, UnifiedYamlTest<ConnType>, ConnType> : pu
                 (storm::test::batch_insert<Person, ConnType>(std::vector<Person>(PEOPLE_25.begin(), PEOPLE_25.end())))
         );
         storm::QuerySet<Person, ConnType> pqs;
-        auto                              people_result = pqs.template order_by<^^Person::name>().select().execute();
+        auto people_result = pqs.template order_by<fields::Person.name>().select().execute();
         ASSERT_TRUE(people_result.has_value()) << people_result.error().message();
         ASSERT_EQ(people_result.value().size(), 25U);
         std::array<int, 4> sender_ids{};

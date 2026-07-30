@@ -11,7 +11,7 @@ import storm_orm_field_attr; // RefAction (junction ON DELETE policy)
 // Dependency-free leaf module (#408): the relation-annotation TYPES (ManyToMany,
 // ReverseFk) and the "is this member a relation, not a persisted column?" detection
 // predicates. Extracted here from storm_orm_statements_base so storm_orm_where can
-// reject relation members in f<>() without importing the statement module (which
+// reject relation members in the field proxy without importing the statement module (which
 // would create a layering cycle — base.cppm already imports where.cppm). Same leaf
 // pattern as storm_orm_field_attr (#387), which holds the FK annotation + is_fk_field.
 //
@@ -89,7 +89,8 @@ export namespace storm::meta {
     // Combined relation-field predicate (#398): m2m container OR reverse_fk container.
     // The single chokepoint for "not a persisted column" — schema/CRUD invisibility
     // for both relation kinds falls out of every persisted-field array filtering here.
-    // Gates f<>() (#408) so a WHERE clause on a relation member fails at the call site.
+    // Gates where::Field<M> / meta::FieldRef<M> (#408) so a WHERE clause on a relation
+    // member fails at the call site.
     consteval auto is_relation_field(std::meta::info member) -> bool {
         return is_m2m_field(member) || is_reverse_fk_field(member);
     }

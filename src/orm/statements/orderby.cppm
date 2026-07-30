@@ -7,6 +7,7 @@ export module storm_orm_statements_orderby;
 import std;
 
 import storm_orm_utilities;
+import storm_orm_fields; // selector_info — #518 proxy args
 
 namespace detail {
 
@@ -19,6 +20,12 @@ namespace detail {
     };
 
     // Free consteval helper — avoids generic-lambda-in-consteval compiler bug
+    //
+    // INVARIANT: the "is this a field?" test below (the else arm) must stay in
+    // lockstep with is_field_arg() beneath — one sizes the array, the other
+    // advances the write index. If they ever disagree, idx desynchronises from
+    // field position and a DESC/COLLATE modifier silently attaches to the wrong
+    // column: valid SQL, wrong result, no diagnostic. Edit both or neither.
     template <std::size_t N, auto Arg>
     consteval void process_order_by_arg(std::array<OrderByField, N>& result, std::size_t& idx) {
         if constexpr (std::same_as<decltype(Arg), bool>) {
@@ -26,12 +33,16 @@ namespace detail {
         } else if constexpr (std::same_as<decltype(Arg), Collate>) {
             result[idx - 1].col = Arg;
         } else {
-            result[idx] = {.field = Arg, .asc = true, .col = Collate::None};
+            // Field args arrive in either public spelling (#518): a raw
+            // std::meta::info or a generated FieldRef proxy. Both normalise to
+            // info here, so the emitted ORDER BY text is byte-identical.
+            result[idx] = {.field = storm::meta::selector_info<Arg>(), .asc = true, .col = Collate::None};
             ++idx;
         }
     }
 
-    // Count field args (skip bool and Collate modifiers)
+    // Count field args (skip bool and Collate modifiers).
+    // Mirrors process_order_by_arg's dispatch above — see the INVARIANT there.
     template <auto Arg> consteval auto is_field_arg() -> bool {
         return !std::same_as<decltype(Arg), bool> && !std::same_as<decltype(Arg), Collate>;
     }

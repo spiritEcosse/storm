@@ -21,6 +21,7 @@ import storm_orm_statements_update;
 import storm_orm_statements_join;
 import storm_orm_statements_orderby;
 import storm_orm_where;
+import storm_orm_fields; // selector_info / ValidSelector — #518 proxy selectors
 import storm_orm_statements_aggregate;
 import storm_orm_statements_setop;
 import storm_orm_utilities;
@@ -114,19 +115,19 @@ export namespace storm {
         // WHERE clause support - builder pattern with method chaining using type-safe expressions
         //
         // Usage examples:
-        //   queryset.where(f<^^Person::age>() > 25).select()
-        //   queryset.where(f<^^Person::id>().in(1, 2, 3)).select()
-        //   queryset.where(f<^^Person::name>().like("A%")).select()
-        //   queryset.where(f<^^Person::age>().between(25, 50)).select()
+        //   queryset.where(fields::Person.age > 25).select()
+        //   queryset.where(fields::Person.id.in(1, 2, 3)).select()
+        //   queryset.where(fields::Person.name.like("A%")).select()
+        //   queryset.where(fields::Person.age.between(25, 50)).select()
         //
         // Chaining with AND composition:
-        //   queryset.where(f<^^Person::age>() > 25)
-        //           .where(f<^^Person::name>() == "Alice")
+        //   queryset.where(fields::Person.age > 25)
+        //           .where(fields::Person.name == "Alice")
         //           .select()
         //
         // Complex expressions with AND/OR:
-        //   queryset.where(f<^^Person::age>() > 25 and f<^^Person::is_active>() == true).select()
-        //   queryset.where((f<^^Person::age>() > 25) or (f<^^Person::name>().like("A%"))).select()
+        //   queryset.where(fields::Person.age > 25 && fields::Person.is_active == true).select()
+        //   queryset.where((fields::Person.age > 25) || (fields::Person.name.like("A%"))).select()
         //
         [[nodiscard]] auto where(orm::where::ExpressionVariantPtr expr) const -> QuerySet {
             auto result = clone_state();
@@ -214,52 +215,54 @@ export namespace storm {
 
         // Field-specific DISTINCT support using reflection
         // Usage:
-        //   auto names = queryset.distinct<^^Person::name>().execute();  // plf::hive<std::string>
-        //   auto pairs = queryset.distinct<^^Person::name, ^^Person::age>().execute();
+        //   auto names = queryset.distinct<fields::Person.name>().execute();  // plf::hive<std::string>
+        //   auto pairs = queryset.distinct<fields::Person.name, fields::Person.age>().execute();
         //   // Returns plf::hive<std::tuple<std::string, int>>
         //   auto ids = queryset.distinct().execute();  // plf::hive<int> (defaults to PK)
         //
         // OPTIMIZATION: Returns cached DistinctStatement for optimal performance
         // Returns DistinctStatement by value - connection-level prepare_cached() handles SQL caching
         // No static thread_local needed since actual statement caching is at connection level
-        template <std::meta::info... FieldInfos> [[nodiscard]] constexpr auto distinct() {
-            if constexpr (sizeof...(FieldInfos) == 0) {
+        template <auto... S>
+            requires((storm::meta::ValidSelector<S> && ...))
+        [[nodiscard]] constexpr auto distinct() {
+            if constexpr (sizeof...(S) == 0) {
                 using StmtType = orm::statements::
                         DistinctStatement<T, ConnType, orm::statements::BaseStatement<T>::primary_key_>;
                 return StmtType{conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_};
             } else {
-                using StmtType = orm::statements::DistinctStatement<T, ConnType, FieldInfos...>;
+                using StmtType = orm::statements::DistinctStatement<T, ConnType, storm::meta::selector_info<S>()...>;
                 return StmtType{conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_};
             }
         }
 
         // Column projection support using reflection (SELECT specific columns)
         // Usage:
-        //   auto names = queryset.values<^^Person::name>().execute();  // plf::hive<std::string>
-        //   auto pairs = queryset.values<^^Person::name, ^^Person::age>().execute();
+        //   auto names = queryset.values<fields::Person.name>().execute();  // plf::hive<std::string>
+        //   auto pairs = queryset.values<fields::Person.name, fields::Person.age>().execute();
         //   // Returns plf::hive<std::tuple<std::string, int>>
         //
         // Unlike distinct(), values() does NOT apply DISTINCT — all rows are returned
         // including duplicates. Works with WHERE, JOIN, ORDER BY, LIMIT/OFFSET.
-        template <std::meta::info... FieldInfos>
-            requires(sizeof...(FieldInfos) > 0)
+        template <auto... S>
+            requires(sizeof...(S) > 0 && (storm::meta::ValidSelector<S> && ...))
         [[nodiscard]] constexpr auto values() {
-            using StmtType = orm::statements::ValuesStatement<T, ConnType, FieldInfos...>;
+            using StmtType = orm::statements::ValuesStatement<T, ConnType, storm::meta::selector_info<S>()...>;
             return StmtType{conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_};
         }
 
         // INNER JOIN support for FK fields or many-to-many fields (#203, #392)
         // Immutable: returns a new QuerySet with the join attached (Django-style).
         // Usage:
-        //   Single FK: message_qs.join<^^Message::sender>().select()
-        //   Multi FK:  message_qs.join<^^Message::sender, ^^Message::receiver>().select()
-        //   M2M:       student_qs.join<^^Student::courses>().select()
-        //   Multi M2M: member_qs.join<^^Member::courses, ^^Member::clubs>().select()
+        //   Single FK: message_qs.join<fields::Message.sender>().select()
+        //   Multi FK:  message_qs.join<fields::Message.sender, fields::Message.receiver>().select()
+        //   M2M:       student_qs.join<fields::Student.courses>().select()
+        //   Multi M2M: member_qs.join<fields::Member.courses, fields::Member.clubs>().select()
         // Mixed FK + m2m in one call is rejected (out of scope, #392).
-        template <std::meta::info... FKFields>
-            requires orm::statements::JoinableFields<T, FKFields...>
+        template <auto... S>
+            requires orm::statements::JoinableFields<T, storm::meta::selector_info<S>()...>
         [[nodiscard]] auto join() const -> QuerySet {
-            return make_joined<orm::statements::JoinType::Inner, FKFields...>();
+            return make_joined<orm::statements::JoinType::Inner, storm::meta::selector_info<S>()...>();
         }
 
         // LEFT JOIN support for FK fields or many-to-many fields (#203, #392).
@@ -267,14 +270,14 @@ export namespace storm {
         // relation's container fills independently (empty when no rows).
         // Immutable: returns a new QuerySet with the join attached.
         // Usage:
-        //   Single FK: message_qs.left_join<^^Message::sender>().select()
-        //   Multi FK:  message_qs.left_join<^^Message::sender, ^^Message::receiver>().select()
-        //   M2M:       student_qs.left_join<^^Student::courses>().select()
-        //   Multi M2M: member_qs.left_join<^^Member::courses, ^^Member::clubs>().select()
-        template <std::meta::info... FKFields>
-            requires orm::statements::JoinableFields<T, FKFields...>
+        //   Single FK: message_qs.left_join<fields::Message.sender>().select()
+        //   Multi FK:  message_qs.left_join<fields::Message.sender, fields::Message.receiver>().select()
+        //   M2M:       student_qs.left_join<fields::Student.courses>().select()
+        //   Multi M2M: member_qs.left_join<fields::Member.courses, fields::Member.clubs>().select()
+        template <auto... S>
+            requires orm::statements::JoinableFields<T, storm::meta::selector_info<S>()...>
         [[nodiscard]] auto left_join() const -> QuerySet {
-            return make_joined<orm::statements::JoinType::Left, FKFields...>();
+            return make_joined<orm::statements::JoinType::Left, storm::meta::selector_info<S>()...>();
         }
 
         // Update single object - returns proxy with .execute() and .to_sql()
@@ -292,23 +295,24 @@ export namespace storm {
 
         // Conditional bulk UPDATE (#403) — updates rows matching the current where() filter.
         // SET columns are the Members... NTTPs; values come from `proto`.
-        // qs.where(cond).update<^^T::a, ^^T::b>(T{...}).execute() → std::expected<void, Error>.
+        // qs.where(cond).update<fields::T.a, fields::T.b>(T{...}).execute() → std::expected<void, Error>.
         // With NO where() set, .execute()/.to_sql() return std::unexpected and refuse to
         // write the whole table.
-        template <std::meta::info... Members>
-            requires(sizeof...(Members) > 0)
+        template <auto... S>
+            requires(sizeof...(S) > 0 && (storm::meta::ValidSelector<S> && ...))
         [[nodiscard]] auto update(const T& proto [[clang::lifetimebound]]) {
             return orm::statements::UpdateStatement<T, ConnType>(conn_)
-                    .template query_where<Members...>(proto, where_expr_);
+                    .template query_where<storm::meta::selector_info<S>()...>(proto, where_expr_);
         }
 
         // Update all rows (#409) — UPDATE <table> SET <set> with NO WHERE clause.
         // SET columns are the Members... NTTPs; values come from `proto`. The explicit
         // full-table escape hatch named by update<>()'s empty-WHERE refusal (mirrors erase_all()).
-        template <std::meta::info... Members>
-            requires(sizeof...(Members) > 0)
+        template <auto... S>
+            requires(sizeof...(S) > 0 && (storm::meta::ValidSelector<S> && ...))
         [[nodiscard]] auto update_all(const T& proto [[clang::lifetimebound]]) {
-            return orm::statements::UpdateStatement<T, ConnType>(conn_).template query_all<Members...>(proto);
+            return orm::statements::UpdateStatement<T, ConnType>(conn_)
+                    .template query_all<storm::meta::selector_info<S>()...>(proto);
         }
 
         // Reset WHERE, JOIN, LIMIT, and OFFSET state
@@ -328,13 +332,13 @@ export namespace storm {
 
         // GROUP BY - returns GroupByBuilder for fluent aggregate chaining
         // Usage:
-        //   qs.group_by<^^Person::department>().count().execute()    // grouped → .execute()
-        //   qs.group_by<^^Person::dept, ^^Person::role>().sum<^^Person::salary>().execute()
-        //   qs.where(age > 25).group_by<^^Person::years_exp>().count().execute()
-        template <std::meta::info... GroupFieldInfos>
-            requires(sizeof...(GroupFieldInfos) > 0)
+        //   qs.group_by<fields::Person.department>().count().execute()    // grouped → .execute()
+        //   qs.group_by<fields::Person.dept, fields::Person.role>().sum<fields::Person.salary>().execute()
+        //   qs.where(age > 25).group_by<fields::Person.years_exp>().count().execute()
+        template <auto... S>
+            requires(sizeof...(S) > 0 && (storm::meta::ValidSelector<S> && ...))
         [[nodiscard]] auto group_by() {
-            return orm::statements::GroupByBuilder<T, ConnType, GroupFieldInfos...>{
+            return orm::statements::GroupByBuilder<T, ConnType, storm::meta::selector_info<S>()...>{
                     {conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_, nullptr}
             };
         }
@@ -385,18 +389,22 @@ export namespace storm {
 
         // SUM aggregate (multi-field: SUM(f1 + f2 + ...))
         // Supports WHERE and JOIN clauses
-        // Usage: queryset.sum<^^Person::age>().execute()
-        //        queryset.where(age > 30).sum<^^Person::age>().execute()
-        //        queryset.join<FK>().sum<^^Person::salary>().execute()
+        // Usage: queryset.sum<fields::Person.age>().execute()
+        //        queryset.where(age > 30).sum<fields::Person.age>().execute()
+        //        queryset.join<FK>().sum<fields::Person.salary>().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
-        template <std::meta::info... FieldInfos>
-            requires orm::statements::AllNumericAggregateable<FieldInfos...>
+        template <auto... S>
+            requires(
+                    (storm::meta::ValidSelector<S> && ...) &&
+                    orm::statements::AllNumericAggregateable<storm::meta::selector_info<S>()...>
+            )
         [[nodiscard]] auto sum() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
                     orm::statements::NoGroupBy,
-                    orm::statements::AggregateOp<orm::statements::AggregateType::SUM, FieldInfos...>>;
+                    orm::statements::
+                            AggregateOp<orm::statements::AggregateType::SUM, storm::meta::selector_info<S>()...>>;
             return StmtType{{conn_, where_expr_, join_stmt_, {}, {}, {}, nullptr}};
         }
 
@@ -406,74 +414,93 @@ export namespace storm {
         //        queryset.where(age > 30).count().execute()
         //        queryset.join<FK>().count().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
-        template <std::meta::info... FieldInfos> [[nodiscard]] auto count() {
+        template <auto... S>
+            requires((storm::meta::ValidSelector<S> && ...))
+        [[nodiscard]] auto count() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
                     orm::statements::NoGroupBy,
-                    orm::statements::AggregateOp<orm::statements::AggregateType::COUNT, FieldInfos...>>;
+                    orm::statements::
+                            AggregateOp<orm::statements::AggregateType::COUNT, storm::meta::selector_info<S>()...>>;
             return StmtType{{conn_, where_expr_, join_stmt_, {}, {}, {}, nullptr}};
         }
 
         // AVG aggregate (multi-field: AVG(f1 + f2 + ...))
         // Supports WHERE and JOIN clauses
-        // Usage: queryset.avg<^^Person::salary>().execute()
-        //        queryset.where(department == "Engineering").avg<^^Person::salary>().execute()
+        // Usage: queryset.avg<fields::Person.salary>().execute()
+        //        queryset.where(department == "Engineering").avg<fields::Person.salary>().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
-        template <std::meta::info... FieldInfos>
-            requires orm::statements::AllNumericAggregateable<FieldInfos...>
+        template <auto... S>
+            requires(
+                    (storm::meta::ValidSelector<S> && ...) &&
+                    orm::statements::AllNumericAggregateable<storm::meta::selector_info<S>()...>
+            )
         [[nodiscard]] auto avg() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
                     orm::statements::NoGroupBy,
-                    orm::statements::AggregateOp<orm::statements::AggregateType::AVG, FieldInfos...>>;
+                    orm::statements::
+                            AggregateOp<orm::statements::AggregateType::AVG, storm::meta::selector_info<S>()...>>;
             return StmtType{{conn_, where_expr_, join_stmt_, {}, {}, {}, nullptr}};
         }
 
         // MIN aggregate (multi-field: MIN(f1 + f2 + ...))
         // Supports WHERE and JOIN clauses
-        // Usage: queryset.min<^^Person::age>().execute()
-        //        queryset.where(active == true).min<^^Person::age>().execute()
+        // Usage: queryset.min<fields::Person.age>().execute()
+        //        queryset.where(active == true).min<fields::Person.age>().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
-        template <std::meta::info... FieldInfos>
-            requires orm::statements::AllNumericAggregateable<FieldInfos...>
+        template <auto... S>
+            requires(
+                    (storm::meta::ValidSelector<S> && ...) &&
+                    orm::statements::AllNumericAggregateable<storm::meta::selector_info<S>()...>
+            )
         [[nodiscard]] auto min() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
                     orm::statements::NoGroupBy,
-                    orm::statements::AggregateOp<orm::statements::AggregateType::MIN, FieldInfos...>>;
+                    orm::statements::
+                            AggregateOp<orm::statements::AggregateType::MIN, storm::meta::selector_info<S>()...>>;
             return StmtType{{conn_, where_expr_, join_stmt_, {}, {}, {}, nullptr}};
         }
 
         // MAX aggregate (multi-field: MAX(f1 + f2 + ...))
         // Supports WHERE and JOIN clauses
-        // Usage: queryset.max<^^Person::age>().execute()
-        //        queryset.where(department == "Sales").max<^^Person::salary>().execute()
+        // Usage: queryset.max<fields::Person.age>().execute()
+        //        queryset.where(department == "Sales").max<fields::Person.salary>().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
-        template <std::meta::info... FieldInfos>
-            requires orm::statements::AllNumericAggregateable<FieldInfos...>
+        template <auto... S>
+            requires(
+                    (storm::meta::ValidSelector<S> && ...) &&
+                    orm::statements::AllNumericAggregateable<storm::meta::selector_info<S>()...>
+            )
         [[nodiscard]] auto max() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
                     orm::statements::NoGroupBy,
-                    orm::statements::AggregateOp<orm::statements::AggregateType::MAX, FieldInfos...>>;
+                    orm::statements::
+                            AggregateOp<orm::statements::AggregateType::MAX, storm::meta::selector_info<S>()...>>;
             return StmtType{{conn_, where_expr_, join_stmt_, {}, {}, {}, nullptr}};
         }
 
         // COUNT(DISTINCT field) aggregate
         // Supports WHERE and JOIN clauses
-        // Usage: queryset.count_distinct<^^Person::age>().execute()
-        //        queryset.where(active == true).count_distinct<^^Person::department>().execute()
+        // Usage: queryset.count_distinct<fields::Person.age>().execute()
+        //        queryset.where(active == true).count_distinct<fields::Person.department>().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
-        template <std::meta::info FieldInfo> [[nodiscard]] auto count_distinct() {
+        template <auto S>
+            requires storm::meta::ValidSelector<S>
+        [[nodiscard]] auto count_distinct() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
                     orm::statements::NoGroupBy,
-                    orm::statements::AggregateOp<orm::statements::AggregateType::COUNT_DISTINCT, FieldInfo>>;
+                    orm::statements::AggregateOp<
+                            orm::statements::AggregateType::COUNT_DISTINCT,
+                            storm::meta::selector_info<S>()>>;
             return StmtType{{conn_, where_expr_, join_stmt_, {}, {}, {}, nullptr}};
         }
 

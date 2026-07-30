@@ -97,7 +97,7 @@ export namespace storm::orm::statements {
         // std::optional<T> → T (dealiased); any other type returned dealiased unchanged.
         // Shared optional-unwrap for FK-target queries. Detection goes through the
         // leaf module's is_optional_type (#509) — this site previously spelled the
-        // same check as template_of(dealias(^^std::optional<int>)), which is
+        // same check as template_of(dealias(fields::std.optional<int>)), which is
         // equivalent but was the copy most likely to drift from the other four.
         consteval auto unwrap_optional_type(std::meta::info type) -> std::meta::info {
             const auto t = std::meta::dealias(type);
@@ -121,7 +121,7 @@ export namespace storm::orm::statements {
         }
 
         // The raw template argument of a reverse_fk member's annotation — either an
-        // owner type (^^Task) or an FK field (^^Task::assignee). The join machinery
+        // owner type (^^Task) or an FK field (fields::Task.assignee). The join machinery
         // resolves it to the concrete FK field via resolve_reverse_fk_target.
         // Precondition: `member` is a reverse_fk field (callers gate on
         // is_reverse_fk_field), so the annotation is always present.
@@ -205,7 +205,7 @@ export namespace storm::orm::statements {
             const auto first =
                     std::meta::dealias(std::meta::template_arguments_of(std::meta::dealias(container_type))[0]);
             if (std::meta::has_template_arguments(first)) {
-                // ^^std::shared_ptr names a using-declarator under `import std;` and can't
+                // fields::std.shared_ptr names a using-declarator under `import std;` and can't
                 // be reflected directly — derive the canonical template from a concrete
                 // specialization instead.
                 const auto tmpl            = std::meta::template_of(first);
@@ -660,7 +660,7 @@ export namespace storm::orm::statements {
 
     // A cross-model reverse-FK selector (#398): Member is an fk<...> data member
     // of ANOTHER model whose FK type (unwrapping std::optional) is the base model T.
-    //   QuerySet<Person>().left_join<^^Task::assignee>()  // Member = ^^Task::assignee
+    //   QuerySet<Person>().left_join<fields::Task.assignee>()  // Member = fields::Task.assignee
     // The owning model (Task), FK field, and FK target (Person) all come from Member;
     // naming the field disambiguates several FKs to the same target (assignee vs reviewer).
     // Structural-only queries on Member (parent_of/type_of/identifier_of) — safe across a

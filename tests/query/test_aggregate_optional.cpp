@@ -43,7 +43,7 @@ TYPED_TEST(OptionalAggregateTest, CountWithNullValues) {
     ASSERT_TRUE(count_all.has_value());
     EXPECT_EQ(count_all.value(), 4);
 
-    auto count_age = this->qs->template count<^^Person::score>().execute();
+    auto count_age = this->qs->template count<fields::Person.score>().execute();
     ASSERT_TRUE(count_age.has_value());
     EXPECT_EQ(count_age.value(), 2);
 }
@@ -55,7 +55,7 @@ TYPED_TEST(OptionalAggregateTest, SumWithNullValues) {
             {.name = "Charlie", .salary = 70000.0, .score = 35},
     })));
 
-    auto sum = this->qs->template sum<^^Person::score>().execute();
+    auto sum = this->qs->template sum<fields::Person.score>().execute();
     ASSERT_TRUE(sum.has_value());
     EXPECT_EQ(sum.value(), 60);
 }
@@ -67,7 +67,7 @@ TYPED_TEST(OptionalAggregateTest, AvgWithNullValues) {
             {.name = "Charlie", .salary = 70000.0, .score = 40},
     })));
 
-    auto avg = this->qs->template avg<^^Person::score>().execute();
+    auto avg = this->qs->template avg<fields::Person.score>().execute();
     ASSERT_TRUE(avg.has_value());
     ASSERT_TRUE(avg.value().has_value());
     EXPECT_NEAR(avg.value().value(), 30.0, 0.01);
@@ -81,12 +81,12 @@ TYPED_TEST(OptionalAggregateTest, MinMaxWithNullValues) {
             {.name = "Dave", .salary = 80000.0, .score = std::nullopt},
     })));
 
-    auto min_val = this->qs->template min<^^Person::score>().execute();
+    auto min_val = this->qs->template min<fields::Person.score>().execute();
     ASSERT_TRUE(min_val.has_value());
     ASSERT_TRUE(min_val.value().has_value());
     EXPECT_NEAR(min_val.value().value(), 25.0, 0.01);
 
-    auto max_val = this->qs->template max<^^Person::score>().execute();
+    auto max_val = this->qs->template max<fields::Person.score>().execute();
     ASSERT_TRUE(max_val.has_value());
     ASSERT_TRUE(max_val.value().has_value());
     EXPECT_NEAR(max_val.value().value(), 45.0, 0.01);
@@ -101,7 +101,7 @@ TYPED_TEST(OptionalAggregateTest, CountDistinctWithNullValues) {
             {.name = "Eve", .salary = 90000.0, .score = 40},
     })));
 
-    auto result = this->qs->template count_distinct<^^Person::score>().execute();
+    auto result = this->qs->template count_distinct<fields::Person.score>().execute();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value(), 2);
 }
@@ -113,7 +113,7 @@ TYPED_TEST(OptionalAggregateTest, GroupByWithAllNullValuesInGroupColumn) {
             {.name = "Charlie", .salary = 70000.0, .score = std::nullopt},
     })));
 
-    auto result = this->qs->template group_by<^^Person::score>().count().execute();
+    auto result = this->qs->template group_by<fields::Person.score>().count().execute();
     ASSERT_TRUE(result.has_value()) << "GROUP BY with all NULL values failed";
     EXPECT_EQ(result.value().size(), 1);
 
@@ -134,7 +134,7 @@ TYPED_TEST(OptionalAggregateTest, GroupByWithMixedNullAndNonNullValues) {
             {.name = "Eve", .salary = 90000.0, .score = 30},
     })));
 
-    auto result = this->qs->template group_by<^^Person::score>().count().execute();
+    auto result = this->qs->template group_by<fields::Person.score>().count().execute();
     ASSERT_TRUE(result.has_value()) << "GROUP BY with mixed NULL values failed";
     EXPECT_EQ(result.value().size(), 3) << "Expected 3 groups (NULL, 25, 30)";
 
@@ -169,7 +169,7 @@ TYPED_TEST(OptionalAggregateTest, MinOverEmptySetIsNullopt) {
             {.name = "Bob", .age = 35},
     })));
 
-    auto result = this->qs->where(storm::orm::where::f<^^Person::age>() > 9999).template min<^^Person::age>().execute();
+    auto result = this->qs->where(fields::Person.age > 9999).template min<fields::Person.age>().execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_FALSE(result.value().has_value()) << "MIN over empty set must be nullopt, not 0";
 }
@@ -180,7 +180,7 @@ TYPED_TEST(OptionalAggregateTest, MaxOverEmptySetIsNullopt) {
             {.name = "Bob", .age = 35},
     })));
 
-    auto result = this->qs->where(storm::orm::where::f<^^Person::age>() > 9999).template max<^^Person::age>().execute();
+    auto result = this->qs->where(fields::Person.age > 9999).template max<fields::Person.age>().execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_FALSE(result.value().has_value()) << "MAX over empty set must be nullopt, not 0";
 }
@@ -191,7 +191,7 @@ TYPED_TEST(OptionalAggregateTest, AvgOverEmptySetIsNullopt) {
             {.name = "Bob", .age = 35},
     })));
 
-    auto result = this->qs->where(storm::orm::where::f<^^Person::age>() > 9999).template avg<^^Person::age>().execute();
+    auto result = this->qs->where(fields::Person.age > 9999).template avg<fields::Person.age>().execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_FALSE(result.value().has_value()) << "AVG over empty set must be nullopt, not 0.0";
 }
@@ -202,14 +202,13 @@ TYPED_TEST(OptionalAggregateTest, MinMaxAvgOverEmptySetVsRealZeroAreDistinguisha
     })));
 
     // Real zero: a row with age == 0 -> the aggregate IS 0, present.
-    auto real_min = this->qs->where(storm::orm::where::f<^^Person::age>() == 0).template min<^^Person::age>().execute();
+    auto real_min = this->qs->where(fields::Person.age == 0).template min<fields::Person.age>().execute();
     ASSERT_TRUE(real_min.has_value()) << real_min.error().message();
     ASSERT_TRUE(real_min.value().has_value()) << "MIN over a present 0 must hold a value";
     EXPECT_DOUBLE_EQ(real_min.value().value(), 0.0);
 
     // Empty set: no rows -> nullopt, NOT a real 0.
-    auto empty_min =
-            this->qs->where(storm::orm::where::f<^^Person::age>() > 9999).template min<^^Person::age>().execute();
+    auto empty_min = this->qs->where(fields::Person.age > 9999).template min<fields::Person.age>().execute();
     ASSERT_TRUE(empty_min.has_value()) << empty_min.error().message();
     EXPECT_FALSE(empty_min.value().has_value());
 }
@@ -219,7 +218,7 @@ TYPED_TEST(OptionalAggregateTest, SumOverEmptySetKeepsZeroConvention) {
             {.name = "Alice", .age = 25},
     })));
 
-    auto result = this->qs->where(storm::orm::where::f<^^Person::age>() > 9999).template sum<^^Person::age>().execute();
+    auto result = this->qs->where(fields::Person.age > 9999).template sum<fields::Person.age>().execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result.value(), 0) << "SUM over empty set keeps the 0 convention";
 }
@@ -229,7 +228,7 @@ TYPED_TEST(OptionalAggregateTest, CountOverEmptySetIsZero) {
             {.name = "Alice", .age = 25},
     })));
 
-    auto result = this->qs->where(storm::orm::where::f<^^Person::age>() > 9999).count().execute();
+    auto result = this->qs->where(fields::Person.age > 9999).count().execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result.value(), 0);
 }
@@ -241,7 +240,7 @@ TYPED_TEST(OptionalAggregateTest, GroupByAvgOfAllNullColumnInGroupIsNullopt) {
             {.name = "Solo", .salary = 50000.0, .score = std::nullopt},
     })));
 
-    auto result = this->qs->template group_by<^^Person::name>().template avg<^^Person::score>().execute();
+    auto result = this->qs->template group_by<fields::Person.name>().template avg<fields::Person.score>().execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     ASSERT_EQ(result.value().size(), 1U);
     auto it                 = result.value().begin();
@@ -262,7 +261,7 @@ TYPED_TEST(AggregateTest, NegativeNumbersInSum) {
             {.name = "Charlie", .age = -3, .salary = 70000.0, .years_experience = 7},
     })));
 
-    auto sum = this->qs->template sum<^^Person::age>().execute();
+    auto sum = this->qs->template sum<fields::Person.age>().execute();
     ASSERT_TRUE(sum.has_value());
     EXPECT_EQ(sum.value(), -8);
 }
@@ -274,7 +273,7 @@ TYPED_TEST(AggregateTest, NegativeNumbersInAvg) {
             {.name = "Charlie", .age = 0, .salary = 70000.0, .years_experience = 7},
     })));
 
-    auto avg = this->qs->template avg<^^Person::age>().execute();
+    auto avg = this->qs->template avg<fields::Person.age>().execute();
     ASSERT_TRUE(avg.has_value());
     ASSERT_TRUE(avg.value().has_value());
     EXPECT_NEAR(avg.value().value(), -2.0, 0.01);
@@ -288,12 +287,12 @@ TYPED_TEST(AggregateTest, NegativeNumbersInMinMax) {
             {.name = "Dave", .age = 15, .salary = 80000.0, .years_experience = 10},
     })));
 
-    auto min_val = this->qs->template min<^^Person::age>().execute();
+    auto min_val = this->qs->template min<fields::Person.age>().execute();
     ASSERT_TRUE(min_val.has_value());
     ASSERT_TRUE(min_val.value().has_value());
     EXPECT_NEAR(min_val.value().value(), -20.0, 0.01);
 
-    auto max_val = this->qs->template max<^^Person::age>().execute();
+    auto max_val = this->qs->template max<fields::Person.age>().execute();
     ASSERT_TRUE(max_val.has_value());
     ASSERT_TRUE(max_val.value().has_value());
     EXPECT_NEAR(max_val.value().value(), 15.0, 0.01);
@@ -310,7 +309,7 @@ TYPED_TEST(AggregateTest, NegativeNumbersInCount) {
     ASSERT_TRUE(count.has_value());
     EXPECT_EQ(count.value(), 3);
 
-    auto count_age = this->qs->template count<^^Person::age>().execute();
+    auto count_age = this->qs->template count<fields::Person.age>().execute();
     ASSERT_TRUE(count_age.has_value());
     EXPECT_EQ(count_age.value(), 3);
 }
@@ -324,11 +323,11 @@ TYPED_TEST(AggregateTest, NegativeNumbersInWhere) {
             {.name = "Eve", .age = 10, .salary = 90000.0, .years_experience = 15},
     })));
 
-    auto result = this->qs->where(storm::orm::where::f<^^Person::age>() < 0).count().execute();
+    auto result = this->qs->where(fields::Person.age < 0).count().execute();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value(), 2);
 
-    auto sum_neg = this->qs->where(storm::orm::where::f<^^Person::age>() < 0).template sum<^^Person::age>().execute();
+    auto sum_neg = this->qs->where(fields::Person.age < 0).template sum<fields::Person.age>().execute();
     ASSERT_TRUE(sum_neg.has_value());
     EXPECT_EQ(sum_neg.value(), -15);
 }

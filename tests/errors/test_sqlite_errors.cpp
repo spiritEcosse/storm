@@ -947,7 +947,7 @@ TEST_F(ORMErrorTest, SelectWithWhereNoMatch) {
     ASSERT_TRUE(insert_result.has_value());
 
     // Select with WHERE that matches nothing
-    auto result = qs.where(storm::orm::where::f<^^Person::age>() > 100).select().execute();
+    auto result = qs.where(fields::Person.age > 100).select().execute();
     ASSERT_TRUE(result.has_value()) << "Select with no matches should succeed";
     EXPECT_TRUE(result.value().empty()) << "Result should be empty";
 }
@@ -972,12 +972,12 @@ TEST_F(ORMErrorTest, AggregateOnEmptyTable) {
     EXPECT_EQ(count_result.value(), 0);
 
     // SUM on empty table should return 0 (NULL coerced to 0)
-    auto sum_result = qs.sum<^^Person::age>().execute();
+    auto sum_result = qs.sum<fields::Person.age>().execute();
     ASSERT_TRUE(sum_result.has_value()) << "SUM on empty table should succeed";
     EXPECT_EQ(sum_result.value(), 0);
 
     // AVG on empty table has no value -> nullopt, not a real 0.0 (#416)
-    auto avg_result = qs.avg<^^Person::age>().execute();
+    auto avg_result = qs.avg<fields::Person.age>().execute();
     ASSERT_TRUE(avg_result.has_value()) << "AVG on empty table should succeed";
     EXPECT_FALSE(avg_result.value().has_value()) << "AVG over empty set must be nullopt";
 }
@@ -991,7 +991,7 @@ TEST_F(ORMErrorTest, AggregateWithWhereNoMatch) {
     ASSERT_TRUE(insert_result.has_value());
 
     // COUNT with WHERE that matches nothing
-    auto count_result = qs.where(storm::orm::where::f<^^Person::age>() > 100).count().execute();
+    auto count_result = qs.where(fields::Person.age > 100).count().execute();
     ASSERT_TRUE(count_result.has_value()) << "COUNT with no matches should succeed";
     EXPECT_EQ(count_result.value(), 0);
 }
@@ -1000,7 +1000,7 @@ TEST_F(ORMErrorTest, DistinctOnEmptyTable) {
     storm::QuerySet<Person> qs;
 
     // DISTINCT on empty table
-    auto result = qs.distinct<^^Person::name>().execute();
+    auto result = qs.distinct<fields::Person.name>().execute();
     ASSERT_TRUE(result.has_value()) << "DISTINCT on empty table should succeed";
     EXPECT_TRUE(result.value().empty());
 }
@@ -1009,7 +1009,7 @@ TEST_F(ORMErrorTest, GroupByOnEmptyTable) {
     storm::QuerySet<Person> qs;
 
     // GROUP BY on empty table
-    auto result = qs.group_by<^^Person::age>().count().execute();
+    auto result = qs.group_by<fields::Person.age>().count().execute();
     ASSERT_TRUE(result.has_value()) << "GROUP BY on empty table should succeed";
     EXPECT_TRUE(result.value().empty());
 }
@@ -1111,7 +1111,7 @@ TEST_F(ORMErrorTest, InsertThenSelectWithOrderBy) {
     }
 
     // Select with ORDER BY age ascending
-    auto result = qs.order_by<^^Person::age>().select().execute();
+    auto result = qs.order_by<fields::Person.age>().select().execute();
     ASSERT_TRUE(result.has_value());
     ASSERT_EQ(result.value().size(), 5);
 
@@ -1138,7 +1138,7 @@ TEST_F(ORMErrorTest, SelectWithLimitOffset) {
     }
 
     // Select with limit 3, offset 2
-    auto result = qs.order_by<^^Person::age>().limit(3).offset(2).select().execute();
+    auto result = qs.order_by<fields::Person.age>().limit(3).offset(2).select().execute();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 3);
 

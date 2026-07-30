@@ -185,7 +185,7 @@ namespace {
 
     // ---- Many-to-many eager-load benchmark (#391) ------------------------
     // Defined here in register.cpp's purview (not a .cppm) because the m2m
-    // reflecting instantiation — `join<^^BStudent::courses>().select()` on the
+    // reflecting instantiation — `join<m2m::fields::BStudent.courses>().select()` on the
     // annotated models — segfaults the BMI serializer when it lives in a module
     // purview (clang-p2996 #262 family). The existing QueryBenchmark gets away
     // with a .cppm only because its splice instantiation is deferred to here.
@@ -250,7 +250,7 @@ namespace {
         }
 
         auto run_once() -> void {
-            (void)sqs_.template join<^^BStudent::courses>().select().execute();
+            (void)sqs_.template join<storm::benchmark::m2m::fields::BStudent.courses>().select().execute();
         }
     };
 

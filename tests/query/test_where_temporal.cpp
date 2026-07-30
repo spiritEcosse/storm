@@ -19,7 +19,6 @@ using std::chrono::year;
 using std::chrono::year_month_day;
 using storm::QuerySet;
 using storm::UUID;
-using storm::orm::where::f;
 
 namespace {
 
@@ -73,22 +72,22 @@ TYPED_TEST_SUITE(WhereTemporalTest, DatabaseTypes);
 // ===== year_month_day: all 6 comparison operators =====
 
 TYPED_TEST(WhereTemporalTest, DateEqual) {
-    EXPECT_EQ(this->count_where(f<^^ExtendedTypes::date_field>() == year_month_day{year{2024}, month{6}, day{15}}), 1U);
+    EXPECT_EQ(this->count_where(fields::ExtendedTypes.date_field == year_month_day{year{2024}, month{6}, day{15}}), 1U);
 }
 TYPED_TEST(WhereTemporalTest, DateNotEqual) {
-    EXPECT_EQ(this->count_where(f<^^ExtendedTypes::date_field>() != year_month_day{year{2024}, month{6}, day{15}}), 2U);
+    EXPECT_EQ(this->count_where(fields::ExtendedTypes.date_field != year_month_day{year{2024}, month{6}, day{15}}), 2U);
 }
 TYPED_TEST(WhereTemporalTest, DateGreater) {
-    EXPECT_EQ(this->count_where(f<^^ExtendedTypes::date_field>() > year_month_day{year{2024}, month{6}, day{15}}), 1U);
+    EXPECT_EQ(this->count_where(fields::ExtendedTypes.date_field > year_month_day{year{2024}, month{6}, day{15}}), 1U);
 }
 TYPED_TEST(WhereTemporalTest, DateGreaterEqual) {
-    EXPECT_EQ(this->count_where(f<^^ExtendedTypes::date_field>() >= year_month_day{year{2024}, month{6}, day{15}}), 2U);
+    EXPECT_EQ(this->count_where(fields::ExtendedTypes.date_field >= year_month_day{year{2024}, month{6}, day{15}}), 2U);
 }
 TYPED_TEST(WhereTemporalTest, DateLess) {
-    EXPECT_EQ(this->count_where(f<^^ExtendedTypes::date_field>() < year_month_day{year{2024}, month{6}, day{15}}), 1U);
+    EXPECT_EQ(this->count_where(fields::ExtendedTypes.date_field < year_month_day{year{2024}, month{6}, day{15}}), 1U);
 }
 TYPED_TEST(WhereTemporalTest, DateLessEqual) {
-    EXPECT_EQ(this->count_where(f<^^ExtendedTypes::date_field>() <= year_month_day{year{2024}, month{6}, day{15}}), 2U);
+    EXPECT_EQ(this->count_where(fields::ExtendedTypes.date_field <= year_month_day{year{2024}, month{6}, day{15}}), 2U);
 }
 
 // ===== year_month_day: BETWEEN + IN =====
@@ -96,7 +95,7 @@ TYPED_TEST(WhereTemporalTest, DateLessEqual) {
 TYPED_TEST(WhereTemporalTest, DateBetween) {
     EXPECT_EQ(
             this->count_where(
-                    f<^^ExtendedTypes::date_field>().between(
+                    fields::ExtendedTypes.date_field.between(
                             year_month_day{year{2024}, month{3}, day{1}}, year_month_day{year{2024}, month{9}, day{1}}
                     )
             ),
@@ -106,7 +105,7 @@ TYPED_TEST(WhereTemporalTest, DateBetween) {
 TYPED_TEST(WhereTemporalTest, DateIn) {
     EXPECT_EQ(
             this->count_where(
-                    f<^^ExtendedTypes::date_field>().in(
+                    fields::ExtendedTypes.date_field.in(
                             year_month_day{year{2024}, month{1}, day{1}}, year_month_day{year{2024}, month{12}, day{31}}
                     )
             ),
@@ -117,22 +116,22 @@ TYPED_TEST(WhereTemporalTest, DateIn) {
 // ===== system_clock::time_point: all 6 comparison operators =====
 
 TYPED_TEST(WhereTemporalTest, DatetimeEqual) {
-    EXPECT_EQ(this->count_where(f<^^ExtendedTypes::datetime_field>() == make_tp(2024, 6, 15, 12, 30, 0)), 1U);
+    EXPECT_EQ(this->count_where(fields::ExtendedTypes.datetime_field == make_tp(2024, 6, 15, 12, 30, 0)), 1U);
 }
 TYPED_TEST(WhereTemporalTest, DatetimeNotEqual) {
-    EXPECT_EQ(this->count_where(f<^^ExtendedTypes::datetime_field>() != make_tp(2024, 6, 15, 12, 30, 0)), 2U);
+    EXPECT_EQ(this->count_where(fields::ExtendedTypes.datetime_field != make_tp(2024, 6, 15, 12, 30, 0)), 2U);
 }
 TYPED_TEST(WhereTemporalTest, DatetimeGreater) {
-    EXPECT_EQ(this->count_where(f<^^ExtendedTypes::datetime_field>() > make_tp(2024, 6, 15, 12, 30, 0)), 1U);
+    EXPECT_EQ(this->count_where(fields::ExtendedTypes.datetime_field > make_tp(2024, 6, 15, 12, 30, 0)), 1U);
 }
 TYPED_TEST(WhereTemporalTest, DatetimeGreaterEqual) {
-    EXPECT_EQ(this->count_where(f<^^ExtendedTypes::datetime_field>() >= make_tp(2024, 6, 15, 12, 30, 0)), 2U);
+    EXPECT_EQ(this->count_where(fields::ExtendedTypes.datetime_field >= make_tp(2024, 6, 15, 12, 30, 0)), 2U);
 }
 TYPED_TEST(WhereTemporalTest, DatetimeLess) {
-    EXPECT_EQ(this->count_where(f<^^ExtendedTypes::datetime_field>() < make_tp(2024, 6, 15, 12, 30, 0)), 1U);
+    EXPECT_EQ(this->count_where(fields::ExtendedTypes.datetime_field < make_tp(2024, 6, 15, 12, 30, 0)), 1U);
 }
 TYPED_TEST(WhereTemporalTest, DatetimeLessEqual) {
-    EXPECT_EQ(this->count_where(f<^^ExtendedTypes::datetime_field>() <= make_tp(2024, 6, 15, 12, 30, 0)), 2U);
+    EXPECT_EQ(this->count_where(fields::ExtendedTypes.datetime_field <= make_tp(2024, 6, 15, 12, 30, 0)), 2U);
 }
 
 // ===== system_clock::time_point: BETWEEN + IN =====
@@ -140,7 +139,7 @@ TYPED_TEST(WhereTemporalTest, DatetimeLessEqual) {
 TYPED_TEST(WhereTemporalTest, DatetimeBetween) {
     EXPECT_EQ(
             this->count_where(
-                    f<^^ExtendedTypes::datetime_field>()
+                    fields::ExtendedTypes.datetime_field
                             .between(make_tp(2024, 3, 1, 0, 0, 0), make_tp(2024, 9, 1, 0, 0, 0))
             ),
             1U
@@ -149,7 +148,7 @@ TYPED_TEST(WhereTemporalTest, DatetimeBetween) {
 TYPED_TEST(WhereTemporalTest, DatetimeIn) {
     EXPECT_EQ(
             this->count_where(
-                    f<^^ExtendedTypes::datetime_field>()
+                    fields::ExtendedTypes.datetime_field
                             .in(make_tp(2024, 1, 1, 8, 0, 0), make_tp(2024, 12, 31, 23, 59, 59))
             ),
             2U
@@ -159,15 +158,15 @@ TYPED_TEST(WhereTemporalTest, DatetimeIn) {
 // ===== UUID: equality + IN (no ordering / BETWEEN) =====
 
 TYPED_TEST(WhereTemporalTest, UuidEqual) {
-    EXPECT_EQ(this->count_where(f<^^ExtendedTypes::uuid_field>() == UUID{TestFixture::kUuid2}), 1U);
+    EXPECT_EQ(this->count_where(fields::ExtendedTypes.uuid_field == UUID{TestFixture::kUuid2}), 1U);
 }
 TYPED_TEST(WhereTemporalTest, UuidNotEqual) {
-    EXPECT_EQ(this->count_where(f<^^ExtendedTypes::uuid_field>() != UUID{TestFixture::kUuid2}), 2U);
+    EXPECT_EQ(this->count_where(fields::ExtendedTypes.uuid_field != UUID{TestFixture::kUuid2}), 2U);
 }
 TYPED_TEST(WhereTemporalTest, UuidIn) {
     EXPECT_EQ(
             this->count_where(
-                    f<^^ExtendedTypes::uuid_field>().in(UUID{TestFixture::kUuid1}, UUID{TestFixture::kUuid3})
+                    fields::ExtendedTypes.uuid_field.in(UUID{TestFixture::kUuid1}, UUID{TestFixture::kUuid3})
             ),
             2U
     );
@@ -178,8 +177,8 @@ TYPED_TEST(WhereTemporalTest, UuidIn) {
 TYPED_TEST(WhereTemporalTest, DateRangeAndLogical) {
     EXPECT_EQ(
             this->count_where(
-                    f<^^ExtendedTypes::date_field>() >= year_month_day{year{2024}, month{1}, day{1}} &&
-                    f<^^ExtendedTypes::date_field>() < year_month_day{year{2024}, month{12}, day{31}}
+                    fields::ExtendedTypes.date_field >= year_month_day{year{2024}, month{1}, day{1}} &&
+                    fields::ExtendedTypes.date_field < year_month_day{year{2024}, month{12}, day{31}}
             ),
             2U
     );

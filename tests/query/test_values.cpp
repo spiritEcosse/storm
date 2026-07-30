@@ -8,7 +8,6 @@ import storm;
 import std;
 
 using storm::QuerySet;
-using storm::orm::where::f;
 
 #include "test_models.h" // NOSONAR cpp:S954
 
@@ -32,7 +31,7 @@ TYPED_TEST(ValuesTest, SingleFieldNameWithDuplicates) {
     ASSERT_TRUE(insert_result.has_value()) << "INSERT failed: " << insert_result.error().message();
 
     // SELECT age (no DISTINCT — should return ALL rows including duplicates)
-    auto result = queryset.template values<^^Person::age>().execute();
+    auto result = queryset.template values<fields::Person.age>().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT values failed: " << result.error().message();
 
     const auto& ages = result.value();
@@ -50,7 +49,7 @@ TYPED_TEST(ValuesTest, SingleFieldAgeWithDuplicates) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT age — should return 4 rows (duplicates preserved)
-    auto result = queryset.template values<^^Person::age>().execute();
+    auto result = queryset.template values<fields::Person.age>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& ages = result.value();
@@ -75,7 +74,7 @@ TYPED_TEST(ValuesTest, SingleFieldAgeWithDuplicates) {
 TYPED_TEST(ValuesTest, SingleFieldFromEmptyTable) {
     QuerySet<Person, TypeParam> queryset;
 
-    auto result = queryset.template values<^^Person::name>().execute();
+    auto result = queryset.template values<fields::Person.name>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& names = result.value();
@@ -90,7 +89,7 @@ TYPED_TEST(ValuesTest, SingleFieldWithSingleRow) {
     auto         insert_result = queryset.insert(alice).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    auto result = queryset.template values<^^Person::name>().execute();
+    auto result = queryset.template values<fields::Person.name>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& names = result.value();
@@ -116,7 +115,7 @@ TYPED_TEST(ValuesTest, TwoFieldsNameAndAge) {
     auto insert_result = queryset.insert(std::span<const Person>(people)).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    auto result = queryset.template values<^^Person::name, ^^Person::age>().execute();
+    auto result = queryset.template values<fields::Person.name, fields::Person.age>().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT values failed: " << result.error().message();
 
     const auto& pairs = result.value();
@@ -131,19 +130,19 @@ TYPED_TEST(ValuesTest, VerifyReturnTypes) {
     std::ignore = queryset.insert(Person{.id = 0, .name = "Alice", .age = 30}).execute();
 
     // Verify return type for values on name field is hive of strings
-    auto names_result = queryset.template values<^^Person::name>().execute();
+    auto names_result = queryset.template values<fields::Person.name>().execute();
     static_assert(std::is_same_v<decltype(names_result.value()), plf::hive<std::string>&>);
 
     // Verify return type for values on age field is hive of integers
-    auto ages_result = queryset.template values<^^Person::age>().execute();
+    auto ages_result = queryset.template values<fields::Person.age>().execute();
     static_assert(std::is_same_v<decltype(ages_result.value()), plf::hive<int>&>);
 
     // Verify return type for multi-field values is hive of tuples
-    auto pairs_result = queryset.template values<^^Person::name, ^^Person::age>().execute();
+    auto pairs_result = queryset.template values<fields::Person.name, fields::Person.age>().execute();
     static_assert(std::is_same_v<decltype(pairs_result.value()), plf::hive<std::tuple<std::string, int>>&>);
 
     // Reversed order
-    auto reversed_result = queryset.template values<^^Person::age, ^^Person::name>().execute();
+    auto reversed_result = queryset.template values<fields::Person.age, fields::Person.name>().execute();
     static_assert(std::is_same_v<decltype(reversed_result.value()), plf::hive<std::tuple<int, std::string>>&>);
 }
 
@@ -165,7 +164,7 @@ TYPED_TEST(ValuesTest, DuplicatesPreserved) {
     ASSERT_TRUE(insert_result.has_value());
 
     // values() should return ALL 10 rows (duplicate ages preserved)
-    auto values_result = queryset.template values<^^Person::age>().execute();
+    auto values_result = queryset.template values<fields::Person.age>().execute();
     ASSERT_TRUE(values_result.has_value());
     EXPECT_EQ(values_result.value().size(), 10) << "values() should preserve all duplicates";
 
@@ -195,7 +194,7 @@ TYPED_TEST(ValuesTest, WithWhereSingleField) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT name WHERE age > 22
-    auto result = queryset.where(f<^^Person::age>() > 22).template values<^^Person::name>().execute();
+    auto result = queryset.where(fields::Person.age > 22).template values<fields::Person.name>().execute();
     ASSERT_TRUE(result.has_value()) << "values with WHERE failed: " << result.error().message();
 
     const auto& names = result.value();
@@ -218,9 +217,9 @@ TYPED_TEST(ValuesTest, WithMultipleWhereClauses) {
     ASSERT_TRUE(insert_result.has_value());
 
     // Chain multiple WHERE clauses (AND)
-    auto result = queryset.where(f<^^Person::age>() > 22)
-                          .where(f<^^Person::age>() < 32)
-                          .template values<^^Person::name>()
+    auto result = queryset.where(fields::Person.age > 22)
+                          .where(fields::Person.age < 32)
+                          .template values<fields::Person.name>()
                           .execute();
     ASSERT_TRUE(result.has_value());
 
@@ -244,7 +243,7 @@ TYPED_TEST(ValuesTest, WithComplexWhere) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT name WHERE age BETWEEN 25 AND 35
-    auto result = queryset.where(f<^^Person::age>().between(25, 35)).template values<^^Person::name>().execute();
+    auto result = queryset.where(fields::Person.age.between(25, 35)).template values<fields::Person.name>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& names = result.value();
@@ -259,7 +258,7 @@ TYPED_TEST(ValuesTest, WithWhereNoResults) {
     auto                insert_result = queryset.insert(people).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    auto result = queryset.where(f<^^Person::age>() > 100).template values<^^Person::name>().execute();
+    auto result = queryset.where(fields::Person.age > 100).template values<fields::Person.name>().execute();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value().size(), 0);
 }
@@ -275,7 +274,7 @@ TYPED_TEST(ValuesTest, WithJoinSingleField) {
     QuerySet<Message, TypeParam> msg_qs;
 
     // SELECT content FROM Message JOIN Person (values replaces field list)
-    auto result = msg_qs.template join<^^Message::sender>().template values<^^Message::content>().execute();
+    auto result = msg_qs.template join<fields::Message.sender>().template values<fields::Message.content>().execute();
     ASSERT_TRUE(result.has_value()) << "values with JOIN failed: " << result.error().message();
 
     const auto& contents = result.value();
@@ -289,9 +288,9 @@ TYPED_TEST(ValuesTest, WithJoinAndWhere) {
 
     QuerySet<Message, TypeParam> msg_qs;
 
-    auto result = msg_qs.template join<^^Message::sender>()
-                          .where(f<^^Message::content>().like("%o%")) // Hello, World, Goodbye
-                          .template values<^^Message::content>()
+    auto result = msg_qs.template join<fields::Message.sender>()
+                          .where(fields::Message.content.like("%o%")) // Hello, World, Goodbye
+                          .template values<fields::Message.content>()
                           .execute();
     ASSERT_TRUE(result.has_value()) << "values with JOIN and WHERE failed: " << result.error().message();
 
@@ -323,7 +322,7 @@ TYPED_TEST(ValuesTest, WithOrderByAsc) {
     auto insert_result = queryset.insert(people).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    auto result = queryset.template order_by<^^Person::name>().template values<^^Person::name>().execute();
+    auto result = queryset.template order_by<fields::Person.name>().template values<fields::Person.name>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& names = result.value();
@@ -348,7 +347,8 @@ TYPED_TEST(ValuesTest, WithOrderByDesc) {
     auto insert_result = queryset.insert(people).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    auto result = queryset.template order_by<^^Person::name, false>().template values<^^Person::name>().execute();
+    auto result =
+            queryset.template order_by<fields::Person.name, false>().template values<fields::Person.name>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& names = result.value();
@@ -379,7 +379,8 @@ TYPED_TEST(ValuesTest, WithLimit) {
     auto insert_result = queryset.insert(people).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    auto result = queryset.template order_by<^^Person::name>().limit(3).template values<^^Person::name>().execute();
+    auto result =
+            queryset.template order_by<fields::Person.name>().limit(3).template values<fields::Person.name>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& names = result.value();
@@ -407,8 +408,11 @@ TYPED_TEST(ValuesTest, WithLimitAndOffset) {
     ASSERT_TRUE(insert_result.has_value());
 
     // Skip Alice, Bob and return Charlie, Dave
-    auto result =
-            queryset.template order_by<^^Person::name>().limit(2).offset(2).template values<^^Person::name>().execute();
+    auto result = queryset.template order_by<fields::Person.name>()
+                          .limit(2)
+                          .offset(2)
+                          .template values<fields::Person.name>()
+                          .execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& names = result.value();
@@ -434,10 +438,10 @@ TYPED_TEST(ValuesTest, WithWhereOrderByLimit) {
     auto insert_result = queryset.insert(people).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    auto result = queryset.where(f<^^Person::age>() > 25)
-                          .template order_by<^^Person::name>()
+    auto result = queryset.where(fields::Person.age > 25)
+                          .template order_by<fields::Person.name>()
                           .limit(2)
-                          .template values<^^Person::name>()
+                          .template values<fields::Person.name>()
                           .execute();
     ASSERT_TRUE(result.has_value());
 
@@ -469,7 +473,7 @@ TYPED_TEST(ValuesTest, OptionalIntFieldWithNulls) {
     auto insert_result = queryset.insert(people).execute();
     ASSERT_TRUE(insert_result.has_value()) << "Insert failed: " << insert_result.error().message();
 
-    auto result = queryset.template values<^^Person::score>().execute();
+    auto result = queryset.template values<fields::Person.score>().execute();
     ASSERT_TRUE(result.has_value()) << "values on optional field failed: " << result.error().message();
 
     const auto& ages = result.value();
@@ -500,7 +504,7 @@ TYPED_TEST(ValuesTest, OptionalStringFieldWithNulls) {
     auto insert_result = queryset.insert(people).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    auto result = queryset.template values<^^Person::nickname>().execute();
+    auto result = queryset.template values<fields::Person.nickname>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& nicknames = result.value();
@@ -536,7 +540,7 @@ TYPED_TEST(ValuesTest, StatementReuseStability) {
     std::ignore = queryset.insert(people).execute();
 
     for (int i = 0; i < 5; ++i) {
-        auto result = queryset.template values<^^Person::name>().execute();
+        auto result = queryset.template values<fields::Person.name>().execute();
         ASSERT_TRUE(result.has_value()) << "Iteration " << i << " failed: " << result.error().message();
         EXPECT_EQ(result.value().size(), 3) << "Iteration " << i << " returned wrong count";
     }
@@ -555,14 +559,14 @@ TYPED_TEST(ValuesTest, DifferentWhereExpressionsWithCaching) {
     std::ignore = queryset.insert(people).execute();
 
     // Query 1: age > 25
-    auto result1 = queryset.where(f<^^Person::age>() > 25).template values<^^Person::name>().execute();
+    auto result1 = queryset.where(fields::Person.age > 25).template values<fields::Person.name>().execute();
     ASSERT_TRUE(result1.has_value());
     EXPECT_EQ(result1.value().size(), 3); // Bob, Charlie, Dave
 
     queryset.reset();
 
     // Query 2: age > 35
-    auto result2 = queryset.where(f<^^Person::age>() > 35).template values<^^Person::name>().execute();
+    auto result2 = queryset.where(fields::Person.age > 35).template values<fields::Person.name>().execute();
     ASSERT_TRUE(result2.has_value());
     EXPECT_EQ(result2.value().size(), 1); // Dave only
 }

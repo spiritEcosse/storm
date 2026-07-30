@@ -11,7 +11,6 @@ import std;
 #include "test_seed_helpers.h"
 #include "test_select_runner.h"
 using storm::QuerySet;
-using storm::orm::where::f;
 
 template <typename ConnType> auto insert_test_data(const std::vector<Person>& data) -> void {
     QuerySet<Person, ConnType> qs;
@@ -58,7 +57,7 @@ TYPED_TEST(OrderByTest, MultipleFieldsAllAsc) {
     QuerySet<Person, TypeParam> qs;
 
     // Order by age ASC, then name ASC
-    auto result = qs.template order_by<^^Person::age, ^^Person::name>().select().execute();
+    auto result = qs.template order_by<fields::Person.age, fields::Person.name>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
@@ -73,7 +72,7 @@ TYPED_TEST(OrderByTest, MultipleFieldsMixedDirections) {
     QuerySet<Person, TypeParam> qs;
 
     // Order by age ASC, then name DESC
-    auto result = qs.template order_by<^^Person::age, true, ^^Person::name, false>().select().execute();
+    auto result = qs.template order_by<fields::Person.age, true, fields::Person.name, false>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
@@ -88,7 +87,7 @@ TYPED_TEST(OrderByTest, MultipleFieldsAllDesc) {
     QuerySet<Person, TypeParam> qs;
 
     // Order by age DESC, then name DESC
-    auto result = qs.template order_by<^^Person::age, false, ^^Person::name, false>().select().execute();
+    auto result = qs.template order_by<fields::Person.age, false, fields::Person.name, false>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
@@ -109,8 +108,8 @@ TYPED_TEST(OrderByTest, WhereWithMultipleOrderBy) {
     QuerySet<Person, TypeParam> qs;
 
     // Filter age >= 30 and order by age ASC, name DESC
-    auto result = qs.where(f<^^Person::age>() >= 30)
-                          .template order_by<^^Person::age, true, ^^Person::name, false>()
+    auto result = qs.where(fields::Person.age >= 30)
+                          .template order_by<fields::Person.age, true, fields::Person.name, false>()
                           .select()
                           .execute();
     ASSERT_TRUE(result.has_value());
@@ -132,7 +131,7 @@ TYPED_TEST(OrderByTest, WithLimit) {
     QuerySet<Person, TypeParam> qs;
 
     // Get youngest 3 people
-    auto result = qs.template order_by<^^Person::age>().limit(3).select().execute();
+    auto result = qs.template order_by<fields::Person.age>().limit(3).select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
@@ -148,7 +147,7 @@ TYPED_TEST(OrderByTest, WithLimitAndOffset) {
     QuerySet<Person, TypeParam> qs;
 
     // Get people ranked 4-6 by name
-    auto result = qs.template order_by<^^Person::name>().limit(3).offset(3).select().execute();
+    auto result = qs.template order_by<fields::Person.name>().limit(3).offset(3).select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
@@ -163,7 +162,7 @@ TYPED_TEST(OrderByTest, OrderByBeforeLimitOffset) {
     QuerySet<Person, TypeParam> qs;
 
     // Test that order_by works correctly with limit and offset
-    auto result = qs.template order_by<^^Person::age, false>().limit(5).offset(2).select().execute();
+    auto result = qs.template order_by<fields::Person.age, false>().limit(5).offset(2).select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
@@ -183,7 +182,7 @@ TYPED_TEST(OrderByTest, BooleanField) {
     QuerySet<Person, TypeParam> qs;
 
     // Order by boolean field
-    auto result = qs.template order_by<^^Person::is_active, false>().select().execute();
+    auto result = qs.template order_by<fields::Person.is_active, false>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto people = result.value();
@@ -197,8 +196,8 @@ TYPED_TEST(OrderByTest, ChainedWithMultipleClauses) {
     QuerySet<Person, TypeParam> qs;
 
     // Complex query: WHERE + ORDER BY + LIMIT + OFFSET (23 match age >= 25)
-    auto result = qs.where(f<^^Person::age>() >= 25)
-                          .template order_by<^^Person::age, ^^Person::name>()
+    auto result = qs.where(fields::Person.age >= 25)
+                          .template order_by<fields::Person.age, fields::Person.name>()
                           .limit(5)
                           .offset(1)
                           .select()
@@ -250,7 +249,7 @@ TYPED_TEST(OrderByNullableTest, NullableFieldAsc) {
 
     // Order by nullable score ASC
     // In SQLite, NULL values sort first in ASC order by default
-    auto result = qs.template order_by<^^Person::score>().select().execute();
+    auto result = qs.template order_by<fields::Person.score>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto items = result.value();
@@ -288,7 +287,7 @@ TYPED_TEST(OrderByNullableTest, NullableFieldDesc) {
 
     // Order by nullable score DESC
     // In SQLite, NULL values sort last in DESC order by default
-    auto result = qs.template order_by<^^Person::score, false>().select().execute();
+    auto result = qs.template order_by<fields::Person.score, false>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto items = result.value();
@@ -324,7 +323,7 @@ TYPED_TEST(OrderByNullableTest, NullableFieldWithSecondarySort) {
     QuerySet<Person, TypeParam> qs;
 
     // Order by score ASC, then name ASC (to have deterministic ordering within same scores)
-    auto result = qs.template order_by<^^Person::score, true, ^^Person::name, true>().select().execute();
+    auto result = qs.template order_by<fields::Person.score, true, fields::Person.name, true>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto items = result.value();
@@ -374,7 +373,7 @@ TYPED_TEST(OrderByNullableTest, AllNullValues) {
     ASSERT_TRUE(insert_result.has_value());
 
     // Order by nullable field when all values are NULL
-    auto result = qs.template order_by<^^Person::score>().select().execute();
+    auto result = qs.template order_by<fields::Person.score>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto items = result.value();
@@ -413,7 +412,7 @@ TYPED_TEST(OrderByBlobTest, BlobFieldAsc) {
 
     // Order by BLOB field ASC
     // SQLite sorts BLOBs by memcmp order (byte-by-byte comparison)
-    auto result = qs.template order_by<^^Person::avatar>().select().execute();
+    auto result = qs.template order_by<fields::Person.avatar>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto items = result.value();
@@ -451,7 +450,7 @@ TYPED_TEST(OrderByBlobTest, BlobFieldDesc) {
     QuerySet<Person, TypeParam> qs;
 
     // Order by BLOB field DESC
-    auto result = qs.template order_by<^^Person::avatar, false>().select().execute();
+    auto result = qs.template order_by<fields::Person.avatar, false>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto items = result.value();
@@ -483,7 +482,7 @@ TYPED_TEST(OrderByBlobTest, BlobWithSecondarySort) {
     QuerySet<Person, TypeParam> qs;
 
     // Order by BLOB ASC, then name ASC
-    auto result = qs.template order_by<^^Person::avatar, true, ^^Person::name, true>().select().execute();
+    auto result = qs.template order_by<fields::Person.avatar, true, fields::Person.name, true>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto items = result.value();
@@ -507,7 +506,7 @@ TYPED_TEST(OrderByBlobTest, EmptyBlobsOnly) {
     auto insert_result = qs.insert(empty_blobs).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    auto result = qs.template order_by<^^Person::avatar>().select().execute();
+    auto result = qs.template order_by<fields::Person.avatar>().select().execute();
     ASSERT_TRUE(result.has_value());
 
     auto items = result.value();
@@ -527,8 +526,8 @@ TYPED_TEST(OrderByTest, EmptyResultWithMultipleOrderBy) {
     QuerySet<Person, TypeParam> qs;
 
     // Complex ORDER BY with no matching results
-    auto result = qs.where(f<^^Person::age>() > 100)
-                          .template order_by<^^Person::age, false, ^^Person::name, true>()
+    auto result = qs.where(fields::Person.age > 100)
+                          .template order_by<fields::Person.age, false, fields::Person.name, true>()
                           .select()
                           .execute();
     ASSERT_TRUE(result.has_value());

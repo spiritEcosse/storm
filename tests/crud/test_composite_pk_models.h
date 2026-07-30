@@ -11,6 +11,7 @@
  * Split across two test TUs: test_composite_pk_sql.cpp (compile-time gates and
  * SQL text) and test_composite_pk_crud.cpp (live execution on both backends).
  */
+#include <meta>
 
 // Canonical 2-part composite key, both parts int.
 struct OrderLine {
@@ -212,7 +213,7 @@ struct StorageBin {
 // "5x name length + 256" budget has no term that scales with PK part count or
 // part identifier length).
 // The SECOND m2m field makes this the only composite-PK owner with more than
-// one relation, which is what #392's multi-relation join<^^T::a, ^^T::b>()
+// one relation, which is what #392's multi-relation join<fields::T.a, fields::T.b>()
 // needs to be exercised over a composite key: relation Is takes junction alias
 // 2+2*Is and related alias 3+2*Is, and with a composite owner EACH relation's
 // ON clause now AND-joins one equality per owner PK part. A single-relation
@@ -229,5 +230,54 @@ struct ShelfAssignment {
     [[= storm::many_to_many<>]] std::vector<StorageBin> bins;
     [[= storm::many_to_many<>]] std::vector<LedgerTag> tags;
 };
+
+// fields:: selector proxies (#518) — two mechanical lines per model, no field
+// names, so they cannot drift when a model gains or loses a member.
+namespace fields {
+
+struct OrderLineT;
+consteval { std::meta::define_aggregate(^^OrderLineT, storm::field_specs_for(^^OrderLine)); }
+inline constexpr OrderLineT OrderLine{};
+
+struct InventoryT;
+consteval { std::meta::define_aggregate(^^InventoryT, storm::field_specs_for(^^Inventory)); }
+inline constexpr InventoryT Inventory{};
+
+struct LedgerT;
+consteval { std::meta::define_aggregate(^^LedgerT, storm::field_specs_for(^^Ledger)); }
+inline constexpr LedgerT Ledger{};
+
+struct WidgetT;
+consteval { std::meta::define_aggregate(^^WidgetT, storm::field_specs_for(^^Widget)); }
+inline constexpr WidgetT Widget{};
+
+struct StockEntryT;
+consteval { std::meta::define_aggregate(^^StockEntryT, storm::field_specs_for(^^StockEntry)); }
+inline constexpr StockEntryT StockEntry{};
+
+struct LedgerWithTagsT;
+consteval { std::meta::define_aggregate(^^LedgerWithTagsT, storm::field_specs_for(^^LedgerWithTags)); }
+inline constexpr LedgerWithTagsT LedgerWithTags{};
+
+struct OptionalShipmentT;
+consteval { std::meta::define_aggregate(^^OptionalShipmentT, storm::field_specs_for(^^OptionalShipment)); }
+inline constexpr OptionalShipmentT OptionalShipment{};
+
+struct OrderLineWithShipmentsT;
+consteval { std::meta::define_aggregate(^^OrderLineWithShipmentsT, storm::field_specs_for(^^OrderLineWithShipments)); }
+inline constexpr OrderLineWithShipmentsT OrderLineWithShipments{};
+
+struct ShelfAssignmentT;
+consteval { std::meta::define_aggregate(^^ShelfAssignmentT, storm::field_specs_for(^^ShelfAssignment)); }
+inline constexpr ShelfAssignmentT ShelfAssignment{};
+
+struct ShipmentT;
+consteval { std::meta::define_aggregate(^^ShipmentT, storm::field_specs_for(^^Shipment)); }
+inline constexpr ShipmentT Shipment{};
+
+struct TagRegistryT;
+consteval { std::meta::define_aggregate(^^TagRegistryT, storm::field_specs_for(^^TagRegistry)); }
+inline constexpr TagRegistryT TagRegistry{};
+} // namespace fields
 
 #endif // STORM_TESTS_TEST_COMPOSITE_PK_MODELS_H

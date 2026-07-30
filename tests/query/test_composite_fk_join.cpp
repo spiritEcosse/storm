@@ -16,7 +16,7 @@ import std;
 // ── #504 Task 7: regular FK JoinStatement — multi-column AND-joined ON clause ──
 // Shipment::line is a plain (non-m2m, non-reverse-FK) FK member whose target
 // (OrderLineWithShipments) carries a 2-part composite PK (order_id, product_id).
-// join<^^Shipment::line>() must emit an ON clause that AND-joins BOTH target PK
+// join<fields::Shipment.line>() must emit an ON clause that AND-joins BOTH target PK
 // parts against their respective local <fk>_<part>_id columns — using only ONE
 // part (as the pre-fix code did, via FKBase_at<Is>::pk_name_) would silently
 // match on order_id alone, potentially joining to the WRONG OrderLineWithShipments
@@ -40,7 +40,7 @@ TYPED_TEST(CompositeFkRegularJoinTest, InnerJoinAcrossCompositeFkReturnsMatching
     storm::QuerySet<Shipment, TypeParam> ship_qs;
     ASSERT_TRUE(ship_qs.insert(Shipment{.line = line, .carrier = "UPS"}).execute().has_value());
 
-    auto results = ship_qs.template join<^^Shipment::line>().select().execute();
+    auto results = ship_qs.template join<fields::Shipment.line>().select().execute();
     ASSERT_TRUE(results.has_value());
     ASSERT_EQ(results->size(), 1U);
     auto& shipment = *results->begin();
@@ -67,7 +67,7 @@ TYPED_TEST(CompositeFkRegularJoinTest, InnerJoinDoesNotCrossMatchOnSharedPkPart)
     ASSERT_TRUE(ship_qs.insert(Shipment{.line = line_a, .carrier = "UPS"}).execute().has_value());
     ASSERT_TRUE(ship_qs.insert(Shipment{.line = line_b, .carrier = "FedEx"}).execute().has_value());
 
-    auto results = ship_qs.template join<^^Shipment::line>().select().execute();
+    auto results = ship_qs.template join<fields::Shipment.line>().select().execute();
     ASSERT_TRUE(results.has_value());
     ASSERT_EQ(results->size(), 2U);
 
@@ -104,7 +104,7 @@ TYPED_TEST(OptionalCompositeFkJoinTest, LeftJoinKeepsRowWithNullCompositeFk) {
     storm::QuerySet<OptionalShipment, TypeParam> ship_qs;
     ASSERT_TRUE(ship_qs.insert(OptionalShipment{.line = std::nullopt, .carrier = "FedEx"}).execute().has_value());
 
-    auto results = ship_qs.template left_join<^^OptionalShipment::line>().select().execute();
+    auto results = ship_qs.template left_join<fields::OptionalShipment.line>().select().execute();
     ASSERT_TRUE(results.has_value());
     ASSERT_EQ(results->size(), 1U); // LEFT keeps the shipment even with a NULL composite FK
     EXPECT_FALSE(results->begin()->line.has_value());
@@ -209,7 +209,7 @@ TYPED_TEST(CompositeReverseFkOwnerTest, ReverseFkStitchesCorrectlyWithCompositeO
     storm::QuerySet<Shipment, TypeParam> ship_qs;
     ASSERT_TRUE(ship_qs.insert(Shipment{.line = line_a, .carrier = "DHL"}).execute().has_value());
 
-    auto results = line_qs.template join<^^OrderLineWithShipments::shipments>().select().execute();
+    auto results = line_qs.template join<fields::OrderLineWithShipments.shipments>().select().execute();
     ASSERT_TRUE(results.has_value()) << results.error().message();
 
     bool found_a = false;
@@ -231,7 +231,7 @@ TYPED_TEST(CompositeReverseFkOwnerTest, ReverseFkStitchesCorrectlyWithCompositeO
 TYPED_TEST(CompositeReverseFkOwnerTest, EmptyRelationOnCompositeOwnerReturnsNoInnerJoinRows) {
     storm::QuerySet<OrderLineWithShipments, TypeParam> line_qs;
     this->insert_solo_line(line_qs);
-    auto results = line_qs.template join<^^OrderLineWithShipments::shipments>().select().execute(); // INNER
+    auto results = line_qs.template join<fields::OrderLineWithShipments.shipments>().select().execute(); // INNER
     ASSERT_TRUE(results.has_value());
     EXPECT_TRUE(results->empty());
 }
@@ -239,7 +239,7 @@ TYPED_TEST(CompositeReverseFkOwnerTest, EmptyRelationOnCompositeOwnerReturnsNoIn
 TYPED_TEST(CompositeReverseFkOwnerTest, LeftJoinKeepsEmptyRelationOnCompositeOwner) {
     storm::QuerySet<OrderLineWithShipments, TypeParam> line_qs;
     this->insert_solo_line(line_qs);
-    auto results = line_qs.template left_join<^^OrderLineWithShipments::shipments>().select().execute();
+    auto results = line_qs.template left_join<fields::OrderLineWithShipments.shipments>().select().execute();
     ASSERT_TRUE(results.has_value());
     ASSERT_EQ(results->size(), 1U);
     EXPECT_TRUE(results->begin()->shipments.empty());
@@ -263,7 +263,7 @@ TYPED_TEST(CompositeReverseFkOwnerTest, FanOutTenShipmentsAllStitchToSameComposi
         );
     }
 
-    auto results = line_qs.template join<^^OrderLineWithShipments::shipments>().select().execute();
+    auto results = line_qs.template join<fields::OrderLineWithShipments.shipments>().select().execute();
     ASSERT_TRUE(results.has_value());
     ASSERT_EQ(results->size(), 1U); // decoy has zero shipments — dropped by INNER
     EXPECT_EQ(results->begin()->product_id, 7);
@@ -316,7 +316,7 @@ TYPED_TEST_SUITE(CompositeM2MSinglePkRegressionTest, DatabaseTypes);
 
 TYPED_TEST(CompositeM2MSinglePkRegressionTest, SinglePkM2MSqlShapeStaysByteIdentical) {
     storm::QuerySet<Student, TypeParam> student_qs;
-    auto                                sql = student_qs.template join<^^Student::courses>().select().sql();
+    auto                                sql = student_qs.template join<fields::Student.courses>().select().sql();
     EXPECT_TRUE(sql.contains("SELECT t2.Student_id, t3.id, t3.title")) << sql;
     EXPECT_TRUE(sql.contains("WHERE t2.Student_id IN (SELECT id FROM Student)")) << sql;
 }

@@ -281,7 +281,7 @@ This is the subtlest rule in the table, and it cuts both ways:
 - The check is **strictly stronger** than "does the target have a PK at all"
   (`ValidForeignKey`, used for ordinary FK fields and `join<>()`). Here, the target's
   PK must *also* pass the single-PK allowlist (#505) — an FK part pointing at a model
-  whose PK is `double` is rejected, even though `join<^^T::fk>()` on that same field
+  whose PK is `double` is rejected, even though `join<fields::T.fk>()` on that same field
   would be fine.
 - **TEXT does not reach through an FK.** The parts-only TEXT widening applies to the
   FK member's *own* declared type, but an FK's declared type is never TEXT — it is the
@@ -401,13 +401,13 @@ A **partial** target (a strict subset) is rejected at compile time: one column o
 composite key is not unique on its own.
 
 ```cpp
-qs.insert(oi).on_conflict<^^OrderItem::order_id, ^^OrderItem::product_id>()
-   .update<^^OrderItem::quantity>().execute();
+qs.insert(oi).on_conflict<fields::OrderItem.order_id, fields::OrderItem.product_id>()
+   .update<fields::OrderItem.quantity>().execute();
 // SQL: INSERT INTO OrderItem (order_id, product_id, quantity) VALUES (?, ?, ?)
 //      ON CONFLICT (order_id, product_id) DO UPDATE SET quantity=excluded.quantity
 //      -- no RETURNING clause
 
-qs.insert(oi).on_conflict<^^OrderItem::order_id>()
+qs.insert(oi).on_conflict<fields::OrderItem.order_id>()
    // COMPILE ERROR: order_id alone is not unique — it's one part of a 2-part key
 ```
 
@@ -488,7 +488,7 @@ struct Student {
 
 // Eager-load m2m with UUID-PK owner — stitch map keys on UUID, not int64_t
 auto students = QuerySet<Student>()
-    .join<^^Student::courses>()
+    .join<fields::Student.courses>()
     .select();
 
 for (const auto& student : students) {
@@ -541,14 +541,14 @@ See [Part types](#part-types-517).
 
 **Q: Can I upsert on a UUID PK?**
 
-A: Yes. Use `on_conflict<^^Model::id>()` with the UUID PK member:
+A: Yes. Use `on_conflict<fields::Model.id>()` with the UUID PK member:
 
 ```cpp
 User user{.id = storm::UUID::generate(), .name = "Alice"};
 QuerySet<User>()
     .insert(user)
-    .on_conflict<^^User::id>()
-    .update<^^User::name>()
+    .on_conflict<fields::User.id>()
+    .update<fields::User.name>()
     .execute();
 // On conflict, update the name; insert if no conflict
 ```
@@ -675,7 +675,7 @@ struct Student {
 
 - **Not a column.** The member maps to a junction table, not to a column —
   `INSERT`/`SELECT`/`UPDATE`/schema generation skip it entirely. Plain `select()`
-  leaves it empty; `join<^^Student::courses>()` eager-loads it.
+  leaves it empty; `join<fields::Student.courses>()` eager-loads it.
 - **Supported containers:** `std::vector<T>`, `plf::hive<T>`, `std::deque<T>`,
   and smart-pointer elements (`std::vector<std::shared_ptr<T>>`); the related
   model type is extracted via C++26 `std::meta`.
@@ -685,7 +685,7 @@ struct Student {
 ## Persistable vs. Filterable
 
 Every type on this page is **persistable and readable** — you can `INSERT` it and `SELECT`
-it back. A **narrower** set is **filterable in a WHERE clause** (`f<^^T::field>() == …`,
+it back. A **narrower** set is **filterable in a WHERE clause** (`fields::T.field == …`,
 `.between(…)`, `.in(…)`): the expression system stores operands in a closed variant, so a
 type must have a variant arm to be filtered on (#407). Temporal types
 (`year_month_day`, `system_clock::time_point`) and `storm::UUID` are both persistable **and**
@@ -801,7 +801,7 @@ concept ValidFieldInfo =
     std::meta::is_nonstatic_data_member(MemberInfo) && std::meta::has_identifier(MemberInfo);
 ```
 
-The field selector `f<^^Model::member>()` and its `Field` / `CollatedField` proxies `require` it,
+The field selector `fields::Model.member` and its `Field` / `CollatedField` proxies `require` it,
 so a selector that is not a field — a static member, a member function, a whole-type reflection
 such as `^^Person`, or a scalar like `^^int` — fails at this named boundary instead of deep inside
 `identifier_of` / `type_of`. Both requirements are load-bearing: on the clang-p2996 build,
@@ -809,7 +809,7 @@ such as `^^Person`, or a scalar like `^^int` — fails at this named boundary in
 `false`, so the concept genuinely rejects (contrast `Entity`, whose structural requirements alone
 accept `int` and rely on `is_class_type` to gate).
 
-`ValidFieldInfo` is orthogonal to `Entity` (which gates the whole model *type*) and to the `f<>`
+`ValidFieldInfo` is orthogonal to `Entity` (which gates the whole model *type*) and to the selector
 call site's extra `!is_relation_field(MemberInfo)` check, which excludes `many_to_many` /
 `reverse_fk` container members that are not persisted columns — that check is still ANDed alongside
 `ValidFieldInfo` at each selector site.
@@ -826,7 +826,7 @@ concept ValidForeignKey = ModelWithPrimaryKey<utilities::optional_inner_type_t<F
 ```
 
 `join<>()` / `left_join<>()` and `find_fk_primary_key<FKType>()` `require` it, so calling
-`join<^^Message::sender>()` when `sender`'s target type has no primary key fails at the join call
+`join<fields::Message.sender>()` when `sender`'s target type has no primary key fails at the join call
 site instead of deep inside FK-column extraction. It is single-level only — it checks the target's
 own PK, never recursing into the target's FKs (a Base⟷Owner reference cycle would otherwise never
 terminate). Loop bodies that walk members at runtime (e.g. `FKFieldOf`) can't splice a loop variable

@@ -5,7 +5,10 @@
  * @brief Shared model structs used by both tests and benchmarks.
  *
  * IMPORTANT: Include this file AFTER `import storm;` — the
- * [[= storm::*]] attributes require the storm module.
+ * [[= storm::*]] attributes require the storm module, and the fields:: blocks
+ * near the bottom call storm::field_specs_for, a *function*, which is a harder
+ * dependency than an annotation. Including this header too early now fails
+ * inside a consteval block rather than at the attribute.
  */
 
 #include <array>
@@ -13,6 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <meta>
 #include <optional>
 #include <string>
 #include <vector>
@@ -147,6 +151,40 @@ struct UuidPkRef {
     [[= storm::fk<>]] UuidPkModel owner;
     std::string value;
 };
+
+// =============================================================================
+// fields:: selector proxies (#518)
+// =============================================================================
+// Two mechanical lines per model, no field names — so they cannot drift when a
+// model gains or loses a member. Declared for the models this header's consumers
+// actually select on; a model with no selector call sites needs no proxy.
+
+namespace fields {
+
+struct PersonT;
+consteval { std::meta::define_aggregate(^^PersonT, storm::field_specs_for(^^Person)); }
+inline constexpr PersonT Person{};
+
+struct SimpleRecordT;
+consteval { std::meta::define_aggregate(^^SimpleRecordT, storm::field_specs_for(^^SimpleRecord)); }
+inline constexpr SimpleRecordT SimpleRecord{};
+
+struct MessageT;
+consteval { std::meta::define_aggregate(^^MessageT, storm::field_specs_for(^^Message)); }
+inline constexpr MessageT Message{};
+
+struct TimestampedRecordT;
+consteval { std::meta::define_aggregate(^^TimestampedRecordT, storm::field_specs_for(^^TimestampedRecord)); }
+inline constexpr TimestampedRecordT TimestampedRecord{};
+
+struct ExtendedTypesT;
+consteval { std::meta::define_aggregate(^^ExtendedTypesT, storm::field_specs_for(^^ExtendedTypes)); }
+inline constexpr ExtendedTypesT ExtendedTypes{};
+
+struct TaskT;
+consteval { std::meta::define_aggregate(^^TaskT, storm::field_specs_for(^^Task)); }
+inline constexpr TaskT Task{};
+} // namespace fields
 
 // =============================================================================
 // Section 4: Seed datasets

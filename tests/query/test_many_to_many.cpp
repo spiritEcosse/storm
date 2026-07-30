@@ -51,10 +51,10 @@ static_assert(storm::orm::statements::M2MFieldOf<Pupil, ^^Pupil::courses>);
 // ============================================================================
 
 template <auto M>
-concept FCallableM2M = requires { storm::orm::where::f<M>(); };
+concept FCallableM2M = requires { storm::meta::FieldRef<M>{}; };
 
-static_assert(!FCallableM2M<^^Student::courses>, "m2m member rejected by f<>()");
-static_assert(!FCallableM2M<^^Pupil::courses>, "m2m_through member rejected by f<>()");
+static_assert(!FCallableM2M<^^Student::courses>, "m2m member rejected by FieldRef");
+static_assert(!FCallableM2M<^^Pupil::courses>, "m2m_through member rejected by FieldRef");
 static_assert(FCallableM2M<^^Student::name>, "persisted column still accepted");
 static_assert(FCallableM2M<^^Student::age>, "persisted column still accepted");
 
@@ -168,7 +168,7 @@ TYPED_TEST(M2MBaseTest, BulkUpdateIgnoresM2MField) {
     auto upd = qs.update(std::span<const Student>(updated)).execute();
     ASSERT_TRUE(upd.has_value()) << upd.error().message();
 
-    auto rows = qs.template order_by<^^Student::id>().select().execute();
+    auto rows = qs.template order_by<fields::Student.id>().select().execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     ASSERT_EQ(rows->size(), 2U);
     auto it = rows->begin();
@@ -294,7 +294,7 @@ TYPED_TEST(M2MBaseTest, JunctionTableIsCreatedAndWritable) {
 
 TYPED_TEST(M2MBaseTest, M2MJoinSqlShape) {
     QuerySet<Student, TypeParam> qs;
-    auto                         sql = qs.template join<^^Student::courses>().select().sql();
+    auto                         sql = qs.template join<fields::Student.courses>().select().sql();
     // Q1 — base entities, a plain SELECT (no join, no sorter).
     EXPECT_TRUE(sql.contains("SELECT id, name, age FROM Student; ")) << sql;
     // Q2 — junction⋈related, related rows filtered by the same base subquery.
@@ -307,9 +307,9 @@ TYPED_TEST(M2MBaseTest, M2MJoinSqlShape) {
 
 TYPED_TEST(M2MBaseTest, M2MJoinSqlModifiersGoInsideSubquery) {
     QuerySet<Student, TypeParam> qs;
-    auto                         sql = qs.template join<^^Student::courses>()
-                       .where(storm::orm::where::f<^^Student::age>() > 18)
-                       .template order_by<^^Student::name, false>()
+    auto                         sql = qs.template join<fields::Student.courses>()
+                       .where(fields::Student.age > 18)
+                       .template order_by<fields::Student.name, false>()
                        .limit(2)
                        .select()
                        .sql();
@@ -331,8 +331,10 @@ TYPED_TEST(M2MBaseTest, M2MJoinSqlModifiersGoInsideSubquery) {
 
 TYPED_TEST(M2MBaseTest, M2MJoinSqlMultiFieldOrderByQualifiesAllFields) {
     QuerySet<Student, TypeParam> qs;
-    auto                         sql =
-            qs.template join<^^Student::courses>().template order_by<^^Student::age, ^^Student::name>().select().sql();
+    auto                         sql = qs.template join<fields::Student.courses>()
+                       .template order_by<fields::Student.age, fields::Student.name>()
+                       .select()
+                       .sql();
     // Multi-field ORDER BY appears (unqualified — no t1. surgery) in Q1 and the
     // Q2 IN-subquery; no pk tiebreak (the stitch is a hash map, not adjacency).
     if constexpr (storm::test::is_postgresql<TypeParam>()) {
@@ -345,7 +347,7 @@ TYPED_TEST(M2MBaseTest, M2MJoinSqlMultiFieldOrderByQualifiesAllFields) {
 
 TYPED_TEST(M2MBaseTest, M2MLeftJoinSqlShape) {
     QuerySet<Student, TypeParam> qs;
-    auto                         sql = qs.template left_join<^^Student::courses>().select().sql();
+    auto                         sql = qs.template left_join<fields::Student.courses>().select().sql();
     // Q2 is always an INNER junction⋈related join — LEFT vs INNER is a post-stitch
     // filter (LEFT keeps zero-relation entities), never an SQL difference.
     EXPECT_TRUE(sql.contains("SELECT id, name, age FROM Student; ")) << sql;
@@ -378,7 +380,7 @@ template <typename Hive> auto find_student(Hive& rows, std::string_view name) ->
 
 TYPED_TEST(M2MSeededTest, EagerLoadAggregatesCourses) {
     QuerySet<Student, TypeParam> qs;
-    auto                         rows = qs.template join<^^Student::courses>().select().execute();
+    auto                         rows = qs.template join<fields::Student.courses>().select().execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     // INNER join drops Carol (no courses); 3 joined rows aggregate into 2 students
     ASSERT_EQ(rows->size(), 2U);
@@ -409,7 +411,7 @@ TYPED_TEST(M2MSeededTest, DeletingOwnerCascadesJunctionRows) {
     ASSERT_EQ(before_stmt.extract_int64(0), 2) << "Alice should start with two junction rows";
 
     QuerySet<Student, TypeParam> sqs;
-    auto                         del = sqs.where(storm::orm::where::f<^^Student::id>() == 1).erase().execute();
+    auto                         del = sqs.where(fields::Student.id == 1).erase().execute();
     ASSERT_TRUE(del.has_value()) << "Deleting Alice failed: " << del.error().message();
 
     auto after = conn->prepare("SELECT COUNT(*) FROM Student_Course WHERE Student_id = 1");
@@ -427,7 +429,7 @@ TYPED_TEST(M2MSeededTest, EagerLoadInsideOuterTransactionSucceeds) {
     auto                         txn = storm::begin(QuerySet<Student, TypeParam>::get_default_connection());
     ASSERT_TRUE(txn.has_value()) << "storm::begin should start a transaction";
 
-    auto rows = qs.template join<^^Student::courses>().select().execute();
+    auto rows = qs.template join<fields::Student.courses>().select().execute();
     ASSERT_TRUE(rows.has_value()) << "m2m prefetch inside outer txn must not fail on nested BEGIN: "
                                   << (rows ? "" : rows.error().message());
     ASSERT_EQ(rows->size(), 2U);
@@ -437,7 +439,7 @@ TYPED_TEST(M2MSeededTest, EagerLoadInsideOuterTransactionSucceeds) {
 
 TYPED_TEST(M2MSeededTest, LeftJoinKeepsStudentsWithoutCourses) {
     QuerySet<Student, TypeParam> qs;
-    auto                         rows = qs.template left_join<^^Student::courses>().select().execute();
+    auto                         rows = qs.template left_join<fields::Student.courses>().select().execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     ASSERT_EQ(rows->size(), 3U);
 
@@ -451,10 +453,7 @@ TYPED_TEST(M2MSeededTest, LeftJoinKeepsStudentsWithoutCourses) {
 
 TYPED_TEST(M2MSeededTest, EmptyResultSet) {
     QuerySet<Student, TypeParam> qs;
-    auto                         rows = qs.template join<^^Student::courses>()
-                        .where(storm::orm::where::f<^^Student::age>() > 99)
-                        .select()
-                        .execute();
+    auto rows = qs.template join<fields::Student.courses>().where(fields::Student.age > 99).select().execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     EXPECT_TRUE(rows->empty());
 }
@@ -462,7 +461,7 @@ TYPED_TEST(M2MSeededTest, EmptyResultSet) {
 // Aggregates over an m2m join count (student, course) PAIRS — documented behavior.
 TYPED_TEST(M2MSeededTest, CountOverM2MJoinCountsPairs) {
     QuerySet<Student, TypeParam> qs;
-    auto                         count = qs.template join<^^Student::courses>().count().execute();
+    auto                         count = qs.template join<fields::Student.courses>().count().execute();
     ASSERT_TRUE(count.has_value()) << count.error().message();
     EXPECT_EQ(count.value(), 3);
 }
@@ -494,7 +493,7 @@ TYPED_TEST_SUITE(M2MContainerTest, DatabaseTypes);
 
 TYPED_TEST(M2MContainerTest, HiveContainerEagerLoad) {
     QuerySet<Playlist, TypeParam> qs;
-    auto                          rows = qs.template join<^^Playlist::tracks>().select().execute();
+    auto                          rows = qs.template join<fields::Playlist.tracks>().select().execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     ASSERT_EQ(rows->size(), 1U);
     ASSERT_EQ(rows->begin()->tracks.size(), 2U); // appended via hive insert()
@@ -504,7 +503,7 @@ TYPED_TEST(M2MContainerTest, HiveContainerEagerLoad) {
 
 TYPED_TEST(M2MContainerTest, SharedPtrElementsEagerLoad) {
     QuerySet<Album, TypeParam> qs;
-    auto                       rows = qs.template join<^^Album::tracks>().select().execute();
+    auto                       rows = qs.template join<fields::Album.tracks>().select().execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     ASSERT_EQ(rows->size(), 1U);
     ASSERT_EQ(rows->begin()->tracks.size(), 1U);

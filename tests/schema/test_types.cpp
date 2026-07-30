@@ -20,7 +20,6 @@ using std::chrono::system_clock;
 using std::chrono::year;
 using std::chrono::year_month_day;
 using storm::QuerySet;
-using storm::orm::where::f;
 
 // ===== INTEGER TYPES TESTS =====
 
@@ -1241,7 +1240,7 @@ TYPED_TEST(EnumTypesTest, WhereEnumEqual) {
     auto insert_result = qs.insert(batch).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    auto selected = qs.where(f<^^ExtendedTypes::color>() == Color::Green).select().execute();
+    auto selected = qs.where(fields::ExtendedTypes.color == Color::Green).select().execute();
     ASSERT_TRUE(selected.has_value());
     ASSERT_EQ(selected.value().size(), 1);
     EXPECT_EQ(selected.value().begin()->label, "g");
@@ -1257,7 +1256,7 @@ TYPED_TEST(EnumTypesTest, WhereEnumNotEqual) {
     auto insert_result = qs.insert(batch).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    auto selected = qs.where(f<^^ExtendedTypes::color>() != Color::Red).select().execute();
+    auto selected = qs.where(fields::ExtendedTypes.color != Color::Red).select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 2);
 }
@@ -1272,7 +1271,7 @@ TYPED_TEST(EnumTypesTest, WhereEnumBetween) {
     auto insert_result = qs.insert(batch).execute();
     ASSERT_TRUE(insert_result.has_value());
 
-    auto selected = qs.where(f<^^ExtendedTypes::color>().between(Color::Green, Color::Blue)).select().execute();
+    auto selected = qs.where(fields::ExtendedTypes.color.between(Color::Green, Color::Blue)).select().execute();
     ASSERT_TRUE(selected.has_value());
     EXPECT_EQ(selected.value().size(), 2);
 }
@@ -1927,7 +1926,7 @@ TYPED_TEST(Uint64SignedStorageTest, OrderBySortsBySignedInterpretation) {
     // ORDER BY big_unsigned ASC. By unsigned value, "small" (1) < "huge" (2^63+1),
     // so "small" should come first. But signed storage flips it: the huge value is
     // a negative int64, so "huge" sorts FIRST. We pin the (wrong-for-unsigned) order.
-    auto selected = qs.template order_by<^^ExtendedTypes::big_unsigned>().select().execute();
+    auto selected = qs.template order_by<fields::ExtendedTypes.big_unsigned>().select().execute();
     ASSERT_TRUE(selected.has_value()) << selected.error().message();
     ASSERT_EQ(selected.value().size(), 2);
     auto it = selected.value().begin();
@@ -2065,7 +2064,7 @@ TYPED_TEST(Uint64FullUnsignedTest, ZeroAndSmallValuesRoundTrip) {
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
 
-    auto selected = qs.template order_by<^^ExtendedTypes::id>().select().execute();
+    auto selected = qs.template order_by<fields::ExtendedTypes.id>().select().execute();
     ASSERT_TRUE(selected.has_value()) << selected.error().message();
     ASSERT_EQ(selected.value().size(), 2);
     auto it = selected.value().begin();
@@ -2088,7 +2087,7 @@ TYPED_TEST(Uint64FullUnsignedTest, OrderBySortsByUnsignedValue) {
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
 
-    auto selected = qs.template order_by<^^ExtendedTypes::big_unsigned_full>().select().execute();
+    auto selected = qs.template order_by<fields::ExtendedTypes.big_unsigned_full>().select().execute();
     ASSERT_TRUE(selected.has_value()) << selected.error().message();
     ASSERT_EQ(selected.value().size(), 2);
     auto it = selected.value().begin();
