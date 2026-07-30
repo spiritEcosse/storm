@@ -152,11 +152,16 @@ export namespace storm {
     // the whole selector vocabulary is reachable under one spelling — the methods
     // widened to accept proxies constrain on ValidSelector and convert through
     // selector_info.
-    using meta::field_specs_for; // NOLINT(misc-unused-using-decls)
-    using meta::FieldRef;        // NOLINT(misc-unused-using-decls)
-    using meta::FieldSelector;   // NOLINT(misc-unused-using-decls)
-    using meta::selector_info;   // NOLINT(misc-unused-using-decls)
-    using meta::ValidSelector;   // NOLINT(misc-unused-using-decls)
+    // A relation member (m2m / reverse_fk) gets RelationRef instead — a join
+    // target with no comparison operators, so WHERE on it stays a compile error.
+    using meta::AnySelector;      // NOLINT(misc-unused-using-decls)
+    using meta::field_specs_for;  // NOLINT(misc-unused-using-decls)
+    using meta::FieldRef;         // NOLINT(misc-unused-using-decls)
+    using meta::FieldSelector;    // NOLINT(misc-unused-using-decls)
+    using meta::RelationRef;      // NOLINT(misc-unused-using-decls)
+    using meta::RelationSelector; // NOLINT(misc-unused-using-decls)
+    using meta::selector_info;    // NOLINT(misc-unused-using-decls)
+    using meta::ValidSelector;    // NOLINT(misc-unused-using-decls)
 
     // Returns the compile-time generated CREATE TABLE SQL for model T and dialect D.
     template <typename T, orm::schema::Dialect D = orm::schema::Dialect::SQLite>

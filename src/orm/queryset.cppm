@@ -21,6 +21,7 @@ import storm_orm_statements_update;
 import storm_orm_statements_join;
 import storm_orm_statements_orderby;
 import storm_orm_where;
+import storm_orm_fields; // selector_info / ValidSelector — #518 proxy selectors
 import storm_orm_statements_aggregate;
 import storm_orm_statements_setop;
 import storm_orm_utilities;
@@ -222,13 +223,15 @@ export namespace storm {
         // OPTIMIZATION: Returns cached DistinctStatement for optimal performance
         // Returns DistinctStatement by value - connection-level prepare_cached() handles SQL caching
         // No static thread_local needed since actual statement caching is at connection level
-        template <std::meta::info... FieldInfos> [[nodiscard]] constexpr auto distinct() {
-            if constexpr (sizeof...(FieldInfos) == 0) {
+        template <auto... S>
+            requires((storm::meta::ValidSelector<S> && ...))
+        [[nodiscard]] constexpr auto distinct() {
+            if constexpr (sizeof...(S) == 0) {
                 using StmtType = orm::statements::
                         DistinctStatement<T, ConnType, orm::statements::BaseStatement<T>::primary_key_>;
                 return StmtType{conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_};
             } else {
-                using StmtType = orm::statements::DistinctStatement<T, ConnType, FieldInfos...>;
+                using StmtType = orm::statements::DistinctStatement<T, ConnType, storm::meta::selector_info<S>()...>;
                 return StmtType{conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_};
             }
         }
@@ -241,10 +244,10 @@ export namespace storm {
         //
         // Unlike distinct(), values() does NOT apply DISTINCT — all rows are returned
         // including duplicates. Works with WHERE, JOIN, ORDER BY, LIMIT/OFFSET.
-        template <std::meta::info... FieldInfos>
-            requires(sizeof...(FieldInfos) > 0)
+        template <auto... S>
+            requires(sizeof...(S) > 0 && (storm::meta::ValidSelector<S> && ...))
         [[nodiscard]] constexpr auto values() {
-            using StmtType = orm::statements::ValuesStatement<T, ConnType, FieldInfos...>;
+            using StmtType = orm::statements::ValuesStatement<T, ConnType, storm::meta::selector_info<S>()...>;
             return StmtType{conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_};
         }
 
@@ -256,10 +259,10 @@ export namespace storm {
         //   M2M:       student_qs.join<^^Student::courses>().select()
         //   Multi M2M: member_qs.join<^^Member::courses, ^^Member::clubs>().select()
         // Mixed FK + m2m in one call is rejected (out of scope, #392).
-        template <std::meta::info... FKFields>
-            requires orm::statements::JoinableFields<T, FKFields...>
+        template <auto... S>
+            requires orm::statements::JoinableFields<T, storm::meta::selector_info<S>()...>
         [[nodiscard]] auto join() const -> QuerySet {
-            return make_joined<orm::statements::JoinType::Inner, FKFields...>();
+            return make_joined<orm::statements::JoinType::Inner, storm::meta::selector_info<S>()...>();
         }
 
         // LEFT JOIN support for FK fields or many-to-many fields (#203, #392).
@@ -271,10 +274,10 @@ export namespace storm {
         //   Multi FK:  message_qs.left_join<^^Message::sender, ^^Message::receiver>().select()
         //   M2M:       student_qs.left_join<^^Student::courses>().select()
         //   Multi M2M: member_qs.left_join<^^Member::courses, ^^Member::clubs>().select()
-        template <std::meta::info... FKFields>
-            requires orm::statements::JoinableFields<T, FKFields...>
+        template <auto... S>
+            requires orm::statements::JoinableFields<T, storm::meta::selector_info<S>()...>
         [[nodiscard]] auto left_join() const -> QuerySet {
-            return make_joined<orm::statements::JoinType::Left, FKFields...>();
+            return make_joined<orm::statements::JoinType::Left, storm::meta::selector_info<S>()...>();
         }
 
         // Update single object - returns proxy with .execute() and .to_sql()
@@ -295,20 +298,21 @@ export namespace storm {
         // qs.where(cond).update<^^T::a, ^^T::b>(T{...}).execute() → std::expected<void, Error>.
         // With NO where() set, .execute()/.to_sql() return std::unexpected and refuse to
         // write the whole table.
-        template <std::meta::info... Members>
-            requires(sizeof...(Members) > 0)
+        template <auto... S>
+            requires(sizeof...(S) > 0 && (storm::meta::ValidSelector<S> && ...))
         [[nodiscard]] auto update(const T& proto [[clang::lifetimebound]]) {
             return orm::statements::UpdateStatement<T, ConnType>(conn_)
-                    .template query_where<Members...>(proto, where_expr_);
+                    .template query_where<storm::meta::selector_info<S>()...>(proto, where_expr_);
         }
 
         // Update all rows (#409) — UPDATE <table> SET <set> with NO WHERE clause.
         // SET columns are the Members... NTTPs; values come from `proto`. The explicit
         // full-table escape hatch named by update<>()'s empty-WHERE refusal (mirrors erase_all()).
-        template <std::meta::info... Members>
-            requires(sizeof...(Members) > 0)
+        template <auto... S>
+            requires(sizeof...(S) > 0 && (storm::meta::ValidSelector<S> && ...))
         [[nodiscard]] auto update_all(const T& proto [[clang::lifetimebound]]) {
-            return orm::statements::UpdateStatement<T, ConnType>(conn_).template query_all<Members...>(proto);
+            return orm::statements::UpdateStatement<T, ConnType>(conn_)
+                    .template query_all<storm::meta::selector_info<S>()...>(proto);
         }
 
         // Reset WHERE, JOIN, LIMIT, and OFFSET state
@@ -331,10 +335,10 @@ export namespace storm {
         //   qs.group_by<^^Person::department>().count().execute()    // grouped → .execute()
         //   qs.group_by<^^Person::dept, ^^Person::role>().sum<^^Person::salary>().execute()
         //   qs.where(age > 25).group_by<^^Person::years_exp>().count().execute()
-        template <std::meta::info... GroupFieldInfos>
-            requires(sizeof...(GroupFieldInfos) > 0)
+        template <auto... S>
+            requires(sizeof...(S) > 0 && (storm::meta::ValidSelector<S> && ...))
         [[nodiscard]] auto group_by() {
-            return orm::statements::GroupByBuilder<T, ConnType, GroupFieldInfos...>{
+            return orm::statements::GroupByBuilder<T, ConnType, storm::meta::selector_info<S>()...>{
                     {conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_, nullptr}
             };
         }
@@ -389,14 +393,18 @@ export namespace storm {
         //        queryset.where(age > 30).sum<^^Person::age>().execute()
         //        queryset.join<FK>().sum<^^Person::salary>().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
-        template <std::meta::info... FieldInfos>
-            requires orm::statements::AllNumericAggregateable<FieldInfos...>
+        template <auto... S>
+            requires(
+                    (storm::meta::ValidSelector<S> && ...) &&
+                    orm::statements::AllNumericAggregateable<storm::meta::selector_info<S>()...>
+            )
         [[nodiscard]] auto sum() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
                     orm::statements::NoGroupBy,
-                    orm::statements::AggregateOp<orm::statements::AggregateType::SUM, FieldInfos...>>;
+                    orm::statements::
+                            AggregateOp<orm::statements::AggregateType::SUM, storm::meta::selector_info<S>()...>>;
             return StmtType{{conn_, where_expr_, join_stmt_, {}, {}, {}, nullptr}};
         }
 
@@ -406,12 +414,15 @@ export namespace storm {
         //        queryset.where(age > 30).count().execute()
         //        queryset.join<FK>().count().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
-        template <std::meta::info... FieldInfos> [[nodiscard]] auto count() {
+        template <auto... S>
+            requires((storm::meta::ValidSelector<S> && ...))
+        [[nodiscard]] auto count() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
                     orm::statements::NoGroupBy,
-                    orm::statements::AggregateOp<orm::statements::AggregateType::COUNT, FieldInfos...>>;
+                    orm::statements::
+                            AggregateOp<orm::statements::AggregateType::COUNT, storm::meta::selector_info<S>()...>>;
             return StmtType{{conn_, where_expr_, join_stmt_, {}, {}, {}, nullptr}};
         }
 
@@ -420,14 +431,18 @@ export namespace storm {
         // Usage: queryset.avg<^^Person::salary>().execute()
         //        queryset.where(department == "Engineering").avg<^^Person::salary>().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
-        template <std::meta::info... FieldInfos>
-            requires orm::statements::AllNumericAggregateable<FieldInfos...>
+        template <auto... S>
+            requires(
+                    (storm::meta::ValidSelector<S> && ...) &&
+                    orm::statements::AllNumericAggregateable<storm::meta::selector_info<S>()...>
+            )
         [[nodiscard]] auto avg() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
                     orm::statements::NoGroupBy,
-                    orm::statements::AggregateOp<orm::statements::AggregateType::AVG, FieldInfos...>>;
+                    orm::statements::
+                            AggregateOp<orm::statements::AggregateType::AVG, storm::meta::selector_info<S>()...>>;
             return StmtType{{conn_, where_expr_, join_stmt_, {}, {}, {}, nullptr}};
         }
 
@@ -436,14 +451,18 @@ export namespace storm {
         // Usage: queryset.min<^^Person::age>().execute()
         //        queryset.where(active == true).min<^^Person::age>().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
-        template <std::meta::info... FieldInfos>
-            requires orm::statements::AllNumericAggregateable<FieldInfos...>
+        template <auto... S>
+            requires(
+                    (storm::meta::ValidSelector<S> && ...) &&
+                    orm::statements::AllNumericAggregateable<storm::meta::selector_info<S>()...>
+            )
         [[nodiscard]] auto min() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
                     orm::statements::NoGroupBy,
-                    orm::statements::AggregateOp<orm::statements::AggregateType::MIN, FieldInfos...>>;
+                    orm::statements::
+                            AggregateOp<orm::statements::AggregateType::MIN, storm::meta::selector_info<S>()...>>;
             return StmtType{{conn_, where_expr_, join_stmt_, {}, {}, {}, nullptr}};
         }
 
@@ -452,14 +471,18 @@ export namespace storm {
         // Usage: queryset.max<^^Person::age>().execute()
         //        queryset.where(department == "Sales").max<^^Person::salary>().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
-        template <std::meta::info... FieldInfos>
-            requires orm::statements::AllNumericAggregateable<FieldInfos...>
+        template <auto... S>
+            requires(
+                    (storm::meta::ValidSelector<S> && ...) &&
+                    orm::statements::AllNumericAggregateable<storm::meta::selector_info<S>()...>
+            )
         [[nodiscard]] auto max() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
                     orm::statements::NoGroupBy,
-                    orm::statements::AggregateOp<orm::statements::AggregateType::MAX, FieldInfos...>>;
+                    orm::statements::
+                            AggregateOp<orm::statements::AggregateType::MAX, storm::meta::selector_info<S>()...>>;
             return StmtType{{conn_, where_expr_, join_stmt_, {}, {}, {}, nullptr}};
         }
 
@@ -468,12 +491,16 @@ export namespace storm {
         // Usage: queryset.count_distinct<^^Person::age>().execute()
         //        queryset.where(active == true).count_distinct<^^Person::department>().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
-        template <std::meta::info FieldInfo> [[nodiscard]] auto count_distinct() {
+        template <auto S>
+            requires storm::meta::ValidSelector<S>
+        [[nodiscard]] auto count_distinct() {
             using StmtType = orm::statements::AggregateStatement<
                     T,
                     ConnType,
                     orm::statements::NoGroupBy,
-                    orm::statements::AggregateOp<orm::statements::AggregateType::COUNT_DISTINCT, FieldInfo>>;
+                    orm::statements::AggregateOp<
+                            orm::statements::AggregateType::COUNT_DISTINCT,
+                            storm::meta::selector_info<S>()>>;
             return StmtType{{conn_, where_expr_, join_stmt_, {}, {}, {}, nullptr}};
         }
 

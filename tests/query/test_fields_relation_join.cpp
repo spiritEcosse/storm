@@ -1,0 +1,88 @@
+#include <gtest/gtest.h>
+#include "test_db_helpers.h"
+#include "plf_hive/plf_hive.h"
+
+import storm;
+import std;
+
+using storm::QuerySet;
+
+#include "test_models.h"     // NOSONAR cpp:S954
+#include "test_m2m_models.h" // NOSONAR cpp:S954
+
+// fields:: proxies for the relation-carrying models. Declared here rather than
+// in test_m2m_models.h so the m2m TUs that do not need them stay unchanged.
+namespace fields {
+
+    struct StudentT;
+    consteval {
+        std::meta::define_aggregate(^^StudentT, storm::field_specs_for(^^Student));
+    }
+    inline constexpr StudentT Student{};
+
+    struct PupilT;
+    consteval {
+        std::meta::define_aggregate(^^PupilT, storm::field_specs_for(^^Pupil));
+    }
+    inline constexpr PupilT Pupil{};
+
+} // namespace fields
+
+namespace {
+
+    using Conn = storm::db::sqlite::Connection;
+
+    // A relation member is not a column, but IS a legal join target. These assert
+    // the spelling `join<fields::Student.courses>()` exists and emits byte-identical
+    // SQL to the ^^ form — the 65 in-tree m2m/reverse-FK join sites depend on it.
+    class FieldsRelationJoin : public StormTestFixture<Student, Conn, Course, Pupil> {
+      public:
+        [[nodiscard]] static auto student_qs() -> QuerySet<Student, Conn> {
+            return QuerySet<Student, Conn>{};
+        }
+        [[nodiscard]] static auto pupil_qs() -> QuerySet<Pupil, Conn> {
+            return QuerySet<Pupil, Conn>{};
+        }
+    };
+
+    TEST_F(FieldsRelationJoin, AutoJunctionM2MJoin) {
+        EXPECT_EQ(
+                student_qs().join<^^Student::courses>().select().sql(),
+                student_qs().join<fields::Student.courses>().select().sql()
+        );
+    }
+
+    TEST_F(FieldsRelationJoin, AutoJunctionM2MLeftJoin) {
+        EXPECT_EQ(
+                student_qs().left_join<^^Student::courses>().select().sql(),
+                student_qs().left_join<fields::Student.courses>().select().sql()
+        );
+    }
+
+    TEST_F(FieldsRelationJoin, ThroughModelM2MJoin) {
+        // many_to_many_through<Enrollment> — the explicit-junction spelling.
+        EXPECT_EQ(
+                pupil_qs().join<^^Pupil::courses>().select().sql(),
+                pupil_qs().join<fields::Pupil.courses>().select().sql()
+        );
+    }
+
+    TEST_F(FieldsRelationJoin, RelationJoinCombinedWithWhereAndOrderBy) {
+        // The relation proxy must compose with column proxies in one chain.
+        EXPECT_EQ(
+                student_qs()
+                        .join<^^Student::courses>()
+                        .where(storm::orm::where::f<^^Student::age>() > 20)
+                        .order_by<^^Student::name>()
+                        .select()
+                        .sql(),
+                student_qs()
+                        .join<fields::Student.courses>()
+                        .where(fields::Student.age > 20)
+                        .order_by<fields::Student.name>()
+                        .select()
+                        .sql()
+        );
+    }
+
+} // namespace

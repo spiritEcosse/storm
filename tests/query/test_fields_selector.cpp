@@ -7,6 +7,7 @@ import std;
 #include "test_fields_models.h" // NOSONAR cpp:S954
 
 using storm::meta::FieldSelector;
+using storm::meta::RelationSelector;
 using storm::meta::selector_info;
 using storm::meta::ValidSelector;
 
@@ -36,30 +37,41 @@ static_assert(ValidSelector<fields::FSPerson.age>); // the proxy
 static_assert(ValidSelector<^^FSPerson::age>);      // a raw info
 static_assert(!ValidSelector<42>);                  // neither spelling
 
-// ── Relation members are excluded from the generated struct ──────────────────
-// Probed structurally: `is_relation_field` is NOT re-exported through
-// `import storm;` (spike finding 2), so a test TU cannot call it directly.
-// A requires-expression on member access soft-fails, which is enough.
-//
-// CAVEAT on signal (mutation-tested). `!has_tags` is a REGRESSION guard, not a
-// proof the filter runs: it cannot be made to fail. Deleting the
-// `is_relation_field` skip in field_specs_for does not silently admit `tags` —
-// it hard-errors at the `substitute(^^FieldRef, ...)` on the very next line,
-// caught by FieldRef's OWN `requires(!is_relation_field(M))`. where::Field<M>
-// carries the same constraint as a backstop if FieldRef's were ever dropped.
-// Either way the assert never observes a false value. Kept because it is what a
-// reader checks — but the real enforcement is the constraint, not this line.
+// ── Relation members ARE present, but as a DIFFERENT proxy type ──────────────
+// A relation member (m2m, reverse_fk) is not a column, but it IS a legal join
+// target — `join<fields::Article.tags>()` has to work. So field_specs_for emits
+// RelationRef for it instead of FieldRef. RelationRef deliberately has NO
+// where::Field<M> base, which is what keeps a relation out of a WHERE clause
+// (the #408 guarantee) while still naming it for a join.
 template <typename FieldsT> constexpr bool has_tags  = requires(const FieldsT& obj) { obj.tags; };
 template <typename FieldsT> constexpr bool has_title = requires(const FieldsT& obj) { obj.title; };
 
-static_assert(has_title<decltype(fields::FSArticle)>); // a real column IS there
-static_assert(!has_tags<decltype(fields::FSArticle)>); // the m2m member is NOT
+static_assert(has_title<decltype(fields::FSArticle)>); // a real column
+static_assert(has_tags<decltype(fields::FSArticle)>);  // the m2m member, as RelationRef
+
+// The two proxies are distinct types, and only the column one is a FieldSelector.
+static_assert(FieldSelector<std::remove_cvref_t<decltype(fields::FSArticle.title)>>);
+static_assert(!FieldSelector<std::remove_cvref_t<decltype(fields::FSArticle.tags)>>);
+static_assert(RelationSelector<std::remove_cvref_t<decltype(fields::FSArticle.tags)>>);
+static_assert(!RelationSelector<std::remove_cvref_t<decltype(fields::FSArticle.title)>>);
+
+// Both resolve to their member for the NTTP positions.
+static_assert(std::meta::identifier_of(selector_info<fields::FSArticle.tags>()) == "tags");
+
+// ── A relation proxy carries NO comparison operators (#408 preserved) ────────
+// This is the load-bearing difference from FieldRef, and the reason RelationRef
+// does not derive from where::Field<M>. WHERE on a relation stays a compile error.
+template <auto S> constexpr bool where_capable = requires { S == 1; };
+static_assert(where_capable<fields::FSPerson.age>);    // a column: comparable
+static_assert(!where_capable<fields::FSArticle.tags>); // a relation: NOT comparable
+
+// ValidSelector gates the column positions, so it must REJECT a relation proxy.
+static_assert(ValidSelector<fields::FSArticle.title>);
+static_assert(!ValidSelector<fields::FSArticle.tags>);
 
 // ── Field counts ─────────────────────────────────────────────────────────────
-// Same caveat as above for the FSArticle count: it is a regression guard on the
-// arity, not an independent check of the filter.
 static_assert(storm::field_specs_for(^^FSPerson).size() == 3);
-static_assert(storm::field_specs_for(^^FSArticle).size() == 2); // id, title — not tags
+static_assert(storm::field_specs_for(^^FSArticle).size() == 3); // id, title, tags
 
 // ── Adding a field auto-propagates: no edit to the fields:: declaration ─────
 static_assert(storm::field_specs_for(^^FSPersonExtra).size() == 4);
