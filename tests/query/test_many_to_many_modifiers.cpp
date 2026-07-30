@@ -44,7 +44,7 @@ using Names = std::vector<std::string>;
 
 TYPED_TEST(M2MModifierTest, WhereFiltersBaseEntities) {
     QuerySet<Student, TypeParam> qs;
-    auto rows = qs.template join<^^Student::courses>().where(f<^^Student::age>() >= 22).select().execute();
+    auto rows = qs.template join<^^Student::courses>().where(fields::Student.age >= 22).select().execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     // Carol matches the WHERE but has no courses → dropped by INNER join
     ASSERT_EQ(rows->size(), 1U);
@@ -54,24 +54,24 @@ TYPED_TEST(M2MModifierTest, WhereFiltersBaseEntities) {
 }
 
 TYPED_TEST(M2MModifierTest, WhereAllSixComparisonOperators) {
-    EXPECT_EQ(this->names_matching(f<^^Student::age>() == 20), (Names{"Alice"}));
-    EXPECT_EQ(this->names_matching(f<^^Student::age>() != 20), (Names{"Bob"}));
-    EXPECT_EQ(this->names_matching(f<^^Student::age>() > 20), (Names{"Bob"}));
-    EXPECT_EQ(this->names_matching(f<^^Student::age>() >= 20), (Names{"Alice", "Bob"}));
-    EXPECT_EQ(this->names_matching(f<^^Student::age>() < 22), (Names{"Alice"}));
-    EXPECT_EQ(this->names_matching(f<^^Student::age>() <= 22), (Names{"Alice", "Bob"}));
+    EXPECT_EQ(this->names_matching(fields::Student.age == 20), (Names{"Alice"}));
+    EXPECT_EQ(this->names_matching(fields::Student.age != 20), (Names{"Bob"}));
+    EXPECT_EQ(this->names_matching(fields::Student.age > 20), (Names{"Bob"}));
+    EXPECT_EQ(this->names_matching(fields::Student.age >= 20), (Names{"Alice", "Bob"}));
+    EXPECT_EQ(this->names_matching(fields::Student.age < 22), (Names{"Alice"}));
+    EXPECT_EQ(this->names_matching(fields::Student.age <= 22), (Names{"Alice", "Bob"}));
 }
 
 TYPED_TEST(M2MModifierTest, WhereSpecialExpressionsAndLogic) {
-    EXPECT_EQ(this->names_matching(f<^^Student::age>().in(20, 25)), (Names{"Alice"}));
-    EXPECT_EQ(this->names_matching(f<^^Student::age>().between(19, 21)), (Names{"Alice"}));
-    EXPECT_EQ(this->names_matching(f<^^Student::name>().like("B%")), (Names{"Bob"}));
+    EXPECT_EQ(this->names_matching(fields::Student.age.in(20, 25)), (Names{"Alice"}));
+    EXPECT_EQ(this->names_matching(fields::Student.age.between(19, 21)), (Names{"Alice"}));
+    EXPECT_EQ(this->names_matching(fields::Student.name.like("B%")), (Names{"Bob"}));
     EXPECT_EQ(
-            this->names_matching(f<^^Student::name>().like("A%") || f<^^Student::age>() == 22), (Names{"Alice", "Bob"})
+            this->names_matching(fields::Student.name.like("A%") || fields::Student.age == 22), (Names{"Alice", "Bob"})
     );
     EXPECT_EQ(
             this->names_matching(
-                    (f<^^Student::age>() >= 20 && f<^^Student::age>() < 22) || f<^^Student::name>() == "Bob"
+                    (fields::Student.age >= 20 && fields::Student.age < 22) || fields::Student.name == "Bob"
             ),
             (Names{"Alice", "Bob"})
     );
@@ -124,14 +124,14 @@ TYPED_TEST(M2MModifierTest, FirstReturnsCompleteEntity) {
 
 TYPED_TEST(M2MModifierTest, FirstOnEmptyReturnsNullopt) {
     QuerySet<Student, TypeParam> qs;
-    auto first = qs.template join<^^Student::courses>().where(f<^^Student::age>() > 99).first().execute();
+    auto first = qs.template join<^^Student::courses>().where(fields::Student.age > 99).first().execute();
     ASSERT_TRUE(first.has_value()) << first.error().message();
     EXPECT_FALSE(first->has_value());
 }
 
 TYPED_TEST(M2MModifierTest, GetReturnsExactlyOne) {
     QuerySet<Student, TypeParam> qs;
-    auto got = qs.template join<^^Student::courses>().where(f<^^Student::name>() == "Bob").get().execute();
+    auto got = qs.template join<^^Student::courses>().where(fields::Student.name == "Bob").get().execute();
     ASSERT_TRUE(got.has_value()) << got.error().message();
     EXPECT_EQ(got->name, "Bob");
     ASSERT_EQ(got->courses.size(), 1U);
@@ -142,7 +142,7 @@ TYPED_TEST(M2MModifierTest, GetAggregatesMultipleRelationsIntoOneEntity) {
     QuerySet<Student, TypeParam> qs;
     // Alice has TWO courses — two joined rows must aggregate into ONE entity,
     // not trip the "multiple rows" uniqueness check.
-    auto got = qs.template join<^^Student::courses>().where(f<^^Student::name>() == "Alice").get().execute();
+    auto got = qs.template join<^^Student::courses>().where(fields::Student.name == "Alice").get().execute();
     ASSERT_TRUE(got.has_value()) << got.error().message();
     EXPECT_EQ(got->name, "Alice");
     EXPECT_EQ(got->courses.size(), 2U);
@@ -150,7 +150,7 @@ TYPED_TEST(M2MModifierTest, GetAggregatesMultipleRelationsIntoOneEntity) {
 
 TYPED_TEST(M2MModifierTest, GetZeroRowsIsError) {
     QuerySet<Student, TypeParam> qs;
-    auto got = qs.template join<^^Student::courses>().where(f<^^Student::name>() == "Zed").get().execute();
+    auto got = qs.template join<^^Student::courses>().where(fields::Student.name == "Zed").get().execute();
     ASSERT_FALSE(got.has_value());
     EXPECT_TRUE(got.error().message().contains("No row found"));
 }
@@ -180,7 +180,7 @@ TYPED_TEST(M2MModifierTest, RowsGeneratorYieldsAggregatedEntities) {
 
 TYPED_TEST(M2MModifierTest, RowsGeneratorOnEmptyYieldsNothing) {
     QuerySet<Student, TypeParam> qs;
-    auto                         joined = qs.template join<^^Student::courses>().where(f<^^Student::age>() > 99);
+    auto                         joined = qs.template join<^^Student::courses>().where(fields::Student.age > 99);
 
     std::size_t count = 0;
     for (auto&& row : joined.rows()) {

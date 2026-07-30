@@ -148,7 +148,7 @@ TYPED_TEST(ReverseFKTest, SingleRowUpdateIgnoresReverseContainer) {
     auto           upd = qs.update(updated).execute();
     ASSERT_TRUE(upd.has_value()) << upd.error().message();
 
-    auto rows = qs.where(f<^^RfPerson::id>() == 1).select().execute();
+    auto rows = qs.where(fields::RfPerson.id == 1).select().execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     ASSERT_EQ(rows->size(), 1U);
     EXPECT_EQ(rows->begin()->name, "Alice Updated");
@@ -208,7 +208,7 @@ TYPED_TEST(ReverseFKTest, InnerJoinDropsZeroRelationEntities) {
 // Owner rows carry their columns (title) and the FK pk.
 TYPED_TEST(ReverseFKTest, OwnerColumnsExtracted) {
     auto rows = QuerySet<RfPerson, TypeParam>()
-                        .where(f<^^RfPerson::id>() == 1)
+                        .where(fields::RfPerson.id == 1)
                         .template left_join<^^RfPerson::tasks>()
                         .select()
                         .execute();
@@ -228,7 +228,7 @@ TYPED_TEST(ReverseFKTest, OwnerColumnsExtracted) {
 // WHERE bounds the BASE entities (the loaded persons), not the tasks.
 TYPED_TEST(ReverseFKTest, WhereAppliesToBaseEntities) {
     auto rows = QuerySet<RfPerson, TypeParam>()
-                        .where(f<^^RfPerson::age>() < 25)
+                        .where(fields::RfPerson.age < 25)
                         .template left_join<^^RfPerson::tasks>()
                         .template order_by<^^RfPerson::id>()
                         .select()

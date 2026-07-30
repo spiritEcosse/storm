@@ -308,7 +308,7 @@ TYPED_TEST(M2MBaseTest, M2MJoinSqlShape) {
 TYPED_TEST(M2MBaseTest, M2MJoinSqlModifiersGoInsideSubquery) {
     QuerySet<Student, TypeParam> qs;
     auto                         sql = qs.template join<^^Student::courses>()
-                       .where(storm::orm::where::f<^^Student::age>() > 18)
+                       .where(fields::Student.age > 18)
                        .template order_by<^^Student::name, false>()
                        .limit(2)
                        .select()
@@ -409,7 +409,7 @@ TYPED_TEST(M2MSeededTest, DeletingOwnerCascadesJunctionRows) {
     ASSERT_EQ(before_stmt.extract_int64(0), 2) << "Alice should start with two junction rows";
 
     QuerySet<Student, TypeParam> sqs;
-    auto                         del = sqs.where(storm::orm::where::f<^^Student::id>() == 1).erase().execute();
+    auto                         del = sqs.where(fields::Student.id == 1).erase().execute();
     ASSERT_TRUE(del.has_value()) << "Deleting Alice failed: " << del.error().message();
 
     auto after = conn->prepare("SELECT COUNT(*) FROM Student_Course WHERE Student_id = 1");
@@ -451,10 +451,7 @@ TYPED_TEST(M2MSeededTest, LeftJoinKeepsStudentsWithoutCourses) {
 
 TYPED_TEST(M2MSeededTest, EmptyResultSet) {
     QuerySet<Student, TypeParam> qs;
-    auto                         rows = qs.template join<^^Student::courses>()
-                        .where(storm::orm::where::f<^^Student::age>() > 99)
-                        .select()
-                        .execute();
+    auto rows = qs.template join<^^Student::courses>().where(fields::Student.age > 99).select().execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     EXPECT_TRUE(rows->empty());
 }

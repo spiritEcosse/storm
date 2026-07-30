@@ -78,6 +78,19 @@ namespace {
 
 } // namespace
 
+// fields:: selector proxies (#518). At global scope, NOT nested inside the
+// anonymous namespace above: a nested `namespace fields` makes every
+// unqualified `fields::` reference in this TU ambiguous against the global one.
+namespace fields {
+
+    struct WidgetT;
+    consteval {
+        std::meta::define_aggregate(^^WidgetT, storm::field_specs_for(^^Widget));
+    }
+    inline constexpr WidgetT Widget{};
+
+} // namespace fields
+
 // ============================================================================
 // DDL — PK column name (SQLite + PostgreSQL)
 // ============================================================================
@@ -189,28 +202,28 @@ TYPED_TEST(NonIdPkCrudTest, InsertSelectUpdateDeleteRoundTrip) {
                                       << (inserted.has_value() ? std::string{} : inserted.error().message());
     const auto new_id = static_cast<int>(inserted.value());
 
-    auto selected = qs.where(f<^^Widget::widget_id>() == new_id).select().execute();
+    auto selected = qs.where(fields::Widget.widget_id == new_id).select().execute();
     ASSERT_TRUE(selected.has_value()) << "Select by widget_id failed: "
                                       << (selected.has_value() ? std::string{} : selected.error().message());
     ASSERT_EQ(selected->size(), 1U);
     EXPECT_EQ(selected->begin()->name, "Sprocket");
 
-    auto updated = qs.where(f<^^Widget::widget_id>() == new_id)
+    auto updated = qs.where(fields::Widget.widget_id == new_id)
                            .template update<^^Widget::name>(Widget{.name = "Cog"})
                            .execute();
     ASSERT_TRUE(updated.has_value()) << "Update by widget_id failed: "
                                      << (updated.has_value() ? std::string{} : updated.error().message());
 
-    auto reselected = qs.where(f<^^Widget::widget_id>() == new_id).select().execute();
+    auto reselected = qs.where(fields::Widget.widget_id == new_id).select().execute();
     ASSERT_TRUE(reselected.has_value());
     ASSERT_EQ(reselected->size(), 1U);
     EXPECT_EQ(reselected->begin()->name, "Cog");
 
-    auto deleted = qs.where(f<^^Widget::widget_id>() == new_id).erase().execute();
+    auto deleted = qs.where(fields::Widget.widget_id == new_id).erase().execute();
     ASSERT_TRUE(deleted.has_value()) << "Delete by widget_id failed: "
                                      << (deleted.has_value() ? std::string{} : deleted.error().message());
 
-    auto empty = qs.where(f<^^Widget::widget_id>() == new_id).select().execute();
+    auto empty = qs.where(fields::Widget.widget_id == new_id).select().execute();
     ASSERT_TRUE(empty.has_value());
     EXPECT_EQ(empty->size(), 0U);
 }

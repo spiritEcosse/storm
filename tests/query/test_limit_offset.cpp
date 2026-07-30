@@ -124,7 +124,7 @@ TYPED_TEST(LimitOffsetTest, LimitOffsetPagination) {
 TYPED_TEST(LimitOffsetTest, WhereWithOffsetNoLimit) {
     QuerySet<Person, TypeParam> qs;
 
-    auto result = qs.template order_by<^^Person::name>().where(f<^^Person::age>() < 30).offset(2).select().execute();
+    auto result = qs.template order_by<^^Person::name>().where(fields::Person.age < 30).offset(2).select().execute();
     ASSERT_TRUE(result.has_value()) << "SELECT WHERE with OFFSET failed: " << result.error().message();
 
     const auto& people = result.value();

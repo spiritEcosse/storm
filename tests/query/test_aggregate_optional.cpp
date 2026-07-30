@@ -169,7 +169,7 @@ TYPED_TEST(OptionalAggregateTest, MinOverEmptySetIsNullopt) {
             {.name = "Bob", .age = 35},
     })));
 
-    auto result = this->qs->where(storm::orm::where::f<^^Person::age>() > 9999).template min<^^Person::age>().execute();
+    auto result = this->qs->where(fields::Person.age > 9999).template min<^^Person::age>().execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_FALSE(result.value().has_value()) << "MIN over empty set must be nullopt, not 0";
 }
@@ -180,7 +180,7 @@ TYPED_TEST(OptionalAggregateTest, MaxOverEmptySetIsNullopt) {
             {.name = "Bob", .age = 35},
     })));
 
-    auto result = this->qs->where(storm::orm::where::f<^^Person::age>() > 9999).template max<^^Person::age>().execute();
+    auto result = this->qs->where(fields::Person.age > 9999).template max<^^Person::age>().execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_FALSE(result.value().has_value()) << "MAX over empty set must be nullopt, not 0";
 }
@@ -191,7 +191,7 @@ TYPED_TEST(OptionalAggregateTest, AvgOverEmptySetIsNullopt) {
             {.name = "Bob", .age = 35},
     })));
 
-    auto result = this->qs->where(storm::orm::where::f<^^Person::age>() > 9999).template avg<^^Person::age>().execute();
+    auto result = this->qs->where(fields::Person.age > 9999).template avg<^^Person::age>().execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_FALSE(result.value().has_value()) << "AVG over empty set must be nullopt, not 0.0";
 }
@@ -202,14 +202,13 @@ TYPED_TEST(OptionalAggregateTest, MinMaxAvgOverEmptySetVsRealZeroAreDistinguisha
     })));
 
     // Real zero: a row with age == 0 -> the aggregate IS 0, present.
-    auto real_min = this->qs->where(storm::orm::where::f<^^Person::age>() == 0).template min<^^Person::age>().execute();
+    auto real_min = this->qs->where(fields::Person.age == 0).template min<^^Person::age>().execute();
     ASSERT_TRUE(real_min.has_value()) << real_min.error().message();
     ASSERT_TRUE(real_min.value().has_value()) << "MIN over a present 0 must hold a value";
     EXPECT_DOUBLE_EQ(real_min.value().value(), 0.0);
 
     // Empty set: no rows -> nullopt, NOT a real 0.
-    auto empty_min =
-            this->qs->where(storm::orm::where::f<^^Person::age>() > 9999).template min<^^Person::age>().execute();
+    auto empty_min = this->qs->where(fields::Person.age > 9999).template min<^^Person::age>().execute();
     ASSERT_TRUE(empty_min.has_value()) << empty_min.error().message();
     EXPECT_FALSE(empty_min.value().has_value());
 }
@@ -219,7 +218,7 @@ TYPED_TEST(OptionalAggregateTest, SumOverEmptySetKeepsZeroConvention) {
             {.name = "Alice", .age = 25},
     })));
 
-    auto result = this->qs->where(storm::orm::where::f<^^Person::age>() > 9999).template sum<^^Person::age>().execute();
+    auto result = this->qs->where(fields::Person.age > 9999).template sum<^^Person::age>().execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result.value(), 0) << "SUM over empty set keeps the 0 convention";
 }
@@ -229,7 +228,7 @@ TYPED_TEST(OptionalAggregateTest, CountOverEmptySetIsZero) {
             {.name = "Alice", .age = 25},
     })));
 
-    auto result = this->qs->where(storm::orm::where::f<^^Person::age>() > 9999).count().execute();
+    auto result = this->qs->where(fields::Person.age > 9999).count().execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result.value(), 0);
 }
@@ -324,11 +323,11 @@ TYPED_TEST(AggregateTest, NegativeNumbersInWhere) {
             {.name = "Eve", .age = 10, .salary = 90000.0, .years_experience = 15},
     })));
 
-    auto result = this->qs->where(storm::orm::where::f<^^Person::age>() < 0).count().execute();
+    auto result = this->qs->where(fields::Person.age < 0).count().execute();
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(result.value(), 2);
 
-    auto sum_neg = this->qs->where(storm::orm::where::f<^^Person::age>() < 0).template sum<^^Person::age>().execute();
+    auto sum_neg = this->qs->where(fields::Person.age < 0).template sum<^^Person::age>().execute();
     ASSERT_TRUE(sum_neg.has_value());
     EXPECT_EQ(sum_neg.value(), -15);
 }

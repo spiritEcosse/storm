@@ -60,7 +60,7 @@ TYPED_TEST(M2MThroughTest, SingleRowUpdateIgnoresThroughField) {
     auto        upd = qs.update(updated).execute();
     ASSERT_TRUE(upd.has_value()) << upd.error().message();
 
-    auto rows = qs.where(f<^^Pupil::id>() == 1).select().execute();
+    auto rows = qs.where(fields::Pupil.id == 1).select().execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     ASSERT_EQ(rows->size(), 1U);
     EXPECT_EQ(rows->begin()->name, "Dora Updated");
@@ -109,7 +109,7 @@ TYPED_TEST(M2MThroughTest, ThroughEagerLoadIgnoresMetadata) {
 TYPED_TEST(M2MThroughTest, ThroughWithWhereOrderAndLimit) {
     QuerySet<Pupil, TypeParam> qs;
     auto                       rows = qs.template join<^^Pupil::courses>()
-                        .where(f<^^Pupil::age>() >= 11)
+                        .where(fields::Pupil.age >= 11)
                         .template order_by<^^Pupil::name, false>()
                         .limit(1)
                         .select()
@@ -124,7 +124,7 @@ TYPED_TEST(M2MThroughTest, ThroughWithWhereOrderAndLimit) {
 TYPED_TEST(M2MThroughTest, JunctionModelQueriedDirectlyForMetadata) {
     QuerySet<Enrollment, TypeParam> qs;
     auto                            rows = qs.template join<^^Enrollment::pupil, ^^Enrollment::course>()
-                        .where(f<^^Enrollment::grade>() == "B")
+                        .where(fields::Enrollment.grade == "B")
                         .select()
                         .execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();

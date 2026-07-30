@@ -33,7 +33,7 @@ TYPED_TEST(SetOpTest, UnionBasic) {
 
     // Left: 4 people with age above 40, right: 2 people with age below 24
     // No overlap, UNION yields 6
-    auto result = qs_left.where(f<^^Person::age>() > 40).union_(qs_right.where(f<^^Person::age>() < 24)).execute();
+    auto result = qs_left.where(fields::Person.age > 40).union_(qs_right.where(fields::Person.age < 24)).execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 6);
 }
@@ -45,7 +45,7 @@ TYPED_TEST(SetOpTest, UnionDeduplicates) {
     // age >= 40: Eve(40), Frank(45), Leo(42), Olivia(48), Sam(40), Victor(45) = 6
     // age <= 45: all except Olivia(48) = 24
     // UNION deduplicates -> all 25
-    auto result = qs_left.where(f<^^Person::age>() >= 40).union_(qs_right.where(f<^^Person::age>() <= 45)).execute();
+    auto result = qs_left.where(fields::Person.age >= 40).union_(qs_right.where(fields::Person.age <= 45)).execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 25);
 }
@@ -60,7 +60,7 @@ TYPED_TEST(SetOpTest, UnionAllKeepsDuplicates) {
 
     // age >= 40: 6, age <= 45: 24, overlap: 5
     // UNION ALL = 6 + 24 = 30
-    auto result = qs_left.where(f<^^Person::age>() >= 40).union_all(qs_right.where(f<^^Person::age>() <= 45)).execute();
+    auto result = qs_left.where(fields::Person.age >= 40).union_all(qs_right.where(fields::Person.age <= 45)).execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 30);
 }
@@ -75,8 +75,8 @@ TYPED_TEST(SetOpTest, ExceptBasic) {
 
     // Active (16) EXCEPT (active AND age>35: Frank,Leo,Olivia,Sam,Victor = 5)
     // Result = 11
-    auto result = qs_left.where(f<^^Person::is_active>() == true)
-                          .except_(qs_right.where(f<^^Person::is_active>() == true && f<^^Person::age>() > 35))
+    auto result = qs_left.where(fields::Person.is_active == true)
+                          .except_(qs_right.where(fields::Person.is_active == true && fields::Person.age > 35))
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 11);
@@ -91,8 +91,8 @@ TYPED_TEST(SetOpTest, IntersectBasic) {
     QuerySet<Person, TypeParam> qs_right;
 
     // Active(16) INTERSECT age>35(8) = active AND age>35: Frank,Leo,Olivia,Sam,Victor = 5
-    auto result = qs_left.where(f<^^Person::is_active>() == true)
-                          .intersect_(qs_right.where(f<^^Person::age>() > 35))
+    auto result = qs_left.where(fields::Person.is_active == true)
+                          .intersect_(qs_right.where(fields::Person.age > 35))
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 5);
@@ -107,8 +107,8 @@ TYPED_TEST(SetOpTest, UnionBothWithWhere) {
     QuerySet<Person, TypeParam> qs_right;
 
     // 6 Engineering + 5 Sales, no overlap, UNION yields 11
-    auto result = qs_left.where(f<^^Person::department>() == "Engineering")
-                          .union_(qs_right.where(f<^^Person::department>() == "Sales"))
+    auto result = qs_left.where(fields::Person.department == "Engineering")
+                          .union_(qs_right.where(fields::Person.department == "Sales"))
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 11);
@@ -123,8 +123,8 @@ TYPED_TEST(SetOpTest, UnionLeftWhereOnly) {
     QuerySet<Person, TypeParam> qs_right;
 
     // Engineering(6) UNION all(via age>0, 25) = 25
-    auto result = qs_left.where(f<^^Person::department>() == "Engineering")
-                          .union_(qs_right.where(f<^^Person::age>() > 0))
+    auto result = qs_left.where(fields::Person.department == "Engineering")
+                          .union_(qs_right.where(fields::Person.age > 0))
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 25);
@@ -138,8 +138,8 @@ TYPED_TEST(SetOpTest, UnionWithOrderBy) {
     QuerySet<Person, TypeParam> qs_left;
     QuerySet<Person, TypeParam> qs_right;
 
-    auto result = qs_left.where(f<^^Person::department>() == "Engineering")
-                          .union_(qs_right.where(f<^^Person::department>() == "Sales"))
+    auto result = qs_left.where(fields::Person.department == "Engineering")
+                          .union_(qs_right.where(fields::Person.department == "Sales"))
                           .template order_by<^^Person::name>()
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
@@ -160,8 +160,8 @@ TYPED_TEST(SetOpTest, UnionWithOrderByAndLimit) {
     QuerySet<Person, TypeParam> qs_left;
     QuerySet<Person, TypeParam> qs_right;
 
-    auto result = qs_left.where(f<^^Person::department>() == "Engineering")
-                          .union_(qs_right.where(f<^^Person::department>() == "Sales"))
+    auto result = qs_left.where(fields::Person.department == "Engineering")
+                          .union_(qs_right.where(fields::Person.department == "Sales"))
                           .template order_by<^^Person::name>()
                           .limit(3)
                           .execute();
@@ -177,8 +177,8 @@ TYPED_TEST(SetOpTest, UnionWithOrderByLimitOffset) {
     QuerySet<Person, TypeParam> qs_left;
     QuerySet<Person, TypeParam> qs_right;
 
-    auto result = qs_left.where(f<^^Person::department>() == "Engineering")
-                          .union_(qs_right.where(f<^^Person::department>() == "Sales"))
+    auto result = qs_left.where(fields::Person.department == "Engineering")
+                          .union_(qs_right.where(fields::Person.department == "Sales"))
                           .template order_by<^^Person::name>()
                           .limit(3)
                           .offset(2)
@@ -195,8 +195,8 @@ TYPED_TEST(SetOpTest, UnionWithLimitOnly) {
     QuerySet<Person, TypeParam> qs_left;
     QuerySet<Person, TypeParam> qs_right;
 
-    auto result = qs_left.where(f<^^Person::department>() == "Engineering")
-                          .union_(qs_right.where(f<^^Person::department>() == "Sales"))
+    auto result = qs_left.where(fields::Person.department == "Engineering")
+                          .union_(qs_right.where(fields::Person.department == "Sales"))
                           .limit(5)
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
@@ -213,9 +213,9 @@ TYPED_TEST(SetOpTest, ThreeWayUnion) {
     QuerySet<Person, TypeParam> qs3;
 
     // 6 Engineering + 5 Sales + 4 HR, no overlap, UNION yields 15
-    auto builder = qs1.where(f<^^Person::department>() == "Engineering")
-                           .union_(qs2.where(f<^^Person::department>() == "Sales"));
-    auto result = std::move(builder).union_(qs3.where(f<^^Person::department>() == "HR").capture_operand()).execute();
+    auto builder = qs1.where(fields::Person.department == "Engineering")
+                           .union_(qs2.where(fields::Person.department == "Sales"));
+    auto result = std::move(builder).union_(qs3.where(fields::Person.department == "HR").capture_operand()).execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 15);
 }
@@ -233,9 +233,9 @@ TYPED_TEST(SetOpTest, MixedOpsUnionThenExcept) {
     // Engineering(6) UNION Sales(5) = 11
     // age>40: Frank(45),Leo(42),Olivia(48),Victor(45) = 4
     // Result = 11 - 4 = 7
-    auto builder = qs1.where(f<^^Person::department>() == "Engineering")
-                           .union_(qs2.where(f<^^Person::department>() == "Sales"));
-    auto result = std::move(builder).except_(qs3.where(f<^^Person::age>() > 40).capture_operand()).execute();
+    auto builder = qs1.where(fields::Person.department == "Engineering")
+                           .union_(qs2.where(fields::Person.department == "Sales"));
+    auto result = std::move(builder).except_(qs3.where(fields::Person.age > 40).capture_operand()).execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 7);
 }
@@ -249,8 +249,8 @@ TYPED_TEST(SetOpTest, IntersectNoCommon) {
     QuerySet<Person, TypeParam> qs_right;
 
     // Engineering INTERSECT Sales = empty
-    auto result = qs_left.where(f<^^Person::department>() == "Engineering")
-                          .intersect_(qs_right.where(f<^^Person::department>() == "Sales"))
+    auto result = qs_left.where(fields::Person.department == "Engineering")
+                          .intersect_(qs_right.where(fields::Person.department == "Sales"))
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 0);
@@ -264,7 +264,7 @@ TYPED_TEST(SetOpTest, UnionBothEmpty) {
     QuerySet<Person, TypeParam> qs_left;
     QuerySet<Person, TypeParam> qs_right;
 
-    auto result = qs_left.where(f<^^Person::age>() > 100).union_(qs_right.where(f<^^Person::age>() < 0)).execute();
+    auto result = qs_left.where(fields::Person.age > 100).union_(qs_right.where(fields::Person.age < 0)).execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 0);
 }
@@ -278,8 +278,8 @@ TYPED_TEST(SetOpTest, ExceptAllMatch) {
     QuerySet<Person, TypeParam> qs_right;
 
     // Engineering EXCEPT Engineering = empty
-    auto result = qs_left.where(f<^^Person::department>() == "Engineering")
-                          .except_(qs_right.where(f<^^Person::department>() == "Engineering"))
+    auto result = qs_left.where(fields::Person.department == "Engineering")
+                          .except_(qs_right.where(fields::Person.department == "Engineering"))
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 0);
@@ -293,7 +293,7 @@ TYPED_TEST(SetOpTest, ToSqlUnion) {
     QuerySet<Person, TypeParam> qs_left;
     QuerySet<Person, TypeParam> qs_right;
 
-    auto sql = qs_left.where(f<^^Person::age>() > 30).union_(qs_right.where(f<^^Person::age>() < 25)).to_sql();
+    auto sql = qs_left.where(fields::Person.age > 30).union_(qs_right.where(fields::Person.age < 25)).to_sql();
     ASSERT_TRUE(sql.has_value()) << sql.error().message();
     EXPECT_TRUE(sql->find("UNION") != std::string::npos) << "SQL should contain UNION: " << *sql;
     EXPECT_TRUE(sql->find("UNION ALL") == std::string::npos) << "SQL should not contain UNION ALL: " << *sql;
@@ -303,7 +303,7 @@ TYPED_TEST(SetOpTest, ToSqlUnionAll) {
     QuerySet<Person, TypeParam> qs_left;
     QuerySet<Person, TypeParam> qs_right;
 
-    auto sql = qs_left.where(f<^^Person::age>() > 30).union_all(qs_right.where(f<^^Person::age>() < 25)).to_sql();
+    auto sql = qs_left.where(fields::Person.age > 30).union_all(qs_right.where(fields::Person.age < 25)).to_sql();
     ASSERT_TRUE(sql.has_value()) << sql.error().message();
     EXPECT_TRUE(sql->find("UNION ALL") != std::string::npos) << "SQL should contain UNION ALL: " << *sql;
 }
@@ -312,7 +312,7 @@ TYPED_TEST(SetOpTest, ToSqlExcept) {
     QuerySet<Person, TypeParam> qs_left;
     QuerySet<Person, TypeParam> qs_right;
 
-    auto sql = qs_left.where(f<^^Person::age>() > 30).except_(qs_right.where(f<^^Person::age>() < 25)).to_sql();
+    auto sql = qs_left.where(fields::Person.age > 30).except_(qs_right.where(fields::Person.age < 25)).to_sql();
     ASSERT_TRUE(sql.has_value()) << sql.error().message();
     EXPECT_TRUE(sql->find("EXCEPT") != std::string::npos) << "SQL should contain EXCEPT: " << *sql;
 }
@@ -321,7 +321,7 @@ TYPED_TEST(SetOpTest, ToSqlIntersect) {
     QuerySet<Person, TypeParam> qs_left;
     QuerySet<Person, TypeParam> qs_right;
 
-    auto sql = qs_left.where(f<^^Person::age>() > 30).intersect_(qs_right.where(f<^^Person::age>() < 40)).to_sql();
+    auto sql = qs_left.where(fields::Person.age > 30).intersect_(qs_right.where(fields::Person.age < 40)).to_sql();
     ASSERT_TRUE(sql.has_value()) << sql.error().message();
     EXPECT_TRUE(sql->find("INTERSECT") != std::string::npos) << "SQL should contain INTERSECT: " << *sql;
 }
@@ -335,8 +335,8 @@ TYPED_TEST(SetOpTest, SelfUnion) {
     QuerySet<Person, TypeParam> qs_right;
 
     // UNION deduplicates -> same as one side
-    auto result = qs_left.where(f<^^Person::department>() == "Engineering")
-                          .union_(qs_right.where(f<^^Person::department>() == "Engineering"))
+    auto result = qs_left.where(fields::Person.department == "Engineering")
+                          .union_(qs_right.where(fields::Person.department == "Engineering"))
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 6);
@@ -350,8 +350,8 @@ TYPED_TEST(SetOpTest, SelfUnionAll) {
     QuerySet<Person, TypeParam> qs_left;
     QuerySet<Person, TypeParam> qs_right;
 
-    auto result = qs_left.where(f<^^Person::department>() == "Engineering")
-                          .union_all(qs_right.where(f<^^Person::department>() == "Engineering"))
+    auto result = qs_left.where(fields::Person.department == "Engineering")
+                          .union_all(qs_right.where(fields::Person.department == "Engineering"))
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 12);
@@ -365,8 +365,8 @@ TYPED_TEST(SetOpTest, UnionSingleRow) {
     QuerySet<Person, TypeParam> qs_left;
     QuerySet<Person, TypeParam> qs_right;
 
-    auto result = qs_left.where(f<^^Person::name>() == "Alice")
-                          .union_(qs_right.where(f<^^Person::name>() == "Alice"))
+    auto result = qs_left.where(fields::Person.name == "Alice")
+                          .union_(qs_right.where(fields::Person.name == "Alice"))
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 1);
@@ -382,7 +382,7 @@ TYPED_TEST(SetOpTest, UnionAllLargeResult) {
     QuerySet<Person, TypeParam> qs_right;
 
     // UNION ALL of all 25 with all 25 = 50
-    auto result = qs_left.where(f<^^Person::age>() > 0).union_all(qs_right.where(f<^^Person::age>() > 0)).execute();
+    auto result = qs_left.where(fields::Person.age > 0).union_all(qs_right.where(fields::Person.age > 0)).execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 50);
 }
@@ -395,8 +395,8 @@ TYPED_TEST(SetOpTest, ToSqlWithModifiers) {
     QuerySet<Person, TypeParam> qs_left;
     QuerySet<Person, TypeParam> qs_right;
 
-    auto sql = qs_left.where(f<^^Person::age>() > 30)
-                       .union_(qs_right.where(f<^^Person::age>() < 25))
+    auto sql = qs_left.where(fields::Person.age > 30)
+                       .union_(qs_right.where(fields::Person.age < 25))
                        .template order_by<^^Person::name>()
                        .limit(5)
                        .to_sql();
@@ -416,8 +416,8 @@ TYPED_TEST(SetOpTest, UnionWithNotEquals) {
 
     // department != "Engineering" (19) UNION department == "Sales" (5)
     // Sales is subset of non-Engineering -> UNION = 19
-    auto result = qs_left.where(f<^^Person::department>() != "Engineering")
-                          .union_(qs_right.where(f<^^Person::department>() == "Sales"))
+    auto result = qs_left.where(fields::Person.department != "Engineering")
+                          .union_(qs_right.where(fields::Person.department == "Sales"))
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 19);
@@ -434,8 +434,8 @@ TYPED_TEST(SetOpTest, UnionWithDoubleWhere) {
     // salary >= 90000: Eve(92k),Leo(95k),Olivia(98k),Sam(90k),Victor(93k) = 5
     // salary < 40000: Paul(32k),Yara(35k) = 2
     // No overlap -> UNION = 7
-    auto result = qs_left.where(f<^^Person::salary>() >= 90000.0)
-                          .union_(qs_right.where(f<^^Person::salary>() < 40000.0))
+    auto result = qs_left.where(fields::Person.salary >= 90000.0)
+                          .union_(qs_right.where(fields::Person.salary < 40000.0))
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 7);
@@ -448,8 +448,8 @@ TYPED_TEST(SetOpTest, ExceptWithDoubleWhere) {
     // salary >= 80000 (8): Jack,Leo,Frank,Olivia,Sam,Victor,Xander,Eve
     // salary >= 90000 (5): Eve,Leo,Olivia,Sam,Victor
     // EXCEPT = 3: Jack(85k),Frank(88k),Xander(82k)
-    auto result = qs_left.where(f<^^Person::salary>() >= 80000.0)
-                          .except_(qs_right.where(f<^^Person::salary>() >= 90000.0))
+    auto result = qs_left.where(fields::Person.salary >= 80000.0)
+                          .except_(qs_right.where(fields::Person.salary >= 90000.0))
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 3);
@@ -469,8 +469,8 @@ TYPED_TEST(SetOpTest, UnionWithOrWhere) {
     //   No overlap -> 6
     // Right: department == "HR" -> Diana,Jack,Paul,Uma = 4
     // UNION: 6+4 - Paul(overlap) = 9
-    auto result = qs_left.where(f<^^Person::age>() < 25 || f<^^Person::salary>() > 90000.0)
-                          .union_(qs_right.where(f<^^Person::department>() == "HR"))
+    auto result = qs_left.where(fields::Person.age < 25 || fields::Person.salary > 90000.0)
+                          .union_(qs_right.where(fields::Person.department == "HR"))
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 9);
@@ -494,9 +494,9 @@ TYPED_TEST(SetOpTest, IntersectWithComplexNested) {
     // INTERSECT: rows in both = those from 8 that have salary>50k
     //   Frank(88k)✓,Leo(95k)✓,Olivia(98k)✓,Victor(93k)✓,Jack(85k)✓,Uma(69k)✓ = 6
     //   Diana(48k)✗,Paul(32k)✗ -> 6
-    auto result = qs_left.where((f<^^Person::age>() > 40 && f<^^Person::is_active>() == true) ||
-                                f<^^Person::department>() == "HR")
-                          .intersect_(qs_right.where(f<^^Person::salary>() > 50000.0))
+    auto result = qs_left.where((fields::Person.age > 40 && fields::Person.is_active == true) ||
+                                fields::Person.department == "HR")
+                          .intersect_(qs_right.where(fields::Person.salary > 50000.0))
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 6);
@@ -513,8 +513,8 @@ TYPED_TEST(SetOpTest, UnionWithLike) {
     // name LIKE "A%" -> Alice = 1
     // name LIKE "B%" -> Bob = 1
     // UNION = 2
-    auto result = qs_left.where(f<^^Person::name>().like("A%"))
-                          .union_(qs_right.where(f<^^Person::name>().like("B%")))
+    auto result = qs_left.where(fields::Person.name.like("A%"))
+                          .union_(qs_right.where(fields::Person.name.like("B%")))
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 2);
@@ -531,8 +531,8 @@ TYPED_TEST(SetOpTest, ExceptWithBetween) {
     // Left: age BETWEEN 30 AND 40 -> Bob,Charlie,Eve,Henry,Ivy,Jack,Nick,Quinn,Rachel,Sam,Uma,Xander = 12
     // Right: age BETWEEN 35 AND 40 -> Charlie,Eve,Jack,Nick,Rachel,Sam,Xander = 7
     // EXCEPT = 5: Bob(30),Henry(33),Ivy(30),Quinn(30),Uma(33)
-    auto result = qs_left.where(f<^^Person::age>().between(30, 40))
-                          .except_(qs_right.where(f<^^Person::age>().between(35, 40)))
+    auto result = qs_left.where(fields::Person.age.between(30, 40))
+                          .except_(qs_right.where(fields::Person.age.between(35, 40)))
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 5);
@@ -549,8 +549,8 @@ TYPED_TEST(SetOpTest, IntersectWithIn) {
     // Left: age IN (25, 30, 35) -> Alice,Bob,Charlie,Grace,Ivy,Karen,Nick,Quinn = 8
     // Right: department == "Engineering" -> Alice,Eve,Ivy,Leo,Quinn,Victor = 6
     // INTERSECT = Alice,Ivy,Quinn = 3
-    auto result = qs_left.where(f<^^Person::age>().in(25, 30, 35))
-                          .intersect_(qs_right.where(f<^^Person::department>() == "Engineering"))
+    auto result = qs_left.where(fields::Person.age.in(25, 30, 35))
+                          .intersect_(qs_right.where(fields::Person.department == "Engineering"))
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 3);
@@ -564,8 +564,8 @@ TYPED_TEST(SetOpTest, UnionWithOrderByDesc) {
     QuerySet<Person, TypeParam> qs_left;
     QuerySet<Person, TypeParam> qs_right;
 
-    auto result = qs_left.where(f<^^Person::department>() == "Engineering")
-                          .union_(qs_right.where(f<^^Person::department>() == "Sales"))
+    auto result = qs_left.where(fields::Person.department == "Engineering")
+                          .union_(qs_right.where(fields::Person.department == "Sales"))
                           .template order_by<^^Person::age, false>()
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
@@ -587,8 +587,8 @@ TYPED_TEST(SetOpTest, UnionWithOffsetOnly) {
     QuerySet<Person, TypeParam> qs_right;
 
     // Engineering(6) UNION Sales(5) = 11, skip first 5 -> 6
-    auto result = qs_left.where(f<^^Person::department>() == "Engineering")
-                          .union_(qs_right.where(f<^^Person::department>() == "Sales"))
+    auto result = qs_left.where(fields::Person.department == "Engineering")
+                          .union_(qs_right.where(fields::Person.department == "Sales"))
                           .offset(5)
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
@@ -607,11 +607,11 @@ TYPED_TEST(SetOpTest, UnionAllLarge100Plus) {
     QuerySet<Person, TypeParam> qs5;
 
     // 5x UNION ALL of all 25 = 125
-    auto builder = qs1.where(f<^^Person::age>() > 0).union_all(qs2.where(f<^^Person::age>() > 0));
+    auto builder = qs1.where(fields::Person.age > 0).union_all(qs2.where(fields::Person.age > 0));
     auto result  = std::move(builder)
-                          .union_all(qs3.where(f<^^Person::age>() > 0).capture_operand())
-                          .union_all(qs4.where(f<^^Person::age>() > 0).capture_operand())
-                          .union_all(qs5.where(f<^^Person::age>() > 0).capture_operand())
+                          .union_all(qs3.where(fields::Person.age > 0).capture_operand())
+                          .union_all(qs4.where(fields::Person.age > 0).capture_operand())
+                          .union_all(qs5.where(fields::Person.age > 0).capture_operand())
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 125);
@@ -625,8 +625,8 @@ TYPED_TEST(SetOpTest, RepeatedExecution) {
     QuerySet<Person, TypeParam> qs_left;
     QuerySet<Person, TypeParam> qs_right;
 
-    auto builder = qs_left.where(f<^^Person::department>() == "Engineering")
-                           .union_(qs_right.where(f<^^Person::department>() == "Sales"));
+    auto builder = qs_left.where(fields::Person.department == "Engineering")
+                           .union_(qs_right.where(fields::Person.department == "Sales"));
 
     auto result1 = builder.execute();
     ASSERT_TRUE(result1.has_value()) << result1.error().message();
@@ -654,8 +654,8 @@ TYPED_TEST(SetOpTest, ExceptThenUnion) {
     // EXCEPT: Engineering rows NOT in age>40 -> Alice,Eve(40 not >40),Ivy,Quinn = 4
     // HR: Diana,Jack,Paul,Uma = 4
     // UNION = 8
-    auto builder = qs1.where(f<^^Person::department>() == "Engineering").except_(qs2.where(f<^^Person::age>() > 40));
-    auto result  = std::move(builder).union_(qs3.where(f<^^Person::department>() == "HR").capture_operand()).execute();
+    auto builder = qs1.where(fields::Person.department == "Engineering").except_(qs2.where(fields::Person.age > 40));
+    auto result  = std::move(builder).union_(qs3.where(fields::Person.department == "HR").capture_operand()).execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 8);
 }
@@ -673,9 +673,9 @@ TYPED_TEST(SetOpTest, IntersectThenUnionAll) {
     // Active(16) INTERSECT age>35(8) = active AND age>35: Frank,Leo,Olivia,Sam,Victor = 5
     // HR: Diana,Jack,Paul,Uma = 4
     // UNION ALL = 9
-    auto builder = qs1.where(f<^^Person::is_active>() == true).intersect_(qs2.where(f<^^Person::age>() > 35));
+    auto builder = qs1.where(fields::Person.is_active == true).intersect_(qs2.where(fields::Person.age > 35));
     auto result =
-            std::move(builder).union_all(qs3.where(f<^^Person::department>() == "HR").capture_operand()).execute();
+            std::move(builder).union_all(qs3.where(fields::Person.department == "HR").capture_operand()).execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 9);
 }
@@ -691,11 +691,11 @@ TYPED_TEST(SetOpTest, FourWayUnion) {
     QuerySet<Person, TypeParam> qs4;
 
     // 6 Engineering + 5 Sales + 4 HR + 5 Marketing, no overlap, UNION yields 20
-    auto builder = qs1.where(f<^^Person::department>() == "Engineering")
-                           .union_(qs2.where(f<^^Person::department>() == "Sales"));
+    auto builder = qs1.where(fields::Person.department == "Engineering")
+                           .union_(qs2.where(fields::Person.department == "Sales"));
     auto result = std::move(builder)
-                          .union_(qs3.where(f<^^Person::department>() == "HR").capture_operand())
-                          .union_(qs4.where(f<^^Person::department>() == "Marketing").capture_operand())
+                          .union_(qs3.where(fields::Person.department == "HR").capture_operand())
+                          .union_(qs4.where(fields::Person.department == "Marketing").capture_operand())
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 20);
@@ -715,12 +715,12 @@ TYPED_TEST(SetOpTest, AllFourOpsChained) {
     // Uses UNION ALL + EXCEPT + UNION (same precedence, left-to-right in all backends).
     // Avoids INTERSECT which has higher precedence in PostgreSQL vs left-to-right in SQLite.
     // Eng(6) UNION ALL Sales(5)=11 → EXCEPT age>40=7 → UNION HR(4)=11 → EXCEPT !active=7
-    auto builder = qs1.where(f<^^Person::department>() == "Engineering")
-                           .union_all(qs2.where(f<^^Person::department>() == "Sales"));
+    auto builder = qs1.where(fields::Person.department == "Engineering")
+                           .union_all(qs2.where(fields::Person.department == "Sales"));
     auto result = std::move(builder)
-                          .except_(qs3.where(f<^^Person::age>() > 40).capture_operand())
-                          .union_(qs4.where(f<^^Person::department>() == "HR").capture_operand())
-                          .except_(qs5.where(f<^^Person::is_active>() == false).capture_operand())
+                          .except_(qs3.where(fields::Person.age > 40).capture_operand())
+                          .union_(qs4.where(fields::Person.department == "HR").capture_operand())
+                          .except_(qs5.where(fields::Person.is_active == false).capture_operand())
                           .execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ(result->size(), 7);

@@ -76,7 +76,7 @@ namespace {
         static auto quantity_of(int order_id, int product_id) -> int {
             using storm::orm::where::f;
             auto row = OrderLineTest::find_one(
-                    f<^^OrderLine::order_id>() == order_id && f<^^OrderLine::product_id>() == product_id
+                    fields::OrderLine.order_id == order_id && fields::OrderLine.product_id == product_id
             );
             return row ? row->quantity : -1;
         }
@@ -216,7 +216,7 @@ namespace {
         static auto on_hand_of(int warehouse, std::string_view sku) -> int {
             using storm::orm::where::f;
             auto row = InventoryTest::find_one(
-                    f<^^Inventory::warehouse>() == warehouse && f<^^Inventory::sku>() == std::string(sku)
+                    fields::Inventory.warehouse == warehouse && fields::Inventory.sku == std::string(sku)
             );
             return row ? row->on_hand : -1;
         }
@@ -272,8 +272,8 @@ namespace {
         static auto balance_of(int region, std::string_view account, std::int64_t period) -> double {
             using storm::orm::where::f;
             auto row = LedgerTest::find_one(
-                    f<^^Ledger::region>() == region && f<^^Ledger::account>() == std::string(account) &&
-                    f<^^Ledger::period>() == period
+                    fields::Ledger.region == region && fields::Ledger.account == std::string(account) &&
+                    fields::Ledger.period == period
             );
             return row ? row->balance : -1.0;
         }
@@ -356,7 +356,7 @@ namespace {
         }
 
         // Selects every row and matches the key in C++ rather than in a WHERE clause.
-        // Filtering with f<^^StockEntry::warehouse>() would compare the FK MEMBER rather
+        // Filtering with fields::StockEntry.warehouse would compare the FK MEMBER rather
         // than its "warehouse_id" column — an unrelated gap in the WHERE layer (nothing
         // in the tree filters on an FK member today), and leaning on it here would make
         // this test fail for a reason unrelated to the key binding it exists to check.
@@ -473,7 +473,7 @@ TYPED_TEST(LargeBatchTest, ChunkedUpdateSpansMultipleChunks) {
 
     using storm::orm::where::f;
     storm::QuerySet<OrderLine, TypeParam> check;
-    auto                                  updated = check.where(f<^^OrderLine::quantity>() >= 1000).count().execute();
+    auto                                  updated = check.where(fields::OrderLine.quantity >= 1000).count().execute();
     ASSERT_TRUE(updated.has_value());
     EXPECT_EQ(updated.value(), LargeBatchTest<TypeParam>::ROWS);
 }
@@ -496,7 +496,7 @@ namespace {
         static auto age_of(int person_id) -> int {
             using storm::orm::where::f;
             storm::QuerySet<Person, ConnType> qs;
-            auto                              rows = qs.where(f<^^Person::id>() == person_id).select().execute();
+            auto                              rows = qs.where(fields::Person.id == person_id).select().execute();
             if (!rows.has_value() || rows.value().empty()) {
                 return -1;
             }
@@ -561,7 +561,7 @@ TYPED_TEST(OrderLineInsertTest, SingleInsertLandsEveryKeyPart) {
 
     EXPECT_EQ(this->row_count(), 1);
     using storm::orm::where::f;
-    auto found = this->find_one(f<^^OrderLine::order_id>() == 7 && f<^^OrderLine::product_id>() == 42);
+    auto found = this->find_one(fields::OrderLine.order_id == 7 && fields::OrderLine.product_id == 42);
     ASSERT_TRUE(found.has_value()) << "the full key landed";
     EXPECT_EQ(found->quantity, 3);
     EXPECT_EQ(found->note, "a");
@@ -576,9 +576,9 @@ TYPED_TEST(OrderLineInsertTest, FirstKeyPartIsNotDefaultedOrShifted) {
     ASSERT_TRUE(qs.insert(row).execute().has_value());
 
     using storm::orm::where::f;
-    EXPECT_FALSE(this->find_one(f<^^OrderLine::order_id>() == 6).has_value())
+    EXPECT_FALSE(this->find_one(fields::OrderLine.order_id == 6).has_value())
             << "product_id's value must not land in order_id";
-    auto found = this->find_one(f<^^OrderLine::order_id>() == 5 && f<^^OrderLine::product_id>() == 6);
+    auto found = this->find_one(fields::OrderLine.order_id == 5 && fields::OrderLine.product_id == 6);
     ASSERT_TRUE(found.has_value());
     EXPECT_EQ(found->quantity, 9) << "every non-key value landed in its own column";
 }
@@ -631,7 +631,7 @@ TYPED_TEST(OrderLineInsertTest, BatchInsertLandsEveryRow) {
     EXPECT_EQ(this->row_count(), 3);
 
     using storm::orm::where::f;
-    auto row = this->find_one(f<^^OrderLine::order_id>() == 2 && f<^^OrderLine::product_id>() == 10);
+    auto row = this->find_one(fields::OrderLine.order_id == 2 && fields::OrderLine.product_id == 10);
     ASSERT_TRUE(row.has_value());
     EXPECT_EQ(row->quantity, 9);
 }
@@ -659,7 +659,7 @@ TYPED_TEST(OrderLineInsertTest, BatchAtTheChunkBoundary) {
 
     using storm::orm::where::f;
     auto last =
-            this->find_one(f<^^OrderLine::order_id>() == ROWS - 1 && f<^^OrderLine::product_id>() == (ROWS - 1) * 2);
+            this->find_one(fields::OrderLine.order_id == ROWS - 1 && fields::OrderLine.product_id == (ROWS - 1) * 2);
     ASSERT_TRUE(last.has_value()) << "the row past the chunk boundary landed with its full key";
     EXPECT_EQ(last->quantity, ROWS - 1);
 }
@@ -672,7 +672,7 @@ TYPED_TEST(InventoryInsertTest, TextKeyPartBindsPerType) {
     ASSERT_TRUE(qs.insert(Inventory{.warehouse = 1, .sku = "pear", .on_hand = 7}).execute().has_value());
 
     using storm::orm::where::f;
-    auto row = this->find_one(f<^^Inventory::warehouse>() == 1 && f<^^Inventory::sku>() == std::string("apple"));
+    auto row = this->find_one(fields::Inventory.warehouse == 1 && fields::Inventory.sku == std::string("apple"));
     ASSERT_TRUE(row.has_value());
     EXPECT_EQ(row->on_hand, 5);
 }
@@ -768,7 +768,7 @@ TYPED_TEST(OrderLineUpsertTest, DoNothingSkipsOnConflict) {
     EXPECT_EQ(this->row_count(), 1) << "the conflicting insert must be skipped, not applied";
 
     using storm::orm::where::f;
-    auto row = this->find_one(f<^^OrderLine::order_id>() == 1 && f<^^OrderLine::product_id>() == 10);
+    auto row = this->find_one(fields::OrderLine.order_id == 1 && fields::OrderLine.product_id == 10);
     ASSERT_TRUE(row.has_value());
     EXPECT_EQ(row->quantity, 5) << "DO NOTHING must not overwrite the existing row";
 }
@@ -795,7 +795,7 @@ TYPED_TEST(OrderLineUpsertTest, DoUpdateOverwritesListedColumn) {
     EXPECT_EQ(this->row_count(), 1);
 
     using storm::orm::where::f;
-    auto row = this->find_one(f<^^OrderLine::order_id>() == 2 && f<^^OrderLine::product_id>() == 20);
+    auto row = this->find_one(fields::OrderLine.order_id == 2 && fields::OrderLine.product_id == 20);
     ASSERT_TRUE(row.has_value());
     EXPECT_EQ(row->quantity, 99) << "the listed column is overwritten by the conflicting insert";
     EXPECT_EQ(row->note, "a") << "an unlisted column is preserved from the original row";
@@ -848,7 +848,7 @@ TYPED_TEST(InventoryUpsertTest, DoUpdateOverwritesListedColumnWithTextKeyPart) {
     EXPECT_EQ(this->row_count(), 1);
 
     using storm::orm::where::f;
-    auto row = this->find_one(f<^^Inventory::warehouse>() == 1 && f<^^Inventory::sku>() == std::string("apple"));
+    auto row = this->find_one(fields::Inventory.warehouse == 1 && fields::Inventory.sku == std::string("apple"));
     ASSERT_TRUE(row.has_value());
     EXPECT_EQ(row->on_hand, 900) << "the listed column is overwritten by the conflicting insert";
 }
@@ -866,7 +866,7 @@ TYPED_TEST(InventoryUpsertTest, DoNothingSkipsOnConflictWithTextKeyPart) {
     ASSERT_TRUE(skipped.has_value());
 
     using storm::orm::where::f;
-    auto row = this->find_one(f<^^Inventory::warehouse>() == 2 && f<^^Inventory::sku>() == std::string("pear"));
+    auto row = this->find_one(fields::Inventory.warehouse == 2 && fields::Inventory.sku == std::string("pear"));
     ASSERT_TRUE(row.has_value());
     EXPECT_EQ(row->on_hand, 3) << "DO NOTHING must not overwrite the existing row";
 }

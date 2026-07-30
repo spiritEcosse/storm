@@ -44,34 +44,34 @@ TYPED_TEST_SUITE(WhereIntegerFoldTest, DatabaseTypes);
 // ===== unsigned int → folds to int arm =====
 
 TYPED_TEST(WhereIntegerFoldTest, UnsignedIntEqual) {
-    EXPECT_EQ(this->count_where(f<^^ExtendedTypes::u_int>() == 20U), 1U);
+    EXPECT_EQ(this->count_where(fields::ExtendedTypes.u_int == 20U), 1U);
 }
 TYPED_TEST(WhereIntegerFoldTest, UnsignedIntGreater) {
-    EXPECT_EQ(this->count_where(f<^^ExtendedTypes::u_int>() > 10U), 2U);
+    EXPECT_EQ(this->count_where(fields::ExtendedTypes.u_int > 10U), 2U);
 }
 TYPED_TEST(WhereIntegerFoldTest, UnsignedIntBetween) {
-    EXPECT_EQ(this->count_where(f<^^ExtendedTypes::u_int>().between(15U, 25U)), 1U);
+    EXPECT_EQ(this->count_where(fields::ExtendedTypes.u_int.between(15U, 25U)), 1U);
 }
 TYPED_TEST(WhereIntegerFoldTest, UnsignedIntIn) {
-    EXPECT_EQ(this->count_where(f<^^ExtendedTypes::u_int>().in(10U, 30U)), 2U);
+    EXPECT_EQ(this->count_where(fields::ExtendedTypes.u_int.in(10U, 30U)), 2U);
 }
 
 // ===== long long → folds to int64_t arm =====
 
 TYPED_TEST(WhereIntegerFoldTest, LongLongLessEqual) {
-    EXPECT_EQ(this->count_where(f<^^ExtendedTypes::ll_signed>() <= 200LL), 2U);
+    EXPECT_EQ(this->count_where(fields::ExtendedTypes.ll_signed <= 200LL), 2U);
 }
 TYPED_TEST(WhereIntegerFoldTest, LongLongBetween) {
-    EXPECT_EQ(this->count_where(f<^^ExtendedTypes::ll_signed>().between(150LL, 350LL)), 2U);
+    EXPECT_EQ(this->count_where(fields::ExtendedTypes.ll_signed.between(150LL, 350LL)), 2U);
 }
 TYPED_TEST(WhereIntegerFoldTest, LongLongIn) {
-    EXPECT_EQ(this->count_where(f<^^ExtendedTypes::ll_signed>().in(100LL, 300LL)), 2U);
+    EXPECT_EQ(this->count_where(fields::ExtendedTypes.ll_signed.in(100LL, 300LL)), 2U);
 }
 
 // ===== unsigned char (narrow) → folds to int arm =====
 
 TYPED_TEST(WhereIntegerFoldTest, TinyUnsignedGreaterEqual) {
-    EXPECT_EQ(this->count_where(f<^^ExtendedTypes::tiny_unsigned>() >= static_cast<unsigned char>(2)), 2U);
+    EXPECT_EQ(this->count_where(fields::ExtendedTypes.tiny_unsigned >= static_cast<unsigned char>(2)), 2U);
 }
 
 // NOLINTEND(misc-const-correctness,performance-unnecessary-value-param)

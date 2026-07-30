@@ -10,6 +10,7 @@
 // issue #262, where annotations are silently dropped across BMI boundaries
 // (memory feedback_cpp26_module_reflection_annotations).
 
+#include <meta>
 #include <string>
 
 namespace bench_dashboard {
@@ -41,5 +42,23 @@ namespace bench_dashboard {
         double                         complexity_coef{}; // leading coefficient (bigo rows only)
         double                         rms_pct{};         // fit quality 0-100 (rms rows only)
     };
+
+    // fields:: selector proxies (#518). Inside bench_dashboard, so the spelling
+    // is bench_dashboard::fields::BenchRun.branch.
+    namespace fields {
+
+        struct BenchRunT;
+        consteval {
+            std::meta::define_aggregate(^^BenchRunT, storm::field_specs_for(^^BenchRun));
+        }
+        inline constexpr BenchRunT BenchRun{};
+
+        struct BenchResultT;
+        consteval {
+            std::meta::define_aggregate(^^BenchResultT, storm::field_specs_for(^^BenchResult));
+        }
+        inline constexpr BenchResultT BenchResult{};
+
+    } // namespace fields
 
 } // namespace bench_dashboard

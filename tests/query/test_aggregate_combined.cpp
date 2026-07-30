@@ -58,7 +58,7 @@ TYPED_TEST(AggregateTest, FullChain_WhereJoinOrderByLimitOffset) {
     // WHERE + JOIN + ORDER BY DESC + LIMIT 5 + OFFSET 2
     // Values >= 20 ordered DESC: 75,70,65,60,55,50,45,40,35,30,25,20
     // After OFFSET 2: 65,60,55,50,45,...  After LIMIT 5: 65,60,55,50,45
-    auto result = this->msg_qs->where(storm::orm::where::f<^^Message::value>() >= 20)
+    auto result = this->msg_qs->where(fields::Message.value >= 20)
                           .template join<^^Message::sender>()
                           .template order_by<^^Message::value, false>()
                           .limit(5)
@@ -74,7 +74,7 @@ TYPED_TEST(AggregateTest, FullChain_WhereJoinOrderByLimitOffset) {
 TYPED_TEST(AggregateTest, FullChain_WhereJoinOrderByAscLimit) {
     insert_full_chain_14_messages<TypeParam>();
 
-    auto result = this->msg_qs->where(storm::orm::where::f<^^Message::value>() >= 20)
+    auto result = this->msg_qs->where(fields::Message.value >= 20)
                           .template join<^^Message::sender>()
                           .template order_by<^^Message::value, true>()
                           .limit(3)
@@ -90,10 +90,8 @@ TYPED_TEST(AggregateTest, FullChain_WhereJoinOrderByAscLimit) {
 TYPED_TEST(AggregateTest, FullChain_JoinResolvesCorrectSender) {
     insert_full_chain_14_messages<TypeParam>();
 
-    auto result = this->msg_qs->where(storm::orm::where::f<^^Message::value>() == 75)
-                          .template join<^^Message::sender>()
-                          .select()
-                          .execute();
+    auto result =
+            this->msg_qs->where(fields::Message.value == 75).template join<^^Message::sender>().select().execute();
 
     ASSERT_TRUE(result.has_value()) << "JOIN verification query failed";
     ASSERT_EQ(result.value().size(), 1);
@@ -162,7 +160,7 @@ TYPED_TEST(AggregateTest, GroupByWithAllAggregateTypes) {
     verify_group_by_sum_avg_min_max<TypeParam>(*this->qs);
 
     (*this->qs).reset();
-    auto filtered_sum = this->qs->where(storm::orm::where::f<^^Person::years_experience>() == 5)
+    auto filtered_sum = this->qs->where(fields::Person.years_experience == 5)
                                 .template group_by<^^Person::years_experience>()
                                 .template sum<^^Person::age>()
                                 .execute();

@@ -40,93 +40,67 @@ namespace {
         }
     };
 
+    // WHERE-clause assertions are VALUE assertions against the expected SQL text,
+    // not proxy-vs-^^ comparisons. Deliberate: f<> is deleted in the next commit,
+    // at which point a cross-spelling comparison becomes impossible to write —
+    // and a comparison whose two sides were both migrated silently degrades into
+    // EXPECT_EQ(x, x), which passes even if the proxy path is completely broken.
+    // Pinning the text keeps these meaningful after f<> is gone.
+    constexpr std::string_view SELECT_ALL =
+            "SELECT id, name, age, salary, is_active, years_experience, department, score, nickname, avatar FROM "
+            "Person";
+
+    [[nodiscard]] auto expected(std::string_view where_clause) -> std::string {
+        return std::format("{} WHERE {}", SELECT_ALL, where_clause);
+    }
+
     TEST_F(FieldsSqlParity, BareComparisonOperator) {
         // THE headline spelling from the issue — no f<> wrapper.
-        EXPECT_EQ(
-                qs().where(f<^^Person::age>() == 30).select().sql(), qs().where(fields::Person.age == 30).select().sql()
-        );
+        EXPECT_EQ(qs().where(fields::Person.age == 30).select().sql(), expected("age = ?"));
     }
 
     TEST_F(FieldsSqlParity, AllSixComparisonOperators) {
         // Per the CLAUDE.md testing checklist: every comparison operator.
-        EXPECT_EQ(
-                qs().where(f<^^Person::age>() == 30).select().sql(), qs().where(fields::Person.age == 30).select().sql()
-        );
-        EXPECT_EQ(
-                qs().where(f<^^Person::age>() != 30).select().sql(), qs().where(fields::Person.age != 30).select().sql()
-        );
-        EXPECT_EQ(
-                qs().where(f<^^Person::age>() > 30).select().sql(), qs().where(fields::Person.age > 30).select().sql()
-        );
-        EXPECT_EQ(
-                qs().where(f<^^Person::age>() >= 30).select().sql(), qs().where(fields::Person.age >= 30).select().sql()
-        );
-        EXPECT_EQ(
-                qs().where(f<^^Person::age>() < 30).select().sql(), qs().where(fields::Person.age < 30).select().sql()
-        );
-        EXPECT_EQ(
-                qs().where(f<^^Person::age>() <= 30).select().sql(), qs().where(fields::Person.age <= 30).select().sql()
-        );
+        EXPECT_EQ(qs().where(fields::Person.age == 30).select().sql(), expected("age = ?"));
+        EXPECT_EQ(qs().where(fields::Person.age != 30).select().sql(), expected("age != ?"));
+        EXPECT_EQ(qs().where(fields::Person.age > 30).select().sql(), expected("age > ?"));
+        EXPECT_EQ(qs().where(fields::Person.age >= 30).select().sql(), expected("age >= ?"));
+        EXPECT_EQ(qs().where(fields::Person.age < 30).select().sql(), expected("age < ?"));
+        EXPECT_EQ(qs().where(fields::Person.age <= 30).select().sql(), expected("age <= ?"));
     }
 
     TEST_F(FieldsSqlParity, CompoundExpression) {
         // The motivating case: the model is named ONCE per field, not twice.
         EXPECT_EQ(
-                qs().where(f<^^Person::department>() == "Eng" && f<^^Person::age>() < 28).select().sql(),
-                qs().where(fields::Person.department == "Eng" && fields::Person.age < 28).select().sql()
+                qs().where(fields::Person.department == "Eng" && fields::Person.age < 28).select().sql(),
+                expected("(department = ? AND age < ?)")
         );
     }
 
     TEST_F(FieldsSqlParity, OrAndNestedComposition) {
         EXPECT_EQ(
-                qs().where((f<^^Person::age>() > 30 && f<^^Person::is_active>() == true) ||
-                           f<^^Person::department>() == "Eng")
-                        .select()
-                        .sql(),
                 qs().where((fields::Person.age > 30 && fields::Person.is_active == true) ||
                            fields::Person.department == "Eng")
                         .select()
-                        .sql()
+                        .sql(),
+                expected("((age > ? AND is_active = ?) OR department = ?)")
         );
     }
 
     TEST_F(FieldsSqlParity, InBetweenLikeCollate) {
         using storm::orm::utilities::Collate;
+        EXPECT_EQ(qs().where(fields::Person.id.in(1, 2, 3)).select().sql(), expected("id IN (?, ?, ?)"));
+        EXPECT_EQ(qs().where(fields::Person.age.between(20, 40)).select().sql(), expected("age BETWEEN ? AND ?"));
+        EXPECT_EQ(qs().where(fields::Person.name.like("A%")).select().sql(), expected("name LIKE ?"));
         EXPECT_EQ(
-                qs().where(f<^^Person::id>().in(1, 2, 3)).select().sql(),
-                qs().where(fields::Person.id.in(1, 2, 3)).select().sql()
-        );
-        EXPECT_EQ(
-                qs().where(f<^^Person::age>().between(20, 40)).select().sql(),
-                qs().where(fields::Person.age.between(20, 40)).select().sql()
-        );
-        EXPECT_EQ(
-                qs().where(f<^^Person::name>().like("A%")).select().sql(),
-                qs().where(fields::Person.name.like("A%")).select().sql()
-        );
-        EXPECT_EQ(
-                qs().where(f<^^Person::name>().collate(Collate::NoCase) == "bob").select().sql(),
-                qs().where(fields::Person.name.collate(Collate::NoCase) == "bob").select().sql()
+                qs().where(fields::Person.name.collate(Collate::NoCase) == "bob").select().sql(),
+                expected("name COLLATE NOCASE = ?")
         );
     }
 
     TEST_F(FieldsSqlParity, NullChecksOnOptionalField) {
-        EXPECT_EQ(
-                qs().where(f<^^Person::score>().is_null()).select().sql(),
-                qs().where(fields::Person.score.is_null()).select().sql()
-        );
-        EXPECT_EQ(
-                qs().where(f<^^Person::nickname>().is_not_null()).select().sql(),
-                qs().where(fields::Person.nickname.is_not_null()).select().sql()
-        );
-    }
-
-    TEST_F(FieldsSqlParity, MixedSpellingsInOneExpression) {
-        // A migration leaves files half-converted; both spellings must compose.
-        EXPECT_EQ(
-                qs().where(f<^^Person::department>() == "Eng" && f<^^Person::age>() < 28).select().sql(),
-                qs().where(fields::Person.department == "Eng" && f<^^Person::age>() < 28).select().sql()
-        );
+        EXPECT_EQ(qs().where(fields::Person.score.is_null()).select().sql(), expected("score IS NULL"));
+        EXPECT_EQ(qs().where(fields::Person.nickname.is_not_null()).select().sql(), expected("nickname IS NOT NULL"));
     }
 
     TEST_F(FieldsSqlParity, OrderBySingleAndMulti) {
@@ -163,7 +137,7 @@ namespace {
 
     TEST_F(FieldsSqlParity, OrderByCombinedWithWhereAndLimit) {
         EXPECT_EQ(
-                qs().where(f<^^Person::age>() > 20).order_by<^^Person::name>().limit(5).select().sql(),
+                qs().where(fields::Person.age > 20).order_by<^^Person::name>().limit(5).select().sql(),
                 qs().where(fields::Person.age > 20).order_by<fields::Person.name>().limit(5).select().sql()
         );
     }
@@ -242,11 +216,11 @@ namespace {
     TEST_F(FieldsSqlParity, GroupByHavingBothChainPositions) {
         // Both chaining orders, per the CLAUDE.md testing checklist.
         EXPECT_EQ(
-                qs().group_by<^^Person::age>().having(f<^^Person::age>() > 30).count<>().sql(),
+                qs().group_by<^^Person::age>().having(fields::Person.age > 30).count<>().sql(),
                 qs().group_by<fields::Person.age>().having(fields::Person.age > 30).count<>().sql()
         );
         EXPECT_EQ(
-                qs().group_by<^^Person::department>().count<>().having(f<^^Person::department>() == "Eng").sql(),
+                qs().group_by<^^Person::department>().count<>().having(fields::Person.department == "Eng").sql(),
                 qs().group_by<fields::Person.department>().count<>().having(fields::Person.department == "Eng").sql()
         );
     }
@@ -257,7 +231,7 @@ namespace {
         const Person proto{.salary = 60000, .is_active = true};
 
         const auto legacy_upd =
-                qs().where(f<^^Person::salary>() < 50000).update<^^Person::salary, ^^Person::is_active>(proto).to_sql();
+                qs().where(fields::Person.salary < 50000).update<^^Person::salary, ^^Person::is_active>(proto).to_sql();
         const auto proxy_upd = qs().where(fields::Person.salary < 50000)
                                        .update<fields::Person.salary, fields::Person.is_active>(proto)
                                        .to_sql();

@@ -90,6 +90,18 @@ namespace {
 
 } // namespace
 
+// fields:: selector proxies (#518). Global scope, not nested in the anonymous
+// namespace: a nested `namespace fields` would be ambiguous with the global one.
+namespace fields {
+
+    struct TsCompositeCleanT;
+    consteval {
+        std::meta::define_aggregate(^^TsCompositeCleanT, storm::field_specs_for(^^TsCompositeClean));
+    }
+    inline constexpr TsCompositeCleanT TsCompositeClean{};
+
+} // namespace fields
+
 // ============================================================================
 // Compile-time concept gate — ModelTimestampPkValid<T>
 // ============================================================================
@@ -207,7 +219,7 @@ namespace {
     TEST_F(TimestampPkTest, ConditionalUpdateSetClauseExcludesKeyParts) {
         using storm::orm::where::f;
         storm::QuerySet<TsCompositeClean, ConnType> qs;
-        const auto                                  sql = qs.where(f<^^TsCompositeClean::tenant_id>() == 1)
+        const auto                                  sql = qs.where(fields::TsCompositeClean.tenant_id == 1)
                                  .update<^^TsCompositeClean::payload>(TsCompositeClean{.payload = 7})
                                  .to_sql();
         ASSERT_TRUE(sql.has_value());
@@ -238,7 +250,7 @@ namespace {
     TEST_F(TimestampedRecordSqlTest, ConditionalUpdateSqlUnchanged) {
         using storm::orm::where::f;
         storm::QuerySet<TimestampedRecord, ConnType> qs;
-        const auto                                   sql = qs.where(f<^^TimestampedRecord::id>() == 1)
+        const auto                                   sql = qs.where(fields::TimestampedRecord.id == 1)
                                  .update<^^TimestampedRecord::name>(TimestampedRecord{.name = "renamed"})
                                  .to_sql();
         ASSERT_TRUE(sql.has_value());

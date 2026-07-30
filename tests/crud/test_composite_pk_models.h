@@ -11,6 +11,7 @@
  * Split across two test TUs: test_composite_pk_sql.cpp (compile-time gates and
  * SQL text) and test_composite_pk_crud.cpp (live execution on both backends).
  */
+#include <meta>
 
 // Canonical 2-part composite key, both parts int.
 struct OrderLine {
@@ -229,5 +230,31 @@ struct ShelfAssignment {
     [[= storm::many_to_many<>]] std::vector<StorageBin> bins;
     [[= storm::many_to_many<>]] std::vector<LedgerTag> tags;
 };
+
+// fields:: selector proxies (#518) — two mechanical lines per model, no field
+// names, so they cannot drift when a model gains or loses a member.
+namespace fields {
+
+struct OrderLineT;
+consteval { std::meta::define_aggregate(^^OrderLineT, storm::field_specs_for(^^OrderLine)); }
+inline constexpr OrderLineT OrderLine{};
+
+struct InventoryT;
+consteval { std::meta::define_aggregate(^^InventoryT, storm::field_specs_for(^^Inventory)); }
+inline constexpr InventoryT Inventory{};
+
+struct LedgerT;
+consteval { std::meta::define_aggregate(^^LedgerT, storm::field_specs_for(^^Ledger)); }
+inline constexpr LedgerT Ledger{};
+
+struct WidgetT;
+consteval { std::meta::define_aggregate(^^WidgetT, storm::field_specs_for(^^Widget)); }
+inline constexpr WidgetT Widget{};
+
+struct StockEntryT;
+consteval { std::meta::define_aggregate(^^StockEntryT, storm::field_specs_for(^^StockEntry)); }
+inline constexpr StockEntryT StockEntry{};
+
+} // namespace fields
 
 #endif // STORM_TESTS_TEST_COMPOSITE_PK_MODELS_H

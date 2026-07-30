@@ -7,26 +7,9 @@ import std;
 
 using storm::QuerySet;
 
-#include "test_models.h"     // NOSONAR cpp:S954
-#include "test_m2m_models.h" // NOSONAR cpp:S954
-
-// fields:: proxies for the relation-carrying models. Declared here rather than
-// in test_m2m_models.h so the m2m TUs that do not need them stay unchanged.
-namespace fields {
-
-    struct StudentT;
-    consteval {
-        std::meta::define_aggregate(^^StudentT, storm::field_specs_for(^^Student));
-    }
-    inline constexpr StudentT Student{};
-
-    struct PupilT;
-    consteval {
-        std::meta::define_aggregate(^^PupilT, storm::field_specs_for(^^Pupil));
-    }
-    inline constexpr PupilT Pupil{};
-
-} // namespace fields
+#include "test_models.h"            // NOSONAR cpp:S954
+#include "test_m2m_models.h"        // NOSONAR cpp:S954
+#include "test_reverse_fk_models.h" // NOSONAR cpp:S954
 
 namespace {
 
@@ -35,13 +18,16 @@ namespace {
     // A relation member is not a column, but IS a legal join target. These assert
     // the spelling `join<fields::Student.courses>()` exists and emits byte-identical
     // SQL to the ^^ form — the 65 in-tree m2m/reverse-FK join sites depend on it.
-    class FieldsRelationJoin : public StormTestFixture<Student, Conn, Course, Pupil> {
+    class FieldsRelationJoin : public StormTestFixture<Student, Conn, Course, Pupil, RfPerson, RfTask> {
       public:
         [[nodiscard]] static auto student_qs() -> QuerySet<Student, Conn> {
             return QuerySet<Student, Conn>{};
         }
         [[nodiscard]] static auto pupil_qs() -> QuerySet<Pupil, Conn> {
             return QuerySet<Pupil, Conn>{};
+        }
+        [[nodiscard]] static auto rf_qs() -> QuerySet<RfPerson, Conn> {
+            return QuerySet<RfPerson, Conn>{};
         }
     };
 
@@ -67,12 +53,25 @@ namespace {
         );
     }
 
+    TEST_F(FieldsRelationJoin, ReverseFkJoin) {
+        // reverse_fk goes through the same RelationRef path as m2m, but its Q2
+        // hits the owner table directly (no junction) — asserted separately so
+        // the claim is tested rather than inferred from the m2m cases.
+        EXPECT_EQ(
+                rf_qs().join<^^RfPerson::tasks>().select().sql(), rf_qs().join<fields::RfPerson.tasks>().select().sql()
+        );
+        EXPECT_EQ(
+                rf_qs().left_join<^^RfPerson::tasks>().select().sql(),
+                rf_qs().left_join<fields::RfPerson.tasks>().select().sql()
+        );
+    }
+
     TEST_F(FieldsRelationJoin, RelationJoinCombinedWithWhereAndOrderBy) {
         // The relation proxy must compose with column proxies in one chain.
         EXPECT_EQ(
                 student_qs()
                         .join<^^Student::courses>()
-                        .where(storm::orm::where::f<^^Student::age>() > 20)
+                        .where(fields::Student.age > 20)
                         .order_by<^^Student::name>()
                         .select()
                         .sql(),

@@ -41,7 +41,7 @@ template <typename ConnType> class ConditionalEraseTest : public StormTestFixtur
     static auto personExists(int person_id) -> bool {
         using storm::orm::where::f;
         const storm::QuerySet<Person, ConnType> qs;
-        auto                                    result = qs.where(f<^^Person::id>() == person_id).select().execute();
+        auto                                    result = qs.where(fields::Person.id == person_id).select().execute();
         return result.has_value() && !result.value().empty();
     }
 };
@@ -56,7 +56,7 @@ TYPED_TEST(ConditionalEraseTest, Setup) {
 TYPED_TEST(ConditionalEraseTest, Equal) {
     using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
-    ASSERT_TRUE(qs.where(f<^^Person::age>() == 30).erase().execute().has_value());
+    ASSERT_TRUE(qs.where(fields::Person.age == 30).erase().execute().has_value());
     EXPECT_FALSE(this->personExists(1));
     EXPECT_EQ(this->countPersons(), 4);
 }
@@ -64,7 +64,7 @@ TYPED_TEST(ConditionalEraseTest, Equal) {
 TYPED_TEST(ConditionalEraseTest, NotEqual) {
     using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
-    ASSERT_TRUE(qs.where(f<^^Person::age>() != 30).erase().execute().has_value());
+    ASSERT_TRUE(qs.where(fields::Person.age != 30).erase().execute().has_value());
     EXPECT_TRUE(this->personExists(1)) << "age==30 row (Alice) survives";
     EXPECT_EQ(this->countPersons(), 1);
 }
@@ -72,7 +72,7 @@ TYPED_TEST(ConditionalEraseTest, NotEqual) {
 TYPED_TEST(ConditionalEraseTest, GreaterThan) {
     using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
-    ASSERT_TRUE(qs.where(f<^^Person::age>() > 35).erase().execute().has_value());
+    ASSERT_TRUE(qs.where(fields::Person.age > 35).erase().execute().has_value());
     EXPECT_FALSE(this->personExists(4));
     EXPECT_FALSE(this->personExists(5));
     EXPECT_EQ(this->countPersons(), 3);
@@ -81,14 +81,14 @@ TYPED_TEST(ConditionalEraseTest, GreaterThan) {
 TYPED_TEST(ConditionalEraseTest, GreaterEqual) {
     using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
-    ASSERT_TRUE(qs.where(f<^^Person::age>() >= 35).erase().execute().has_value());
+    ASSERT_TRUE(qs.where(fields::Person.age >= 35).erase().execute().has_value());
     EXPECT_EQ(this->countPersons(), 2) << "ages 35,40,45 removed";
 }
 
 TYPED_TEST(ConditionalEraseTest, LessThan) {
     using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
-    ASSERT_TRUE(qs.where(f<^^Person::age>() < 30).erase().execute().has_value());
+    ASSERT_TRUE(qs.where(fields::Person.age < 30).erase().execute().has_value());
     EXPECT_FALSE(this->personExists(2)) << "Bob age 25 removed";
     EXPECT_EQ(this->countPersons(), 4);
 }
@@ -96,7 +96,7 @@ TYPED_TEST(ConditionalEraseTest, LessThan) {
 TYPED_TEST(ConditionalEraseTest, LessEqual) {
     using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
-    ASSERT_TRUE(qs.where(f<^^Person::age>() <= 30).erase().execute().has_value());
+    ASSERT_TRUE(qs.where(fields::Person.age <= 30).erase().execute().has_value());
     EXPECT_EQ(this->countPersons(), 3) << "ages 25,30 removed";
 }
 
@@ -104,35 +104,35 @@ TYPED_TEST(ConditionalEraseTest, LessEqual) {
 TYPED_TEST(ConditionalEraseTest, InClause) {
     using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
-    ASSERT_TRUE(qs.where(f<^^Person::age>().in(25, 35, 45)).erase().execute().has_value());
+    ASSERT_TRUE(qs.where(fields::Person.age.in(25, 35, 45)).erase().execute().has_value());
     EXPECT_EQ(this->countPersons(), 2) << "Bob(25), Charlie(35), Eve(45) removed";
 }
 
 TYPED_TEST(ConditionalEraseTest, BetweenClause) {
     using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
-    ASSERT_TRUE(qs.where(f<^^Person::age>().between(30, 40)).erase().execute().has_value());
+    ASSERT_TRUE(qs.where(fields::Person.age.between(30, 40)).erase().execute().has_value());
     EXPECT_EQ(this->countPersons(), 2) << "ages 30,35,40 removed";
 }
 
 TYPED_TEST(ConditionalEraseTest, LikeClause) {
     using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
-    ASSERT_TRUE(qs.where(f<^^Person::department>().like("Eng%")).erase().execute().has_value());
+    ASSERT_TRUE(qs.where(fields::Person.department.like("Eng%")).erase().execute().has_value());
     EXPECT_EQ(this->countPersons(), 3) << "Alice & Bob in Eng removed";
 }
 
 TYPED_TEST(ConditionalEraseTest, IsNull) {
     using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
-    ASSERT_TRUE(qs.where(f<^^Person::score>().is_null()).erase().execute().has_value());
+    ASSERT_TRUE(qs.where(fields::Person.score.is_null()).erase().execute().has_value());
     EXPECT_EQ(this->countPersons(), 2) << "rows with NULL score removed (3 of 5)";
 }
 
 TYPED_TEST(ConditionalEraseTest, IsNotNull) {
     using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
-    ASSERT_TRUE(qs.where(f<^^Person::score>().is_not_null()).erase().execute().has_value());
+    ASSERT_TRUE(qs.where(fields::Person.score.is_not_null()).erase().execute().has_value());
     EXPECT_EQ(this->countPersons(), 3) << "rows with non-NULL score removed (2 of 5)";
 }
 
@@ -140,7 +140,7 @@ TYPED_TEST(ConditionalEraseTest, IsNotNull) {
 TYPED_TEST(ConditionalEraseTest, StringEqual) {
     using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
-    ASSERT_TRUE(qs.where(f<^^Person::name>() == "Alice").erase().execute().has_value());
+    ASSERT_TRUE(qs.where(fields::Person.name == "Alice").erase().execute().has_value());
     EXPECT_FALSE(this->personExists(1));
     EXPECT_EQ(this->countPersons(), 4);
 }
@@ -148,14 +148,14 @@ TYPED_TEST(ConditionalEraseTest, StringEqual) {
 TYPED_TEST(ConditionalEraseTest, DoubleGreater) {
     using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
-    ASSERT_TRUE(qs.where(f<^^Person::salary>() > 55000.0).erase().execute().has_value());
+    ASSERT_TRUE(qs.where(fields::Person.salary > 55000.0).erase().execute().has_value());
     EXPECT_EQ(this->countPersons(), 2) << "salaries 60k,70k,80k removed";
 }
 
 TYPED_TEST(ConditionalEraseTest, BoolEqual) {
     using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
-    ASSERT_TRUE(qs.where(f<^^Person::is_active>() == false).erase().execute().has_value());
+    ASSERT_TRUE(qs.where(fields::Person.is_active == false).erase().execute().has_value());
     EXPECT_EQ(this->countPersons(), 3) << "Bob & Dave (inactive) removed";
 }
 
@@ -163,7 +163,7 @@ TYPED_TEST(ConditionalEraseTest, BoolEqual) {
 TYPED_TEST(ConditionalEraseTest, AndCombination) {
     using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
-    ASSERT_TRUE(qs.where(f<^^Person::department>() == "Sales" && f<^^Person::is_active>() == false)
+    ASSERT_TRUE(qs.where(fields::Person.department == "Sales" && fields::Person.is_active == false)
                         .erase()
                         .execute()
                         .has_value());
@@ -175,7 +175,7 @@ TYPED_TEST(ConditionalEraseTest, AndCombination) {
 TYPED_TEST(ConditionalEraseTest, OrCombination) {
     using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
-    ASSERT_TRUE(qs.where(f<^^Person::age>() < 26 || f<^^Person::age>() > 44).erase().execute().has_value());
+    ASSERT_TRUE(qs.where(fields::Person.age < 26 || fields::Person.age > 44).erase().execute().has_value());
     EXPECT_FALSE(this->personExists(2)) << "Bob 25 removed";
     EXPECT_FALSE(this->personExists(5)) << "Eve 45 removed";
     EXPECT_EQ(this->countPersons(), 3);
@@ -184,8 +184,8 @@ TYPED_TEST(ConditionalEraseTest, OrCombination) {
 TYPED_TEST(ConditionalEraseTest, NestedCombination) {
     using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
-    ASSERT_TRUE(qs.where((f<^^Person::department>() == "Eng" && f<^^Person::age>() < 28) ||
-                         f<^^Person::salary>() > 75000.0)
+    ASSERT_TRUE(qs.where((fields::Person.department == "Eng" && fields::Person.age < 28) ||
+                         fields::Person.salary > 75000.0)
                         .erase()
                         .execute()
                         .has_value());
@@ -198,8 +198,8 @@ TYPED_TEST(ConditionalEraseTest, NestedCombination) {
 TYPED_TEST(ConditionalEraseTest, ChainedWhere) {
     using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
-    ASSERT_TRUE(qs.where(f<^^Person::department>() == "Eng")
-                        .where(f<^^Person::is_active>() == true)
+    ASSERT_TRUE(qs.where(fields::Person.department == "Eng")
+                        .where(fields::Person.is_active == true)
                         .erase()
                         .execute()
                         .has_value());
@@ -212,7 +212,7 @@ TYPED_TEST(ConditionalEraseTest, ChainedWhere) {
 TYPED_TEST(ConditionalEraseTest, EmptyResultNoOp) {
     using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
-    ASSERT_TRUE(qs.where(f<^^Person::age>() > 1000).erase().execute().has_value())
+    ASSERT_TRUE(qs.where(fields::Person.age > 1000).erase().execute().has_value())
             << "Matching nothing is a successful no-op";
     EXPECT_EQ(this->countPersons(), 5) << "No rows deleted";
 }
@@ -220,7 +220,7 @@ TYPED_TEST(ConditionalEraseTest, EmptyResultNoOp) {
 TYPED_TEST(ConditionalEraseTest, SingleRowMatch) {
     using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
-    ASSERT_TRUE(qs.where(f<^^Person::id>() == 3).erase().execute().has_value());
+    ASSERT_TRUE(qs.where(fields::Person.id == 3).erase().execute().has_value());
     EXPECT_FALSE(this->personExists(3));
     EXPECT_EQ(this->countPersons(), 4);
 }
@@ -236,7 +236,7 @@ TYPED_TEST(ConditionalEraseTest, LargeResultSet) {
     }
     ASSERT_TRUE(qs.insert(std::span<const Person>(batch)).execute().has_value());
     EXPECT_EQ(this->countPersons(), 155);
-    ASSERT_TRUE(qs.where(f<^^Person::department>() == "Bulk").erase().execute().has_value());
+    ASSERT_TRUE(qs.where(fields::Person.department == "Bulk").erase().execute().has_value());
     EXPECT_EQ(this->countPersons(), 5) << "All 150 bulk rows deleted in one statement";
 }
 
@@ -258,7 +258,7 @@ TYPED_TEST(ConditionalEraseTest, EraseAllStillWipes) {
 TYPED_TEST(ConditionalEraseTest, ToSqlShape) {
     using storm::orm::where::f;
     storm::QuerySet<Person, TypeParam> qs;
-    auto                               sql = qs.where(f<^^Person::age>() > 30).erase().to_sql();
+    auto                               sql = qs.where(fields::Person.age > 30).erase().to_sql();
     ASSERT_TRUE(sql.has_value());
     EXPECT_TRUE(sql.value().contains("DELETE FROM")) << sql.value();
     EXPECT_TRUE(sql.value().contains("WHERE")) << sql.value();

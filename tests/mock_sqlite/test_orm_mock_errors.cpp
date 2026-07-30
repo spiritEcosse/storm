@@ -17,6 +17,7 @@
 
 #include <format>
 #include <gtest/gtest.h>
+#include <meta>
 
 // NOLINTBEGIN(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes) // NOSONAR(cpp:S125)
 // NOLINTBEGIN(misc-const-correctness,bugprone-unused-return-value,performance-inefficient-vector-operation) // NOSONAR(cpp:S125)
@@ -52,6 +53,15 @@ namespace {
         std::string                       name;
         int                               age{};
     };
+
+    // fields:: selector proxies (#518).
+    namespace fields {
+        struct MockPersonT;
+        consteval {
+            std::meta::define_aggregate(^^MockPersonT, storm::field_specs_for(^^MockPerson));
+        }
+        inline constexpr MockPersonT MockPerson{};
+    } // namespace fields
 
     // Test model with optional fields
     struct MockPersonOptional {
@@ -500,7 +510,7 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.where(storm::orm::where::f<^^MockPerson::age>() > 30).erase().execute();
+        auto                 result = qs.where(fields::MockPerson.age > 30).erase().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -510,7 +520,7 @@ namespace {
         MockSqlite3Config::bind_int_fails_on_call(1, SQLITE_NOMEM);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.where(storm::orm::where::f<^^MockPerson::age>() > 30).erase().execute();
+        auto                 result = qs.where(fields::MockPerson.age > 30).erase().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -520,7 +530,7 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_LOCKED);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.where(storm::orm::where::f<^^MockPerson::age>() > 30).erase().execute();
+        auto                 result = qs.where(fields::MockPerson.age > 30).erase().execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_LOCKED);
@@ -545,9 +555,8 @@ namespace {
         MockSqlite3Config::prepare_returns(SQLITE_ERROR);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.where(storm::orm::where::f<^^MockPerson::age>() > 30)
-                              .update<^^MockPerson::name>(MockPerson{.name = "x"})
-                              .execute();
+        auto                 result =
+                qs.where(fields::MockPerson.age > 30).update<^^MockPerson::name>(MockPerson{.name = "x"}).execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -558,9 +567,8 @@ namespace {
         MockSqlite3Config::bind_text_fails_on_call(1, SQLITE_NOMEM);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.where(storm::orm::where::f<^^MockPerson::age>() > 30)
-                              .update<^^MockPerson::name>(MockPerson{.name = "x"})
-                              .execute();
+        auto                 result =
+                qs.where(fields::MockPerson.age > 30).update<^^MockPerson::name>(MockPerson{.name = "x"}).execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -571,9 +579,8 @@ namespace {
         MockSqlite3Config::bind_int_fails_on_call(1, SQLITE_NOMEM);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.where(storm::orm::where::f<^^MockPerson::age>() > 30)
-                              .update<^^MockPerson::name>(MockPerson{.name = "x"})
-                              .execute();
+        auto                 result =
+                qs.where(fields::MockPerson.age > 30).update<^^MockPerson::name>(MockPerson{.name = "x"}).execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -583,9 +590,8 @@ namespace {
         MockSqlite3Config::step_returns(SQLITE_LOCKED);
 
         QuerySet<MockPerson> qs;
-        auto                 result = qs.where(storm::orm::where::f<^^MockPerson::age>() > 30)
-                              .update<^^MockPerson::name>(MockPerson{.name = "x"})
-                              .execute();
+        auto                 result =
+                qs.where(fields::MockPerson.age > 30).update<^^MockPerson::name>(MockPerson{.name = "x"}).execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_LOCKED);
@@ -3246,9 +3252,7 @@ namespace {
 
         QuerySet<MockPerson> qs1;
         QuerySet<MockPerson> qs2;
-        auto                 result = qs1.where(storm::orm::where::f<^^MockPerson::age>() > 30)
-                              .union_(qs2.where(storm::orm::where::f<^^MockPerson::age>() < 10))
-                              .execute();
+        auto result = qs1.where(fields::MockPerson.age > 30).union_(qs2.where(fields::MockPerson.age < 10)).execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -3259,9 +3263,7 @@ namespace {
 
         QuerySet<MockPerson> qs1;
         QuerySet<MockPerson> qs2;
-        auto                 result = qs1.where(storm::orm::where::f<^^MockPerson::age>() > 30)
-                              .union_(qs2.where(storm::orm::where::f<^^MockPerson::age>() < 10))
-                              .execute();
+        auto result = qs1.where(fields::MockPerson.age > 30).union_(qs2.where(fields::MockPerson.age < 10)).execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -3272,9 +3274,7 @@ namespace {
 
         QuerySet<MockPerson> qs1;
         QuerySet<MockPerson> qs2;
-        auto                 result = qs1.where(storm::orm::where::f<^^MockPerson::age>() > 30)
-                              .union_(qs2.where(storm::orm::where::f<^^MockPerson::age>() < 10))
-                              .execute();
+        auto result = qs1.where(fields::MockPerson.age > 30).union_(qs2.where(fields::MockPerson.age < 10)).execute();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_CORRUPT);
@@ -3285,9 +3285,7 @@ namespace {
 
         QuerySet<MockPerson> qs1;
         QuerySet<MockPerson> qs2;
-        auto                 result = qs1.where(storm::orm::where::f<^^MockPerson::age>() > 30)
-                              .union_(qs2.where(storm::orm::where::f<^^MockPerson::age>() < 10))
-                              .to_sql();
+        auto result = qs1.where(fields::MockPerson.age > 30).union_(qs2.where(fields::MockPerson.age < 10)).to_sql();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_ERROR);
@@ -3298,9 +3296,7 @@ namespace {
 
         QuerySet<MockPerson> qs1;
         QuerySet<MockPerson> qs2;
-        auto                 result = qs1.where(storm::orm::where::f<^^MockPerson::age>() > 30)
-                              .union_(qs2.where(storm::orm::where::f<^^MockPerson::age>() < 10))
-                              .to_sql();
+        auto result = qs1.where(fields::MockPerson.age > 30).union_(qs2.where(fields::MockPerson.age < 10)).to_sql();
 
         ASSERT_FALSE(result.has_value());
         EXPECT_EQ(result.error().code(), SQLITE_NOMEM);
@@ -3324,7 +3320,7 @@ namespace {
         MockSqlite3Config::bind_int_returns(SQLITE_NOMEM);
 
         QuerySet<MockPerson> qs;
-        auto                 age       = storm::orm::where::f<^^MockPerson::age>();
+        auto                 age       = fields::MockPerson.age;
         bool                 got_error = false;
         for (auto&& result : qs.where(age > 25).rows()) {
             if (!result.has_value()) {
@@ -3768,6 +3764,15 @@ namespace {
         [[= storm::many_to_many<>]] std::vector<MockCourse> courses;
     };
 
+    // fields:: selector proxies (#518).
+    namespace fields {
+        struct MockStudentT;
+        consteval {
+            std::meta::define_aggregate(^^MockStudentT, storm::field_specs_for(^^MockStudent));
+        }
+        inline constexpr MockStudentT MockStudent{};
+    } // namespace fields
+
     TEST_F(ORMMockErrorTest, M2MSelectFailsOnStepError) {
         MockSqlite3Config::step_returns(SQLITE_IOERR);
 
@@ -3883,10 +3888,7 @@ namespace {
         MockSqlite3Config::bind_int_returns(SQLITE_RANGE);
 
         QuerySet<MockStudent> qs;
-        auto                  rows = qs.join<^^MockStudent::courses>()
-                            .where(storm::orm::where::f<^^MockStudent::id>() > 0)
-                            .select()
-                            .execute();
+        auto rows = qs.join<^^MockStudent::courses>().where(fields::MockStudent.id > 0).select().execute();
 
         ASSERT_FALSE(rows.has_value());
         EXPECT_EQ(rows.error().code(), SQLITE_RANGE);

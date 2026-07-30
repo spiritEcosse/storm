@@ -765,7 +765,7 @@ TYPED_TEST(DistinctTest, DistinctWithWhereSingleField) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT age WHERE age > 22
-    auto result = queryset.where(f<^^Person::age>() > 22).template distinct<^^Person::age>().execute();
+    auto result = queryset.where(fields::Person.age > 22).template distinct<^^Person::age>().execute();
     ASSERT_TRUE(result.has_value()) << "DISTINCT with WHERE failed: " << result.error().message();
 
     const auto& ages = result.value();
@@ -798,7 +798,7 @@ TYPED_TEST(DistinctTest, DistinctWithWhereMultipleFields) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT name, age WHERE age > 22
-    auto result = queryset.where(f<^^Person::age>() > 22).template distinct<^^Person::name, ^^Person::age>().execute();
+    auto result = queryset.where(fields::Person.age > 22).template distinct<^^Person::name, ^^Person::age>().execute();
     ASSERT_TRUE(result.has_value()) << "DISTINCT with WHERE failed: " << result.error().message();
 
     const auto& pairs = result.value();
@@ -826,7 +826,7 @@ TYPED_TEST(DistinctTest, DistinctWithWhereNoResults) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT name WHERE age > 100 (no matches)
-    auto result = queryset.where(f<^^Person::age>() > 100).template distinct<^^Person::name>().execute();
+    auto result = queryset.where(fields::Person.age > 100).template distinct<^^Person::name>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& names = result.value();
@@ -851,7 +851,7 @@ TYPED_TEST(DistinctTest, DistinctWithComplexWhere) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT age WHERE age >= 25 AND age <= 35
-    auto result = queryset.where(f<^^Person::age>().between(25, 35)).template distinct<^^Person::age>().execute();
+    auto result = queryset.where(fields::Person.age.between(25, 35)).template distinct<^^Person::age>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& ages = result.value();
@@ -893,7 +893,7 @@ TYPED_TEST(DistinctTest, ChainingOrderWhereJoinDistinct) {
 
     // Test that WHERE -> JOIN -> DISTINCT works
     // Using content field to avoid ambiguous column names
-    auto result = msg_qs.where(f<^^Message::content>().like("%e%"))
+    auto result = msg_qs.where(fields::Message.content.like("%e%"))
                           .template join<^^Message::sender>()
                           .template distinct<^^Message::content>()
                           .execute();
@@ -909,7 +909,7 @@ TYPED_TEST(DistinctTest, ChainingOrderJoinWhereDistinct) {
     // Test that JOIN -> WHERE -> DISTINCT works
     // Using content field to avoid ambiguous column names
     auto result = msg_qs.template join<^^Message::sender>()
-                          .where(f<^^Message::content>().like("%e%"))
+                          .where(fields::Message.content.like("%e%"))
                           .template distinct<^^Message::content>()
                           .execute();
     ASSERT_TRUE(result.has_value()) << "JOIN -> WHERE -> DISTINCT failed: " << result.error().message();
@@ -929,7 +929,7 @@ TYPED_TEST(DistinctTest, DistinctDefaultPKWithWhere) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT id (default PK) WHERE age > 22
-    auto result = queryset.where(f<^^Person::age>() > 22).distinct().execute();
+    auto result = queryset.where(fields::Person.age > 22).distinct().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& ids = result.value();
@@ -951,8 +951,8 @@ TYPED_TEST(DistinctTest, MultipleWhereClausesWithDistinct) {
     ASSERT_TRUE(insert_result.has_value());
 
     // Chain multiple WHERE clauses (should combine with AND)
-    auto result = queryset.where(f<^^Person::age>() > 22)
-                          .where(f<^^Person::age>() < 32)
+    auto result = queryset.where(fields::Person.age > 22)
+                          .where(fields::Person.age < 32)
                           .template distinct<^^Person::name>()
                           .execute();
     ASSERT_TRUE(result.has_value());
@@ -1228,7 +1228,7 @@ TYPED_TEST(DistinctTest, DistinctWithWhereOrderByLimit) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT name WHERE age > 25 ORDER BY name ASC LIMIT 2
-    auto result = queryset.where(f<^^Person::age>() > 25)
+    auto result = queryset.where(fields::Person.age > 25)
                           .template order_by<^^Person::name>()
                           .limit(2)
                           .template distinct<^^Person::name>()
@@ -1426,7 +1426,7 @@ TYPED_TEST(DistinctTest, DistinctOptionalWithWhereOnOptional) {
     ASSERT_TRUE(insert_result.has_value());
 
     // SELECT DISTINCT name WHERE age > 20 (filters out NULLs)
-    auto result = queryset.where(f<^^Person::score>() > 20).template distinct<^^Person::name>().execute();
+    auto result = queryset.where(fields::Person.score > 20).template distinct<^^Person::name>().execute();
     ASSERT_TRUE(result.has_value());
 
     const auto& names = result.value();
@@ -1572,7 +1572,7 @@ TYPED_TEST(DistinctTest, DifferentWhereExpressionsWithCaching) {
     std::ignore = queryset.insert(people).execute();
 
     // Query 1: age > 25
-    auto result1 = queryset.where(f<^^Person::age>() > 25).template distinct<^^Person::name>().execute();
+    auto result1 = queryset.where(fields::Person.age > 25).template distinct<^^Person::name>().execute();
     ASSERT_TRUE(result1.has_value());
     EXPECT_EQ(result1.value().size(), 3); // Bob, Charlie, Dave
 
@@ -1580,14 +1580,14 @@ TYPED_TEST(DistinctTest, DifferentWhereExpressionsWithCaching) {
     queryset.reset();
 
     // Query 2: age > 35
-    auto result2 = queryset.where(f<^^Person::age>() > 35).template distinct<^^Person::name>().execute();
+    auto result2 = queryset.where(fields::Person.age > 35).template distinct<^^Person::name>().execute();
     ASSERT_TRUE(result2.has_value());
     EXPECT_EQ(result2.value().size(), 1); // Dave only
 
     // Reset and Query 3: different condition
     queryset.reset();
 
-    auto result3 = queryset.where(f<^^Person::age>() < 30).template distinct<^^Person::name>().execute();
+    auto result3 = queryset.where(fields::Person.age < 30).template distinct<^^Person::name>().execute();
     ASSERT_TRUE(result3.has_value());
     EXPECT_EQ(result3.value().size(), 1); // Alice only
 }
@@ -1636,7 +1636,7 @@ TYPED_TEST(DistinctTest, SqlVerifyDistinctMultiField) {
 // Test: DISTINCT + WHERE generates correct SQL
 TYPED_TEST(DistinctTest, SqlVerifyDistinctWithWhere) {
     QuerySet<Person, TypeParam> queryset;
-    auto                        sql = queryset.where(f<^^Person::age>() > 30).template distinct<^^Person::name>().sql();
+    auto                        sql = queryset.where(fields::Person.age > 30).template distinct<^^Person::name>().sql();
     EXPECT_EQ(sql, "SELECT DISTINCT name FROM Person WHERE age > ?");
 }
 
@@ -1651,7 +1651,7 @@ TYPED_TEST(DistinctTest, SqlVerifyDistinctWithJoin) {
 TYPED_TEST(DistinctTest, SqlVerifyDistinctWithJoinAndWhere) {
     QuerySet<Message, TypeParam> msg_qs;
     auto                         sql = msg_qs.template join<^^Message::sender>()
-                       .where(f<^^Message::content>().like("%test%"))
+                       .where(fields::Message.content.like("%test%"))
                        .template distinct<^^Message::content>()
                        .sql();
     EXPECT_EQ(
@@ -1705,7 +1705,7 @@ TYPED_TEST(DistinctTest, SqlVerifyDistinctWithLimitOffset) {
 TYPED_TEST(DistinctTest, SqlVerifyDistinctFullCombo) {
     QuerySet<Message, TypeParam> msg_qs;
     auto                         sql = msg_qs.template join<^^Message::sender>()
-                       .where(f<^^Message::value>() > 10)
+                       .where(fields::Message.value > 10)
                        .template order_by<^^Message::content>()
                        .limit(5)
                        .template distinct<^^Message::content>()

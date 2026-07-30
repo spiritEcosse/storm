@@ -183,7 +183,7 @@ namespace {
     auto load_results_for_run(int run_id) -> std::vector<bench_dashboard::BenchResult> {
         return materialise_select<bench_dashboard::BenchResult>(
                 storm::QuerySet<bench_dashboard::BenchResult>()
-                        .where(storm::orm::where::f<^^bench_dashboard::BenchResult::run_id>() == run_id)
+                        .where(bench_dashboard::fields::BenchResult.run_id == run_id)
                         .order_by<^^bench_dashboard::BenchResult::id>()
         );
     }

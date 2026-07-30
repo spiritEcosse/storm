@@ -156,8 +156,8 @@ struct UuidPkRef {
 // fields:: selector proxies (#518)
 // =============================================================================
 // Two mechanical lines per model, no field names — so they cannot drift when a
-// model gains or loses a member. Stage 1 declares only the three models the
-// parity tests exercise; the rest land in Stage 2.
+// model gains or loses a member. Declared for the models this header's consumers
+// actually select on; a model with no selector call sites needs no proxy.
 
 namespace fields {
 
@@ -172,6 +172,14 @@ inline constexpr SimpleRecordT SimpleRecord{};
 struct MessageT;
 consteval { std::meta::define_aggregate(^^MessageT, storm::field_specs_for(^^Message)); }
 inline constexpr MessageT Message{};
+
+struct TimestampedRecordT;
+consteval { std::meta::define_aggregate(^^TimestampedRecordT, storm::field_specs_for(^^TimestampedRecord)); }
+inline constexpr TimestampedRecordT TimestampedRecord{};
+
+struct ExtendedTypesT;
+consteval { std::meta::define_aggregate(^^ExtendedTypesT, storm::field_specs_for(^^ExtendedTypes)); }
+inline constexpr ExtendedTypesT ExtendedTypes{};
 
 } // namespace fields
 

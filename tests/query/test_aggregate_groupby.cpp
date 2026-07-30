@@ -136,7 +136,7 @@ TYPED_TEST(AggregateTest, GroupByEmptyTable) {
 TYPED_TEST(AggregateTest, GroupByFullChain_Count) {
     this->insert_full_chain_data();
 
-    auto count_result = this->msg_qs->where(storm::orm::where::f<^^Message::value>() >= 20)
+    auto count_result = this->msg_qs->where(fields::Message.value >= 20)
                                 .template join<^^Message::sender>()
                                 .template group_by<^^Message::value>()
                                 .count()
@@ -151,7 +151,7 @@ TYPED_TEST(AggregateTest, GroupByFullChain_Count) {
 TYPED_TEST(AggregateTest, GroupByFullChain_SumAndAvg) {
     this->insert_full_chain_data();
 
-    auto sum_result = this->msg_qs->where(storm::orm::where::f<^^Message::value>() < 50)
+    auto sum_result = this->msg_qs->where(fields::Message.value < 50)
                               .template join<^^Message::sender>()
                               .template group_by<^^Message::content>()
                               .template sum<^^Message::value>()
@@ -161,9 +161,7 @@ TYPED_TEST(AggregateTest, GroupByFullChain_SumAndAvg) {
 
     (*this->msg_qs).reset();
 
-    auto avg_result = this->msg_qs
-                              ->where(storm::orm::where::f<^^Message::value>() >= 10 &&
-                                      storm::orm::where::f<^^Message::value>() <= 70)
+    auto avg_result = this->msg_qs->where(fields::Message.value >= 10 && fields::Message.value <= 70)
                               .template join<^^Message::sender>()
                               .template group_by<^^Message::value>()
                               .template avg<^^Message::value>()

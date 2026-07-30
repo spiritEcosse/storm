@@ -214,7 +214,7 @@ TYPED_TEST(PublicTransactionApiTest, NestedBatchUpdateCooperatesAndCommits) {
             << "nested batch update must not raise a nested-BEGIN error";
     ASSERT_TRUE(txn->commit().has_value());
 
-    auto bumped = qs.where(storm::orm::where::f<^^Person::age>() >= 100).count().execute();
+    auto bumped = qs.where(fields::Person.age >= 100).count().execute();
     ASSERT_TRUE(bumped.has_value());
     EXPECT_EQ(bumped.value(), 3) << "all updated rows persisted with the outer commit";
 }
@@ -232,7 +232,7 @@ TYPED_TEST(PublicTransactionApiTest, OuterRollbackDiscardsNestedBatchUpdate) {
         // No commit — outer rollback on scope exit.
     }
 
-    auto bumped = qs.where(storm::orm::where::f<^^Person::age>() >= 100).count().execute();
+    auto bumped = qs.where(fields::Person.age >= 100).count().execute();
     ASSERT_TRUE(bumped.has_value());
     EXPECT_EQ(bumped.value(), 0) << "nested batch update must not have self-committed";
 }

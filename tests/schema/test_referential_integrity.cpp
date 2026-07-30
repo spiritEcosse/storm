@@ -132,7 +132,7 @@ TYPED_TEST(FkPolicyTest, CascadeDeletesChildren) {
     ASSERT_TRUE(
             child_qs.insert(CascadeChild{.id = 0, .owner = Person{.id = alice_id}, .label = "c"}).execute().has_value()
     );
-    ASSERT_TRUE(person_qs.where(f<^^Person::id>() == alice_id).erase().execute().has_value())
+    ASSERT_TRUE(person_qs.where(fields::Person.id == alice_id).erase().execute().has_value())
             << "CASCADE must allow deleting the referenced parent";
 
     EXPECT_EQ(child_qs.count().execute(), 0) << "CASCADE must delete the child rows";
@@ -148,7 +148,7 @@ TYPED_TEST(FkPolicyTest, SetNullNullsChildFk) {
     ASSERT_TRUE(
             child_qs.insert(SetNullChild{.id = 0, .owner = Person{.id = alice_id}, .label = "s"}).execute().has_value()
     );
-    ASSERT_TRUE(person_qs.where(f<^^Person::id>() == alice_id).erase().execute().has_value())
+    ASSERT_TRUE(person_qs.where(fields::Person.id == alice_id).erase().execute().has_value())
             << "SET NULL must allow deleting the referenced parent";
 
     auto rows = child_qs.select().execute();
@@ -167,7 +167,7 @@ TYPED_TEST(FkPolicyTest, RestrictBlocksParentDelete) {
     ASSERT_TRUE(
             child_qs.insert(RestrictChild{.id = 0, .owner = Person{.id = alice_id}, .label = "r"}).execute().has_value()
     );
-    auto del = person_qs.where(f<^^Person::id>() == alice_id).erase().execute();
+    auto del = person_qs.where(fields::Person.id == alice_id).erase().execute();
     EXPECT_FALSE(del.has_value()) << "RESTRICT must block deleting a referenced parent";
 }
 
@@ -258,7 +258,7 @@ TYPED_TEST(ReferentialIntegrityTest, RejectsDeleteOfReferencedParent) {
 
     // Alice is still referenced by the task — RESTRICT must block the delete.
     using storm::orm::where::f;
-    auto del = user_qs.where(f<^^Person::id>() == alice_id).erase().execute();
+    auto del = user_qs.where(fields::Person.id == alice_id).erase().execute();
     EXPECT_FALSE(del.has_value()) << "Deleting a referenced parent must be rejected (RESTRICT)";
 }
 

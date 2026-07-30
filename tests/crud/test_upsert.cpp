@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <meta>
 #include "test_db_helpers.h"
 #include <sqlite3.h>
 
@@ -25,6 +26,15 @@ struct TimestampedUpsertRecord {
     [[= storm::auto_create]] std::chrono::system_clock::time_point created_at{};
     [[= storm::auto_update]] std::chrono::system_clock::time_point updated_at{};
 };
+
+// fields:: selector proxies (#518).
+namespace fields {
+    struct TimestampedUpsertRecordT;
+    consteval {
+        std::meta::define_aggregate(^^TimestampedUpsertRecordT, storm::field_specs_for(^^TimestampedUpsertRecord));
+    }
+    inline constexpr TimestampedUpsertRecordT TimestampedUpsertRecord{};
+} // namespace fields
 
 struct UniqueOwnerRecord {
     [[= storm::primary]] int                    id{};
@@ -119,7 +129,7 @@ TYPED_TEST(UpsertTest, DoNothingSkipsOnConflict) {
     ASSERT_TRUE(second.has_value());
     EXPECT_FALSE(second.value().has_value()); // skipped — no row touched
 
-    auto rows = qs.where(f<^^Person::name>() == "Zed").select().execute();
+    auto rows = qs.where(fields::Person.name == "Zed").select().execute();
     ASSERT_TRUE(rows.has_value());
     ASSERT_EQ(rows.value().size(), 1U);
     EXPECT_EQ(rows.value().begin()->age, 1); // untouched by the conflicting insert
@@ -138,7 +148,7 @@ TYPED_TEST(UpsertTest, DoUpdateOverwritesListedColumn) {
     ASSERT_TRUE(updated_id.has_value());
     EXPECT_EQ(updated_id.value(), first_id);
 
-    auto rows = qs.where(f<^^Person::name>() == "Zed").select().execute();
+    auto rows = qs.where(fields::Person.name == "Zed").select().execute();
     ASSERT_TRUE(rows.has_value());
     ASSERT_EQ(rows.value().size(), 1U);
     EXPECT_EQ(rows.value().begin()->age, 99); // overwritten by the conflicting insert
@@ -186,7 +196,7 @@ TYPED_TEST(UpsertTest, DoUpdateMultipleColumns) {
                      .execute();
     ASSERT_TRUE(r.has_value()) << r.error().message();
     EXPECT_EQ(r.value(), first.value());
-    auto row = qs.where(storm::orm::where::f<^^Person::name>() == std::string("Dan")).select().execute();
+    auto row = qs.where(fields::Person.name == std::string("Dan")).select().execute();
     ASSERT_TRUE(row.has_value());
     EXPECT_EQ(row.value().begin()->age, 11);
     EXPECT_DOUBLE_EQ(row.value().begin()->salary, 200.0);
@@ -219,7 +229,7 @@ TYPED_TEST(UpsertTimestampTest, DoUpdateRefreshesAutoUpdateTimestamp) {
                             .execute();
     ASSERT_TRUE(inserted.has_value());
 
-    auto before = qs.where(f<^^TimestampedUpsertRecord::name>() == "record").select().execute();
+    auto before = qs.where(fields::TimestampedUpsertRecord.name == "record").select().execute();
     ASSERT_TRUE(before.has_value());
     ASSERT_EQ(before.value().size(), 1U);
     const auto first_stamp = before.value().begin()->updated_at;
@@ -235,7 +245,7 @@ TYPED_TEST(UpsertTimestampTest, DoUpdateRefreshesAutoUpdateTimestamp) {
                            .execute();
     ASSERT_TRUE(updated.has_value());
 
-    auto after = qs.where(f<^^TimestampedUpsertRecord::name>() == "record").select().execute();
+    auto after = qs.where(fields::TimestampedUpsertRecord.name == "record").select().execute();
     ASSERT_TRUE(after.has_value());
     ASSERT_EQ(after.value().size(), 1U);
     EXPECT_GT(after.value().begin()->updated_at, first_stamp); // updated_at advanced
