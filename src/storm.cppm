@@ -160,6 +160,7 @@ export namespace storm {
     using meta::FieldSelector;    // NOLINT(misc-unused-using-decls)
     using meta::RelationRef;      // NOLINT(misc-unused-using-decls)
     using meta::RelationSelector; // NOLINT(misc-unused-using-decls)
+    using meta::selector_for;     // NOLINT(misc-unused-using-decls)
     using meta::selector_info;    // NOLINT(misc-unused-using-decls)
     using meta::ValidSelector;    // NOLINT(misc-unused-using-decls)
 

@@ -21,21 +21,26 @@ static_assert(std::meta::identifier_of(selector_info<fields::FSPerson.age>()) !=
 // Load-bearing: removing the base class breaks exactly this (mutation-verified).
 static_assert(decltype(fields::FSPerson.age)::field_name_sv == "age");
 
-// ── Dual-accept: a raw info still converts (transitional, see fields.cppm) ───
-static_assert(selector_info<^^FSPerson::age>() == ^^FSPerson::age);
+// ── The proxy resolves to exactly the member's reflection ───────────────────
+// A RAW ^^Model::member is no longer accepted anywhere: selector_info is
+// proxy-only, so there is one public spelling rather than two.
 static_assert(selector_info<fields::FSPerson.age>() == ^^FSPerson::age);
+// A raw info is rejected. Routed through a template parameter: `requires` naming
+// a concrete unsatisfied call at namespace scope is a hard error, not a soft false.
+template <auto S> constexpr bool convertible = requires { selector_info<S>(); };
+static_assert(convertible<fields::FSPerson.age>);
+static_assert(!convertible<^^FSPerson::age>);
 
 // ── The concept distinguishes the two spellings ──────────────────────────────
 static_assert(FieldSelector<std::remove_cvref_t<decltype(fields::FSPerson.age)>>);
 static_assert(!FieldSelector<std::meta::info>);
 
-// ── ValidSelector accepts BOTH spellings, and rejects a non-selector ─────────
-// The widened QuerySet/aggregate/order_by methods constrain on this concept in
-// the NEXT commit; asserting it here means a typo inside it fails now rather
-// than one commit later, when the failure would be buried in template noise.
+// ── ValidSelector accepts ONLY the proxy spelling ───────────────────────────
+// The widened QuerySet/aggregate/order_by methods constrain on this concept, so
+// a typo inside it surfaces here rather than buried in template noise later.
 static_assert(ValidSelector<fields::FSPerson.age>); // the proxy
-static_assert(ValidSelector<^^FSPerson::age>);      // a raw info
-static_assert(!ValidSelector<42>);                  // neither spelling
+static_assert(!ValidSelector<^^FSPerson::age>);     // a raw info: REJECTED now
+static_assert(!ValidSelector<42>);                  // not a selector at all
 
 // ── Relation members ARE present, but as a DIFFERENT proxy type ──────────────
 // A relation member (m2m, reverse_fk) is not a column, but it IS a legal join

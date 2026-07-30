@@ -77,26 +77,36 @@ namespace fields {
 using storm::QuerySet;
 
 // ── Compile-time API contract (#388) ─────────────────────────────────────────
-// join/left_join take ^^T::field reflection NTTPs. Member-pointer syntax,
-// non-member reflections, non-FK fields, and other models' fields are all
-// rejected by the FKFieldOf constraint. The template parameter makes the
-// call dependent so a rejected argument is a substitution failure (= false),
-// not a hard error.
+// join/left_join take fields:: selector proxies (#518). Member-pointer syntax,
+// raw ^^ reflections, non-FK fields, and other models' fields are all rejected —
+// by FKFieldOf for the wrong field, and by selector_info's own constraint for a
+// non-selector. The template parameter makes the call dependent so a rejected
+// argument is a substitution failure (= false), not a hard error.
 template <auto... FKs> constexpr bool join_accepts = requires(QuerySet<Task> qs) { qs.template join<FKs...>(); };
 
-static_assert(join_accepts<^^Task::assignee>);
-static_assert(join_accepts<^^Task::assignee, ^^Task::reviewer>);
+static_assert(join_accepts<fields::Task.assignee>);
+static_assert(join_accepts<fields::Task.assignee, fields::Task.reviewer>);
+static_assert(!join_accepts<^^Task::assignee>); // the raw ^^ spelling is gone (#518)
 static_assert(requires(QuerySet<Task> qs) { qs.template left_join<fields::Task.assignee>(); });
 // right_join was removed in #397 — its only distinguishing output was junk
 // defaulted base entities; see #398 for the reverse-relation replacement.
 // The QuerySet type must be the template parameter (detection idiom): with a
 // concrete type the missing member is a hard error at parse, not 'false'.
-template <typename QS> constexpr bool has_right_join = requires(QS qs) { qs.template right_join<^^Task::assignee>(); };
+template <typename QS>
+constexpr bool has_right_join = requires(QS qs) { qs.template right_join<fields::Task.assignee>(); };
 static_assert(!has_right_join<QuerySet<Task>>);
-static_assert(!join_accepts<&Task::assignee>);     // old pointer syntax removed
-static_assert(!join_accepts<^^Task::description>); // non-FK field
-static_assert(!join_accepts<^^Task>);              // not a data member
-static_assert(!join_accepts<^^Person::name>);      // member of another model
+static_assert(!join_accepts<&Task::assignee>); // old pointer syntax removed
+// These three now fail at selector_info's constraint (not a proxy) rather than
+// at FKFieldOf. The FKFieldOf rejections that still MATTER are asserted through
+// the proxy spelling below, where the argument IS a valid selector.
+static_assert(!join_accepts<^^Task::description>);
+static_assert(!join_accepts<^^Task>);
+static_assert(!join_accepts<^^Person::name>);
+
+// The real FK gate, probed with genuine selectors: a non-FK column of the right
+// model, and an FK-shaped member of a DIFFERENT model, are both rejected.
+static_assert(!join_accepts<fields::Task.description>); // non-FK field
+static_assert(!join_accepts<fields::Person.name>);      // member of another model
 
 // Test fixture for FK field operations — templated on database backend
 template <typename ConnType> class FKFieldTest : public StormTestFixture<Person, ConnType, Task> {};

@@ -18,15 +18,15 @@ using storm::QuerySet;
 // ============================================================================
 
 // Probe: is join<Fields...>() well-formed on QuerySet<M>?
-template <typename M, std::meta::info... Fields>
+template <typename M, auto... Fields>
 concept CanJoin = requires(storm::QuerySet<M> qs) { qs.template join<Fields...>(); };
 
-static_assert(CanJoin<Member, ^^Member::courses, ^^Member::clubs>, "multi m2m join must be accepted");
-static_assert(CanJoin<Member, ^^Member::clubs>, "single m2m join still accepted");
+static_assert(CanJoin<Member, fields::Member.courses, fields::Member.clubs>, "multi m2m join must be accepted");
+static_assert(CanJoin<Member, fields::Member.clubs>, "single m2m join still accepted");
 // Duplicate m2m fields would silently double-fill one container — rejected.
-static_assert(!CanJoin<Member, ^^Member::courses, ^^Member::courses>);
+static_assert(!CanJoin<Member, fields::Member.courses, fields::Member.courses>);
 // Mixed FK + m2m stays out of scope (#392).
-static_assert(!CanJoin<Message, ^^Message::sender, ^^Member::courses>);
+static_assert(!CanJoin<Message, fields::Message.sender, fields::Member.courses>);
 
 // ============================================================================
 // Schema: one auto junction table per m2m field (#392)

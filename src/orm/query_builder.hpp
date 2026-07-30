@@ -231,7 +231,7 @@ namespace storm::orm::query_builder {
             if constexpr (spec.join.enabled) {
                 constexpr std::size_t N = spec.join.fk_count >= 2 ? spec.join.fk_count : std::size_t{1};
                 [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                    dispatch_join_type<fk_resolver(join_fk_name(Is))...>(qs);
+                    dispatch_join_type<storm::meta::selector_for<fk_resolver(join_fk_name(Is))>()...>(qs);
                 }(std::make_index_sequence<N>{});
             }
         }
@@ -268,9 +268,9 @@ namespace storm::orm::query_builder {
                 constexpr bool asc = (ob.direction.view() != "DESC");
                 if constexpr (ob.collate.view() != "") {
                     constexpr auto col = parse_collate(ob.collate.view());
-                    return apply_order_by_impl<I + 1>(qs.template order_by<fi, asc, col>());
+                    return apply_order_by_impl<I + 1>(qs.template order_by<storm::meta::FieldRef<fi>{}, asc, col>());
                 } else {
-                    return apply_order_by_impl<I + 1>(qs.template order_by<fi, asc>());
+                    return apply_order_by_impl<I + 1>(qs.template order_by<storm::meta::FieldRef<fi>{}, asc>());
                 }
             }
         }
@@ -308,7 +308,7 @@ namespace storm::orm::query_builder {
             } else {
                 static_assert(has_field<Model>(spec.aggregate.field.view()), "aggregate field not found on model");
                 constexpr std::string_view func = spec.aggregate.func.view();
-                constexpr auto             fi   = dispatch_field<Model>(spec.aggregate.field.view());
+                constexpr auto fi = storm::meta::selector_for<dispatch_field<Model>(spec.aggregate.field.view())>();
                 if (func == "count")
                     return ^^Stmt::template count<fi>;
                 if (func == "count_distinct")
@@ -332,13 +332,15 @@ namespace storm::orm::query_builder {
 
         static auto build_distinct_stmt(auto& qs) {
             return [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                return qs.template distinct<dispatch_field<Model>(spec.distinct.fields[Is].view())...>();
+                return qs.template distinct<
+                        storm::meta::selector_for<dispatch_field<Model>(spec.distinct.fields[Is].view())>()...>();
             }(std::make_index_sequence<spec.distinct.field_count()>{});
         }
 
         static auto build_group_by_query(auto& qs) {
             auto gb = [&]<std::size_t... Is>(std::index_sequence<Is...>) {
-                return qs.template group_by<dispatch_field<Model>(spec.group_by.fields[Is].view())...>();
+                return qs.template group_by<
+                        storm::meta::selector_for<dispatch_field<Model>(spec.group_by.fields[Is].view())>()...>();
             }(std::make_index_sequence<spec.group_by.field_count()>{});
 
             if constexpr (spec.group_by.having.enabled) {

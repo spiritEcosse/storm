@@ -215,8 +215,8 @@ export namespace storm {
 
         // Field-specific DISTINCT support using reflection
         // Usage:
-        //   auto names = queryset.distinct<^^Person::name>().execute();  // plf::hive<std::string>
-        //   auto pairs = queryset.distinct<^^Person::name, ^^Person::age>().execute();
+        //   auto names = queryset.distinct<fields::Person.name>().execute();  // plf::hive<std::string>
+        //   auto pairs = queryset.distinct<fields::Person.name, fields::Person.age>().execute();
         //   // Returns plf::hive<std::tuple<std::string, int>>
         //   auto ids = queryset.distinct().execute();  // plf::hive<int> (defaults to PK)
         //
@@ -238,8 +238,8 @@ export namespace storm {
 
         // Column projection support using reflection (SELECT specific columns)
         // Usage:
-        //   auto names = queryset.values<^^Person::name>().execute();  // plf::hive<std::string>
-        //   auto pairs = queryset.values<^^Person::name, ^^Person::age>().execute();
+        //   auto names = queryset.values<fields::Person.name>().execute();  // plf::hive<std::string>
+        //   auto pairs = queryset.values<fields::Person.name, fields::Person.age>().execute();
         //   // Returns plf::hive<std::tuple<std::string, int>>
         //
         // Unlike distinct(), values() does NOT apply DISTINCT — all rows are returned
@@ -254,10 +254,10 @@ export namespace storm {
         // INNER JOIN support for FK fields or many-to-many fields (#203, #392)
         // Immutable: returns a new QuerySet with the join attached (Django-style).
         // Usage:
-        //   Single FK: message_qs.join<^^Message::sender>().select()
-        //   Multi FK:  message_qs.join<^^Message::sender, ^^Message::receiver>().select()
-        //   M2M:       student_qs.join<^^Student::courses>().select()
-        //   Multi M2M: member_qs.join<^^Member::courses, ^^Member::clubs>().select()
+        //   Single FK: message_qs.join<fields::Message.sender>().select()
+        //   Multi FK:  message_qs.join<fields::Message.sender, fields::Message.receiver>().select()
+        //   M2M:       student_qs.join<fields::Student.courses>().select()
+        //   Multi M2M: member_qs.join<fields::Member.courses, fields::Member.clubs>().select()
         // Mixed FK + m2m in one call is rejected (out of scope, #392).
         template <auto... S>
             requires orm::statements::JoinableFields<T, storm::meta::selector_info<S>()...>
@@ -270,10 +270,10 @@ export namespace storm {
         // relation's container fills independently (empty when no rows).
         // Immutable: returns a new QuerySet with the join attached.
         // Usage:
-        //   Single FK: message_qs.left_join<^^Message::sender>().select()
-        //   Multi FK:  message_qs.left_join<^^Message::sender, ^^Message::receiver>().select()
-        //   M2M:       student_qs.left_join<^^Student::courses>().select()
-        //   Multi M2M: member_qs.left_join<^^Member::courses, ^^Member::clubs>().select()
+        //   Single FK: message_qs.left_join<fields::Message.sender>().select()
+        //   Multi FK:  message_qs.left_join<fields::Message.sender, fields::Message.receiver>().select()
+        //   M2M:       student_qs.left_join<fields::Student.courses>().select()
+        //   Multi M2M: member_qs.left_join<fields::Member.courses, fields::Member.clubs>().select()
         template <auto... S>
             requires orm::statements::JoinableFields<T, storm::meta::selector_info<S>()...>
         [[nodiscard]] auto left_join() const -> QuerySet {
@@ -295,7 +295,7 @@ export namespace storm {
 
         // Conditional bulk UPDATE (#403) — updates rows matching the current where() filter.
         // SET columns are the Members... NTTPs; values come from `proto`.
-        // qs.where(cond).update<^^T::a, ^^T::b>(T{...}).execute() → std::expected<void, Error>.
+        // qs.where(cond).update<fields::T.a, fields::T.b>(T{...}).execute() → std::expected<void, Error>.
         // With NO where() set, .execute()/.to_sql() return std::unexpected and refuse to
         // write the whole table.
         template <auto... S>
@@ -332,9 +332,9 @@ export namespace storm {
 
         // GROUP BY - returns GroupByBuilder for fluent aggregate chaining
         // Usage:
-        //   qs.group_by<^^Person::department>().count().execute()    // grouped → .execute()
-        //   qs.group_by<^^Person::dept, ^^Person::role>().sum<^^Person::salary>().execute()
-        //   qs.where(age > 25).group_by<^^Person::years_exp>().count().execute()
+        //   qs.group_by<fields::Person.department>().count().execute()    // grouped → .execute()
+        //   qs.group_by<fields::Person.dept, fields::Person.role>().sum<fields::Person.salary>().execute()
+        //   qs.where(age > 25).group_by<fields::Person.years_exp>().count().execute()
         template <auto... S>
             requires(sizeof...(S) > 0 && (storm::meta::ValidSelector<S> && ...))
         [[nodiscard]] auto group_by() {
@@ -389,9 +389,9 @@ export namespace storm {
 
         // SUM aggregate (multi-field: SUM(f1 + f2 + ...))
         // Supports WHERE and JOIN clauses
-        // Usage: queryset.sum<^^Person::age>().execute()
-        //        queryset.where(age > 30).sum<^^Person::age>().execute()
-        //        queryset.join<FK>().sum<^^Person::salary>().execute()
+        // Usage: queryset.sum<fields::Person.age>().execute()
+        //        queryset.where(age > 30).sum<fields::Person.age>().execute()
+        //        queryset.join<FK>().sum<fields::Person.salary>().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
         template <auto... S>
             requires(
@@ -428,8 +428,8 @@ export namespace storm {
 
         // AVG aggregate (multi-field: AVG(f1 + f2 + ...))
         // Supports WHERE and JOIN clauses
-        // Usage: queryset.avg<^^Person::salary>().execute()
-        //        queryset.where(department == "Engineering").avg<^^Person::salary>().execute()
+        // Usage: queryset.avg<fields::Person.salary>().execute()
+        //        queryset.where(department == "Engineering").avg<fields::Person.salary>().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
         template <auto... S>
             requires(
@@ -448,8 +448,8 @@ export namespace storm {
 
         // MIN aggregate (multi-field: MIN(f1 + f2 + ...))
         // Supports WHERE and JOIN clauses
-        // Usage: queryset.min<^^Person::age>().execute()
-        //        queryset.where(active == true).min<^^Person::age>().execute()
+        // Usage: queryset.min<fields::Person.age>().execute()
+        //        queryset.where(active == true).min<fields::Person.age>().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
         template <auto... S>
             requires(
@@ -468,8 +468,8 @@ export namespace storm {
 
         // MAX aggregate (multi-field: MAX(f1 + f2 + ...))
         // Supports WHERE and JOIN clauses
-        // Usage: queryset.max<^^Person::age>().execute()
-        //        queryset.where(department == "Sales").max<^^Person::salary>().execute()
+        // Usage: queryset.max<fields::Person.age>().execute()
+        //        queryset.where(department == "Sales").max<fields::Person.salary>().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
         template <auto... S>
             requires(
@@ -488,8 +488,8 @@ export namespace storm {
 
         // COUNT(DISTINCT field) aggregate
         // Supports WHERE and JOIN clauses
-        // Usage: queryset.count_distinct<^^Person::age>().execute()
-        //        queryset.where(active == true).count_distinct<^^Person::department>().execute()
+        // Usage: queryset.count_distinct<fields::Person.age>().execute()
+        //        queryset.where(active == true).count_distinct<fields::Person.department>().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
         template <auto S>
             requires storm::meta::ValidSelector<S>

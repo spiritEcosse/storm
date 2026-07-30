@@ -105,37 +105,43 @@ export namespace storm::meta {
     // std::meta::info is consteval-only so it cannot be returned into a runtime
     // expression.
     //
-    // The raw-info branch still carries the ~653 un-migrated ^^Model::member NTTP
-    // selector arguments (order_by<>, distinct<>, the aggregates, join<>, ...).
-    // f<> itself is gone, so WHERE clauses are proxy-only; once the NTTP positions
-    // are migrated too this branch can go and the body collapses to
-    // `decltype(S)::member`.
-    // CONSTRAINED, deliberately: an unconstrained `else` branch would treat any
-    // non-info NTTP as a proxy and hard-error on `::member` deep inside this
-    // function. Call sites rely on a bad selector being a SUBSTITUTION FAILURE —
-    // e.g. tests/schema/test_fk_fields.cpp asserts
-    // `!join_accepts<&Task::assignee>` (the removed pointer-to-member syntax)
-    // via a requires-expression, which needs a soft failure to yield `false`.
+    // Proxy-only: the transitional raw-`std::meta::info` branch is gone, along
+    // with the last ^^Model::member call site it existed for. A raw info in a
+    // selector position is now a compile error, which is the point — one public
+    // spelling, not two.
+    //
+    // CONSTRAINED, deliberately: unconstrained, this would treat any NTTP as a
+    // proxy and hard-error on `::member` deep inside the function. Call sites
+    // rely on a bad selector being a SUBSTITUTION FAILURE — e.g.
+    // tests/schema/test_fk_fields.cpp asserts `!join_accepts<&Task::assignee>`
+    // (the removed pointer-to-member syntax) via a requires-expression, which
+    // needs a soft failure to yield `false`.
     template <auto S>
-        requires(
-                AnySelector<std::remove_cvref_t<decltype(S)>> ||
-                std::same_as<std::remove_cvref_t<decltype(S)>, std::meta::info>
-        )
+        requires AnySelector<std::remove_cvref_t<decltype(S)>>
     consteval auto selector_info() -> std::meta::info {
-        if constexpr (std::same_as<std::remove_cvref_t<decltype(S)>, std::meta::info>) {
-            return S;
+        return std::remove_cvref_t<decltype(S)>::member;
+    }
+
+    // info -> proxy VALUE, picking FieldRef or RelationRef by what the member is.
+    // The inverse of selector_info, for generic code that resolves a member by
+    // NAME at compile time (the YAML-driven query builder and test runner) and
+    // must then hand a selector to the public API. A hand-written call site
+    // spells `fields::Model.member` and never needs this.
+    template <std::meta::info M>
+        requires ValidFieldInfo<M>
+    consteval auto selector_for() {
+        if constexpr (is_relation_field(M)) {
+            return RelationRef<M>{};
         } else {
-            return std::remove_cvref_t<decltype(S)>::member;
+            return FieldRef<M>{};
         }
     }
 
     // The gate for the COLUMN selector positions (order_by, distinct, values,
-    // group_by, the aggregates, update, upsert). Accepts either spelling of a
-    // column, and rejects a relation proxy on two counts: FieldSelector excludes
-    // RelationRef by type, and !is_relation_field re-checks the member itself
-    // (which also catches a raw ^^Model::relation info). join/left_join do NOT
-    // use this concept — they take relations legitimately and gate on
-    // JoinableFields instead.
+    // group_by, the aggregates, update, upsert). Rejects a relation proxy on two
+    // counts: FieldSelector excludes RelationRef by type, and !is_relation_field
+    // re-checks the member itself. join/left_join do NOT use this concept — they
+    // take relations legitimately and gate on JoinableFields instead.
     //
     // The first conjunct is REDUNDANT with selector_info's own constraint: a bad S
     // already makes selector_info<S>() a substitution failure, which maps to false
@@ -144,9 +150,8 @@ export namespace storm::meta {
     // kept as an explicit statement of what this concept accepts, NOT as a
     // load-bearing guard, so do not preserve it under that mistaken rationale.
     template <auto S>
-    concept ValidSelector = (FieldSelector<std::remove_cvref_t<decltype(S)>> ||
-                             std::same_as<std::remove_cvref_t<decltype(S)>, std::meta::info>) &&
-                            ValidFieldInfo<selector_info<S>()> && !is_relation_field(selector_info<S>());
+    concept ValidSelector = FieldSelector<std::remove_cvref_t<decltype(S)>> && ValidFieldInfo<selector_info<S>()> &&
+                            !is_relation_field(selector_info<S>());
 
     // The define_aggregate spec list for `owner`: one proxy-typed member per
     // model member, named after it. A persisted column gets a FieldRef (usable

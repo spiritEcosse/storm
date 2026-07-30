@@ -252,10 +252,9 @@ namespace {
     // pack constraint is otherwise silently green.
     template <auto S> constexpr bool summable = requires(QuerySet<Person, Conn> qs) { qs.template sum<S>(); };
 
-    static_assert(summable<^^Person::age>);        // int — allowed
-    static_assert(summable<fields::Person.age>);   // same, via the proxy
-    static_assert(!summable<^^Person::name>);      // std::string — rejected
-    static_assert(!summable<fields::Person.name>); // MUST also be rejected via the proxy
+    static_assert(summable<fields::Person.age>);   // int — allowed
+    static_assert(!summable<fields::Person.name>); // std::string — rejected
+    static_assert(!summable<^^Person::age>);       // a raw info is not a selector at all
 
     // Upsert is a write path: to_sql() returns std::expected<std::string, Error>.
     // A helper keeps each case to the has_value + compare shape without repetition.
@@ -298,9 +297,8 @@ namespace {
     constexpr bool conflictable =
             requires(QuerySet<Person, Conn> qs, Person obj) { qs.insert(obj).template on_conflict<S>(); };
 
-    static_assert(conflictable<^^Person::name>);      // [[= storm::unique]] — allowed
-    static_assert(conflictable<fields::Person.name>); // same, via the proxy
-    static_assert(!conflictable<^^Person::age>);      // not unique — rejected
-    static_assert(!conflictable<fields::Person.age>); // MUST also be rejected via the proxy
+    static_assert(conflictable<fields::Person.name>); // [[= storm::unique]] — allowed
+    static_assert(!conflictable<fields::Person.age>); // not unique — rejected
+    static_assert(!conflictable<^^Person::name>);     // a raw info is not a selector at all
 
 } // namespace
