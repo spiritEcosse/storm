@@ -407,14 +407,25 @@ jobs:
   # no-op touch therefore measures the real worst case while keeping the job
   # hermetic and diff-free.
   #
-  # REPORT-ONLY, deliberately. GHA walltime noise is 20-29% (#551), so a time
-  # threshold would be untrustworthy. The TU count IS deterministic and could be
-  # gated later once a baseline series exists on develop — but a gate from day
-  # one would only get bumped mechanically as tests are added, since each new
-  # test TU adds exactly 1 (they parallelize; the module chain does not).
+  # REPORT-ONLY, deliberately. Only ONE of the three reported numbers is noisy:
+  # GHA walltime varies 21% across identical work (measured over 8 develop runs
+  # of ninja-release: 730-895 s; consistent with #551's 20-29%). TU count and
+  # critical-path depth are DETERMINISTIC — computed from the graph and mtime,
+  # not timed — so they are trustworthy on any branch. They could be gated later
+  # once a baseline series exists, but a gate from day one would only get bumped
+  # mechanically as tests are added, since each new test TU adds exactly 1 (they
+  # parallelize; the module chain does not).
   #
-  # develop-only: keeps PR turnaround untouched and yields a clean single-branch
-  # time series, which is what a trend needs.
+  # Runs on BOTH pull_request and push, because the two deterministic numbers are
+  # more useful BEFORE a merge than after. #518 inserted storm_orm_fields into
+  # the chain and took critical-path depth from 7 to 9; on a develop-only job
+  # that is discovered after the fact, whereas here it shows up in the PR that
+  # causes it.
+  #
+  # This does NOT lengthen PR turnaround: the job is ~15 min (a ninja-release
+  # build plus ~2 min of measurement) and runs in parallel with a matrix whose
+  # critical path is already ninja-asan-ubsan at 17-19 min. It costs runner time,
+  # not wall-clock turnaround.
   #
   # The number to actually watch is critical-path depth, not TU count. Test TUs
   # are mutually independent and parallelize, which is why #558 saw wall time
@@ -423,7 +434,6 @@ jobs:
   # time — and nothing else in CI would notice that.
   rebuild-fanout:
     name: incremental rebuild fan-out (report-only)
-    if: github.event_name == 'push'
     runs-on: ubuntu-24.04
     container:
       # Keep in sync with the `test` job's pin — digest-guard asserts they agree.
@@ -538,17 +548,23 @@ jobs:
           # would flatter the ratio by ~3.5% and drift as harnesses are added.
           total=$(find src tests benchmarks \( -name '*.cpp' -o -name '*.cppm' \) | wc -l)
 
+          # Pulled out of the graph step's output so it can sit in the table as a
+          # first-class number: depth is the metric worth watching, and burying
+          # it under the table would read as a footnote.
+          depth=$(sed -n 's/^critical-path depth: //p' /tmp/graph.txt)
+
           {
             echo "## Incremental rebuild fan-out"
             echo
             echo "Touched \`$leaf\` (leaf module, **no content change**) on a warm \`ninja-release\`."
             echo
-            echo "| metric | value |"
-            echo "|---|---:|"
-            echo "| TU rebuilt | $tu |"
-            echo "| ...of which test TU | $tests |"
-            echo "| total TU in tree | $total |"
-            echo "| wall time | ${wall}s |"
+            echo "| metric | value | |"
+            echo "|---|---:|---|"
+            echo "| **critical-path depth** | **$depth** | deterministic — the number to watch |"
+            echo "| TU rebuilt | $tu | deterministic |"
+            echo "| ...of which test TU | $tests | these parallelize |"
+            echo "| total TU in tree | $total | ninja-release only, excludes fuzz/ |"
+            echo "| wall time | ${wall}s | ±21% on GHA — order of magnitude only |"
             echo
             # As a fenced block, not bare lines: two adjacent plain-text lines
             # would render as one run-on paragraph in GFM, and the critical
