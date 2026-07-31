@@ -393,3 +393,171 @@ jobs:
           path: build/debug/coverage/html-filtered/
           retention-days: 14
           if-no-files-found: warn
+
+  # Tracks what #558 measured once by hand: how much of the tree an edit to the
+  # WORST-CASE file rebuilds. `src/orm/field_attr.cppm` is a leaf (imports only
+  # std, ~60 lines of tag structs) yet sits under base.cppm, which the whole tree
+  # sits under — so it is the single most expensive file here to touch, at ~126
+  # TU / ~110 s locally on 32 cores.
+  #
+  # The touch changes NO content (git stays clean). That is the point, not a
+  # shortcut: #558 established that a content-identical touch costs the same as a
+  # real edit, because the BMI-producing rule (CXX_COMPILER__*_scanned_*) carries
+  # no `restat`, so ninja propagates invalidation on mtime alone. Measuring a
+  # no-op touch therefore measures the real worst case while keeping the job
+  # hermetic and diff-free.
+  #
+  # REPORT-ONLY, deliberately. GHA walltime noise is 20-29% (#551), so a time
+  # threshold would be untrustworthy. The TU count IS deterministic and could be
+  # gated later once a baseline series exists on develop — but a gate from day
+  # one would only get bumped mechanically as tests are added, since each new
+  # test TU adds exactly 1 (they parallelize; the module chain does not).
+  #
+  # develop-only: keeps PR turnaround untouched and yields a clean single-branch
+  # time series, which is what a trend needs.
+  #
+  # The number to actually watch is critical-path depth, not TU count. Test TUs
+  # are mutually independent and parallelize, which is why #558 saw wall time
+  # stay flat (91-111 s) across a 94->140 edge spread. The module chain
+  # serializes, so a NEW module inserted into it is what would genuinely cost
+  # time — and nothing else in CI would notice that.
+  rebuild-fanout:
+    name: incremental rebuild fan-out (report-only)
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    container:
+      # Keep in sync with the `test` job's pin — digest-guard asserts they agree.
+      image: ghcr.io/spiritecosse/storm-ci@sha256:0da07cc20e580c8a7310dca6974bc1d09406c3d367faa099fe26e03b9a449bee
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Link clang-p2996 next to source dir
+        run: ln -sfn /opt/clang-p2996 "$(dirname "$GITHUB_WORKSPACE")/clang-p2996"
+
+      - name: Create libc++ modules symlink for import std;
+        # Same rationale as in the `test` job above (issue #326).
+        run: |
+          clang_root="$(dirname "$GITHUB_WORKSPACE")/clang-p2996"
+          share_dir="$clang_root/build/share/libc++"
+          link="$share_dir/v1"
+          target="$clang_root/build/modules/c++/v1"
+          if [ -d "$target" ] && [ ! -e "$link" ]; then
+            mkdir -p "$share_dir"
+            ln -sfn "$target" "$link"
+            echo "Created symlink: $link -> $target"
+          else
+            echo "Symlink already exists or target missing — skipping"
+          fi
+
+      - name: Cache CPM packages
+        uses: actions/cache@v4
+        with:
+          path: .cache/CPM
+          key: cpm-ninja-release-${{ hashFiles('cmake/cpm.cmake', 'cmake/tests.cmake', 'cmake/bench.cmake') }}
+          restore-keys: |
+            cpm-ninja-release-
+            cpm-
+
+      - name: Report module-graph critical path
+        run: |
+          python3 - <<'PY' | tee /tmp/graph.txt
+          import re, pathlib, functools
+          deps = {}
+          for f in pathlib.Path('src').glob('**/*.cppm'):
+              text = f.read_text()
+              m = re.search(r'^export module ([\w.]+);', text, re.M)
+              if not m:
+                  continue
+              deps[m.group(1)] = {
+                  i for i in re.findall(r'^\s*(?:export )?import ([\w.]+);', text, re.M)
+                  if i.startswith('storm')
+              }
+
+          @functools.cache
+          def depth(n):
+              ds = deps.get(n, ())
+              return 0 if not ds else 1 + max(depth(d) for d in ds)
+
+          @functools.cache
+          def path(n):
+              ds = deps.get(n, ())
+              if not ds:
+                  return [n]
+              return path(max(ds, key=depth)) + [n]
+
+          root = max(deps, key=depth)
+          print(f"modules: {len(deps)}")
+          print(f"critical-path depth: {depth(root)}")
+          print(f"critical path: {' -> '.join(path(root))}")
+          PY
+
+      - name: Configure and warm the release build
+        # The warm-up goes through build-with-retry.sh like every sibling job:
+        # clang-scan-deps segfaults are a known C++26 module flake, and a
+        # warm-up that dies PARTWAY would leave the measurement step counting
+        # "what the first build didn't finish" instead of "what the touch
+        # invalidated" — a wrong number the tu != 0 guard cannot detect.
+        # The MEASUREMENT build below deliberately stays a bare cmake --build:
+        # a retry loop there would corrupt both the timing and the TU count.
+        run: |
+          cmake --preset ninja-release
+          ./scripts/build-with-retry.sh ninja-release
+
+      - name: Measure fan-out of a leaf edit
+        run: |
+          set -o pipefail
+          leaf=src/orm/field_attr.cppm
+          touch "$leaf"
+          # Belt-and-braces, NOT the load-bearing check: after a fresh
+          # actions/checkout this cannot fire, since touch never dirties a file.
+          # It exists so the "no content change" premise stays enforced if this
+          # job is ever run on a dirty tree (e.g. a future workflow_dispatch).
+          # The guard that actually protects the measurement is the tu != 0 one.
+          if ! git diff --quiet -- "$leaf"; then
+            echo "::error::$leaf has uncommitted content changes — the measurement would not be a no-op touch."
+            exit 1
+          fi
+          start=$(date +%s)
+          cmake --build --preset ninja-release 2>&1 | tee /tmp/rebuild.log
+          wall=$(( $(date +%s) - start ))
+
+          tu=$(grep -c 'Building CXX' /tmp/rebuild.log || true)
+          # A warm tree that rebuilds nothing means the warm-up step already did
+          # the work, or the touch did not register — either way the number is
+          # meaningless and silently reporting 0 would look like a huge win.
+          if [ "$tu" -eq 0 ]; then
+            echo "::error::0 TU rebuilt after touching $leaf — the measurement is not meaningful."
+            exit 1
+          fi
+          tests=$(grep 'Building CXX' /tmp/rebuild.log | grep -c 'tests/' || true)
+          # fuzz/ is deliberately excluded: cmake/fuzz.cmake gates
+          # add_subdirectory(fuzz) behind ENABLE_FUZZING, which ninja-release
+          # does not set, so those 5 TUs are never built here. Counting them
+          # would flatter the ratio by ~3.5% and drift as harnesses are added.
+          total=$(find src tests benchmarks \( -name '*.cpp' -o -name '*.cppm' \) | wc -l)
+
+          {
+            echo "## Incremental rebuild fan-out"
+            echo
+            echo "Touched \`$leaf\` (leaf module, **no content change**) on a warm \`ninja-release\`."
+            echo
+            echo "| metric | value |"
+            echo "|---|---:|"
+            echo "| TU rebuilt | $tu |"
+            echo "| ...of which test TU | $tests |"
+            echo "| total TU in tree | $total |"
+            echo "| wall time | ${wall}s |"
+            echo
+            # As a fenced block, not bare lines: two adjacent plain-text lines
+            # would render as one run-on paragraph in GFM, and the critical
+            # path is long enough that it needs to scroll rather than wrap.
+            echo '```'
+            sed -n '2,3p' /tmp/graph.txt
+            echo '```'
+            echo
+            echo "Report-only — see #558 for why this is not gated."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          echo "TU=$tu tests=$tests total=$total wall=${wall}s"
