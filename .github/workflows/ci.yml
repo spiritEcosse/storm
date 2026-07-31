@@ -516,19 +516,23 @@ jobs:
           ./scripts/build-with-retry.sh ninja-release
 
       - name: Measure fan-out of a leaf edit
+        # bash, not the default sh: `set -o pipefail` below is a bashism, and
+        # under `sh -e` it is silently inert — so the measurement build's exit
+        # status would be masked by the `tee` it pipes into.
+        shell: bash
         run: |
           set -o pipefail
           leaf=src/orm/field_attr.cppm
           touch "$leaf"
-          # Belt-and-braces, NOT the load-bearing check: after a fresh
-          # actions/checkout this cannot fire, since touch never dirties a file.
-          # It exists so the "no content change" premise stays enforced if this
-          # job is ever run on a dirty tree (e.g. a future workflow_dispatch).
-          # The guard that actually protects the measurement is the tu != 0 one.
-          if ! git diff --quiet -- "$leaf"; then
-            echo "::error::$leaf has uncommitted content changes — the measurement would not be a no-op touch."
-            exit 1
-          fi
+          # NOTE: no `git diff` guard here. An earlier revision had one, on the
+          # theory that it asserted the touch stayed content-free. It cannot:
+          # after a fresh actions/checkout the file is by construction identical
+          # to HEAD, so the check could only ever pass. Worse, it FAILED in this
+          # container — actions/checkout registers the workspace as a git
+          # safe.directory under a temporary HOME that is gone by the time later
+          # steps run, so git reports "not a git repository" and the guard exits
+          # non-zero for a reason unrelated to what it claimed to check.
+          # The real protection is the tu != 0 check below.
           start=$(date +%s)
           cmake --build --preset ninja-release 2>&1 | tee /tmp/rebuild.log
           wall=$(( $(date +%s) - start ))
