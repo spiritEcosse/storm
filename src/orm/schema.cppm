@@ -799,11 +799,9 @@ export namespace storm::orm::schema {
         }
 
         // The TARGET side of this side's FOREIGN KEY clause: the referenced model's own
-        // primary-key column names. Composite sides only (#504) — a single-PK side keeps
-        // the literal "(id)" the pre-#504 code emitted, deliberately NOT generalised
-        // here: a single PK named something other than "id" is a pre-existing, separate
-        // bug (#506) and fixing it in this path would change existing junction DDL.
-        // Routed through append_column_name (#422) so an FK part emits "<part>_id".
+        // primary-key column names. Composite sides only (#504); the single-PK side is
+        // written by append_junction_fk below, which reads that side's real PK identifier
+        // (#519). Routed through append_column_name (#422) so an FK part emits "<part>_id".
         template <typename SideType, typename SqlT> consteval void append_junction_side_target_list(SqlT& sql) {
             append_junction_side_target_list_impl<SideType>(
                     sql, std::make_index_sequence<junction_side_column_count<SideType>()>{}
@@ -823,7 +821,14 @@ export namespace storm::orm::schema {
             if constexpr (SideBase::has_composite_pk_) {
                 append_junction_side_target_list<SideType>(sql);
             } else {
-                sql.append("id"); // pre-#504 text, kept verbatim — see the note above
+                // This side's REAL PK member identifier (#519), not the literal "id" the
+                // pre-#504 code emitted: an m2m whose owner or related PK is named anything
+                // else produced junction DDL naming a nonexistent column (unexecutable
+                // CREATE TABLE — the #506 failure class). pk_name_ is the same source
+                // join.cppm's ON clauses read, so DDL and the eager load cannot drift.
+                // The junction's OWN column stays "<Side>_id" (append_junction_side_column_name):
+                // that is the junction's column, not the referenced model's.
+                sql.append(SideBase::pk_name_);
             }
             sql.append(") ON DELETE ");
             sql.append(action);

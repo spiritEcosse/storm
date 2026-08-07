@@ -65,6 +65,31 @@ CREATE TABLE Student_Course (
 );
 ```
 
+The referenced column is each model's **actual primary-key member**, resolved per side (#519) —
+`Student` and `Course` above both name theirs `id`, but a model whose PK is called something else
+is referenced by that name:
+
+```cpp
+struct Badge { [[= storm::primary]] int badge_id{}; std::string label; };
+struct Hero {
+    [[= storm::primary]] int hero_id{};
+    [[= storm::many_to_many<>]] std::vector<Badge> badges;
+};
+```
+
+```sql
+CREATE TABLE Hero_Badge (
+    Hero_id INTEGER NOT NULL,
+    Badge_id INTEGER NOT NULL,
+    PRIMARY KEY (Hero_id, Badge_id),
+    FOREIGN KEY (Hero_id) REFERENCES Hero(hero_id) ON DELETE CASCADE,
+    FOREIGN KEY (Badge_id) REFERENCES Badge(badge_id) ON DELETE CASCADE
+);
+```
+
+The junction's own column names stay `<Model>_id` regardless of the PK member's name — they are the
+junction's columns, not the referenced model's.
+
 ## ON DELETE policy (#431)
 
 The `ON DELETE` referential action is configurable per FK via the `fk<RefAction>`

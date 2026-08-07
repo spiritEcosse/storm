@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "test_db_helpers.h"
+#include "plf_hive/plf_hive.h"
 
 // NOLINTBEGIN(misc-const-correctness)
 
@@ -76,6 +77,65 @@ namespace {
         [[= storm::fk<>]] LongPkTarget target;
     };
 
+    // ── m2m auto-junction, non-"id" PKs on BOTH sides (#519) ────────────────
+    // The junction's own columns are <Model>_id by construction, but the
+    // target-side "REFERENCES <Model>(...)" must name each model's REAL PK
+    // member — the same failure class as #506, in the junction DDL path.
+    struct Badge {
+        [[= storm::primary]] int badge_id{};
+        std::string              label;
+    };
+
+    struct Hero {
+        [[= storm::primary]] int                       hero_id{};
+        std::string                                    name;
+        [[= storm::many_to_many<>]] std::vector<Badge> badges;
+    };
+
+    // Mixed shape: owner PK is "id", related PK is not — proves the two sides
+    // are resolved independently rather than from one shared lookup.
+    struct Sticker {
+        [[= storm::primary]] int sticker_id{};
+        std::string              label;
+    };
+
+    struct Notebook {
+        [[= storm::primary]] int                         id{};
+        std::string                                      title;
+        [[= storm::many_to_many<>]] std::vector<Sticker> stickers;
+    };
+
+    // Both sides PK-named "id" — the byte-identical regression guard.
+    struct Tag {
+        [[= storm::primary]] int id{};
+        std::string              label;
+    };
+
+    struct Post {
+        [[= storm::primary]] int                     id{};
+        std::string                                  title;
+        [[= storm::many_to_many<>]] std::vector<Tag> tags;
+    };
+
+    // Long PK names on both junction sides — proves build_junction_sql's
+    // consteval buffer folds in the two PK identifier lengths instead of
+    // budgeting for the fixed 2-char literal "id".
+    struct LongPkRelated {
+        [[= storm::primary]] int
+                    this_is_a_deliberately_very_long_primary_key_identifier_that_exceeds_one_hundred_characters_long{};
+        std::string label;
+    };
+
+    struct LongPkOwner {
+        [[= storm::primary]] int
+                this_is_a_deliberately_very_long_primary_key_identifier_that_exceeds_one_hundred_characters_long{};
+        [[= storm::many_to_many<>]] std::vector<LongPkRelated> links;
+    };
+
+    template <typename Model, storm::orm::schema::Dialect D> auto junction_sql() -> const std::string& {
+        return storm::orm::schema::SchemaStatement<Model>::template junction_table_sql<D>();
+    }
+
 } // namespace
 
 // fields:: selector proxies (#518). At global scope, NOT nested inside the
@@ -94,6 +154,12 @@ namespace fields {
         std::meta::define_aggregate(^^ItemT, storm::field_specs_for(^^Item));
     }
     inline constexpr ItemT Item{};
+
+    struct HeroT;
+    consteval {
+        std::meta::define_aggregate(^^HeroT, storm::field_specs_for(^^Hero));
+    }
+    inline constexpr HeroT Hero{};
 } // namespace fields
 
 // ============================================================================
@@ -259,6 +325,117 @@ TYPED_TEST(FkTargetNonIdPkTest, InsertWithFkToNonIdPkTargetSucceeds) {
                                     << (joined.has_value() ? std::string{} : joined.error().message());
     ASSERT_EQ(joined->size(), 1U);
     EXPECT_EQ(joined->begin()->owner.label, "Acme");
+}
+
+// ============================================================================
+// m2m auto-junction — REFERENCES clause names each side's real PK (#519)
+//
+// The junction's own columns stay <Model>_id (internally consistent by
+// construction); only the target-side REFERENCES was hardcoded to "id".
+// The junction FK DDL is dialect-independent, so each case asserts on both.
+// ============================================================================
+
+TEST(PkColumnNameTest, JunctionReferencesNonIdPkBothSides) {
+    for (const std::string& sql : {junction_sql<Hero, Dialect::SQLite>(), junction_sql<Hero, Dialect::PostgreSQL>()}) {
+        EXPECT_TRUE(sql.contains("FOREIGN KEY (Hero_id) REFERENCES Hero(hero_id) ON DELETE CASCADE")) << sql;
+        EXPECT_TRUE(sql.contains("FOREIGN KEY (Badge_id) REFERENCES Badge(badge_id) ON DELETE CASCADE")) << sql;
+        EXPECT_FALSE(sql.contains("(id)")) << "Must not fall back to the literal 'id': " << sql;
+    }
+}
+
+TEST(PkColumnNameTest, JunctionReferencesResolvesEachSideIndependently) {
+    for (const std::string& sql :
+         {junction_sql<Notebook, Dialect::SQLite>(), junction_sql<Notebook, Dialect::PostgreSQL>()}) {
+        // Owner PK is "id", related PK is "sticker_id" — neither side may borrow the other's.
+        EXPECT_TRUE(sql.contains("FOREIGN KEY (Notebook_id) REFERENCES Notebook(id) ON DELETE CASCADE")) << sql;
+        EXPECT_TRUE(sql.contains("FOREIGN KEY (Sticker_id) REFERENCES Sticker(sticker_id) ON DELETE CASCADE")) << sql;
+    }
+}
+
+// Regression guard: Post/Tag both have "id"-named PKs — the junction DDL must
+// stay byte-identical to its pre-#519 form.
+TEST(PkColumnNameTest, JunctionIdNamedPksUnchanged) {
+    EXPECT_EQ(
+            (junction_sql<Post, Dialect::SQLite>()),
+            "CREATE TABLE Post_Tag (\n"
+            "    Post_id INTEGER NOT NULL,\n"
+            "    Tag_id INTEGER NOT NULL,\n"
+            "    PRIMARY KEY (Post_id, Tag_id),\n"
+            "    FOREIGN KEY (Post_id) REFERENCES Post(id) ON DELETE CASCADE,\n"
+            "    FOREIGN KEY (Tag_id) REFERENCES Tag(id) ON DELETE CASCADE\n"
+            ")"
+    );
+}
+
+// Long PK names on both sides must not overflow build_junction_sql's consteval
+// buffer. The budget is measured by rendering append_junction_sql into ClauseSizer
+// (#504), so it tracks the real identifier automatically — this pins that the
+// sizer and the emitter stay the same code: ConstexprString::append truncates
+// SILENTLY, so a sizer that missed the PK term would drop the tail unnoticed.
+TEST(PkColumnNameTest, JunctionLongPkNamesNotTruncated) {
+    const std::string expected_pk(kLongPkName);
+    for (const std::string& sql :
+         {junction_sql<LongPkOwner, Dialect::SQLite>(), junction_sql<LongPkOwner, Dialect::PostgreSQL>()}) {
+        EXPECT_TRUE(sql.contains("REFERENCES LongPkOwner(" + expected_pk + ") ON DELETE CASCADE")) << sql;
+        EXPECT_TRUE(sql.contains("REFERENCES LongPkRelated(" + expected_pk + ") ON DELETE CASCADE")) << sql;
+        EXPECT_TRUE(sql.ends_with(")")) << "junction SQL truncated: " << sql;
+    }
+}
+
+// ============================================================================
+// m2m junction with non-"id" PKs — executable DDL end-to-end (TYPED_TEST)
+//
+// The DDL assertions above prove the SQL text; this proves the DB accepts it:
+// with the hardcoded "id" the CREATE TABLE names a column that does not exist,
+// so the junction insert (and its FK enforcement) fails at runtime.
+// ============================================================================
+
+template <typename ConnType> class M2MNonIdPkTest : public StormTestFixture<Hero, ConnType, Badge> {
+  public:
+    // Seeds one Hero + one Badge and links them through the junction. Returns
+    // false on a fatal failure so the caller can bail (ASSERT_* cannot cross a
+    // helper's return).
+    static auto seed_linked_pair(const std::shared_ptr<ConnType>& conn) -> bool {
+        QuerySet<Hero, ConnType>  hero_qs;
+        QuerySet<Badge, ConnType> badge_qs;
+        auto                      hero_id = hero_qs.insert(Hero{.hero_id = 0, .name = "Rook"}).execute();
+        EXPECT_TRUE(hero_id.has_value());
+        auto badge_id = badge_qs.insert(Badge{.badge_id = 0, .label = "Gold"}).execute();
+        EXPECT_TRUE(badge_id.has_value());
+        if (!hero_id.has_value() || !badge_id.has_value()) {
+            return false;
+        }
+        auto ins = conn->execute(
+                std::format(
+                        "INSERT INTO Hero_Badge (Hero_id, Badge_id) VALUES ({}, {})", hero_id.value(), badge_id.value()
+                )
+        );
+        EXPECT_TRUE(ins.has_value()) << ins.error().message();
+        return ins.has_value();
+    }
+};
+
+TYPED_TEST_SUITE(M2MNonIdPkTest, DatabaseTypes);
+
+TYPED_TEST(M2MNonIdPkTest, JunctionDdlIsExecutableAndEnforcesFks) {
+    auto conn = QuerySet<Hero, TypeParam>::get_default_connection();
+    ASSERT_TRUE(TestFixture::seed_linked_pair(conn)) << "junction insert must succeed on executable DDL";
+
+    // The FK really points at Hero(hero_id)/Badge(badge_id) — a dangling pair is rejected.
+    auto dangling = conn->execute("INSERT INTO Hero_Badge (Hero_id, Badge_id) VALUES (99999, 99999)");
+    EXPECT_FALSE(dangling.has_value()) << "Junction FK must reject a dangling owner/related key";
+}
+
+TYPED_TEST(M2MNonIdPkTest, EagerLoadThroughNonIdPkJunction) {
+    auto conn = QuerySet<Hero, TypeParam>::get_default_connection();
+    ASSERT_TRUE(TestFixture::seed_linked_pair(conn));
+
+    QuerySet<Hero, TypeParam> hero_qs;
+    auto                      loaded = hero_qs.template join<fields::Hero.badges>().select().execute();
+    ASSERT_TRUE(loaded.has_value()) << loaded.error().message();
+    ASSERT_EQ(loaded->size(), 1U);
+    ASSERT_EQ(loaded->begin()->badges.size(), 1U);
+    EXPECT_EQ(loaded->begin()->badges.begin()->label, "Gold");
 }
 
 // NOLINTEND(misc-const-correctness)
