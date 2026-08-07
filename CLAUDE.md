@@ -498,9 +498,22 @@ model whose PK member was not named `id` got DDL and queries that disagreed at r
 column"). Composite-PK models are unaffected (routed around this branch, #500). The consteval size
 budgets (`column_size_budget`'s `pk_size`, `fk_references_len`) were widened to measure the real
 identifier length instead of assuming the fixed 2-char `"id"`; `id`-named models (the ~50 existing
-ones) stay byte-identical. The m2m auto-junction `FOREIGN KEY ... REFERENCES <Model>(id)` clause
-still hardcodes `"id"` for both sides — same bug class, out of #506's scope, tracked separately as
-#519.
+ones) stay byte-identical.
+
+**m2m auto-junction REFERENCES uses the real PK identifier (#519)**: the same fix, one path later.
+`detail::append_junction_fk`'s single-PK branch emitted the literal `REFERENCES <Side>(id)`, so an
+m2m whose owner or related PK member is not named `id` produced junction DDL naming a nonexistent
+column — unexecutable `CREATE TABLE`, the #506 failure class. (#504 fixed the COMPOSITE branch and
+deliberately left this one: generalising it there would have changed existing junction DDL outside
+that issue's scope.) The branch now emits `SideBase::pk_name_` — the same source `join.cppm`'s ON
+clauses read, so junction DDL and the two-query eager load cannot drift. Each side resolves
+INDEPENDENTLY (owner `id` + related `sticker_id` is a legal shape). The junction's OWN columns stay
+`<Side>_id` (`append_junction_side_column_name`): those are the junction's columns, and `join.cppm`
+derives them from `table_name_ + "_id"`, never from `pk_name_` — renaming the DDL side alone would
+INTRODUCE the very drift this fixes. No sizing change was needed: #504 replaced the old
+`5×name + 256` heuristic with a budget measured by rendering the emitter into `ClauseSizer`, so it
+tracks the real identifier automatically. `id`-named models keep byte-identical junction DDL
+(regression-asserted on the whole string).
 
 **Many-to-many (#203)**: `[[= storm::many_to_many<>]]` (auto junction `<Owner>_<Related>`,
 one junction table per field) or `[[= storm::many_to_many_through<Model>]]` on a container
