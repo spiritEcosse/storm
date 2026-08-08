@@ -1,0 +1,308 @@
+#include <gtest/gtest.h>
+#include <meta>
+#include <plf_hive/plf_hive.h> // NOSONAR cpp:S954 — must precede `import std;` (see test_m2m_models.h)
+
+#include "test_db_helpers.h"
+
+import storm;
+import std;
+
+#include "test_models.h" // NOSONAR cpp:S954 — StormTestFixture, DatabaseTypes
+
+// Must follow test_models.h: the composite-PK models name storm:: annotations.
+#include "crud/test_composite_pk_models.h" // NOSONAR cpp:S954
+// Pupil/Course/Enrollment — the single-PK through model, used as the
+// byte-identity anchor below.
+#include "test_m2m_models.h" // NOSONAR cpp:S954
+
+// ── #536: many_to_many_through<> over a composite primary key ────────────────
+//
+// A through model is a REAL user-declared model, so its junction columns are
+// ordinary composite-FK columns of an ordinary table: the FK rule names them
+// "<member>_<part>" with the target part's BARE identifier. Storm's synthetic
+// auto-junction is a different table with a different owner — the junction rule
+// routes each part through append_column_name, so an FK part gains "_id".
+//
+// The two rules agree for a single-column PK and for a composite key of plain
+// columns; they DIVERGE the moment a PK part is itself an FK. The m2m query
+// path applied the junction rule to both kinds of junction, so a through model
+// over such a key asked for "t2.entry_warehouse_id" while its real column is
+// "entry_warehouse" — "no such column", and the eager load failed outright.
+//
+// These are execution tests, not SQL-text tests, and they run on both backends:
+// the failure is a column that does not exist, which only a live query surfaces.
+// StormTestFixture creates every listed model's table before the body runs, so
+// a through model whose DDL and query path disagree fails here on SQLite and
+// PostgreSQL alike.
+
+namespace {
+
+    template <typename ConnType>
+    class ThroughCompositeOwnerTest : public StormTestFixture<RegionEntry, ConnType, ThroughTopic, RegionEntryLink> {};
+
+    template <typename ConnType>
+    class ThroughCompositeRelatedTest : public StormTestFixture<ShelfOwner, ConnType, ShelfCode, ShelfCodeLink> {};
+
+    // Person is the FK part's target, so it must exist before FkPartEntry.
+    template <typename ConnType>
+    class ThroughFkPartTest : public StormTestFixture<Person, ConnType, ThroughTopic, FkPartEntry, FkPartLink> {};
+
+    template <typename ConnType>
+    class ThroughBothSidesTest : public StormTestFixture<Person, ConnType, ShelfCode, BothSidesOwner, BothSidesLink> {};
+
+    // Two topics, 'audit' then 'review' — autoincrement, so ids are 1 and 2.
+    template <typename ConnType> auto seed_topics() -> void {
+        storm::QuerySet<ThroughTopic, ConnType> topic_qs;
+        ASSERT_TRUE(topic_qs.insert(ThroughTopic{.label = "audit"}).execute().has_value());
+        ASSERT_TRUE(topic_qs.insert(ThroughTopic{.label = "review"}).execute().has_value());
+    }
+
+    // Shared seeding for the FK-part suite: topics, one depot Person (the FK
+    // part's target), and entry sku 10 linked to BOTH topics. `with_decoy` adds
+    // entry sku 20 — sharing the FK part (warehouse == 1) and linked to 'review'
+    // only — which is what makes a stitch keyed on the FK part alone observable.
+    // The aggregate test omits it so its COUNT has one unambiguous expected value.
+    template <typename ConnType> auto seed_fk_part_entries(bool with_decoy) -> void {
+        seed_topics<ConnType>();
+
+        storm::QuerySet<Person, ConnType> person_qs;
+        ASSERT_TRUE(person_qs.insert(Person{.name = "depot-1", .age = 30}).execute().has_value());
+
+        storm::QuerySet<FkPartEntry, ConnType> entry_qs;
+        ASSERT_TRUE(
+                entry_qs.insert(FkPartEntry{.warehouse = {.id = 1}, .sku = 10, .title = "ten"}).execute().has_value()
+        );
+
+        storm::QuerySet<FkPartLink, ConnType> link_qs;
+        ASSERT_TRUE(link_qs.insert(FkPartLink{.entry = {.warehouse = {.id = 1}, .sku = 10}, .topic = {.id = 1}})
+                            .execute()
+                            .has_value());
+        ASSERT_TRUE(link_qs.insert(FkPartLink{.entry = {.warehouse = {.id = 1}, .sku = 10}, .topic = {.id = 2}})
+                            .execute()
+                            .has_value());
+
+        if (with_decoy) {
+            ASSERT_TRUE(entry_qs.insert(FkPartEntry{.warehouse = {.id = 1}, .sku = 20, .title = "twenty"})
+                                .execute()
+                                .has_value());
+            ASSERT_TRUE(link_qs.insert(FkPartLink{.entry = {.warehouse = {.id = 1}, .sku = 20}, .topic = {.id = 2}})
+                                .execute()
+                                .has_value());
+        }
+    }
+
+} // namespace
+
+TYPED_TEST_SUITE(ThroughCompositeOwnerTest, DatabaseTypes);
+TYPED_TEST_SUITE(ThroughCompositeRelatedTest, DatabaseTypes);
+TYPED_TEST_SUITE(ThroughFkPartTest, DatabaseTypes);
+TYPED_TEST_SUITE(ThroughBothSidesTest, DatabaseTypes);
+
+// Composite (2-part) OWNER through an explicit junction model. Both parts are
+// plain columns, so the FK and junction rules still agree here — this is the
+// control that proves the through path handles a multi-column key at all,
+// independently of the FK-part divergence below.
+//
+// The two entries share their FIRST PK part (region == 1) and differ only in
+// `code`, so a stitch that keyed on the first part alone would give both
+// entries both topics.
+TYPED_TEST(ThroughCompositeOwnerTest, StitchesOnFullCompositeOwnerKey) {
+    seed_topics<TypeParam>();
+
+    storm::QuerySet<RegionEntry, TypeParam> entry_qs;
+    ASSERT_TRUE(entry_qs.insert(RegionEntry{.region = 1, .code = "A", .title = "alpha"}).execute().has_value());
+    ASSERT_TRUE(entry_qs.insert(RegionEntry{.region = 1, .code = "B", .title = "bravo"}).execute().has_value());
+
+    // The junction is a model — its rows are plain Storm inserts, no raw SQL.
+    // A/audit, A/review, B/review.
+    storm::QuerySet<RegionEntryLink, TypeParam> link_qs;
+    ASSERT_TRUE(link_qs.insert(RegionEntryLink{.entry = {.region = 1, .code = "A"}, .topic = {.id = 1}, .note = "n1"})
+                        .execute()
+                        .has_value());
+    ASSERT_TRUE(link_qs.insert(RegionEntryLink{.entry = {.region = 1, .code = "A"}, .topic = {.id = 2}, .note = "n2"})
+                        .execute()
+                        .has_value());
+    ASSERT_TRUE(link_qs.insert(RegionEntryLink{.entry = {.region = 1, .code = "B"}, .topic = {.id = 2}, .note = "n3"})
+                        .execute()
+                        .has_value());
+
+    const auto results = entry_qs.template join<fields::RegionEntry.topics>().select().execute();
+    ASSERT_TRUE(results.has_value()) << results.error().message();
+    ASSERT_EQ(results->size(), 2U);
+
+    for (const auto& entry : *results) {
+        if (entry.code == "A") {
+            EXPECT_EQ(entry.topics.size(), 2U) << "entry A must receive exactly its own two topics";
+        } else {
+            EXPECT_EQ(entry.code, "B");
+            ASSERT_EQ(entry.topics.size(), 1U) << "entry B must not inherit A's topics via a partial-key stitch";
+            EXPECT_EQ(entry.topics.begin()->label, "review");
+        }
+    }
+}
+
+// LEFT keeps a composite through-owner with no junction rows; INNER drops it.
+TYPED_TEST(ThroughCompositeOwnerTest, LeftJoinKeepsCompositeOwnerWithNoTopics) {
+    storm::QuerySet<RegionEntry, TypeParam> entry_qs;
+    ASSERT_TRUE(entry_qs.insert(RegionEntry{.region = 9, .code = "Z", .title = "lonely"}).execute().has_value());
+
+    const auto left = entry_qs.template left_join<fields::RegionEntry.topics>().select().execute();
+    ASSERT_TRUE(left.has_value()) << left.error().message();
+    ASSERT_EQ(left->size(), 1U);
+    EXPECT_TRUE(left->begin()->topics.empty());
+
+    const auto inner = entry_qs.template join<fields::RegionEntry.topics>().select().execute();
+    ASSERT_TRUE(inner.has_value()) << inner.error().message();
+    EXPECT_EQ(inner->size(), 0U) << "INNER drops a through-owner with zero junction rows";
+}
+
+// Single-PK OWNER, composite (2-part) RELATED — the mirror direction. The Q2
+// junction⟷related ON clause must AND-join one equality per related PK part;
+// matching only the first would attach both codes to the owner linked to one.
+TYPED_TEST(ThroughCompositeRelatedTest, JoinsRelatedOnFullCompositeKey) {
+    storm::QuerySet<ShelfCode, TypeParam> code_qs;
+    ASSERT_TRUE(code_qs.insert(ShelfCode{.aisle = 4, .code = "C1", .label = "first"}).execute().has_value());
+    ASSERT_TRUE(code_qs.insert(ShelfCode{.aisle = 4, .code = "C2", .label = "second"}).execute().has_value());
+
+    storm::QuerySet<ShelfOwner, TypeParam> owner_qs;
+    ASSERT_TRUE(owner_qs.insert(ShelfOwner{.name = "owner-1"}).execute().has_value());
+
+    // Link the owner to C1 only. The two codes share aisle == 4, so a related-side
+    // comparison that stops after the first part would also attach C2.
+    storm::QuerySet<ShelfCodeLink, TypeParam> link_qs;
+    ASSERT_TRUE(
+            link_qs.insert(ShelfCodeLink{.owner = {.id = 1}, .code = {.aisle = 4, .code = "C1"}}).execute().has_value()
+    );
+
+    const auto results = owner_qs.template join<fields::ShelfOwner.codes>().select().execute();
+    ASSERT_TRUE(results.has_value()) << results.error().message();
+    ASSERT_EQ(results->size(), 1U);
+    ASSERT_EQ(results->begin()->codes.size(), 1U) << "related side must match on BOTH parts, not just `aisle`";
+    EXPECT_EQ(results->begin()->codes.begin()->label, "first");
+}
+
+// Byte-identity anchor for the SHARED branch. The #536 fix routes composite
+// junction columns through a JunctionNaming switch, but that switch sits INSIDE
+// the `has_composite_pk_` gate, so a single-PK side and an auto-junction reach
+// the same instruction path they always did. Every other test here exercises the
+// NEW branch; this one pins the OLD text, so a future refactor that lifts the
+// Naming switch above the composite gate fails loudly instead of silently
+// re-spelling every pre-#536 junction.
+//
+// Pupil/Course/Enrollment is the canonical single-PK through model from #203.
+TYPED_TEST(ThroughCompositeOwnerTest, SinglePkThroughSqlIsUnchanged) {
+    storm::QuerySet<Pupil, TypeParam> qs;
+    const auto                        sql = qs.template join<fields::Pupil.courses>().select().sql();
+    EXPECT_TRUE(sql.contains("FROM Enrollment t2 INNER JOIN Course t3 ON t2.course_id = t3.id")) << sql;
+    EXPECT_TRUE(sql.contains("WHERE t2.pupil_id IN (SELECT id FROM Pupil)")) << sql;
+}
+
+// Same anchor for an AUTO junction over a COMPOSITE side — the branch the fix
+// deliberately left alone. LedgerWithTags has a 3-part key, so this pins the
+// "<Side>_<part>" spelling (and the `_id` an FK part would gain) against the
+// Through branch bleeding into it.
+TYPED_TEST(ThroughCompositeOwnerTest, AutoJunctionCompositeSqlIsUnchanged) {
+    storm::QuerySet<LedgerWithTags, TypeParam> qs;
+    const auto                                 sql = qs.template join<fields::LedgerWithTags.tags>().select().sql();
+    EXPECT_TRUE(sql.contains("t2.LedgerWithTags_region, t2.LedgerWithTags_account, t2.LedgerWithTags_period")) << sql;
+    EXPECT_TRUE(sql.contains("ON t2.LedgerTag_id = t3.id")) << sql;
+}
+
+// THE divergence case: the owner's composite key has a part that is itself an
+// FK. The through model's real column is "entry_warehouse" (FK rule, bare part
+// identifier); the junction rule would ask for "entry_warehouse_id". Before the
+// fix this failed with "no such column: t2.entry_warehouse_id" — so the first
+// assertion below is the regression guard, and the stitch assertions prove the
+// FK part is also carried correctly through the key comparison.
+TYPED_TEST(ThroughFkPartTest, StitchesOnCompositeKeyWithForeignKeyPart) {
+    // With the decoy: sku 20 shares the FK part (warehouse == 1) with sku 10, so
+    // a stitch keyed on that part alone hands sku 20 both of sku 10's topics.
+    seed_fk_part_entries<TypeParam>(/*with_decoy=*/true);
+
+    storm::QuerySet<FkPartEntry, TypeParam> entry_qs;
+    const auto results = entry_qs.template join<fields::FkPartEntry.topics>().select().execute();
+    // The regression guard: before the fix this errored rather than returning rows.
+    ASSERT_TRUE(results.has_value()) << results.error().message();
+    ASSERT_EQ(results->size(), 2U);
+
+    for (const auto& entry : *results) {
+        if (entry.sku == 10) {
+            EXPECT_EQ(entry.topics.size(), 2U) << "sku 10 must receive exactly its own two topics";
+        } else {
+            EXPECT_EQ(entry.sku, 20);
+            ASSERT_EQ(entry.topics.size(), 1U)
+                    << "sku 20 must not inherit sku 10's topics via a stitch keyed on the FK part alone";
+            EXPECT_EQ(entry.topics.begin()->label, "review");
+        }
+    }
+}
+
+// The aggregate / complete-SQL path is assembled from DIFFERENT fragments than
+// the two-query select path — `append_side_join_names` renders both the model
+// column and the junction column per PK part into one static buffer, and it is
+// the third site the #536 fix rewires. The select tests above instantiate that
+// buffer (so its SIZE is proven) but never execute a query through it. This does.
+TYPED_TEST(ThroughFkPartTest, AggregateOverCompositeThroughJunction) {
+    // No decoy: exactly one entry linked to exactly two topics, so the COUNT has
+    // one unambiguous expected value.
+    seed_fk_part_entries<TypeParam>(/*with_decoy=*/false);
+
+    storm::QuerySet<FkPartEntry, TypeParam> entry_qs;
+    const auto total = entry_qs.template join<fields::FkPartEntry.topics>().count().execute();
+    ASSERT_TRUE(total.has_value()) << total.error().message();
+    EXPECT_EQ(*total, 2) << "COUNT over the composite through junction must see both linked topics";
+}
+
+// Both sides composite AND the owner's key has an FK part — the widest through
+// junction. Owner contributes 2 columns (owner_depot, owner_slot), related
+// contributes 2 more (code_aisle, code_code); every one of the four must be
+// named by the FK rule.
+TYPED_TEST(ThroughBothSidesTest, JoinsWhenBothSidesAreComposite) {
+    storm::QuerySet<Person, TypeParam> person_qs;
+    ASSERT_TRUE(person_qs.insert(Person{.name = "depot-1", .age = 40}).execute().has_value());
+
+    storm::QuerySet<ShelfCode, TypeParam> code_qs;
+    ASSERT_TRUE(code_qs.insert(ShelfCode{.aisle = 7, .code = "D1", .label = "dee-one"}).execute().has_value());
+    ASSERT_TRUE(code_qs.insert(ShelfCode{.aisle = 7, .code = "D2", .label = "dee-two"}).execute().has_value());
+
+    // Two owners sharing the FK part (depot == 1) and differing in `slot`.
+    storm::QuerySet<BothSidesOwner, TypeParam> owner_qs;
+    ASSERT_TRUE(
+            owner_qs.insert(BothSidesOwner{.depot = {.id = 1}, .slot = 1, .name = "slot-one"}).execute().has_value()
+    );
+    ASSERT_TRUE(
+            owner_qs.insert(BothSidesOwner{.depot = {.id = 1}, .slot = 2, .name = "slot-two"}).execute().has_value()
+    );
+
+    // slot 1 → D1 and D2; slot 2 → D2 only.
+    storm::QuerySet<BothSidesLink, TypeParam> link_qs;
+    ASSERT_TRUE(
+            link_qs.insert(BothSidesLink{.owner = {.depot = {.id = 1}, .slot = 1}, .code = {.aisle = 7, .code = "D1"}})
+                    .execute()
+                    .has_value()
+    );
+    ASSERT_TRUE(
+            link_qs.insert(BothSidesLink{.owner = {.depot = {.id = 1}, .slot = 1}, .code = {.aisle = 7, .code = "D2"}})
+                    .execute()
+                    .has_value()
+    );
+    ASSERT_TRUE(
+            link_qs.insert(BothSidesLink{.owner = {.depot = {.id = 1}, .slot = 2}, .code = {.aisle = 7, .code = "D2"}})
+                    .execute()
+                    .has_value()
+    );
+
+    const auto results = owner_qs.template join<fields::BothSidesOwner.codes>().select().execute();
+    ASSERT_TRUE(results.has_value()) << results.error().message();
+    ASSERT_EQ(results->size(), 2U);
+
+    for (const auto& owner : *results) {
+        if (owner.slot == 1) {
+            EXPECT_EQ(owner.codes.size(), 2U) << "slot 1 must receive exactly its own two codes";
+        } else {
+            EXPECT_EQ(owner.slot, 2);
+            ASSERT_EQ(owner.codes.size(), 1U) << "slot 2 must not inherit slot 1's codes";
+            EXPECT_EQ(owner.codes.begin()->label, "dee-two");
+        }
+    }
+}

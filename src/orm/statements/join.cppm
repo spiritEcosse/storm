@@ -150,11 +150,29 @@ export namespace storm::orm::statements {
 
     // Extract one part of a composite FK target's primary key from a single column
     // (#504 Task 8) — mirrors base.cppm's extract_one_fk_part, which is protected on
-    // BaseStatement and so not reachable from this free function.
+    // BaseStatement and so not reachable from this free function. That mirroring is
+    // load-bearing: this is the RELATION-side twin (Q2 result rows for an m2m related
+    // entity or a reverse-FK owner), so the two must resolve a part identically or the
+    // same model extracts differently depending on which side of the join it is on.
+    //
+    // The FK-part branch is therefore the same one #536 added to extract_one_fk_part: a
+    // part that is itself an FK holds the REFERENCED row's key, so extract that key's
+    // own type into the part's referenced-object member. Reading the declared type asks
+    // ColumnExtractor for a whole model struct — a hard error, which is why this shape
+    // did not compile. `fk_obj` is value-initialized by every caller before the fold
+    // (see extract_relation_fk_column below), so the untouched members of the
+    // referenced object are the same pk-only reconstruction the single-column path
+    // produces.
     template <std::meta::info Member, typename Statement>
     auto extract_relation_fk_part(Statement* stmt, auto& fk_obj, int col) noexcept -> void {
-        using PartType    = std::remove_cvref_t<decltype(fk_obj.[:Member:])>;
-        fk_obj.[:Member:] = ColumnExtractor::template extract_column_value<PartType>(stmt, col);
+        using PartType = std::remove_cvref_t<decltype(fk_obj.[:Member:])>;
+        if constexpr (meta::is_fk_field(Member)) {
+            constexpr auto part_pk        = BaseStatement<PartType>::primary_key_;
+            using PartPKType              = std::remove_cvref_t<decltype(std::declval<PartType>().[:part_pk:])>;
+            fk_obj.[:Member:].[:part_pk:] = ColumnExtractor::extract_column_value<PartPKType>(stmt, col);
+        } else {
+            fk_obj.[:Member:] = ColumnExtractor::extract_column_value<PartType>(stmt, col);
+        }
     }
 
     // Extract every part of a composite FK target's primary key from N consecutive
@@ -426,24 +444,61 @@ export namespace storm::orm::statements {
         return sizer.len;
     }
 
+    // Which table owns the junction columns being named, and therefore which naming
+    // rule spells them (#536). The two rules agree for a single-column PK, and for a
+    // composite key whose parts are plain columns; they diverge the moment a PK part
+    // is ITSELF an FK, which is why the distinction cannot be elided.
+    enum class JunctionNaming : std::uint8_t {
+        // Storm's synthetic auto-junction table. Storm names these columns itself, in
+        // schema.cppm's junction DDL, and routes each part through append_column_name
+        // (#422) — so an FK part's column is "<side>_<name>_id".
+        Auto,
+        // An explicit many_to_many_through<> model. The junction is a REAL user-declared
+        // table whose columns are ordinary composite-FK columns, emitted by the regular
+        // model DDL path (schema.cppm's append_composite_fk_part_column, whose consteval
+        // twin is meta::append_fk_column_name_for_part). That rule spells the target
+        // part's BARE identifier — "<member>_<part>", never "_id".
+        Through,
+    };
+
     // Append ONE junction column name for `SideBase`'s PK part index `part`, with no
     // alias prefix: "<side_col>_id" for a single-PK side (byte-identical to the
     // pre-#504 emission), "<side_col>_<part>" for a composite one (#504 Task 9).
     // `side_col` is the junction column's base name — the side's TABLE name for an
-    // auto-junction, or the through model's FK MEMBER name for a through junction;
-    // both spell their columns from this same rule, which is why one helper serves
-    // both. Must stay byte-identical to schema.cppm's junction DDL
-    // (detail::append_junction_side_column_name), which is the only producer of the
-    // columns this reads.
-    template <typename SideBase>
+    // auto-junction, or the through model's FK MEMBER name for a through junction.
+    //
+    // `Naming` selects which table's rule spells a COMPOSITE part; the single-PK
+    // branch is shared, since both rules produce exactly "<side_col>_id" there (that
+    // is what keeps every pre-#536 junction's SQL byte-identical). Each branch must
+    // stay byte-identical to the DDL that actually CREATES the columns it reads:
+    // Auto → schema.cppm's detail::append_junction_side_column_name, Through → the
+    // ordinary composite-FK column DDL for the through model's own table.
+    template <typename SideBase, JunctionNaming Naming>
     consteval auto append_junction_side_col(auto& result, std::string_view side_col, std::size_t part) -> void {
         result.append(side_col);
         if constexpr (SideBase::has_composite_pk_) {
             result.append("_");
-            // #422 — an FK key part's column is "<name>_id", so the junction column is
-            // "<side>_<name>_id"; naming the bare member here would not match the
-            // junction DDL's own append_junction_side_column_name.
-            meta::append_column_name(result, SideBase::primary_key_members_[part]);
+            if constexpr (Naming == JunctionNaming::Auto) {
+                // #422 — an FK key part's column is "<name>_id", so the junction column is
+                // "<side>_<name>_id"; naming the bare member here would not match the
+                // junction DDL's own append_junction_side_column_name.
+                meta::append_column_name(result, SideBase::primary_key_members_[part]);
+            } else {
+                // The through model's column is a plain composite-FK column: bare part
+                // identifier, no "_id" even when the part is an FK. Routing this through
+                // append_column_name is exactly the #536 bug — it asked for a column
+                // ("<member>_<part>_id") the through table does not have.
+                //
+                // This is the tail of storm::meta::append_fk_column_name_for_part's
+                // composite branch — that helper spells "<fk member>_<target part>", and
+                // `side_col` is already the FK member's identifier in Through mode (see
+                // M2MJoinStatement::owner_col_name/related_col_name), so the two agree by
+                // construction. It is not called directly because it re-appends the member
+                // name that `side_col` has already contributed above; the shared prefix
+                // write is what the Auto branch needs too. If that helper's composite
+                // spelling ever changes, THIS line must change with it.
+                result.append(std::meta::identifier_of(SideBase::primary_key_members_[part]));
+            }
         } else {
             result.append("_id");
         }
@@ -458,7 +513,7 @@ export namespace storm::orm::statements {
     // derive their names from different sources: reverse-FK names an FK MEMBER of the
     // owning model (whose composite spelling comes from the TARGET's parts via
     // append_fk_column_name_for_part), the junction names a junction column directly.
-    template <typename SideBase>
+    template <typename SideBase, JunctionNaming Naming>
     consteval auto append_junction_side_col_list(auto& result, std::string_view side_col, std::string_view prefix)
             -> void {
         for (std::size_t p = 0; p < SideBase::primary_key_column_count_; ++p) {
@@ -466,7 +521,7 @@ export namespace storm::orm::statements {
                 result.append(", ");
             }
             result.append(prefix);
-            append_junction_side_col<SideBase>(result, side_col, p);
+            append_junction_side_col<SideBase, Naming>(result, side_col, p);
         }
     }
 
@@ -1229,6 +1284,14 @@ export namespace storm::orm::statements {
             }
         }
 
+        // Which rule spells this junction's COMPOSITE columns (#536). An auto-junction
+        // is Storm's own table; a through model is the user's, and its columns are
+        // ordinary composite-FK columns. Derived from the same `Through` alias that
+        // picks the table and column base names above, so the three cannot disagree
+        // about which junction is being addressed.
+        static constexpr JunctionNaming junction_naming_ =
+                std::same_as<Through, void> ? JunctionNaming::Auto : JunctionNaming::Through;
+
         // ---- Complete-SQL fragments (#392) ------------------------------------
         // The modifier-free join SQL (aggregates / DISTINCT / set-ops) is
         // assembled per-wrapper in make_m2m_join_wrapper from these fragments so
@@ -1313,7 +1376,7 @@ export namespace storm::orm::statements {
             for (std::size_t p = 0; p < SideBase::primary_key_column_count_; ++p) {
                 meta::append_column_name(buf, SideBase::primary_key_members_[p]); // #422 — FK part → "<name>_id"
                 buf.append("\n");                                                 // separator — split back out below
-                append_junction_side_col<SideBase>(buf, side_col, p);
+                append_junction_side_col<SideBase, junction_naming_>(buf, side_col, p);
                 buf.append("\n");
             }
         }
@@ -1503,7 +1566,7 @@ export namespace storm::orm::statements {
                     result.append(" AND ");
                 }
                 result.append("t2.");
-                append_junction_side_col<RelatedBase>(result, related_col_name(), p);
+                append_junction_side_col<RelatedBase, junction_naming_>(result, related_col_name(), p);
                 result.append(" = t3.");
                 meta::append_column_name(result, RelatedBase::primary_key_members_[p]); // #422
             }
@@ -1530,7 +1593,7 @@ export namespace storm::orm::statements {
         // arity is independent of the owner's.
         static consteval auto append_q2_prefix(auto& result) -> void {
             result.append("SELECT ");
-            append_junction_side_col_list<Base>(result, owner_col_name(), "t2.");
+            append_junction_side_col_list<Base, junction_naming_>(result, owner_col_name(), "t2.");
             append_relation_columns<RelatedBase>(result, "t3.");
             result.append(" FROM ");
             result.append(junction_table_name());
@@ -1541,10 +1604,10 @@ export namespace storm::orm::statements {
             result.append(" WHERE ");
             if constexpr (Base::has_composite_pk_) {
                 result.append("(");
-                append_junction_side_col_list<Base>(result, owner_col_name(), "t2.");
+                append_junction_side_col_list<Base, junction_naming_>(result, owner_col_name(), "t2.");
                 result.append(")");
             } else {
-                append_junction_side_col_list<Base>(result, owner_col_name(), "t2.");
+                append_junction_side_col_list<Base, junction_naming_>(result, owner_col_name(), "t2.");
             }
             append_in_subquery_open<Base, Base::has_composite_pk_>(result);
         }

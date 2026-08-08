@@ -450,6 +450,46 @@ tables could not be created on PG at all.
 
 A single-PK junction on both sides is unchanged, byte for byte.
 
+### Through models (`many_to_many_through<>`, #536)
+
+An explicit junction model works over composite keys too, but its columns follow
+a **different naming rule** from the auto-junction above, because it is a
+different kind of table. The auto-junction is Storm's own synthetic table, so
+Storm names its columns (`<Side>_<part>`, an FK part gaining `_id`). A through
+model is a **real model you declared**, so its junction columns are ordinary
+composite-FK columns, named by the FK rule at the top of this section —
+`<member>_<part>`, always the target part's **bare** identifier:
+
+```cpp
+struct Entry {
+    [[= storm::primary_part]][[= storm::fk<>]] Warehouse warehouse;
+    [[= storm::primary_part]] int sku{};
+    [[= storm::many_to_many_through<EntryLink>]] std::vector<Topic> topics;
+};
+
+struct EntryLink {
+    [[= storm::primary_autoincrement]] int id{};
+    [[= storm::fk<>]] Entry entry;   // → entry_warehouse, entry_sku
+    [[= storm::fk<>]] Topic topic;   // → topic_id
+};
+```
+
+Note `entry_warehouse`, **not** `entry_warehouse_id`, even though `warehouse` is
+itself an FK — the `_id` suffix belongs to the auto-junction rule, not this one.
+The two rules agree for a single-column PK and for a composite key of plain
+columns; they diverge exactly here, which is why the query path selects between
+them rather than sharing one.
+
+Because the junction is a model, you write its rows with an ordinary `insert()`
+and can query it directly for its own metadata — no raw SQL, unlike the
+auto-junction.
+
+The FK-part shape above also needs the part's **storage type** resolved: the
+column holds the referenced row's key (`BIGINT`), not the whole struct. Getting
+that wrong typed the column as `TEXT`, which SQLite accepted and silently never
+matched, while PostgreSQL rejected the `CREATE TABLE` outright — the same
+SQLite-accepts/PG-rejects asymmetry as the junction `REFERENCES` bug above.
+
 ### Stitching
 
 The two-query strategy (#391) stitches Q2 rows onto Q1 entities by owner key.

@@ -231,6 +231,109 @@ struct ShelfAssignment {
     [[= storm::many_to_many<>]] std::vector<LedgerTag> tags;
 };
 
+// ── #536: many_to_many_through<> when either side has a composite PK ─────────
+//
+// The auto-junction fixtures above (LedgerWithTags / TagRegistry /
+// ShelfAssignment) cover Storm's SYNTHETIC junction table, whose columns Storm
+// names itself. A through model is a different thing: a REAL user-declared
+// model whose junction columns are ordinary composite-FK columns, named by the
+// FK rule ("<member>_<part>", bare part identifier) rather than the junction
+// rule ("<side>_<part>", part routed through append_column_name so an FK part
+// gains "_id"). The two rules agree for a single-column PK and for a composite
+// key whose parts are plain columns; they DIVERGE the moment a PK part is
+// itself an FK. Nothing in-tree exercised that combination, which is how the
+// divergence shipped.
+//
+// Three directions, mirroring the auto-junction trio, plus the FK-part case
+// that is the actual point of divergence.
+
+// Plain single-PK related side, reused by the composite-OWNER direction.
+struct ThroughTopic {
+    [[= storm::primary_autoincrement]] int id{};
+    std::string label;
+};
+
+struct RegionEntryLink; // through model, defined below (breaks the cycle)
+
+// Composite (2-part) OWNER through an explicit junction model. Both parts are
+// plain columns, so this direction alone does NOT diverge — it is the control
+// that proves the through path handles a multi-column key at all.
+struct RegionEntry {
+    [[= storm::primary_part]] int region{};
+    [[= storm::primary_part]] std::string code;
+    std::string title;
+    [[= storm::many_to_many_through<RegionEntryLink>]] std::vector<ThroughTopic> topics;
+};
+
+struct RegionEntryLink {
+    [[= storm::primary_autoincrement]] int id{};
+    [[= storm::fk<>]] RegionEntry entry;
+    [[= storm::fk<>]] ThroughTopic topic;
+    std::string note;
+};
+
+struct ShelfCodeLink; // through model, defined below
+
+// Composite (2-part) RELATED side reached through an explicit junction model.
+struct ShelfCode {
+    [[= storm::primary_part]] int aisle{};
+    [[= storm::primary_part]] std::string code;
+    std::string label;
+};
+
+// Single-PK OWNER, composite RELATED — the mirror direction.
+struct ShelfOwner {
+    [[= storm::primary_autoincrement]] int id{};
+    std::string name;
+    [[= storm::many_to_many_through<ShelfCodeLink>]] std::vector<ShelfCode> codes;
+};
+
+struct ShelfCodeLink {
+    [[= storm::primary_autoincrement]] int id{};
+    [[= storm::fk<>]] ShelfOwner owner;
+    [[= storm::fk<>]] ShelfCode code;
+};
+
+struct FkPartLink; // through model, defined below
+
+// THE divergence case: a composite key one of whose parts is ITSELF an FK — the
+// canonical association-table shape. `warehouse` is an FK to Person (single-PK,
+// from test_models.h), so:
+//   FK rule       (the through model's real column) → "entry_warehouse"
+//   junction rule (what the m2m query path asked)   → "entry_warehouse_id"
+// Before the fix the query named a column that does not exist and the eager
+// load failed with "no such column: t2.entry_warehouse_id".
+struct FkPartEntry {
+    [[= storm::primary_part]][[= storm::fk<>]] Person warehouse;
+    [[= storm::primary_part]] int sku{};
+    std::string title;
+    [[= storm::many_to_many_through<FkPartLink>]] std::vector<ThroughTopic> topics;
+};
+
+struct FkPartLink {
+    [[= storm::primary_autoincrement]] int id{};
+    [[= storm::fk<>]] FkPartEntry entry;
+    [[= storm::fk<>]] ThroughTopic topic;
+};
+
+struct BothSidesLink; // through model, defined below
+
+// Both sides composite, and the OWNER's key has an FK part: the widest through
+// junction, where the owner contributes 2 columns (one of them FK-derived) and
+// the related side contributes 2 more.
+struct BothSidesOwner {
+    [[= storm::primary_part]][[= storm::fk<>]] Person depot;
+    [[= storm::primary_part]] int slot{};
+    std::string name;
+    [[= storm::many_to_many_through<BothSidesLink>]] std::vector<ShelfCode> codes;
+};
+
+struct BothSidesLink {
+    [[= storm::primary_autoincrement]] int id{};
+    [[= storm::fk<>]] BothSidesOwner owner;
+    [[= storm::fk<>]] ShelfCode code;
+};
+
 // fields:: selector proxies (#518) — two mechanical lines per model, no field
 // names, so they cannot drift when a model gains or loses a member.
 namespace fields {
@@ -278,6 +381,23 @@ inline constexpr ShipmentT Shipment{};
 struct TagRegistryT;
 consteval { std::meta::define_aggregate(^^TagRegistryT, storm::field_specs_for(^^TagRegistry)); }
 inline constexpr TagRegistryT TagRegistry{};
+
+// #536 — through-model m2m over composite PKs.
+struct RegionEntryT;
+consteval { std::meta::define_aggregate(^^RegionEntryT, storm::field_specs_for(^^RegionEntry)); }
+inline constexpr RegionEntryT RegionEntry{};
+
+struct ShelfOwnerT;
+consteval { std::meta::define_aggregate(^^ShelfOwnerT, storm::field_specs_for(^^ShelfOwner)); }
+inline constexpr ShelfOwnerT ShelfOwner{};
+
+struct FkPartEntryT;
+consteval { std::meta::define_aggregate(^^FkPartEntryT, storm::field_specs_for(^^FkPartEntry)); }
+inline constexpr FkPartEntryT FkPartEntry{};
+
+struct BothSidesOwnerT;
+consteval { std::meta::define_aggregate(^^BothSidesOwnerT, storm::field_specs_for(^^BothSidesOwner)); }
+inline constexpr BothSidesOwnerT BothSidesOwner{};
 } // namespace fields
 
 #endif // STORM_TESTS_TEST_COMPOSITE_PK_MODELS_H

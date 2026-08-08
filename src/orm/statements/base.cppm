@@ -1303,11 +1303,28 @@ export namespace storm::orm::statements {
         // "consteval-only type used outside a constant expression" hard error in
         // this compiler, so each part must be named as a template argument, the
         // same discipline bind_one_pk_part uses for composite-PK binding (#501).
+        //
+        // The target's key part may ITSELF be an FK — the canonical association-table
+        // shape, one hop further out than #501's own FK-part handling: here the part
+        // belongs to the FK TARGET's key rather than to T's own. Such a part stores the
+        // referenced row's key, so bind THAT, exactly as bind_one_pk_part does and
+        // matching the value the "<part>_id" column holds (#536). Binding the whole
+        // struct is not a wrong value but a hard error — it fails BindableType — which
+        // is why this shape did not compile at all before.
         template <typename ConnType, std::meta::info Member>
         [[nodiscard]] __attribute__((always_inline)) static constexpr auto
         bind_one_fk_part(typename ConnType::Statement* stmt, const auto& fk_obj, int& param_index) noexcept
                 -> std::expected<void, typename ConnType::Error> {
-            auto result = bind_value_by_type<ConnType>(*stmt, param_index, fk_obj.[:Member:]);
+            auto result = [&] {
+                if constexpr (is_fk_field(Member)) {
+                    using PartFKType = std::remove_cvref_t<decltype(fk_obj.[:Member:])>;
+                    return bind_value_by_type<ConnType>(
+                            *stmt, param_index, fk_obj.[:Member:].[:find_fk_primary_key<PartFKType>():]
+                    );
+                } else {
+                    return bind_value_by_type<ConnType>(*stmt, param_index, fk_obj.[:Member:]);
+                }
+            }();
             if (result.has_value()) {
                 ++param_index;
             }
@@ -1536,11 +1553,26 @@ export namespace storm::orm::statements {
         // col_idx into fk_obj.[:Member:]. `Member` is an NTTP — see bind_one_fk_part
         // for why a std::meta::info cannot instead be captured by a runtime lambda
         // closure in this compiler.
+        //
+        // An FK part is the exact mirror of bind_one_fk_part's FK branch (#536): the
+        // column holds the REFERENCED row's key, so extract that key's own type and
+        // store it into the part's referenced-object member, leaving the rest of that
+        // object default-constructed — the same single-level, key-only reconstruction
+        // extract_optional_fk_column performs for a single-column FK. Extracting
+        // PartType directly would ask ColumnExtractor for a whole model struct.
         template <std::meta::info Member, typename Statement>
         __attribute__((always_inline)) static void
         extract_one_fk_part(Statement* stmt, auto& fk_obj, int col_idx) noexcept {
-            using PartType    = std::remove_cvref_t<decltype(fk_obj.[:Member:])>;
-            fk_obj.[:Member:] = ColumnExtractor::extract_column_value<PartType>(stmt, col_idx);
+            using PartType = std::remove_cvref_t<decltype(fk_obj.[:Member:])>;
+            if constexpr (is_fk_field(Member)) {
+                constexpr auto part_pk_member = find_fk_primary_key<PartType>();
+                using PartPKType = std::remove_cvref_t<decltype(std::declval<PartType>().[:part_pk_member:])>;
+                fk_obj.[:Member:].[:part_pk_member:] = ColumnExtractor::template extract_column_value<PartPKType>(
+                                                             stmt, col_idx
+                                                     );
+            } else {
+                fk_obj.[:Member:] = ColumnExtractor::template extract_column_value<PartType>(stmt, col_idx);
+            }
         }
 
         // Extract every part of a composite FK target's primary key from N
