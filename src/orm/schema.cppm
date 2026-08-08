@@ -500,15 +500,42 @@ export namespace storm::orm::schema {
         // member's own reflection plus its target's PK member list — the target's own
         // BaseStatement<RelatedType>, not SchemaStatement<T>'s Base.
 
+        // The C++ type a composite key part is STORED as. A plain part stores its own
+        // declared type; an FK part stores the REFERENCED row's key, so its storage type
+        // is that key's type, not the whole related struct (which has no storage class at
+        // all — it would fall through to StorageClass::Fallback and trip
+        // not_null_type_for's static_assert from several levels down inside a sizer,
+        // naming neither the model nor the field). Same is_fk_field routing that
+        // BaseStatement::bind_one_pk_part (#501) and TwoQueryJoinBase::append_pk_part_to_key
+        // (#504 Task 8) already use for the identical question. Single-level, matching the
+        // ValidForeignKey precedent (#412): the referenced key is taken as-is, never
+        // resolved recursively if it is ITSELF an FK.
+        template <std::meta::info PartMember> consteval auto pk_part_storage_type() -> std::meta::info {
+            if constexpr (storm::orm::statements::meta::is_fk_field(PartMember)) {
+                using FkFieldType = std::remove_cvref_t<typename[:std::meta::type_of(PartMember):]>;
+                using InnerType   = storm::orm::utilities::optional_inner_type_t<FkFieldType>;
+                return std::meta::type_of(storm::orm::statements::BaseStatement<InnerType>::primary_key_);
+            } else {
+                return std::meta::type_of(PartMember);
+            }
+        }
+
         // Append ONE column of a composite-FK target's part: "<name>_<part> <TYPE> [NOT
         // NULL]" (omits NOT NULL for a nullable FK member, matching append_fk_column_def's
         // own [nullable] dispatch). `PartMember` is the TARGET's own primary-key-part
-        // reflection (e.g. OrderLineWithShipments::order_id) — its OWN declared type drives
-        // the SQL storage CLASS (Integer/Text/...) via the same storage_class_of dispatch
-        // sql_col_def uses internally. Single-level only, matching the FKFieldOf/
-        // ValidForeignKey precedent (#412): a part that is ITSELF an FK field is not
-        // resolved recursively — it falls through to its declared C++ type's storage class
-        // (that shape does not occur in the current fixtures).
+        // reflection (e.g. OrderLineWithShipments::order_id) — its STORED type drives the
+        // SQL storage CLASS (Integer/Text/...) via the same storage_class_of dispatch
+        // sql_col_def uses internally. "Stored" rather than "declared" because a part may
+        // ITSELF be an FK (the canonical association-table shape), in which case the
+        // column holds the REFERENCED row's key: pk_part_storage_type resolves that,
+        // exactly as the junction DDL and the bind/extract paths do for the same question
+        // (#536). Reading the declared type instead typed such a column from the whole
+        // related STRUCT — StorageClass::Fallback, emitted as a nullable TEXT — so the
+        // table-level FOREIGN KEY clause compared TEXT against the target's BIGINT key
+        // and PostgreSQL rejected the CREATE TABLE outright (SQLite, which does not type-
+        // check FK targets, accepted it and then silently never matched). Single-level,
+        // matching the FKFieldOf/ValidForeignKey precedent (#412): the referenced key is
+        // taken as-is, never resolved recursively if it is itself an FK.
         // `FkMember` is the FK member's own reflection (source of the "<name>_" prefix).
         //
         // Nullability is NOT delegated to sql_col_def<PartType, D>(): that dispatch reads
@@ -523,7 +550,7 @@ export namespace storm::orm::schema {
         template <std::meta::info FkMember, std::meta::info PartMember, Dialect D, typename SqlT>
         consteval void append_composite_fk_part_column(SqlT& col) {
             using FkFieldType          = std::remove_cvref_t<typename[:std::meta::type_of(FkMember):]>;
-            using PartType             = std::remove_cvref_t<typename[:std::meta::type_of(PartMember):]>;
+            using PartType             = std::remove_cvref_t<typename[:pk_part_storage_type<PartMember>():]>;
             constexpr StorageClass cls = storage_class_of<PartType>();
             constexpr bool         nullable =
                     utilities::is_optional_v<FkFieldType> || cls == StorageClass::Blob || cls == StorageClass::Fallback;
@@ -686,26 +713,6 @@ export namespace storm::orm::schema {
                 storm::meta::append_column_name(sql, SideBase::primary_key_members_[Is]);
             } else {
                 sql.append("_id");
-            }
-        }
-
-        // The C++ type a composite key part is STORED as. A plain part stores its own
-        // declared type; an FK part stores the REFERENCED row's key, so its storage type
-        // is that key's type, not the whole related struct (which has no storage class at
-        // all — it would fall through to StorageClass::Fallback and trip
-        // not_null_type_for's static_assert from several levels down inside a sizer,
-        // naming neither the model nor the field). Same is_fk_field routing that
-        // BaseStatement::bind_one_pk_part (#501) and TwoQueryJoinBase::append_pk_part_to_key
-        // (#504 Task 8) already use for the identical question. Single-level, matching the
-        // ValidForeignKey precedent (#412): the referenced key is taken as-is, never
-        // resolved recursively if it is ITSELF an FK.
-        template <std::meta::info PartMember> consteval auto pk_part_storage_type() -> std::meta::info {
-            if constexpr (storm::orm::statements::meta::is_fk_field(PartMember)) {
-                using FkFieldType = std::remove_cvref_t<typename[:std::meta::type_of(PartMember):]>;
-                using InnerType   = storm::orm::utilities::optional_inner_type_t<FkFieldType>;
-                return std::meta::type_of(storm::orm::statements::BaseStatement<InnerType>::primary_key_);
-            } else {
-                return std::meta::type_of(PartMember);
             }
         }
 

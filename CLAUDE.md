@@ -476,6 +476,37 @@ sizer runs the **writer itself** into a counting sink, so the two cannot drift �
 `ConstexprString<N>` holds only `N-1` bytes (its `append` stops at `len < N - 1`), so a buffer
 sized to exactly the rendered length silently drops the final character.
 
+**Composite PK — through-model m2m (#536)**: `many_to_many_through<Model>` over a composite side
+failed with `no such column: t2.<fk>_<part>_id`. Root cause: **two junction tables, two naming
+rules, one code path**. The auto-junction is Storm's SYNTHETIC table, so Storm names its columns —
+`<Side>_<part>` with each part routed through `append_column_name` (#422), so an FK part gains
+`_id`. A through model is a REAL user-declared model whose junction columns are ordinary
+composite-FK columns emitted by the regular model DDL (`append_composite_fk_part_column`), which
+spells the target part's **bare** identifier: `<member>_<part>`, no `_id`. The rules agree for a
+single-column PK and for a composite key of plain columns; they diverge exactly when a PK part is
+itself an FK — the canonical association-table shape, which nothing in-tree exercised. `join.cppm`'s
+`append_junction_side_col`/`_list` now take a `JunctionNaming` enum (`Auto`/`Through`) derived from
+the same `Through` alias that picks the table and column base names, so the three cannot disagree
+about which junction is addressed; the single-PK branch stays SHARED (both rules emit exactly
+`<side>_id` there), which is what keeps all pre-#536 junction SQL byte-identical.
+
+Fixing the naming alone was not enough — the FK-part shape was unreachable, broken in three more
+places that #504 left on the "does not occur in the current fixtures" path, all the same
+one-hop-out mistake (an FK **part of the FK target's key** stores the REFERENCED row's key, not the
+whole struct — exactly what `bind_one_pk_part` (#501) already handled for T's OWN key):
+`bind_one_fk_part` bound the whole struct (a hard `BindableType` error, so this shape did not
+compile at all), `extract_one_fk_part` mirrored it, `join.cppm`'s `extract_relation_fk_part` (the
+RELATION-side twin, for Q2 result rows — m2m related entities and reverse-FK owners) mirrored it
+again, and `append_composite_fk_part_column` typed the column from the part's DECLARED type —
+`StorageClass::Fallback` → nullable `TEXT` — so the
+table-level `FOREIGN KEY` compared TEXT against the target's `BIGINT` key. That last one is the
+#519/#506 asymmetry again: **SQLite accepted it and silently never matched; PG rejected the
+`CREATE TABLE`** — so SQLite-only testing was actively misleading, which is why the tests are
+TYPED_TEST executing on both backends rather than SQL-text assertions. All four now route through
+the existing single-source helpers (`find_fk_primary_key`, `pk_part_storage_type`, moved above its
+first use in `schema.cppm`). Every fix is `if constexpr`-dispatched; single-PK and auto-junction SQL
+is byte-identical and benchmarks are unchanged.
+
 **Foreign keys (#431)**: `[[= storm::fk<>]]` marks an FK field (bare = `RESTRICT`,
 the SQL default — no `ON DELETE` clause emitted). The `ON DELETE` policy is the template
 arg: `fk<RefAction::Cascade>` / `fk<RefAction::SetNull>` / `fk<RefAction::Restrict>` /
