@@ -507,6 +507,24 @@ the existing single-source helpers (`find_fk_primary_key`, `pk_part_storage_type
 first use in `schema.cppm`). Every fix is `if constexpr`-dispatched; single-PK and auto-junction SQL
 is byte-identical and benchmarks are unchanged.
 
+**Composite PK — at most 4 parts (#537)**: a composite key may span at most **4** columns;
+a 5th part is a compile-time error via `ModelPrimaryKeyPartLimit<T>` (ANDed into the
+`BaseStatement` constraint list next to `ModelPrimaryKeyValid`). The bound comes from
+`StitchKey` (#504), the m2m/reverse-FK stitch-map key: a fixed 32-byte inline buffer into which
+every part writes exactly one 8-byte word, so 4 parts fill it with **zero slack**. The only prior
+guard was `assert(len_ + sizeof(word) <= CAPACITY)` in `append_word`, which `NDEBUG` compiles
+out — absent from exactly the Release configuration where the overrun matters, making a 5-part
+key a SILENT buffer overrun there. The gate reads `StitchKey::MAX_PARTS` (`= CAPACITY /
+sizeof(uint64_t)`), **derived not hardcoded**, so the limit cannot go stale against the buffer.
+Growing `CAPACITY` was rejected: #504 measured a wider key costing ~4% on the stitch hot path
+(hence single-PK models bypassing `StitchKey` for a bare `uint64_t`); folding surplus parts was
+rejected in #504 as a *mis-stitch* (rows attached to the wrong owner), not a recoverable
+collision. Gated at the MODEL rather than at the stitch for two reasons: the stitch runs behind
+`M2MRelation`'s type-erased fn-pointer vtable where `T` is out of scope (no call site to name the
+model in a diagnostic), and gating only models that currently declare a relation would make
+adding an unrelated m2m field later fail in a distant file. Single-PK and all in-tree composite
+models (2–3 parts) are unaffected — no SQL or hot-path change, so no benchmark movement.
+
 **Foreign keys (#431)**: `[[= storm::fk<>]]` marks an FK field (bare = `RESTRICT`,
 the SQL default — no `ON DELETE` clause emitted). The `ON DELETE` policy is the template
 arg: `fk<RefAction::Cascade>` / `fk<RefAction::SetNull>` / `fk<RefAction::Restrict>` /

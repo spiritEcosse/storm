@@ -658,9 +658,30 @@ export namespace storm::orm::utilities {
     // every composite PK in the codebase today (max 3 parts before #504 ships);
     // a 4th part (int64 or string-hash) still fits exactly (4 x 8 = 32) but is a
     // hard ceiling with zero slack — a 5th part overflows.
+    //
+    // That ceiling is enforced at COMPILE TIME, at the model (#537). The only
+    // guard used to be the assert in append_word, which NDEBUG compiles out —
+    // i.e. it was absent from exactly the Release configuration where the
+    // overrun would matter. ModelPrimaryKeyPartLimit<T> (base.cppm) now rejects a
+    // model with more parts than MAX_PARTS, so append_word cannot be reached with
+    // a full buffer and the assert is a redundant backstop rather than the guard.
+    //
+    // CAPACITY was NOT simply grown to make room: it is load-bearing for
+    // performance. #504 measured a wider key costing ~4% on the stitch hot path,
+    // which is why single-PK models bypass this class entirely for a bare
+    // std::uint64_t. Folding parts beyond the 4th was also rejected in #504 —
+    // two distinct composite keys colliding in the fold is a MIS-STITCH (rows
+    // attached to the wrong owner), not a recoverable map collision.
     class StitchKey {
       public:
         static constexpr std::size_t CAPACITY = 32;
+
+        // How many parts fit. Every appender writes exactly one 8-byte word (see
+        // append_word), so this is the capacity in words. DERIVED rather than
+        // written as a literal 4 so the compile-time model gate that reads it
+        // tracks CAPACITY automatically: changing one cannot leave the other
+        // stale, which is the failure mode that would reintroduce the overrun.
+        static constexpr std::size_t MAX_PARTS = CAPACITY / sizeof(std::uint64_t);
 
         void append_int64(std::int64_t v) noexcept {
             append_word(static_cast<std::uint64_t>(v));
@@ -744,6 +765,13 @@ export namespace storm::orm::utilities {
         // exactly 8 bytes" invariant that hash() and operator== both read whole words
         // on is then enforced by the signature instead of resting on each caller
         // passing sizeof correctly.
+        //
+        // The assert is a BACKSTOP, not the guard (#537). It is compiled out under
+        // NDEBUG — precisely the Release build — so it never protected the case it
+        // names. ModelPrimaryKeyPartLimit<T> rejects an over-wide model at compile
+        // time, before any statement class instantiates, so this is now unreachable
+        // for every model that exists; it is retained to catch a direct caller
+        // (the unit tests append parts by hand, bypassing the model gate).
         void append_word(std::uint64_t word) noexcept {
             assert(len_ + sizeof(word) <= CAPACITY && "StitchKey: append exceeds fixed CAPACITY");
             std::memcpy(bytes_.data() + len_, &word, sizeof(word));
