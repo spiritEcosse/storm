@@ -251,6 +251,36 @@ FK members make good parts — `[[= storm::primary_part]] [[= storm::fk<>]] Ware
 is the canonical association-table key, and the clause names the FK's actual column
 (`PRIMARY KEY (warehouse_id, sku)`).
 
+#### At most 4 parts (#537)
+
+A composite primary key may span **at most 4 columns**. A 5th part is a compile-time error
+via `ModelPrimaryKeyPartLimit<T>` (a `BaseStatement<T>` constraint):
+
+```cpp
+struct TooWide {
+    [[= storm::primary_part]] int a;
+    [[= storm::primary_part]] int b;
+    [[= storm::primary_part]] int c;
+    [[= storm::primary_part]] int d;
+    [[= storm::primary_part]] int e;   // ❌ compile error — 5 parts
+};
+```
+
+The limit comes from the m2m / reverse-FK eager load. That runs as two queries and stitches
+the second query's rows onto their owner through a hash map keyed on the owner's primary key;
+for a composite key, that map key is a fixed 32-byte inline buffer into which each part writes
+exactly one 8-byte word. Four parts fill it exactly.
+
+The buffer is **not** simply grown to make room, because its size is load-bearing for
+performance: a wider key measurably slows the stitch (which is why single-column keys bypass
+the buffer entirely for a bare 64-bit word). Folding surplus parts together was rejected too —
+two distinct keys colliding in the fold would attach rows to the *wrong* owner, a correctness
+bug rather than a recoverable hash collision.
+
+The limit applies to every model, not only to those that currently declare a relation: adding
+an m2m field later must not turn a previously fine model into a compile error in a distant file.
+Single-column keys are unaffected, as are the 2- and 3-part keys in the examples above.
+
 #### Part types (#517)
 
 Every `primary_part` member's type is checked at compile time by `PrimaryKeyType<T>`

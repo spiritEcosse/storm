@@ -468,6 +468,13 @@ export namespace storm::orm::statements {
         std::size_t on_relation{};   // any PK annotation sitting on an m2m/reverse_fk member
         std::size_t nullable{};      // any PK annotation sitting on a std::optional<T> member
         std::size_t unique_part{};   // a primary_part member that also carries storm::unique
+        // How many key COLUMNS the model declares (#537) — PK members that are actually
+        // persisted, i.e. BaseStatement::is_primary_key_column's rule. Deliberately the
+        // column count and not `primary + autoincrement + part`: it must match the
+        // primary_key_members_ array the stitch key walks, which excludes relation
+        // members. Counted here rather than in a second loop of its own so every
+        // whole-model PK fact stays in this one pass.
+        std::size_t columns{};
     };
 
     template <typename T> consteval auto count_primary_key_flavours() -> PrimaryKeyCounts {
@@ -483,6 +490,7 @@ export namespace storm::orm::statements {
                 // quirk even lets duplicate keys through, diverging from PG on identical
                 // DDL). Counted here so ModelPrimaryKeyValid can refuse both.
                 counts.on_relation += static_cast<std::size_t>(storm::meta::is_relation_field(m));
+                counts.columns += static_cast<std::size_t>(!storm::meta::is_relation_field(m)); // #537
                 // UNIQUE on one part of a composite key defeats the key: it allows at
                 // most one row per that part alone, making the other parts pointless.
                 counts.unique_part +=
@@ -554,6 +562,44 @@ export namespace storm::orm::statements {
         }
         return counts.part >= 2; // exactly one part is a plain `primary`
     }();
+
+    // Concept: T's primary key has no more parts than the m2m/reverse-FK stitch key
+    // can hold (#537).
+    //
+    // The m2m and reverse-FK two-query eager load stitches Q2 rows onto their Q1 owner
+    // through a hash map keyed on the owner's PK. For a composite key that key is
+    // utilities::StitchKey, a FIXED 32-byte inline buffer into which every part writes
+    // exactly one 8-byte word — so StitchKey::MAX_PARTS (= 4) parts fill it exactly and
+    // a 5th writes past the end. The only guard was an assert in StitchKey::append_word,
+    // which NDEBUG compiles out: it was absent from exactly the Release configuration
+    // where the overrun would matter, making a 5-part key a SILENT buffer overrun there.
+    //
+    // Rejected here at the model rather than at the stitch, for two reasons. (1) The
+    // stitch runs behind M2MRelation's type-erased fn-pointer vtable, where T is no
+    // longer in scope — there is no call site there at which to name the model in a
+    // diagnostic. (2) Gating only models that CURRENTLY declare a relation would make
+    // adding an unrelated m2m field to a 5-part model fail in a distant file; the limit
+    // is a property of the key, so the key's owner is where it belongs.
+    //
+    // Growing CAPACITY instead was considered and NOT done: #504 measured a wider key
+    // costing ~4% on the stitch hot path (which is why single-PK models bypass StitchKey
+    // for a bare std::uint64_t). Folding the surplus parts was rejected in #504 as well —
+    // two distinct keys colliding in the fold mis-stitches rows onto the wrong owner,
+    // a correctness regression rather than a map collision. If a real 5-part key ever
+    // turns up, raise StitchKey::CAPACITY and re-run the M2M benchmarks; this concept
+    // reads MAX_PARTS, so it follows automatically.
+    //
+    // Single-PK models are unaffected (count 1). Bound at 4, so every composite model in
+    // the tree today (2 and 3 parts) keeps compiling unchanged. Reads the COLUMN count
+    // from count_primary_key_flavours (is_primary_key_column's rule — a PK annotation on
+    // a relation container is not a column, and is rejected by ModelPrimaryKeyValid
+    // anyway), so the number checked here is the same one primary_key_members_ holds and
+    // the stitch actually walks. Cannot read BaseStatement<T>::primary_key_column_count_
+    // for that: this concept is ON that class's constraint list, so touching it here
+    // would be circular.
+    template <typename T>
+    concept ModelPrimaryKeyPartLimit =
+            count_primary_key_flavours<T>().columns <= storm::orm::utilities::StitchKey::MAX_PARTS;
 
     // Concept: every max_length<N> annotation of T must sit on a text field (#493).
     // max_length bounds a text column's length (VARCHAR(N) on PG, CHECK(length) on SQLite);
@@ -791,7 +837,7 @@ export namespace storm::orm::statements {
     template <typename T>
         requires storm::meta::Entity<T> && ModelWithPrimaryKey<T> && PrimaryKeyType<T> && ModelStorageAnnotated<T> &&
                  ModelFkPoliciesValid<T> && ModelAnnotationsValid<T> && ModelMaxLengthValid<T> &&
-                 ModelPrimaryKeyValid<T> && ModelTimestampPkValid<T>
+                 ModelPrimaryKeyValid<T> && ModelTimestampPkValid<T> && ModelPrimaryKeyPartLimit<T>
     class BaseStatement {
       public:
         // Compile-time accessor for table name (used in SQL generation)
