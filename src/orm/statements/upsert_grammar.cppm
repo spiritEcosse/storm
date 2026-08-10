@@ -91,7 +91,12 @@ export namespace storm::orm::statements {
             for (const auto& member : Base::all_members_) {
                 if (is_unlisted_auto_update<SetCols...>(member)) {
                     append_separator(result, first);
-                    result.append(std::meta::identifier_of(member));
+                    // Canonical column-name writer (#422), the same spelling the
+                    // explicit-pack branch above emits (no shared helper: that branch
+                    // writes "col=excluded.col"). The divergence is unreachable —
+                    // ValidTimestampField bars an FK from carrying a timestamp — but
+                    // this keeps the agreement structural (#542).
+                    meta::append_column_name(result, member);
                     result.append("=?");
                 }
             }

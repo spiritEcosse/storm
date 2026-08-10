@@ -128,8 +128,11 @@ export namespace storm::orm::statements {
                     if (!first) {
                         result.append(", ");
                     }
-                    result.append(std::meta::identifier_of(member));
-                    result.append("=?");
+                    // Same writer as the explicit-pack branch above (#542). The
+                    // divergence is unreachable — ValidTimestampField bars an FK from
+                    // carrying a timestamp — but sharing the writer (#422) makes that
+                    // structural rather than coincidental.
+                    append_one_assignment(result, member);
                     first = false;
                 }
             }
