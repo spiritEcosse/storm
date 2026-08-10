@@ -264,3 +264,16 @@ TYPED_TEST(UpsertTimestampTest, DoUpdateRefreshesAutoUpdateTimestamp) {
     ASSERT_EQ(after.value().size(), 1U);
     EXPECT_GT(after.value().begin()->updated_at, first_stamp); // updated_at advanced
 }
+
+// .sql() golden — the auto_update tail inside the FULL assembled statement (#542).
+// The clause is asserted in isolation by AutoUpdateSetTail in test_composite_pk_sql.cpp;
+// this pins that it lands correctly in the complete INSERT ... ON CONFLICT text.
+TYPED_TEST(UpsertTimestampTest, AutoUpdateTailInFullUpsertSql) {
+    storm::QuerySet<TimestampedUpsertRecord, TypeParam> qs;
+    TimestampedUpsertRecord const                       row{.name = "record"};
+    const std::string                                   sql = qs.insert(row)
+                                    .template on_conflict<fields::TimestampedUpsertRecord.name>()
+                                    .template update<fields::TimestampedUpsertRecord.name>()
+                                    .sql();
+    EXPECT_NE(sql.find("DO UPDATE SET name=excluded.name, updated_at=?"), std::string::npos) << sql;
+}

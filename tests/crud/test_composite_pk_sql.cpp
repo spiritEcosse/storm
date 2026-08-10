@@ -377,4 +377,22 @@ TEST(CompositePkUpsertSql, SinglePkStillEmitsReturning) {
     EXPECT_TRUE(update.ends_with("RETURNING id")) << update;
 }
 
+// ── #542: the auto_update SET tail uses the canonical column-name writer ─────
+// Both tails appended identifier_of(member) directly while the explicit-pack
+// branch beside them used meta::append_column_name (#422). The spellings differ
+// only for an FK member, which ValidTimestampField bars from carrying a timestamp
+// annotation — so no model can observe the difference and these assertions hold
+// equally before and after the fix. They pin the emitted text so a later change to
+// either writer cannot silently move the auto_update tail off the shared spelling.
+TEST(AutoUpdateSetTail, UpdateSetClauseText) {
+    constexpr auto set = UpdateGrammar<TimestampedRecord>::build_conditional_set_clause<^^TimestampedRecord::name>();
+    // created_at is auto_create (INSERT only), so only updated_at joins the tail.
+    EXPECT_EQ(std::string(set), "name=?, updated_at=?");
+}
+
+TEST(AutoUpdateSetTail, UpsertExcludedSetClauseText) {
+    constexpr auto set = UpsertGrammar<TimestampedRecord>::build_excluded_set_clause<^^TimestampedRecord::name>();
+    EXPECT_EQ(std::string(set), "name=excluded.name, updated_at=?");
+}
+
 // NOLINTEND(readability-implicit-bool-conversion)
