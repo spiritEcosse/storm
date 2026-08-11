@@ -48,6 +48,7 @@ Documentation for Storm ORM contributors — architecture, build/test workflow, 
 - **[Module System](internals/architecture/MODULE_SYSTEM.md)** - Database-agnostic module design with zero-cost cross-module inlining
 - **[Statement Caching](internals/architecture/STATEMENT_CACHING.md)** - Single Connection-level statement cache achieving near-raw SQLite performance
 - **[Compile-Time vs Runtime](internals/architecture/COMPILE_TIME_VS_RUNTIME.md)** - WHERE expression design tradeoffs and performance analysis
+- **[Composite & Non-Integer Primary Keys](internals/architecture/COMPOSITE_PRIMARY_KEYS.md)** - Multi-column and UUID keys: per-issue design notes and the failure each prevents
 
 ### Building
 

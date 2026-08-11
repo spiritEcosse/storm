@@ -472,15 +472,27 @@ struct User {
 // Usage
 User user{.id = storm::UUID::generate(), .name = "Alice"};  // generate() call is required
 QuerySet<User> qs;
-qs.insert(user).execute();  // Returns std::expected<void, Error> (no ID returned)
+qs.insert<storm::orm::statements::ReturnId::No>(user).execute();  // std::expected<void, Error>
 ```
 
 **Key differences from integer PKs:**
 
-- **`.insert().execute()` returns `std::expected<void, Error>`** (no RETURNING), matching composite PKs (#502). The caller already supplied the UUID, so there is nothing to return.
+- **Spell `insert<ReturnId::No>` explicitly.** A UUID key is caller-supplied, so there is nothing
+  to return — but plain `insert()` still defaults to `ReturnId::Yes` and emits
+  `RETURNING <uuid_pk>`, whose value is extracted as an integer and is therefore meaningless.
+  Tracked in **#572**, which will make `ReturnId::No` the default for a UUID key (a breaking
+  change to the return type, hence separate).
+- **The UUID key column is INSERTed like any other column** (#565) — the caller's key is written,
+  not skipped as if it were an identity column. Same rule as a composite key (#502): neither is
+  ever DB-generated.
 - **The caller must call `storm::UUID::generate()`** and assign it before insert — binding an empty UUID PK is an **error**.
 - **On PostgreSQL**, emits `id UUID PRIMARY KEY`. **On SQLite**, emits `id TEXT PRIMARY KEY`.
 - **FK columns referencing a UUID-PK model** emit `UUID` (PG) / `TEXT` (SQLite) — **not** INTEGER/BIGINT. The column type matches the referenced primary key type.
+- **m2m auto-junction columns** follow the same rule per side (#565): an m2m between UUID-PK models
+  emits `Doc_id UUID NOT NULL, Tag_id UUID NOT NULL` on PG (`TEXT` on SQLite). The two sides resolve
+  independently, so an integer-PK owner and a UUID-PK related model legitimately mix column types in
+  one junction. See
+  [REFERENTIAL_INTEGRITY.md](../features/REFERENTIAL_INTEGRITY.md#junction-column-type-follows-the-referenced-key-565).
 - **Foreign keys, m2m, and reverse-FK eager loading** work identically to integer PKs, with **no performance impact** — integer PKs are byte-identical (zero codegen overhead).
 - **SELECT / UPDATE / DELETE by UUID PK** work identically to integer PKs. The WHERE clause binds the UUID value the same way as non-PK UUID columns.
 - **Thread safety**: Same as integer PKs — per-thread `QuerySet` instances with thread-local connections.

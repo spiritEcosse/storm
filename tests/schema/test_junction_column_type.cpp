@@ -1,0 +1,349 @@
+#include <gtest/gtest.h>
+
+#include "test_db_helpers.h"
+#include "plf_hive/plf_hive.h"
+
+// NOLINTBEGIN(misc-const-correctness)
+
+import storm;
+import std;
+
+#include "test_models.h" // NOSONAR cpp:S954
+
+// ============================================================================
+// m2m auto-junction column TYPE must derive from the referenced model's PK
+// type, not a hardcoded INTEGER/BIGINT (#565).
+//
+// The per-field FK path (append_fk_column_def) has always done this: an FK onto
+// a storm::UUID PK (#507) emits a UUID/TEXT column. The junction path did not —
+// it typed every column INTEGER (SQLite) / BIGINT (PostgreSQL) unconditionally,
+// so an m2m between UUID-PK models produced a junction whose INTEGER/BIGINT
+// column carried a "REFERENCES <Model>(<uuid_pk>)" clause pointing at a
+// UUID/TEXT column. PostgreSQL rejects that DDL outright (FK type mismatch);
+// SQLite accepts it and stores mismatched affinities silently — the #536/#519
+// asymmetry again, which is why the executable-DDL cases below are TYPED_TESTs
+// running on BOTH backends rather than SQL-text assertions alone.
+//
+// #519 fixed the junction's REFERENCES column NAME. That made the clause name
+// the right column — of the wrong type, which is what this closes.
+// ============================================================================
+
+using storm::QuerySet;
+using storm::orm::schema::Dialect;
+
+namespace {
+
+    // ---- UUID PK on BOTH junction sides ------------------------------------
+    struct UuidTag {
+        [[= storm::primary]] storm::UUID id{};
+        std::string                      label;
+    };
+
+    struct UuidDoc {
+        [[= storm::primary]] storm::UUID                 id{};
+        std::string                                      title;
+        [[= storm::many_to_many<>]] std::vector<UuidTag> tags;
+    };
+
+    // ---- Mixed: integer-PK owner, UUID-PK related --------------------------
+    // Proves each side's column type is resolved INDEPENDENTLY rather than from
+    // one shared decision — a single "does this junction involve a UUID" flag
+    // would type both columns the same and break the integer side.
+    struct UuidLabel {
+        [[= storm::primary]] storm::UUID id{};
+        std::string                      text;
+    };
+
+    struct IntShelf {
+        [[= storm::primary]] int                           id{};
+        std::string                                        name;
+        [[= storm::many_to_many<>]] std::vector<UuidLabel> labels;
+    };
+
+    // ---- Integer PKs on both sides — byte-identical regression guard -------
+    struct IntTag {
+        [[= storm::primary]] int id{};
+        std::string              label;
+    };
+
+    struct IntPost {
+        [[= storm::primary]] int                        id{};
+        std::string                                     title;
+        [[= storm::many_to_many<>]] std::vector<IntTag> tags;
+    };
+
+    // ---- UUID PK whose member is NOT named "id" ----------------------------
+    // Type derivation (#565) and name derivation (#519) must both hold at once:
+    // the junction column is typed from the PK member and the REFERENCES clause
+    // names it, so a UUID PK called "note_uuid" exercises the two together.
+    struct UuidNote {
+        [[= storm::primary]] storm::UUID note_uuid{};
+        std::string                      body;
+    };
+
+    struct UuidBinder {
+        [[= storm::primary]] storm::UUID                  binder_uuid{};
+        [[= storm::many_to_many<>]] std::vector<UuidNote> notes;
+    };
+
+    template <typename Model, storm::orm::schema::Dialect D> auto junction_sql() -> const std::string& {
+        return storm::orm::schema::SchemaStatement<Model>::template junction_table_sql<D>();
+    }
+
+    constexpr std::string_view kDocUuid   = "11111111-1111-4111-8111-111111111111";
+    constexpr std::string_view kTagUuid   = "22222222-2222-4222-8222-222222222222";
+    constexpr std::string_view kOtherUuid = "33333333-3333-4333-8333-333333333333";
+
+} // namespace
+
+// fields:: selector proxies (#518). At global scope, NOT nested inside the
+// anonymous namespace above: a nested `namespace fields` makes every
+// unqualified `fields::` reference in this TU ambiguous against the global one.
+namespace fields {
+
+    struct UuidDocT;
+    consteval {
+        std::meta::define_aggregate(^^UuidDocT, storm::field_specs_for(^^UuidDoc));
+    }
+    inline constexpr UuidDocT UuidDoc{};
+
+    struct IntShelfT;
+    consteval {
+        std::meta::define_aggregate(^^IntShelfT, storm::field_specs_for(^^IntShelf));
+    }
+    inline constexpr IntShelfT IntShelf{};
+
+} // namespace fields
+
+// ============================================================================
+// Junction DDL text — column type follows the referenced PK
+// ============================================================================
+
+TEST(JunctionColumnTypeTest, UuidPkBothSidesSqlite) {
+    const std::string& sql = junction_sql<UuidDoc, Dialect::SQLite>();
+    EXPECT_TRUE(sql.contains("UuidDoc_id TEXT NOT NULL")) << sql;
+    EXPECT_TRUE(sql.contains("UuidTag_id TEXT NOT NULL")) << sql;
+    EXPECT_FALSE(sql.contains("INTEGER")) << "A UUID-PK junction must not emit an INTEGER column: " << sql;
+}
+
+TEST(JunctionColumnTypeTest, UuidPkBothSidesPostgres) {
+    const std::string& sql = junction_sql<UuidDoc, Dialect::PostgreSQL>();
+    EXPECT_TRUE(sql.contains("UuidDoc_id UUID NOT NULL")) << sql;
+    EXPECT_TRUE(sql.contains("UuidTag_id UUID NOT NULL")) << sql;
+    EXPECT_FALSE(sql.contains("BIGINT")) << "A UUID-PK junction must not emit a BIGINT column: " << sql;
+}
+
+// Each side resolves independently: the integer owner keeps INTEGER/BIGINT
+// while the UUID related side gets TEXT/UUID, in the SAME junction table.
+TEST(JunctionColumnTypeTest, MixedPkTypesResolveIndependently) {
+    EXPECT_EQ(
+            (junction_sql<IntShelf, Dialect::SQLite>()),
+            "CREATE TABLE IntShelf_UuidLabel (\n"
+            "    IntShelf_id INTEGER NOT NULL,\n"
+            "    UuidLabel_id TEXT NOT NULL,\n"
+            "    PRIMARY KEY (IntShelf_id, UuidLabel_id),\n"
+            "    FOREIGN KEY (IntShelf_id) REFERENCES IntShelf(id) ON DELETE CASCADE,\n"
+            "    FOREIGN KEY (UuidLabel_id) REFERENCES UuidLabel(id) ON DELETE CASCADE\n"
+            ")"
+    );
+    EXPECT_EQ(
+            (junction_sql<IntShelf, Dialect::PostgreSQL>()),
+            "CREATE TABLE IntShelf_UuidLabel (\n"
+            "    IntShelf_id BIGINT NOT NULL,\n"
+            "    UuidLabel_id UUID NOT NULL,\n"
+            "    PRIMARY KEY (IntShelf_id, UuidLabel_id),\n"
+            "    FOREIGN KEY (IntShelf_id) REFERENCES IntShelf(id) ON DELETE CASCADE,\n"
+            "    FOREIGN KEY (UuidLabel_id) REFERENCES UuidLabel(id) ON DELETE CASCADE\n"
+            ")"
+    );
+}
+
+// Type derivation (#565) and PK-name derivation (#519) hold together.
+TEST(JunctionColumnTypeTest, UuidPkWithNonIdPkName) {
+    for (const std::string& sql :
+         {junction_sql<UuidBinder, Dialect::SQLite>(), junction_sql<UuidBinder, Dialect::PostgreSQL>()}) {
+        // The junction's OWN columns stay "<Side>_id" — only the type and the
+        // REFERENCES target follow the model's PK.
+        EXPECT_TRUE(sql.contains("FOREIGN KEY (UuidBinder_id) REFERENCES UuidBinder(binder_uuid) ON DELETE CASCADE"))
+                << sql;
+        EXPECT_TRUE(sql.contains("FOREIGN KEY (UuidNote_id) REFERENCES UuidNote(note_uuid) ON DELETE CASCADE")) << sql;
+    }
+    const std::string& sqlite_sql = junction_sql<UuidBinder, Dialect::SQLite>();
+    const std::string& pg_sql     = junction_sql<UuidBinder, Dialect::PostgreSQL>();
+    EXPECT_TRUE(sqlite_sql.contains("UuidBinder_id TEXT NOT NULL")) << sqlite_sql;
+    EXPECT_TRUE(pg_sql.contains("UuidBinder_id UUID NOT NULL")) << pg_sql;
+}
+
+// Regression guard: integer PKs on both sides — the junction DDL must stay
+// byte-identical to its pre-#565 form on both dialects.
+TEST(JunctionColumnTypeTest, IntegerPkJunctionDdlUnchanged) {
+    EXPECT_EQ(
+            (junction_sql<IntPost, Dialect::SQLite>()),
+            "CREATE TABLE IntPost_IntTag (\n"
+            "    IntPost_id INTEGER NOT NULL,\n"
+            "    IntTag_id INTEGER NOT NULL,\n"
+            "    PRIMARY KEY (IntPost_id, IntTag_id),\n"
+            "    FOREIGN KEY (IntPost_id) REFERENCES IntPost(id) ON DELETE CASCADE,\n"
+            "    FOREIGN KEY (IntTag_id) REFERENCES IntTag(id) ON DELETE CASCADE\n"
+            ")"
+    );
+    EXPECT_EQ(
+            (junction_sql<IntPost, Dialect::PostgreSQL>()),
+            "CREATE TABLE IntPost_IntTag (\n"
+            "    IntPost_id BIGINT NOT NULL,\n"
+            "    IntTag_id BIGINT NOT NULL,\n"
+            "    PRIMARY KEY (IntPost_id, IntTag_id),\n"
+            "    FOREIGN KEY (IntPost_id) REFERENCES IntPost(id) ON DELETE CASCADE,\n"
+            "    FOREIGN KEY (IntTag_id) REFERENCES IntTag(id) ON DELETE CASCADE\n"
+            ")"
+    );
+}
+
+// ============================================================================
+// Executable end-to-end (TYPED_TEST — both backends)
+//
+// The text assertions above prove what is emitted; these prove the DB accepts
+// it. PostgreSQL is the backend that actually REJECTS the pre-#565 DDL (FK type
+// mismatch between a BIGINT junction column and a UUID key), so it must
+// genuinely run here rather than skip.
+// ============================================================================
+
+template <typename ConnType> class UuidM2MJunctionTest : public StormTestFixture<UuidDoc, ConnType, UuidTag> {
+  public:
+    // Seeds one UuidDoc + one UuidTag and links them through the junction.
+    // Returns false on a fatal failure so the caller can bail (ASSERT_* cannot
+    // cross a helper's return).
+    static auto seed_linked_pair(const std::shared_ptr<ConnType>& conn) -> bool {
+        QuerySet<UuidDoc, ConnType> doc_qs;
+        QuerySet<UuidTag, ConnType> tag_qs;
+        // A UUID PK is never DB-generated — the caller supplies it (#507), so
+        // there is no generated id to return: insert<ReturnId::No> keeps this
+        // scoped to the junction DDL rather than the RETURNING path.
+        using storm::orm::statements::ReturnId;
+        auto doc =
+                doc_qs.template insert<ReturnId::No>(UuidDoc{.id = storm::UUID{kDocUuid}, .title = "Spec"}).execute();
+        EXPECT_TRUE(doc.has_value());
+        auto tag =
+                tag_qs.template insert<ReturnId::No>(UuidTag{.id = storm::UUID{kTagUuid}, .label = "draft"}).execute();
+        EXPECT_TRUE(tag.has_value());
+        if (!doc.has_value() || !tag.has_value()) {
+            return false;
+        }
+        auto ins = conn->execute(
+                std::format(
+                        "INSERT INTO UuidDoc_UuidTag (UuidDoc_id, UuidTag_id) VALUES ('{}', '{}')", kDocUuid, kTagUuid
+                )
+        );
+        EXPECT_TRUE(ins.has_value()) << ins.error().message();
+        return ins.has_value();
+    }
+};
+
+TYPED_TEST_SUITE(UuidM2MJunctionTest, DatabaseTypes);
+
+// The whole point: with the pre-#565 hardcoded integer type, PostgreSQL refuses
+// to CREATE the junction at all, so the fixture's table setup fails outright.
+TYPED_TEST(UuidM2MJunctionTest, JunctionDdlIsExecutableAndEnforcesFks) {
+    auto conn = QuerySet<UuidDoc, TypeParam>::get_default_connection();
+    ASSERT_TRUE(TestFixture::seed_linked_pair(conn)) << "junction insert must succeed on executable DDL";
+
+    // The FK really points at the UUID keys — a dangling pair is rejected.
+    auto dangling = conn->execute(
+            std::format(
+                    "INSERT INTO UuidDoc_UuidTag (UuidDoc_id, UuidTag_id) VALUES ('{}', '{}')", kOtherUuid, kOtherUuid
+            )
+    );
+    EXPECT_FALSE(dangling.has_value()) << "Junction FK must reject a dangling owner/related UUID key";
+}
+
+// A UUID key is caller-supplied, so INSERT must EMIT and BIND its column — the
+// same rule #502 established for a composite key, which is likewise never
+// DB-generated. It was skipped as if it were an identity column, so the SQL read
+// "INSERT INTO UuidDoc (title) VALUES (?)" and every row landed with a NULL id
+// (which is what made the junction FK above fail). Round-tripped rather than
+// asserted on the SQL text: the column list and the bind sequence are produced by
+// two different functions, and only reading the row back proves they agree.
+TYPED_TEST(UuidM2MJunctionTest, CallerSuppliedUuidKeyIsPersisted) {
+    QuerySet<UuidDoc, TypeParam> qs;
+    using storm::orm::statements::ReturnId;
+    auto ins = qs.template insert<ReturnId::No>(UuidDoc{.id = storm::UUID{kDocUuid}, .title = "Spec"}).execute();
+    ASSERT_TRUE(ins.has_value()) << ins.error().message();
+
+    auto rows = qs.select().execute();
+    ASSERT_TRUE(rows.has_value()) << rows.error().message();
+    ASSERT_EQ(rows->size(), 1U);
+    EXPECT_EQ(rows->begin()->id.value, std::string{kDocUuid});
+    EXPECT_EQ(rows->begin()->title, "Spec");
+}
+
+// The counterpart guard: a UUID PK is never auto-generated, so an empty one is a
+// caller error rather than a request to invent a key (bind_uuid_pk, #507).
+TYPED_TEST(UuidM2MJunctionTest, EmptyUuidKeyIsRejected) {
+    QuerySet<UuidDoc, TypeParam> qs;
+    using storm::orm::statements::ReturnId;
+    auto ins = qs.template insert<ReturnId::No>(UuidDoc{.id = storm::UUID{}, .title = "No key"}).execute();
+    EXPECT_FALSE(ins.has_value()) << "an empty UUID primary key must be refused, not auto-generated";
+}
+
+// A malformed (non-empty) key takes a DIFFERENT path than the empty one: it gets past
+// bind_uuid_pk's empty check into validate_and_bind_uuid_text, whose failure then
+// propagates back out through bind_optional_or_uuid_pk_field's error return — the arm
+// EmptyUuidKeyIsRejected returns too early to reach.
+TYPED_TEST(UuidM2MJunctionTest, MalformedUuidKeyIsRejected) {
+    QuerySet<UuidDoc, TypeParam> qs;
+    using storm::orm::statements::ReturnId;
+    auto ins = qs.template insert<ReturnId::No>(UuidDoc{.id = storm::UUID{"not-a-uuid"}, .title = "Bad key"}).execute();
+    EXPECT_FALSE(ins.has_value()) << "a malformed UUID primary key must be refused";
+}
+
+TYPED_TEST(UuidM2MJunctionTest, EagerLoadThroughUuidJunction) {
+    auto conn = QuerySet<UuidDoc, TypeParam>::get_default_connection();
+    ASSERT_TRUE(TestFixture::seed_linked_pair(conn));
+
+    QuerySet<UuidDoc, TypeParam> doc_qs;
+    auto                         loaded = doc_qs.template join<fields::UuidDoc.tags>().select().execute();
+    ASSERT_TRUE(loaded.has_value()) << loaded.error().message();
+    ASSERT_EQ(loaded->size(), 1U);
+    ASSERT_EQ(loaded->begin()->tags.size(), 1U);
+    EXPECT_EQ(loaded->begin()->tags.begin()->label, "draft");
+}
+
+// Mixed integer-owner / UUID-related junction, executed end to end: the two
+// column types must coexist in one table and both FKs must enforce.
+template <typename ConnType> class MixedPkM2MJunctionTest : public StormTestFixture<IntShelf, ConnType, UuidLabel> {};
+
+TYPED_TEST_SUITE(MixedPkM2MJunctionTest, DatabaseTypes);
+
+TYPED_TEST(MixedPkM2MJunctionTest, MixedJunctionDdlIsExecutable) {
+    auto                           conn = QuerySet<IntShelf, TypeParam>::get_default_connection();
+    QuerySet<IntShelf, TypeParam>  shelf_qs;
+    QuerySet<UuidLabel, TypeParam> label_qs;
+
+    // The integer side keeps the plain insert (its RETURNING id is real, and used
+    // below); the UUID side spells ReturnId::No like every other UUID insert here —
+    // #572 will make that the default and change this call's return type.
+    using storm::orm::statements::ReturnId;
+    auto shelf = shelf_qs.insert(IntShelf{.id = 0, .name = "Top"}).execute();
+    ASSERT_TRUE(shelf.has_value());
+    auto label =
+            label_qs.template insert<ReturnId::No>(UuidLabel{.id = storm::UUID{kTagUuid}, .text = "urgent"}).execute();
+    ASSERT_TRUE(label.has_value());
+
+    auto ins = conn->execute(
+            std::format(
+                    "INSERT INTO IntShelf_UuidLabel (IntShelf_id, UuidLabel_id) VALUES ({}, '{}')",
+                    shelf.value(),
+                    kTagUuid
+            )
+    );
+    ASSERT_TRUE(ins.has_value()) << ins.error().message();
+
+    QuerySet<IntShelf, TypeParam> load_qs;
+    auto                          loaded = load_qs.template join<fields::IntShelf.labels>().select().execute();
+    ASSERT_TRUE(loaded.has_value()) << loaded.error().message();
+    ASSERT_EQ(loaded->size(), 1U);
+    ASSERT_EQ(loaded->begin()->labels.size(), 1U);
+    EXPECT_EQ(loaded->begin()->labels.begin()->text, "urgent");
+}
+
+// NOLINTEND(misc-const-correctness)

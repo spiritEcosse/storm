@@ -47,6 +47,31 @@ namespace fields {
     inline constexpr TimestampedUpsertRecordT TimestampedUpsertRecord{};
 } // namespace fields
 
+// The UUID-PK mirror of TimestampedUpsertRecord. A UUID key is caller data, so it
+// occupies a VALUES placeholder like any other column (#565) — which moves where the
+// DO UPDATE auto_update tail starts binding. Any count that re-derives the placeholder
+// total arithmetically instead of sharing the iterator that WRITES the placeholders
+// goes stale here, binding now() over the last VALUES parameter and leaving the tail
+// one unbound: PG rejects it, SQLite silently writes updated_at = NULL.
+// No auto_create field: only the auto_update TAIL drives the offset under test, and
+// the extra column would merely pad the VALUES list.
+struct UuidTimestampedUpsertRecord {
+    [[= storm::primary]] storm::UUID                               id{};
+    [[= storm::unique]] std::string                                label;
+    [[= storm::auto_update]] std::chrono::system_clock::time_point updated_at{};
+};
+
+// fields:: selector proxies (#518).
+namespace fields {
+    struct UuidTimestampedUpsertRecordT;
+    consteval {
+        std::meta::define_aggregate(
+                ^^UuidTimestampedUpsertRecordT, storm::field_specs_for(^^UuidTimestampedUpsertRecord)
+        );
+    }
+    inline constexpr UuidTimestampedUpsertRecordT UuidTimestampedUpsertRecord{};
+} // namespace fields
+
 struct UniqueOwnerRecord {
     [[= storm::primary]] int                    id{};
     [[= storm::unique]][[= storm::fk<>]] Person owner;
@@ -276,4 +301,50 @@ TYPED_TEST(UpsertTimestampTest, AutoUpdateTailInFullUpsertSql) {
                                     .template update<fields::TimestampedUpsertRecord.name>()
                                     .sql();
     EXPECT_NE(sql.find("DO UPDATE SET name=excluded.name, updated_at=?"), std::string::npos) << sql;
+}
+
+// A UUID PK occupies a VALUES placeholder (#565), so the DO UPDATE auto_update tail
+// starts one slot later than on an int-PK model. The failure is asymmetric and neither
+// half is a thrown error: PG rejects the unbound trailing parameter, while SQLite binds
+// it NULL and silently writes updated_at = NULL — so this asserts the stamp ADVANCED
+// rather than merely that the statement succeeded.
+template <typename ConnType>
+class UuidUpsertTimestampTest : public StormTestFixture<UuidTimestampedUpsertRecord, ConnType> {};
+TYPED_TEST_SUITE(UuidUpsertTimestampTest, DatabaseTypes);
+
+TYPED_TEST(UuidUpsertTimestampTest, DoUpdateRefreshesAutoUpdateTimestampWithUuidPk) {
+    storm::QuerySet<UuidTimestampedUpsertRecord, TypeParam> qs;
+    // A UUID key is caller-supplied; ReturnId::No because plain insert() still takes the
+    // RETURNING path on a UUID PK (#572).
+    using storm::orm::statements::ReturnId;
+    const storm::UUID key{"44444444-4444-4444-8444-444444444444"};
+
+    auto inserted = qs.template insert<ReturnId::No>(UuidTimestampedUpsertRecord{.id = key, .label = "rec"})
+                            .template on_conflict<fields::UuidTimestampedUpsertRecord.label>()
+                            .template update<fields::UuidTimestampedUpsertRecord.label>()
+                            .execute();
+    ASSERT_TRUE(inserted.has_value()) << inserted.error().message();
+
+    auto before = qs.where(fields::UuidTimestampedUpsertRecord.label == "rec").select().execute();
+    ASSERT_TRUE(before.has_value()) << before.error().message();
+    ASSERT_EQ(before.value().size(), 1U);
+    const auto first_stamp = before.value().begin()->updated_at;
+    // The key itself must have survived the INSERT — a stale placeholder count also
+    // shifts which column each VALUES parameter lands in.
+    EXPECT_EQ(before.value().begin()->id.value, key.value);
+
+    // 1s resolution in the stored format (tp_to_string): a sub-second gap would round
+    // to the same string and falsely fail the advance check.
+    std::this_thread::sleep_for(std::chrono::seconds(1));
+
+    auto updated = qs.template insert<ReturnId::No>(UuidTimestampedUpsertRecord{.id = key, .label = "rec"})
+                           .template on_conflict<fields::UuidTimestampedUpsertRecord.label>()
+                           .template update<fields::UuidTimestampedUpsertRecord.label>()
+                           .execute();
+    ASSERT_TRUE(updated.has_value()) << updated.error().message();
+
+    auto after = qs.where(fields::UuidTimestampedUpsertRecord.label == "rec").select().execute();
+    ASSERT_TRUE(after.has_value()) << after.error().message();
+    ASSERT_EQ(after.value().size(), 1U);
+    EXPECT_GT(after.value().begin()->updated_at, first_stamp); // updated_at advanced, not NULLed
 }
