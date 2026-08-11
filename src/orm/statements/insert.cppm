@@ -558,12 +558,21 @@ export namespace storm::orm::statements {
             return std::unexpected(Error{rc, stmt->get_error_message()});
         }
 
-        // The number of VALUES placeholders in a plain INSERT: every field except a
-        // DB-generated single-column PK; a composite key is caller data, so all
-        // fields (#502). Used by the DO UPDATE upsert path to find where the
-        // auto_update now() tail starts binding (right after the VALUES params).
+        // The number of VALUES placeholders in a plain INSERT. Used by the DO UPDATE
+        // upsert path to find where the auto_update now() tail starts binding (right
+        // after the VALUES params).
+        //
+        // Delegated to the grammar rather than re-derived here: this must equal exactly
+        // what build_placeholders() WROTE. The former arithmetic form
+        // (field_count_ - 1, special-cased per key shape) went stale every time a new
+        // "the key is caller data" shape appeared — composite (#502), then UUID (#565) —
+        // binding the tail over the last VALUES slot and leaving one parameter unbound.
+        // PG rejects that outright ("bind message supplies 3 parameters, but prepared
+        // statement requires 4"); SQLite binds NULL and silently writes the auto_update
+        // column NULL. Counting through the writer's own iterator also fixes the latent
+        // undercount for a composite-FK member, which contributes N placeholders.
         static consteval auto placeholders_count() -> std::size_t {
-            return Base::has_composite_pk_ ? Base::field_count_ : Base::field_count_ - 1;
+            return FieldNameGrammar<Base>::placeholder_count();
         }
 
         // Step a prepared statement to completion and collapse it to void: a plain

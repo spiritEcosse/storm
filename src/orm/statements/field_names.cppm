@@ -68,9 +68,16 @@ export namespace storm::orm::statements {
 
         // Is all_members_[Index] the (single-column) PK skipped by INSERT? Mirrors
         // the pre-#504 SkipPrimaryKey test — a composite key has no auto-generation
-        // mechanism, so nothing is skipped for it (#502).
+        // mechanism, so nothing is skipped for it (#502). A storm::UUID key (#507) is
+        // the same case one shape earlier: AUTOINCREMENT and GENERATED ... AS IDENTITY
+        // are single-INTEGER-column features, so a UUID key is always caller-supplied
+        // and must be INSERTed like any other column. Skipping it emitted
+        // "INSERT INTO UuidDoc (title) VALUES (?)" — the caller's key silently dropped,
+        // every row landing with a NULL id. Kept in lockstep with
+        // BaseStatement::skips_pk_column, which makes the identical decision for the
+        // BIND sequence; the two must agree or the columns and values misalign.
         template <std::size_t Index> static consteval auto is_skipped_pk() -> bool {
-            return !Base::has_composite_pk_ && Base::all_members_[Index] == Base::primary_key_;
+            return !Base::has_composite_pk_ && !Base::has_uuid_pk_() && Base::all_members_[Index] == Base::primary_key_;
         }
 
         // Shared iterator over data members, honouring SkipPrimaryKey, invoking
@@ -169,6 +176,23 @@ export namespace storm::orm::statements {
                 }
             });
             return result;
+        }
+
+        // How many placeholders build_placeholders() above emits. Counted through the
+        // SAME for_each_field_name<true> + column_count_of<Index> pair that writes them,
+        // so the number and the text cannot drift — which is the whole point: the upsert
+        // DO UPDATE path offsets its auto_update now() tail past the VALUES parameters
+        // by this count, and re-deriving it arithmetically (field_count_ - 1, adjusted
+        // per key shape) went stale every time a new "the key is caller data" shape
+        // appeared — composite (#502), then UUID (#565) — binding the tail over the last
+        // VALUES slot and leaving one parameter unbound. It also counts a composite-FK
+        // member's N columns, which the arithmetic form never did.
+        static consteval auto placeholder_count() -> std::size_t {
+            std::size_t count = 0;
+            for_each_field_name<true>([&]<std::size_t Index>(bool /*needs_comma*/) {
+                count += column_count_of<Index>();
+            });
+            return count;
         }
     };
 

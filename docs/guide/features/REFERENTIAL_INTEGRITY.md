@@ -90,6 +90,40 @@ CREATE TABLE Hero_Badge (
 The junction's own column names stay `<Model>_id` regardless of the PK member's name — they are the
 junction's columns, not the referenced model's.
 
+### Junction column type follows the referenced key (#565)
+
+Each junction column is **typed from the model it references**, per side, the same way a regular FK
+column is. An integer PK gives `INTEGER` (SQLite) / `BIGINT` (PostgreSQL); a `storm::UUID` PK (#507)
+gives `TEXT` / `UUID`:
+
+```cpp
+struct Tag { [[= storm::primary]] storm::UUID id{}; std::string label; };
+struct Doc {
+    [[= storm::primary]] storm::UUID id{};
+    [[= storm::many_to_many<>]] std::vector<Tag> tags;
+};
+```
+
+```sql
+-- PostgreSQL
+CREATE TABLE Doc_Tag (
+    Doc_id UUID NOT NULL,
+    Tag_id UUID NOT NULL,
+    PRIMARY KEY (Doc_id, Tag_id),
+    FOREIGN KEY (Doc_id) REFERENCES Doc(id) ON DELETE CASCADE,
+    FOREIGN KEY (Tag_id) REFERENCES Tag(id) ON DELETE CASCADE
+);
+```
+
+The two sides resolve independently, so a junction may legitimately mix types — an integer-PK owner
+and a UUID-PK related model give `IntShelf_id BIGINT NOT NULL, UuidLabel_id UUID NOT NULL` in the
+same table.
+
+Before #565 the junction column was hardcoded to the integer type, so a UUID-PK m2m produced a
+`BIGINT` column whose `REFERENCES` clause pointed at a `UUID` key. PostgreSQL rejects that
+`CREATE TABLE` outright (foreign-key type mismatch), so such a model could not be created at all;
+SQLite accepted it and stored mismatched affinities silently.
+
 ## ON DELETE policy (#431)
 
 The `ON DELETE` referential action is configurable per FK via the `fk<RefAction>`

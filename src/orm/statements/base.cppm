@@ -1171,7 +1171,11 @@ export namespace storm::orm::statements {
             if (SkipAllPK) {
                 return is_pk_member(member);
             }
-            return !has_composite_pk_ && member == primary_key_;
+            // A storm::UUID key (#507) is caller-supplied, never DB-generated — the
+            // same reason a composite key is not skipped (#502). Kept in lockstep with
+            // FieldNameGrammar::is_skipped_pk, which makes this decision for the COLUMN
+            // LIST; a disagreement misaligns columns against values.
+            return !has_composite_pk_ && !has_uuid_pk_() && member == primary_key_;
         }
 
         // Unified field binder: binds a single field at compile-time index.
@@ -1248,23 +1252,43 @@ export namespace storm::orm::statements {
         }
 
         // Bind optional or UUID PK fields. Gates UUID PKs to reject empty.
-        // LCOV_EXCL_START — compile-time template instantiation for UUID PKs
+        // The LCOV_EXCL pair that used to wrap this WHOLE function is gone (#565). It was
+        // added when a UUID PK could not reach here at all; both arms are now genuinely
+        // executed (the UUID branch 20x, its error return 4x, the else ~1.4M), and a stale
+        // exclusion around live code is exactly what let three defects hide in this branch.
+        // What remains excluded is only the declaration below and the closing brace: this
+        // is always_inline, so lcov merges the inlined copies and the non-UUID
+        // instantiations — which enter through the `else` and never materialise these two
+        // as executable lines — win, reporting 0 hits on lines that hold no logic. Same
+        // unhit-instantiation artifact as the m2m/BenchResult case; excluding the two
+        // artifact lines is deliberate, unlike hiding the function body.
         template <typename ConnType, std::size_t Index>
         [[nodiscard]] __attribute__((always_inline)) static constexpr auto
         bind_optional_or_uuid_pk_field(typename ConnType::Statement* stmt, const T& obj, int& param_index) noexcept
                 -> std::expected<void, typename ConnType::Error> {
-            constexpr auto member = all_members_[Index];
+            constexpr auto member = all_members_[Index]; // LCOV_EXCL_LINE
             if constexpr (is_pk_member(member) &&
                           std::meta::dealias(std::meta::type_of(member)) == ^^storm::orm::utilities::UUID) {
                 // UUID PK: reject empty, no auto-generation. Non-PK UUID columns auto-generate via bind_uuid.
-                return utilities::bind_uuid_pk<typename ConnType::Statement, typename ConnType::Error>(
-                        stmt, param_index, obj.[:member:]
+                // Dereferenced: bind_uuid_pk takes StmtType& (like bind_uuid and
+                // validate_and_bind_uuid_text), while `stmt` here is ConnType::Statement*.
+                // param_index is advanced HERE rather than delegated: bind_uuid_pk binds
+                // without advancing, and every sibling branch reaches the ++ through
+                // bind_one. Omitting it bound the next field over the key at the same
+                // slot and left the last placeholder unset — a NOT NULL violation naming
+                // the WRONG column. Unreachable before this change (the key was skipped).
+                auto result = utilities::bind_uuid_pk<typename ConnType::Statement, typename ConnType::Error>(
+                        *stmt, param_index, obj.[:member:]
                 );
+                if (!result) {
+                    return result;
+                }
+                ++param_index;
+                return {};
             } else {
                 return bind_one<ConnType>(stmt, param_index, obj.[:member:]);
             }
-        }
-        // LCOV_EXCL_STOP
+        } // LCOV_EXCL_LINE — see the always_inline note above
 
         // Bind one value at param_index and advance it on success. Shared tail used by the
         // plain-field and auto-timestamp branches of bind_field_at_index.
