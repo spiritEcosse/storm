@@ -336,6 +336,84 @@ export namespace storm::meta {
         return std::meta::identifier_of(member).size() + (is_fk_field(member) ? fk_id_suffix_size : 0);
     }
 
+    // One member's column name as a self-sizing compile-time array (#570). The pair
+    // above needs a caller-supplied buffer, which is fine for the SQL builders that
+    // already own a ConstexprString — but the ORDER BY / aggregate writers spell a
+    // SINGLE column at a time, and one of them (OrderByClause::append_field) appends
+    // to a runtime std::string, where a consteval append_column_name cannot be called
+    // at all.
+    //
+    // Sizing it from column_name_size(Member) rather than from a fixed constant is
+    // what removes the #500/#504 hazard by construction: an over-tight buffer cannot
+    // be written, because the extent IS the writer's own byte count. Returns the bare
+    // array (not ConstexprString) so this stays in the dependency-free leaf; callers
+    // wrap it in a string_view via column_name_view below.
+    template <std::meta::info Member> consteval auto column_name_storage() {
+        std::array<char, column_name_size(Member)> out{};
+        std::size_t                                pos = 0;
+        for (const char c : std::meta::identifier_of(Member)) {
+            out[pos++] = c;
+        }
+        if (is_fk_field(Member)) {
+            for (const char c : fk_id_suffix) {
+                out[pos++] = c;
+            }
+        }
+        return out;
+    }
+
+    // The column name of `Member` as a string_view over static storage — usable from
+    // consteval builders (ConstexprString::append(string_view)) AND from runtime code
+    // (std::string::operator+=), which is why the ORDER BY runtime writer can share
+    // exactly the same derivation as its consteval sibling.
+    template <std::meta::info Member> inline constexpr auto column_name_chars = column_name_storage<Member>();
+    template <std::meta::info Member>
+    inline constexpr std::string_view column_name_view{
+            column_name_chars<Member>.data(), column_name_chars<Member>.size()
+    };
+
+    // How many columns `member` occupies. 1 for an ordinary column and for an FK to a
+    // single-PK target ("<member>_id"); N for an FK whose target has an N-part composite
+    // primary key, which spreads over "<member>_<part>" columns — there is NO "<member>_id"
+    // in that case (#504).
+    //
+    // Counting primary_part members of the target type is sufficient and needs no relation
+    // check: ModelPrimaryKeyValid already rejects a PK annotation on an m2m/reverse_fk
+    // container, so a primary_part member is always a real column. NOTE this count agrees
+    // with BaseStatement's find_fk_primary_key_members (which does AND !is_relation_field)
+    // BECAUSE of that concept, not by construction — this leaf cannot import relation_meta.
+    // If ModelPrimaryKeyValid is ever loosened, re-check here.
+    consteval auto column_span_of(std::meta::info member) -> std::size_t {
+        if (!is_fk_field(member)) {
+            return 1;
+        }
+        // A nullable FK is std::optional<Related> — the PK parts live on the WRAPPED
+        // model, so unwrap first (the same idiom as is_unsigned64_member above). Reading
+        // std::optional's own members instead would count 0 parts and wrongly report a
+        // composite target as single-column.
+        std::meta::info target = std::meta::dealias(std::meta::type_of(member));
+        if (is_optional_type(target)) {
+            target = std::meta::dealias(std::meta::template_arguments_of(target)[0]);
+        }
+        std::size_t parts = 0;
+        for (const std::meta::info target_member :
+             std::meta::nonstatic_data_members_of(target, std::meta::access_context::unchecked())) {
+            if (is_primary_part_member(target_member)) {
+                ++parts;
+            }
+        }
+        return parts == 0 ? 1 : parts; // 0 parts == a single `primary` target
+    }
+
+    // True when `member` resolves to exactly ONE SQL column, i.e. column_name_view<Member>
+    // fully names it. False only for an FK to a composite-PK target. The gate for clause
+    // writers that can spell a single column and nothing else (#570): ORDER BY and
+    // COUNT(DISTINCT) have no correct multi-column form to fall back to, so they reject
+    // such a member at compile time rather than emit a "<member>_id" that no table has.
+    consteval auto is_single_column_member(std::meta::info member) -> bool {
+        return column_span_of(member) == 1;
+    }
+
     // Composite-aware sibling of append_column_name/column_name_size (#422, widened
     // #504). A single-column FK target degenerates to EXACTLY append_column_name's
     // output ("<member>_id") — kept as a hardcoded special case (not derived from

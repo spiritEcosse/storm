@@ -108,8 +108,34 @@ capability Storm does not have yet — tracked as
 [#553](https://github.com/spiritEcosse/storm/issues/553).
 
 Note that an **FK member is a column**, so `fields::Message.sender` is a
-`FieldRef` and is joinable. Its column in SQL is `sender_id`, derived by the
-join machinery — you always write the member name.
+`FieldRef` and is joinable. Its column in SQL is `sender_id`, derived from the
+member name — you always write the member name, in every clause:
+
+```cpp
+qs.order_by<fields::Message.sender>()        // ORDER BY sender_id
+qs.count_distinct<fields::Message.sender>()  // COUNT(DISTINCT sender_id)
+```
+
+`SELECT`, `INSERT`/`UPDATE`, `JOIN`, DDL, `ORDER BY` and `COUNT(DISTINCT)`
+route the member through the one canonical column-name writer
+(`meta::append_column_name`, [#422]), so the `_id` suffix cannot be derived in
+one clause and forgotten in another. `ORDER BY` and `COUNT(DISTINCT)` did
+forget it until [#570] and failed at runtime with `no such column: sender`.
+`WHERE` is the remaining gap, tracked as [#575].
+
+**One limitation.** If the FK's target has a *composite* primary key, the
+member has no single column — it spreads over `<member>_<part>` columns
+(e.g. `line_order_id`, `line_product_id`). `ORDER BY` and `COUNT(DISTINCT)`
+reject such a member at **compile time**, since neither has a correct
+multi-column form: `ORDER BY`'s `ASC`/`DESC` would bind to the last part only,
+and `COUNT(DISTINCT a, b)` is a syntax error in SQLite while PostgreSQL reads
+it as a row constructor. Order or count by the target's parts explicitly
+instead. `join<>` on such an FK is fully supported ([#504]).
+
+[#422]: https://github.com/spiritEcosse/storm/issues/422
+[#504]: https://github.com/spiritEcosse/storm/issues/504
+[#570]: https://github.com/spiritEcosse/storm/issues/570
+[#575]: https://github.com/spiritEcosse/storm/issues/575
 
 ---
 

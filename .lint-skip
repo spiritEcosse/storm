@@ -7,8 +7,21 @@ src/orm/statements/insert.cppm:    file-size
 src/orm/statements/select.cppm:    file-size
 src/orm/statements/base.cppm:      file-size, duplicate
 src/orm/statements/join.cppm:      file-size
-src/orm/statements/aggregate.cppm: file-size
-src/orm/queryset.cppm:             file-size
+# duplicate (#570): the eight public sum/avg/min/max methods — four in
+# AggregateStatement, four in GroupByBuilder — repeat an identical
+# `template<auto... S> requires(ValidSelector && AllNumericAggregateable)` prologue
+# (count/count_distinct share part of the window too). That prologue IS the public
+# API surface — each method must name its own aggregate for overload resolution and
+# for the error message a bad target produces — so folding it into a helper would
+# hide the constraint from the call site without removing a single real branch.
+# Pre-existing; unchanged by #570, which only touched build_single_op_sql.
+src/orm/statements/aggregate.cppm: file-size, duplicate
+# duplicate (#570): same shape as aggregate.cppm above — the sum/avg/min/max
+# factories each repeat an identical requires-clause + AggregateStatement alias.
+# The constraint is the public API contract of each method and must be spelled
+# per method for overload resolution and diagnostics. Pre-existing; #570 changed
+# only the count_distinct requires-clause.
+src/orm/queryset.cppm:             file-size, duplicate
 src/orm/schema.cppm:               file-size
 src/orm/utilities.cppm:            file-size
 

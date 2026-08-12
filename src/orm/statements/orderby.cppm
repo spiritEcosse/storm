@@ -7,7 +7,8 @@ export module storm_orm_statements_orderby;
 import std;
 
 import storm_orm_utilities;
-import storm_orm_fields; // selector_info — #518 proxy args
+import storm_orm_fields;     // selector_info — #518 proxy args
+import storm_orm_field_attr; // column_name_view — #422/#570 canonical column name
 
 namespace detail {
 
@@ -59,7 +60,27 @@ export namespace storm::orm::statements {
     // ORDER BY Clause - variadic pack processing (no recursive specializations)
     // ============================================================================
 
-    template <auto... Args> struct OrderByClause {
+    // Every field arg in the pack names exactly ONE column (#570). False only for an FK
+    // whose target has a composite primary key: that member spreads over
+    // "<member>_<part>" columns, so there is no single name to sort by — and the
+    // multi-column form has no correct shape here either, since the ASC/DESC/COLLATE
+    // suffix attaches once, after one column name. Expanding to a comma list would
+    // silently apply the direction to the LAST part only: valid SQL, wrong order, no
+    // diagnostic — the failure mode this file's INVARIANT comment already warns about.
+    // Rejected rather than mis-emitted, matching #500/#511/#537.
+    // Per-arg, so the modifier args (bool / Collate) short-circuit at the CONCEPT level:
+    // selector_info<Arg>() is constrained by AnySelector and naming it for a bool would
+    // not merely be false, it would fail to normalise.
+    template <auto Arg>
+    concept OrderByArgIsSingleColumn =
+            !detail::is_field_arg<Arg>() || storm::meta::is_single_column_member(storm::meta::selector_info<Arg>());
+
+    template <auto... Args>
+    concept OrderBySelectorsAreSingleColumn = (OrderByArgIsSingleColumn<Args> && ...);
+
+    template <auto... Args>
+        requires OrderBySelectorsAreSingleColumn<Args...>
+    struct OrderByClause {
         // Count field args (skip bool and Collate modifiers)
         static constexpr std::size_t count = ((detail::is_field_arg<Args>() ? 1 : 0) + ... + 0);
 
@@ -92,8 +113,10 @@ export namespace storm::orm::statements {
                 }
 
                 constexpr auto field_info = fields[i].field;
-                constexpr auto field_name = std::meta::identifier_of(field_info);
-                result.append(field_name);
+                // #570: the ORDER BY column, not the member identifier — an FK member
+                // `sender` sorts by the column `sender_id`. column_name_view is sized
+                // from column_name_size, so the FK suffix can never overflow silently.
+                result.append(storm::meta::column_name_view<field_info>);
 
                 constexpr auto collation = fields[i].col;
                 result.append(collate_to_sql(collation));
@@ -131,7 +154,10 @@ export namespace storm::orm::statements {
             }
 
             constexpr auto field_info = fields[I].field;
-            result += std::string(std::meta::identifier_of(field_info));
+            // #570: same derivation as the consteval writer above, so the two can
+            // never disagree. column_name_view is a view over static storage, so no
+            // temporary std::string is built here.
+            result += storm::meta::column_name_view<field_info>;
 
             constexpr auto collation = fields[I].col;
             result += collate_to_sql(collation);
