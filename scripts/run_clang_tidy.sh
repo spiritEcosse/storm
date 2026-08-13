@@ -138,8 +138,15 @@ echo ""
 #   tests/test_write_runner.h, tests/test_yaml_register.h,
 #   tests/query/test_aggregate_fixture.h, tests/query/test_m2m_models.h,
 #   tests/query/test_fields_models.h, tests/crud/test_composite_pk_models.h,
-#   tests/test_parser.hpp, tests/tools/storm_schema/models.h,
-#   shared/models.h
+#   tests/test_parser.hpp, tests/test_unified_yaml_body.h,
+#   tests/tools/storm_schema/models.h, shared/models.h
+#
+#   tests/test_unified_yaml_body.h joined with the YAML-harness split (#561).
+#   It needs `import storm;` like its siblings, and additionally reads
+#   STORM_UNIFIED_CASES_FILE, which the INCLUDING TU defines — parsed standalone
+#   that macro is undeclared and the static_assert guarding it errors out. The
+#   code is still linted through the four tests/yaml/test_unified_yaml_*.cpp TUs
+#   that include it, each of which has a real compile-commands entry.
 #
 #   The last two entries joined the list with the fields:: proxies (#518). Both
 #   call storm::field_specs_for inside a `consteval` block, which is a harder
@@ -183,6 +190,7 @@ is_known_unparseable() {
         tests/query/test_fields_models.h) return 0 ;;
         tests/crud/test_composite_pk_models.h) return 0 ;;
         tests/test_parser.hpp) return 0 ;;
+        tests/test_unified_yaml_body.h) return 0 ;;
         tests/tools/storm_schema/models.h) return 0 ;;
         benchmarks/bench_register.h) return 0 ;;
         benchmarks/models.hpp) return 0 ;;
@@ -264,9 +272,10 @@ if [[ "$MODE" == "diff" ]]; then
         done
     }
 
-    # -timeout 240 (issue #326): tests/yaml/test_unified_yaml.cpp runs an #embed +
-    # consteval JSON parse under import std; (~78s, 2.4 GB RSS) — the old 60s
-    # timed it out (Terminated by signal 9 / timeout) and failed the gate.
+    # -timeout 240 (issue #326): the tests/yaml/test_unified_yaml_*.cpp TUs run an
+    # #embed + consteval JSON parse under import std; — the old 60s timed them out
+    # (Terminated by signal 9 / timeout) and failed the gate. Issue #561 split the
+    # corpus across those four TUs, cutting each one's share of that cost.
     # NOTE: deliberately NOT passing -config-file here. Forcing the root
     # .clang-tidy overrides clang-tidy's normal directory-hierarchy config lookup,
     # which defeats per-directory overrides like tests/.clang-tidy (it sets
@@ -393,8 +402,9 @@ run_tidy() {
     # clang-tidy automatically reads .clang-tidy from project root
     # Filter out noisy clang-tidy meta-messages (but keep actual warnings/errors)
     # Timeout 240s (issue #326): some TUs run a heavy consteval pass under
-    # `import std;` — e.g. tests/yaml/test_unified_yaml.cpp #embeds + consteval-
-    # parses the unified test-case JSON (~78s, 2.4 GB RSS). 60s was too short.
+    # `import std;` — e.g. each tests/yaml/test_unified_yaml_*.cpp #embeds and
+    # consteval-parses its slice of the unified test-case corpus. 60s was too
+    # short even before #561 split that corpus four ways.
     timeout 240 "$CLANG_TIDY" \
         -p "$BUILD_DIR" \
         $FIX_FLAG \
