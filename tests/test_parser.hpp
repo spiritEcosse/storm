@@ -5,9 +5,19 @@
  * @brief Compile-time JSON parser for YAML-driven unit test cases.
  *
  * Uses raw-pointer access (~2 steps/char) to stay within the 4M constexpr
- * step budget for 247 test cases. Imports storm_benchmark_schema for struct
+ * step budget -- sized when one TU parsed all 247 cases, so it clears any
+ * single slice comfortably. Imports storm_benchmark_schema for struct
  * definitions; does NOT import storm_benchmark_parser.
+ *
+ * Issue #561: the corpus path is a macro because #embed requires a literal
+ * filename -- a TU selects its slice by defining STORM_UNIFIED_CASES_FILE
+ * before including this header. The default is the full corpus, for any
+ * includer that does not.
  */
+
+#ifndef STORM_UNIFIED_CASES_FILE
+#define STORM_UNIFIED_CASES_FILE "test_cases/unified_cases.json"
+#endif
 
 #include <array>
 #include <string_view>
@@ -849,14 +859,20 @@ namespace storm::test {
         return arr;
     }
 
-    consteval auto load_unified_tests() {
+    // `static` (internal linkage), NOT inline: STORM_UNIFIED_CASES_FILE differs per
+    // TU, so this function's DEFINITION differs per TU. One external-linkage entity
+    // with several definitions is [basic.def.odr] IFNDR. It is inert today only
+    // because a consteval function is never odr-used and emits no symbol -- one
+    // consteval->constexpr edit away from being live. Same discipline as
+    // UNIFIED_TESTS in test_unified_yaml_body.h.
+    static consteval auto load_unified_tests() {
         static constexpr const char raw[] = {
 // #embed is a C23 feature Clang offers as an extension in C++26 mode; this is
 // the only portable way to embed the JSON test corpus at compile time. Suppress
 // -Wc23-extensions here so the -Werror policy (issue #317) stays clean.
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wc23-extensions"
-#embed "test_cases/unified_cases.json"
+#embed STORM_UNIFIED_CASES_FILE
 #pragma clang diagnostic pop
                 , '\0'
         };
