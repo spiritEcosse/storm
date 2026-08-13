@@ -54,7 +54,11 @@ export namespace storm::orm::statements {
         template <typename U> requires std::same_as<U, T> [[nodiscard]] auto intersect_(SetOpOperand<U> operand) -> SetOpBuilder&& { return add_operand(std::move(operand), SetOpType::Intersect); }
         // clang-format on
 
-        template <auto... Args> [[nodiscard]] auto order_by() -> SetOpBuilder&& {
+        // #570: constrained here as well as on OrderByClause, so a composite-PK FK
+        // selector is diagnosed at THIS call site rather than inside make_order_by_wrapper.
+        template <auto... Args>
+            requires OrderBySelectorsAreSingleColumn<Args...>
+        [[nodiscard]] auto order_by() -> SetOpBuilder&& {
             order_by_wrapper_ = make_order_by_wrapper<Args...>();
             return std::move(*this);
         }

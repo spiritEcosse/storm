@@ -168,7 +168,13 @@ export namespace storm {
 
         // ORDER BY clause support - returns finalized QuerySet (prevents use as set-op operand)
         // Supports single/multiple fields with ASC (default) or DESC direction
-        template <auto... Args> [[nodiscard]] constexpr auto order_by() -> QuerySet<T, ConnType, true> {
+        // #570: constrained here as well as on OrderByClause itself, so a composite-PK FK
+        // selector is diagnosed at THIS call site rather than deep inside
+        // make_order_by_wrapper. The clause on OrderByClause stays as the backstop that
+        // also covers SetOpBuilder::order_by.
+        template <auto... Args>
+            requires orm::statements::OrderBySelectorsAreSingleColumn<Args...>
+        [[nodiscard]] constexpr auto order_by() -> QuerySet<T, ConnType, true> {
             auto result              = to_finalized();
             result.order_by_wrapper_ = orm::statements::make_order_by_wrapper<Args...>();
             return result;
@@ -492,7 +498,7 @@ export namespace storm {
         //        queryset.where(active == true).count_distinct<fields::Person.department>().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
         template <auto S>
-            requires storm::meta::ValidSelector<S>
+            requires storm::meta::ValidSelector<S> && orm::statements::SingleColumnSelector<S>
         [[nodiscard]] auto count_distinct() {
             using StmtType = orm::statements::AggregateStatement<
                     T,

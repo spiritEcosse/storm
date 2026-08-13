@@ -18,7 +18,8 @@ import storm_orm_statements_join;
 import storm_orm_statements_orderby;
 import storm_orm_utilities;
 import storm_orm_where;
-import storm_orm_fields; // selector_info / ValidSelector — #518 proxy selectors
+import storm_orm_fields;     // selector_info / ValidSelector — #518 proxy selectors
+import storm_orm_field_attr; // append_column_name — #422/#570 canonical column name
 
 export namespace storm::orm::statements {
 
@@ -48,6 +49,16 @@ export namespace storm::orm::statements {
     template <std::meta::info... FieldInfos>
     concept AllNumericAggregateable =
             (NumericAggregateable<std::remove_cvref_t<typename[:std::meta::type_of(FieldInfos):]>> && ...);
+
+    // A COUNT(DISTINCT) target must name exactly ONE column (#570). False only for an FK
+    // whose target has a composite primary key: that member spreads over "<member>_<part>"
+    // columns, and unlike ORDER BY there is no multi-column form to expand into —
+    // COUNT(DISTINCT a, b) is a SYNTAX ERROR in SQLite, while PostgreSQL parses it as a
+    // row constructor and counts something else entirely. A backend-divergent wrong answer
+    // is the worst of the options, so the member is rejected at the call site instead.
+    // COUNT(*) and plain count() are unaffected — they name no column.
+    template <auto S>
+    concept SingleColumnSelector = storm::meta::is_single_column_member(storm::meta::selector_info<S>());
 
     // Aggregate function types
     enum class AggregateType : std::uint8_t { SUM, COUNT, AVG, MIN, MAX, COUNT_DISTINCT };
@@ -130,10 +141,15 @@ export namespace storm::orm::statements {
         result.append(agg_name);
         result.append("(");
 
+        // #570: aggregate operands name COLUMNS, so they route through the canonical
+        // column-name writer (#422) — an FK member `sender` is the column `sender_id`.
+        // COUNT(DISTINCT <fk>) is the reachable case; the SUM/AVG/MIN/MAX operand loop
+        // below is corrected for the same structural reason even though
+        // NumericAggregateable (#475) currently rejects an FK target.
         if constexpr (Op::agg_type == AggregateType::COUNT_DISTINCT) {
             result.append("DISTINCT ");
             static_assert(Op::field_count == 1, "COUNT(DISTINCT) requires exactly one field");
-            result.append(std::meta::identifier_of(Op::field_infos[0]));
+            storm::meta::append_column_name(result, Op::field_infos[0]);
         } else if constexpr (Op::field_count == 0) {
             result.append("*");
         } else {
@@ -141,7 +157,7 @@ export namespace storm::orm::statements {
                 if (i > 0) {
                     result.append(" + ");
                 }
-                result.append(std::meta::identifier_of(Op::field_infos[i]));
+                storm::meta::append_column_name(result, Op::field_infos[i]);
             }
         }
 
@@ -169,7 +185,15 @@ export namespace storm::orm::statements {
              if constexpr (Is > 0) {
                  result.append(", ");
              }
-             result.append(std::meta::identifier_of(GroupFields::template at<Is>()));
+             // #570: corrected for the same reason as the operand writer above.
+             // Currently unreachable for an FK key — group_by<fk> fails to COMPILE,
+             // since the row extractor has no extract_column_value<Related>
+             // (extract.cppm) — but the writer is made structurally correct rather
+             // than coincidentally so, matching the #542 argument: this list is
+             // emitted TWICE per query (SELECT prefix and GROUP BY tail), and the
+             // day that extractor gains a case, both would silently name a
+             // nonexistent column.
+             storm::meta::append_column_name(result, GroupFields::template at<Is>());
          }()),
          ...);
         return result;
@@ -764,7 +788,7 @@ export namespace storm::orm::statements {
         }
 
         template <auto... S>
-            requires((storm::meta::ValidSelector<S> && ...))
+            requires((storm::meta::ValidSelector<S> && ...) && (SingleColumnSelector<S> && ...))
         [[nodiscard]] auto count_distinct() {
             return grouped_op<AggregateType::COUNT_DISTINCT, storm::meta::selector_info<S>()...>();
         }
