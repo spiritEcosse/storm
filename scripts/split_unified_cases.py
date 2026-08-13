@@ -81,8 +81,16 @@ def main() -> None:
         print("Usage: split_unified_cases.py input.yaml output_dir", file=sys.stderr)
         sys.exit(1)
 
-    input_path = pathlib.Path(sys.argv[1])
-    output_dir = pathlib.Path(sys.argv[2])
+    # Resolve both paths up front and require them to already exist: this script
+    # only ever rewrites files CMake generates, so a mistyped argument should fail
+    # here rather than read or write somewhere unexpected.
+    input_path = pathlib.Path(sys.argv[1]).resolve()
+    output_dir = pathlib.Path(sys.argv[2]).resolve()
+
+    if not input_path.is_file():
+        raise SystemExit(f"Error: corpus {input_path} is not an existing file")
+    if not output_dir.is_dir():
+        raise SystemExit(f"Error: output directory {output_dir} does not exist")
 
     with input_path.open(encoding="utf-8") as fh:
         cases = yaml.safe_load(fh) or []
@@ -110,7 +118,12 @@ def main() -> None:
         )
 
     for name in CATEGORIES:
-        out = output_dir / f"unified_cases_{name}.json"
+        # The basename comes from the fixed CATEGORIES tuple, never from input, but
+        # resolve and confirm containment anyway so the write target is provably
+        # inside the directory that was passed in.
+        out = (output_dir / f"unified_cases_{name}.json").resolve()
+        if out.parent != output_dir:
+            raise SystemExit(f"Error: refusing to write outside {output_dir}: {out}")
         out.write_text(json.dumps(buckets[name], separators=(",", ":")) + "\n", encoding="utf-8")
 
     total = sum(len(b) for b in buckets.values())
