@@ -278,8 +278,97 @@ shipped as a self-described "partial implementation" whose only UUID-PK model ap
    same slot and left the last placeholder unset — surfacing as a NOT NULL violation naming the
    WRONG column.
 
-Still open as **#572** (deliberately out of scope — a BREAKING return-type change): plain
-`insert(uuid_model)` defaults to `ReturnId::Yes` and emits `RETURNING <uuid_pk>`, extracted via
-`extract_int64` and therefore meaningless. Spell `insert<ReturnId::No>` on a UUID-PK model until
-that lands.
+### #572 — nothing is RETURNed for a caller-supplied key (BREAKING)
+
+The fourth defect of the same #507 batch, split out because it changes a return type. Plain
+`insert(uuid_model)` defaulted to `ReturnId::Yes`, emitting `RETURNING <uuid_pk>` and extracting
+that TEXT/UUID column with `extract_int64` — `0` on SQLite, garbage or an error on PostgreSQL.
+The caller got an `std::expected<int64_t, Error>` whose value could never identify the row.
+
+This is #502's reasoning one shape wider, and the fix is a single named predicate rather than the
+condition repeated per site:
+
+```cpp
+// BaseStatement<T>, next to has_composite_pk_ / has_uuid_pk_()
+static consteval auto pk_is_db_generated_() -> bool {
+    return !has_composite_pk_ && !has_uuid_pk_();
+}
+```
+
+`AUTOINCREMENT` and `GENERATED ... AS IDENTITY` are single-INTEGER-column features, so only a
+single-column integer key has a value the database produces. Four decision points read the
+predicate, and they are load-bearing in PAIRS — a disagreement emits a `RETURNING` clause the
+runtime never reads, or reads a row the SQL never asked for:
+
+| Site | Decides |
+|---|---|
+| `default_return_id<T>()` | what plain `insert()` resolves to |
+| `ReturnIdSupported<T, R>` | rejects an explicit `ReturnId::Yes` at the CALL SITE |
+| `UpsertGrammar::nothing_sql()` / `update_sql()` | whether the SQL TEXT carries `RETURNING` |
+| `execute_upsert_nothing()` / `UpsertUpdateRunner::run()` | whether the runtime READS a returned row |
+
+**The upsert half was an unowned defect.** #572 as filed covered only plain `insert()`; the two
+`UpsertGrammar` clauses gated `RETURNING` on `has_composite_pk_` alone, so
+`insert(uuid_model).on_conflict<...>().update<...>()` kept emitting the same lossy statement one
+call away from the fix. Folded in here rather than left for a fifth issue — the #507 pattern this
+whole document exists to record.
+
+Breaking surface: `insert(uuid_model).execute()` and both upsert terminals now return
+`std::expected<void, Error>`. `insert<ReturnId::No>` was already valid and is unchanged, so the
+in-tree callers written against the gap (`test_junction_column_type.cpp`, `test_upsert.cpp`)
+needed no edit.
+
+Note the two halves are gated the same way but reached differently: `ReturnId` is a template
+argument on `insert()` only, and does NOT propagate through `on_conflict()`. The upsert terminals
+read the model shape directly, so `insert<ReturnId::No>(int_pk_obj).on_conflict<…>().update<…>()`
+still emits `RETURNING` and still returns the id. That predates this issue and is unchanged by it.
+
+### #585 — a key INSERT EMITS can be an ON CONFLICT target
+
+Folded into the same change, because it is the same dead premise one clause over.
+`ConflictTargetUnique` accepts a single `unique` field, a matching `UniqueIndex<...>`, or the full
+PK column set — the last via `target_matches_primary_key`, which was gated on `has_composite_pk_`
+and justified by its own comment:
+
+> Gated on `has_composite_pk_` so a single-column PK is NOT matched here: INSERT omits it from the
+> statement entirely, so it can never conflict.
+
+True for a DB-generated integer key. False for a `storm::UUID` key ever since #565 put that column
+back into the INSERT — a duplicate UUID key really does raise a PK violation. So the natural
+upsert was a compile error:
+
+```cpp
+qs.insert(doc).on_conflict<fields::UuidDoc.id>().update<fields::UuidDoc.title>().execute();
+// pre-#585: constraints not satisfied — ConflictTargetUnique<UuidDoc, ^^UuidDoc::id> is false
+```
+
+…workaround-able only by declaring a redundant `UniqueIndex<^^UuidDoc::id>` over the primary key,
+which emits a duplicate unique constraint.
+
+The gate is now `!pk_is_db_generated_()` — the same "does INSERT emit this key" question, so the
+integer case stays rejected **for the reason that actually applies to it** rather than by accident
+of arity:
+
+| Key | In the INSERT? | Can collide? | Valid conflict target |
+|---|---|---|---|
+| single INTEGER (`AUTOINCREMENT`/IDENTITY) | no — DB generates it | no | rejected |
+| single `storm::UUID` | yes — caller data (#565) | yes | **accepted (#585)** |
+| composite (all parts) | yes — caller data (#502) | yes | accepted (#503) |
+| composite (strict subset) | — | — | rejected (not unique alone) |
+
+PostgreSQL is the backend that proves this rather than merely accepting it: it requires the
+`ON CONFLICT` target to be backed by a real unique constraint and errors otherwise, so the
+round-trip tests fail loudly there if the PK were not genuinely the constraint named.
+
+**Known limitation (#586)**: the table above classifies *every* single-column INTEGER key as
+DB-generated, so there is no way to declare a **caller-assigned integer key** — `insert()` silently
+drops the caller's value and lets the DB assign its own. The DDL already permits one on both
+backends (PG emits `GENERATED BY DEFAULT AS IDENTITY`, the permissive form, not `GENERATED ALWAYS`;
+SQLite's plain `INTEGER PRIMARY KEY` is a rowid alias), and `storm::primary` vs
+`storm::primary_autoincrement` currently differ in exactly one DDL keyword — nothing under
+`src/orm/statements/**` reads `is_primary_autoincrement` at all. Supporting it is one more term in
+`pk_is_db_generated_()`, which already feeds all five decisions that follow. The blocking question
+is how "caller assigns" gets *declared*: unlike a UUID (empty = unset), an integer `id == 0` is
+indistinguishable from a deliberately-assigned zero, so it needs an annotation rather than a
+runtime check.
 

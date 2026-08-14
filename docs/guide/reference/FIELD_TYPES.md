@@ -472,16 +472,17 @@ struct User {
 // Usage
 User user{.id = storm::UUID::generate(), .name = "Alice"};  // generate() call is required
 QuerySet<User> qs;
-qs.insert<storm::orm::statements::ReturnId::No>(user).execute();  // std::expected<void, Error>
+qs.insert(user).execute();  // std::expected<void, Error> — nothing to return (#572)
 ```
 
 **Key differences from integer PKs:**
 
-- **Spell `insert<ReturnId::No>` explicitly.** A UUID key is caller-supplied, so there is nothing
-  to return — but plain `insert()` still defaults to `ReturnId::Yes` and emits
-  `RETURNING <uuid_pk>`, whose value is extracted as an integer and is therefore meaningless.
-  Tracked in **#572**, which will make `ReturnId::No` the default for a UUID key (a breaking
-  change to the return type, hence separate).
+- **`insert()` returns `std::expected<void, Error>`, not the id** (#572). A UUID key is
+  caller-supplied, so there is nothing for `RETURNING` to hand back — no `RETURNING` clause is
+  emitted, and the same holds for `on_conflict().update()` / `.nothing()`. An explicit
+  `insert<ReturnId::Yes>` on a UUID-PK model is a **compile error** rather than a silently
+  meaningless integer; `insert<ReturnId::No>` stays valid on every model shape. You already have
+  the key — read it off the object you inserted.
 - **The UUID key column is INSERTed like any other column** (#565) — the caller's key is written,
   not skipped as if it were an identity column. Same rule as a composite key (#502): neither is
   ever DB-generated.
