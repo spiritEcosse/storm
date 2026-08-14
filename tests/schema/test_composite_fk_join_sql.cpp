@@ -264,20 +264,39 @@ TEST(JunctionDdlTest, CompositeOwnerSidePostgresTypesEachPartIndividually) {
 // unchanged while the RELATED side widens. Proves the widening is per-side, not
 // an all-or-nothing switch driven by the owner alone.
 
+// #566 — same one-token-differs shape as expected_student_course_ddl above, so
+// the PRIMARY KEY / FOREIGN KEY tail (identical on both dialects — only the
+// column TYPE word varies) is written once rather than duplicated per dialect.
+namespace {
+    auto expected_tag_registry_catalog_entry_ddl(std::string_view int_type) -> std::string {
+        return std::format(
+                "CREATE TABLE TagRegistry_CatalogEntry (\n"
+                "    TagRegistry_id {0} NOT NULL,\n"
+                "    CatalogEntry_catalog_id {0} NOT NULL,\n"
+                "    CatalogEntry_entry_no {0} NOT NULL,\n"
+                "    PRIMARY KEY (TagRegistry_id, CatalogEntry_catalog_id, CatalogEntry_entry_no),\n"
+                "    FOREIGN KEY (TagRegistry_id) REFERENCES TagRegistry(id) ON DELETE CASCADE,\n"
+                "    FOREIGN KEY (CatalogEntry_catalog_id, CatalogEntry_entry_no) REFERENCES "
+                "CatalogEntry(catalog_id, entry_no) ON DELETE CASCADE\n"
+                ")",
+                int_type
+        );
+    }
+} // namespace
+
 TEST(JunctionDdlTest, CompositeRelatedSideWidensWhileOwnerStaysSingleColumn) {
     const std::string& sql = junction_sql<TagRegistry, schema_ns::Dialect::SQLite>();
-    EXPECT_EQ(
-            sql,
-            "CREATE TABLE TagRegistry_CatalogEntry (\n"
-            "    TagRegistry_id INTEGER NOT NULL,\n"
-            "    CatalogEntry_catalog_id INTEGER NOT NULL,\n"
-            "    CatalogEntry_entry_no INTEGER NOT NULL,\n"
-            "    PRIMARY KEY (TagRegistry_id, CatalogEntry_catalog_id, CatalogEntry_entry_no),\n"
-            "    FOREIGN KEY (TagRegistry_id) REFERENCES TagRegistry(id) ON DELETE CASCADE,\n"
-            "    FOREIGN KEY (CatalogEntry_catalog_id, CatalogEntry_entry_no) REFERENCES "
-            "CatalogEntry(catalog_id, entry_no) ON DELETE CASCADE\n"
-            ")"
-    );
+    EXPECT_EQ(sql, expected_tag_registry_catalog_entry_ddl("INTEGER"));
+}
+
+// PG must map each part to BIGINT independently on the related side too — the
+// mirror of CompositeOwnerSidePostgresTypesEachPartIndividually above but
+// exact-string rather than contains(): a PG-only regression in the related-side
+// FK target list (#566) would otherwise pass this file's suite with no PG
+// signal at all.
+TEST(JunctionDdlTest, CompositeRelatedSideWidensWhileOwnerStaysSingleColumnPostgres) {
+    const std::string& sql = junction_sql<TagRegistry, schema_ns::Dialect::PostgreSQL>();
+    EXPECT_EQ(sql, expected_tag_registry_catalog_entry_ddl("BIGINT"));
 }
 
 // ---- Composite on BOTH sides (ShelfAssignment -> StorageBin) ------------------

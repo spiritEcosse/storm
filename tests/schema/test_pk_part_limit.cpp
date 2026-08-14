@@ -165,6 +165,16 @@ static_assert(
 // would pass even if it were broken and always false.
 static_assert(base_statement_instantiable<Person>, "probe sanity: an ordinary model instantiates");
 
+// #566 — the m2m JUNCTION path (SchemaStatement<Owner>::junction_table_sql()) adds
+// no separate gate for a composite-PK RELATED side and needs none: every junction
+// helper (junction_side_column_count -> BaseStatement<SideType>, inside
+// build_junction_sql) instantiates BaseStatement<RelatedType> the same way a
+// standalone model does, so the base_statement_instantiable<PkParts5> assertion
+// above already IS the proof for that path too — reached one level down through a
+// different call chain, not a different constraint. Verified manually (an owner
+// with an m2m field to PkParts5, built through ninja-debug): the build fails with
+// "does not satisfy 'ModelPrimaryKeyPartLimit'" at that exact instantiation point.
+
 // ============================================================================
 // Runtime behaviour — a 4-part key round-trips through StitchKey
 // ============================================================================
