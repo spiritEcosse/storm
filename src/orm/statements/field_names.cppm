@@ -67,17 +67,20 @@ export namespace storm::orm::statements {
         }
 
         // Is all_members_[Index] the (single-column) PK skipped by INSERT? Mirrors
-        // the pre-#504 SkipPrimaryKey test — a composite key has no auto-generation
-        // mechanism, so nothing is skipped for it (#502). A storm::UUID key (#507) is
-        // the same case one shape earlier: AUTOINCREMENT and GENERATED ... AS IDENTITY
-        // are single-INTEGER-column features, so a UUID key is always caller-supplied
-        // and must be INSERTed like any other column. Skipping it emitted
-        // "INSERT INTO UuidDoc (title) VALUES (?)" — the caller's key silently dropped,
-        // every row landing with a NULL id. Kept in lockstep with
-        // BaseStatement::skips_pk_column, which makes the identical decision for the
-        // BIND sequence; the two must agree or the columns and values misalign.
+        // the pre-#504 SkipPrimaryKey test. INSERT omits the key column exactly when
+        // the DATABASE generates it, which is what Base::pk_is_db_generated_() answers
+        // for RETURNING too (#502/#507/#572) — one predicate, not a second spelling of
+        // the same condition. A composite key has no auto-generation mechanism (#502),
+        // and a storm::UUID key is the same case one shape earlier (#507):
+        // AUTOINCREMENT and GENERATED ... AS IDENTITY are single-INTEGER-column
+        // features, so a UUID key is always caller-supplied and must be INSERTed like
+        // any other column. Skipping it emitted "INSERT INTO UuidDoc (title) VALUES
+        // (?)" — the caller's key silently dropped, every row landing with a NULL id.
+        // Kept in lockstep with BaseStatement::skips_pk_column, which makes the
+        // identical decision for the BIND sequence; the two must agree or the columns
+        // and values misalign.
         template <std::size_t Index> static consteval auto is_skipped_pk() -> bool {
-            return !Base::has_composite_pk_ && !Base::has_uuid_pk_() && Base::all_members_[Index] == Base::primary_key_;
+            return Base::pk_is_db_generated_() && Base::all_members_[Index] == Base::primary_key_;
         }
 
         // Shared iterator over data members, honouring SkipPrimaryKey, invoking

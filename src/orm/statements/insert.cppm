@@ -32,24 +32,24 @@ export namespace storm::orm::statements {
         std::optional<std::size_t> batch_size = std::nullopt; // nullopt = automatic (999/field_count)
     };
 
-    // A composite PK is never DB-generated (#502): AUTOINCREMENT and
-    // GENERATED ... AS IDENTITY are single-integer-column features, so every key
-    // part is caller-supplied and RETURNING could only echo the input back. Plain
-    // insert() therefore defaults to the void/no-RETURNING path on a composite
-    // model, and keeps returning the generated id on a single-PK model.
+    // Plain insert() defaults to the void/no-RETURNING path on any model whose
+    // key is caller data — composite (#502) or storm::UUID (#572), see
+    // BaseStatement::pk_is_db_generated_() for why neither can be RETURNed — and
+    // keeps returning the generated id on a single-integer-PK model.
     template <typename T> consteval auto default_return_id() -> ReturnId {
-        return BaseStatement<T>::has_composite_pk_ ? ReturnId::No : ReturnId::Yes;
+        return BaseStatement<T>::pk_is_db_generated_() ? ReturnId::Yes : ReturnId::No;
     }
 
-    // An explicit ReturnId::Yes on a composite model is rejected at the call
-    // site: unconstrained it would emit "RETURNING <first part>" — silently
-    // lossy. ReturnId::No stays valid on every model shape, so generic code that
-    // spells it out keeps compiling. (Named concept per the #472/#477/#478
-    // precedent; the #413 auto-DEFAULT caveat was checked and does not fire —
-    // that DEFAULT is recovered from a C++ default-member-initializer, a value
-    // already in the caller's object.)
+    // An explicit ReturnId::Yes on such a model is rejected at the call site:
+    // unconstrained it would emit "RETURNING <first part>" (composite) or
+    // "RETURNING <uuid_pk>" (UUID) — silently lossy either way. ReturnId::No
+    // stays valid on every model shape, so generic code that spells it out keeps
+    // compiling. (Named concept per the #472/#477/#478 precedent; the #413
+    // auto-DEFAULT caveat was checked and does not fire — that DEFAULT is
+    // recovered from a C++ default-member-initializer, a value already in the
+    // caller's object.)
     template <typename T, ReturnId R>
-    concept ReturnIdSupported = (R == ReturnId::No) || !BaseStatement<T>::has_composite_pk_;
+    concept ReturnIdSupported = (R == ReturnId::No) || BaseStatement<T>::pk_is_db_generated_();
 
     template <typename T, storm::db::DatabaseConnection ConnType> class InsertStatement;
 
@@ -80,9 +80,9 @@ export namespace storm::orm::statements {
             using Error = typename ConnType::Error;
             InsertStatement<T, ConnType> stmt;
             const T&                     obj;
-            // A composite key is never DB-generated (#502/#503): DO UPDATE always
-            // touches a row, but there is no generated value to RETURN, so the
-            // proxy resolves to void on a composite model instead of the id.
+            // DO UPDATE always touches a row, but only a DB-generated key has a
+            // value to RETURN (#502/#503/#572), so the proxy resolves to void on
+            // a composite- or UUID-PK model instead of the id.
             [[nodiscard]] auto execute() {
                 return stmt.template upsert_update_runner<Target...>().template run<SetCols...>(obj);
             }
@@ -105,10 +105,10 @@ export namespace storm::orm::statements {
             using Error = typename ConnType::Error;
             InsertStatement<T, ConnType> stmt;
             const T&                     obj;
-            // A composite key is never DB-generated (#502/#503): RETURNING is
-            // omitted, so there is no id to report and no way to tell "inserted"
-            // from "skipped" — the proxy resolves to void on a composite model
-            // (documented as unavailable, per the issue's DoD) instead of
+            // A key that is not DB-generated (#502/#503/#572) omits RETURNING, so
+            // there is no id to report and no way to tell "inserted" from
+            // "skipped" — the proxy resolves to void on a composite- or UUID-PK
+            // model (documented as unavailable, per #502's DoD) instead of
             // optional<int64_t>.
             [[nodiscard]] auto execute() { // NOSONAR(cpp:S1659)
                 return stmt.template execute_upsert_nothing<Target...>(obj);
@@ -591,14 +591,16 @@ export namespace storm::orm::statements {
 
         // Upsert DO NOTHING — RETURNING yields the new id, or no row when skipped.
         //
-        // A composite key is never DB-generated (#503): nothing_sql() omits
-        // RETURNING for a composite model, so there is no row to distinguish
-        // "inserted" from "skipped" — that signal is unavailable there (documented
-        // in the issue's DoD), and this resolves to std::expected<void, Error>.
+        // Only a DB-generated key has an id to report (#503/#572): nothing_sql()
+        // omits RETURNING for a composite or storm::UUID key, so there is no row
+        // to distinguish "inserted" from "skipped" — that signal is unavailable
+        // there (documented in #502's DoD), and this resolves to
+        // std::expected<void, Error>. Branch on the same predicate the grammar
+        // uses, or this reads a row the statement never asked for.
         template <std::meta::info... Target> [[nodiscard]] auto execute_upsert_nothing(const T& obj) {
             const std::string& sql      = Grammar::template nothing_sql<Target...>();
             auto               prepared = prepare_and_bind(sql, obj);
-            if constexpr (Base::has_composite_pk_) {
+            if constexpr (!Base::pk_is_db_generated_()) {
                 if (!prepared) {
                     return std::expected<void, Error>(std::unexpected(prepared.error()));
                 }
@@ -638,9 +640,9 @@ export namespace storm::orm::statements {
         // (this function's pack) + SetCols (the nested run<>() pack) mirrors the proven
         // ConflictTarget<Target...>::update<SetCols...>() shape and resolves both packs
         // unambiguously.
-        // A composite key is never DB-generated (#503): update_sql() omits RETURNING
-        // for a composite model, so run() resolves to std::expected<void, Error>
-        // there instead of the generated id.
+        // Only a DB-generated key has an id to return (#503/#572): update_sql()
+        // omits RETURNING for a composite or storm::UUID key, so run() resolves
+        // to std::expected<void, Error> there instead of the generated id.
         template <std::meta::info... Target> struct UpsertUpdateRunner {
             InsertStatement*                                         self;
             template <std::meta::info... SetCols> [[nodiscard]] auto run(const T& obj) {
@@ -648,7 +650,7 @@ export namespace storm::orm::statements {
                         Grammar::template build_excluded_set_clause<SetCols...>()
                 );
                 auto stmt_result = self->conn_->prepare_cached(sql);
-                if constexpr (Base::has_composite_pk_) {
+                if constexpr (!Base::pk_is_db_generated_()) {
                     if (!stmt_result) {
                         return std::expected<void, Error>(std::unexpected(stmt_result.error()));
                     }

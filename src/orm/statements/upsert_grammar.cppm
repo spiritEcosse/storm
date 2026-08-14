@@ -121,16 +121,19 @@ export namespace storm::orm::statements {
         }
 
         // Full "INSERT ... ON CONFLICT (...) DO NOTHING [RETURNING <pk>]" statement.
-        // A composite key is never DB-generated (#502/#503): every part is caller
-        // data, so there is nothing for RETURNING to echo back — the clause is
-        // omitted entirely on a composite model. Single-PK text is unchanged.
+        // RETURNING is emitted only for a key the DATABASE generates: a composite
+        // key (#502/#503) and a storm::UUID key (#572) are both caller data, so
+        // there is nothing for the clause to echo back and it is omitted
+        // entirely. Single-integer-PK text is unchanged. The gate is
+        // Base::pk_is_db_generated_(), shared with the runner in insert.cppm that
+        // decides whether to READ a returned row — the two must agree.
         template <std::meta::info... Target> static auto nothing_sql() -> const std::string& {
             static const std::string sql = [] {
                 std::string out(build_insert_prefix());
                 out += " ON CONFLICT ";
                 out += std::string(build_conflict_target<Target...>());
                 out += " DO NOTHING";
-                if constexpr (!Base::has_composite_pk_) {
+                if constexpr (Base::pk_is_db_generated_()) {
                     out += " RETURNING ";
                     out += std::string(Base::pk_name_);
                 }
@@ -142,8 +145,8 @@ export namespace storm::orm::statements {
         // Full "INSERT ... ON CONFLICT (...) DO UPDATE SET <set_clause> [RETURNING <pk>]"
         // statement. The SET clause is passed in as a precomputed value (built by
         // build_excluded_set_clause<SetCols...>()) because Target... and SetCols...
-        // cannot share one template parameter list. RETURNING is omitted on a
-        // composite model — same reasoning as nothing_sql() above.
+        // cannot share one template parameter list. RETURNING is omitted whenever
+        // the key is caller data — same reasoning as nothing_sql() above.
         template <std::meta::info... Target, std::size_t N>
         static auto update_sql(const ConstexprString<N>& set_clause) -> std::string {
             std::string out(build_insert_prefix());
@@ -151,7 +154,7 @@ export namespace storm::orm::statements {
             out += std::string(build_conflict_target<Target...>());
             out += " DO UPDATE SET ";
             out += std::string(set_clause);
-            if constexpr (!Base::has_composite_pk_) {
+            if constexpr (Base::pk_is_db_generated_()) {
                 out += " RETURNING ";
                 out += std::string(Base::pk_name_);
             }
@@ -194,16 +197,23 @@ export namespace storm::orm::statements {
         return matched;
     }
 
-    // True if T has a COMPOSITE primary key and the Target... column set exactly
-    // matches it, in declaration order (#503). A composite PK is a unique
-    // constraint over its N columns, so the full set is a valid conflict target —
-    // but a STRICT SUBSET is not unique on its own (order-sensitive match, same as
-    // target_matches_unique_index, so a partial or reordered target is correctly
-    // rejected). Gated on has_composite_pk_ so a single-column PK is NOT matched
-    // here: INSERT omits it from the statement entirely, so it can never conflict
-    // — that exclusion predates this issue and must stay unchanged.
+    // True if the Target... column set is exactly T's primary key, in declaration
+    // order (#503/#585). A PK is a unique constraint over its columns, so the full
+    // set is a valid conflict target — but a STRICT SUBSET is not unique on its own
+    // (order-sensitive match, same as target_matches_unique_index, so a partial or
+    // reordered target is correctly rejected).
+    //
+    // Gated on !pk_is_db_generated_(), i.e. "does INSERT actually EMIT this key",
+    // NOT on has_composite_pk_. A key the DATABASE generates is absent from the
+    // statement, so it can never collide and must stay rejected — true of a
+    // single-column INTEGER key. A key that is CALLER DATA is in the VALUES list
+    // and a duplicate really does raise a PK violation, so ON CONFLICT over it is
+    // meaningful: that covers a composite key (#503) and, since #565 put the UUID
+    // key column back in the INSERT, a single-column storm::UUID key too (#585).
+    // The pre-#585 has_composite_pk_ gate rejected the UUID case as well, whose
+    // stated reason ("INSERT omits it") had silently stopped being true for it.
     template <typename T, std::meta::info... Target> consteval auto target_matches_primary_key() -> bool {
-        if constexpr (!BaseStatement<T>::has_composite_pk_) {
+        if constexpr (BaseStatement<T>::pk_is_db_generated_()) {
             return false;
         } else {
             constexpr std::array targets{Target...};
@@ -213,8 +223,9 @@ export namespace storm::orm::statements {
 
     // A valid conflict target: every Target is a data member of T, AND either a
     // single storm::unique field, a matching UniqueIndex<...>, or the full
-    // composite-PK column set (#503). INSERT omits a single-column PK, so it alone
-    // cannot form a useful conflict target — that case is unaffected here.
+    // primary-key column set of a key INSERT emits (#503/#585). A DB-generated
+    // single-column PK is omitted from the statement, so it alone cannot form a
+    // useful conflict target — that case is unaffected here.
     template <typename T, std::meta::info... Target>
     concept ConflictTargetUnique =
             ((std::meta::is_nonstatic_data_member(Target)) && ...) &&

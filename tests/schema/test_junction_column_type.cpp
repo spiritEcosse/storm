@@ -217,8 +217,9 @@ template <typename ConnType> class UuidM2MJunctionTest : public StormTestFixture
         QuerySet<UuidDoc, ConnType> doc_qs;
         QuerySet<UuidTag, ConnType> tag_qs;
         // A UUID PK is never DB-generated — the caller supplies it (#507), so
-        // there is no generated id to return: insert<ReturnId::No> keeps this
-        // scoped to the junction DDL rather than the RETURNING path.
+        // there is no generated id to return. ReturnId::No is what plain insert()
+        // resolves to on this shape since #572; spelled out so this fixture stays
+        // scoped to the junction DDL rather than to that default.
         using storm::orm::statements::ReturnId;
         auto doc =
                 doc_qs.template insert<ReturnId::No>(UuidDoc{.id = storm::UUID{kDocUuid}, .title = "Spec"}).execute();

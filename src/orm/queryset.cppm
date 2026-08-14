@@ -84,11 +84,11 @@ export namespace storm {
         }
 
         // Insert single object - returns proxy with .execute() and .to_sql()
-        // ReturnId::Yes (single-PK default): .execute() returns std::expected<int64_t, Error>
+        // ReturnId::Yes (single-integer-PK default): .execute() returns std::expected<int64_t, Error>
         // ReturnId::No: .execute() returns std::expected<void, Error> (faster, no RETURNING clause)
-        // Composite-PK models (#502) default to ReturnId::No — a composite key is never
-        // DB-generated, so there is nothing to return — and reject an explicit
-        // ReturnId::Yes at compile time (ReturnIdSupported).
+        // Composite-PK (#502) and storm::UUID-PK (#572) models default to ReturnId::No —
+        // neither key is ever DB-generated, so there is nothing to return — and reject an
+        // explicit ReturnId::Yes at compile time (ReturnIdSupported).
         // (SFINAE: only accept T, not span/container)
         template <orm::statements::ReturnId R = orm::statements::default_return_id<T>(), typename U = T>
             requires std::same_as<std::remove_cvref_t<U>, T> && orm::statements::ReturnIdSupported<T, R>

@@ -314,8 +314,9 @@ TYPED_TEST_SUITE(UuidUpsertTimestampTest, DatabaseTypes);
 
 TYPED_TEST(UuidUpsertTimestampTest, DoUpdateRefreshesAutoUpdateTimestampWithUuidPk) {
     storm::QuerySet<UuidTimestampedUpsertRecord, TypeParam> qs;
-    // A UUID key is caller-supplied; ReturnId::No because plain insert() still takes the
-    // RETURNING path on a UUID PK (#572).
+    // A UUID key is caller-supplied, so nothing is RETURNed on any of these paths (#572) —
+    // ReturnId::No is now what plain insert() resolves to, spelled out here to keep this
+    // test's subject (the auto_update bind offset) independent of that default.
     using storm::orm::statements::ReturnId;
     const storm::UUID key{"44444444-4444-4444-8444-444444444444"};
 
