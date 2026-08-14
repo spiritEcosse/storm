@@ -51,3 +51,12 @@ tests/query/test_where.cpp:                      duplicate
 tests/schema/test_fk_fields.cpp:                  file-size, duplicate, length
 tests/schema/test_sql_inspection.cpp:             duplicate
 tests/test_parser.hpp:                            file-size, duplicate
+# duplicate (#566): each expected_*_ddl builder's PRIMARY KEY / FOREIGN KEY tail
+# is identical to the SQLite/PostgreSQL sibling it serves (only the integer type
+# token differs) and structurally similar to expected_student_course_ddl's own
+# tail. Folding these into one generic, name-parameterized builder would compute
+# the expected SQL from the same shape as build_junction_sql, which defeats the
+# byte-exact regression guard this file exists to be (see its own header
+# comment, "A DDL text assertion proves the string we generate" — the assertion
+# has to be a literal, independently-written string, not derived).
+tests/schema/test_composite_fk_join_sql.cpp:      duplicate
