@@ -451,19 +451,24 @@ export namespace storm::orm::statements {
     concept ModelAnnotationsValid = std::ranges::all_of(
             std::meta::nonstatic_data_members_of(^^T, std::meta::access_context::unchecked()),
             [](std::meta::info m) consteval {
-                const bool primary_conflict = storm::meta::has_annotation_type<storm::meta::Primary>(m) &&
-                                              storm::meta::has_annotation_type<storm::meta::PrimaryAutoincrement>(m);
+                const std::size_t pk_mode_count =
+                        static_cast<std::size_t>(storm::meta::has_annotation_type<storm::meta::Primary>(m)) +
+                        static_cast<std::size_t>(
+                                storm::meta::has_annotation_type<storm::meta::PrimaryAutoincrement>(m)
+                        ) +
+                        static_cast<std::size_t>(storm::meta::has_annotation_type<storm::meta::PrimaryAssigned>(m));
                 const bool storage_conflict = meta::has_signed_storage_attr(m) && meta::has_full_unsigned_attr(m);
-                return !primary_conflict && !storage_conflict;
+                return pk_mode_count <= 1 && !storage_conflict;
             }
     );
 
     // Counts of each primary-key annotation flavour on T (#500), computed in one pass
     // so ModelPrimaryKeyValid can express its rules as plain arithmetic on the result.
-    // A struct rather than a pair: the three counts are read by name at every use.
+    // A struct rather than a pair: the four counts are read by name at every use.
     struct PrimaryKeyCounts {
         std::size_t primary{};       // storm::primary
         std::size_t autoincrement{}; // storm::primary_autoincrement
+        std::size_t assigned{};      // storm::primary_assigned
         std::size_t part{};          // storm::primary_part (composite)
         std::size_t on_relation{};   // any PK annotation sitting on an m2m/reverse_fk member
         std::size_t nullable{};      // any PK annotation sitting on a std::optional<T> member
@@ -483,6 +488,8 @@ export namespace storm::orm::statements {
             counts.primary += static_cast<std::size_t>(storm::meta::has_annotation_type<storm::meta::Primary>(m));
             counts.autoincrement +=
                     static_cast<std::size_t>(storm::meta::has_annotation_type<storm::meta::PrimaryAutoincrement>(m));
+            counts.assigned +=
+                    static_cast<std::size_t>(storm::meta::has_annotation_type<storm::meta::PrimaryAssigned>(m));
             counts.part += static_cast<std::size_t>(storm::meta::is_primary_part_member(m));
             if (storm::meta::is_primary_member(m)) {
                 // A PK on a relation container names something that is never a column,
@@ -502,7 +509,7 @@ export namespace storm::orm::statements {
     }
 
     // Concept: T's primary-key declaration is coherent (#500). Composite support widens
-    // the PK from "exactly one member" to "one or more", which makes three new
+    // the PK from "exactly one member" to "one or more", which makes four new
     // combinations expressible that must not be:
     //
     //   * primary + primary_part — two competing PK declarations; which one is the key?
@@ -515,11 +522,15 @@ export namespace storm::orm::statements {
     //     would surface a runtime error about primary keys that never names the
     //     annotation responsible; rejecting here gives a constraint violation at the
     //     model definition instead.
+    //   * primary_assigned + primary_part — likewise UNREPRESENTABLE in SQL: a
+    //     caller-assigned key is still a single-column INTEGER PRIMARY KEY, which cannot
+    //     coexist with a table-level PRIMARY KEY (...).
     //   * exactly one primary_part — that is a plain PK written the wrong way; tell the
     //     user to spell it `primary` rather than silently accepting a 1-column
     //     "composite" key that emits different DDL than the equivalent `primary`.
-    //   * two or more `primary` / `primary_autoincrement` members — the accidental
-    //     double-`primary` typo the separate primary_part tag exists to keep an error.
+    //   * two or more `primary` / `primary_autoincrement` / `primary_assigned` members —
+    //     the accidental-double-`primary` typo the separate primary_part tag exists to
+    //     keep an error.
     //   * a PK annotation on an m2m/reverse_fk container, or on a std::optional<T>, or
     //     `unique` on a single part — none of which is a well-formed key column.
     //
@@ -551,13 +562,13 @@ export namespace storm::orm::statements {
         // primary_part tag exists to keep an ERROR — without this clause the widened PK
         // machinery would happily treat it as a composite key and silently emit different
         // DDL than the same model produced before composite support existed.
-        if (counts.primary + counts.autoincrement > 1) {
+        if (counts.primary + counts.autoincrement + counts.assigned > 1) {
             return false;
         }
         if (counts.part == 0) {
             return true; // single-PK model — unchanged rules
         }
-        if (counts.primary > 0 || counts.autoincrement > 0) {
+        if (counts.primary > 0 || counts.autoincrement > 0 || counts.assigned > 0) {
             return false; // primary_part mixed with a column-level PK declaration
         }
         return counts.part >= 2; // exactly one part is a plain `primary`
@@ -1122,17 +1133,31 @@ export namespace storm::orm::statements {
             }
         }
 
+        // Caller-assigned integer primary key support: true iff the single PK
+        // member carries storm::primary_assigned. Such a key is never DB-generated —
+        // the caller always supplies the value — so INSERT must emit the column and
+        // there is nothing to RETURNING.
+        static consteval auto has_caller_assigned_pk_() -> bool {
+            if constexpr (has_composite_pk_ || primary_key_count() == 0) {
+                return false; // composite or no PK
+            } else {
+                return storm::meta::has_annotation_type<storm::meta::PrimaryAssigned>(primary_key_);
+            }
+        }
+
         // Does the DATABASE produce the key's value, so that RETURNING could hand
         // something back the caller does not already have?
         //
         // Only a single-column INTEGER key does. AUTOINCREMENT (SQLite) and
         // GENERATED ... AS IDENTITY (PostgreSQL) are single-integer-column
-        // features, so the other two key shapes are pure caller data:
+        // features, so the other key shapes are pure caller data:
         //   - a COMPOSITE key (#502) — every part is supplied by the caller;
         //   - a storm::UUID key (#572) — likewise, and worse than useless to
         //     RETURN: the column is TEXT/UUID, so extracting it as the int64 the
         //     RETURNING path expects yields 0 on SQLite and garbage or an error
-        //     on PostgreSQL.
+        //     on PostgreSQL;
+        //   - a caller-assigned integer key — likewise, the caller supplies
+        //     the value and there is nothing new to echo back.
         //
         // One named predicate rather than the condition spelled out at each of
         // its decision points (insert's default_return_id/ReturnIdSupported,
@@ -1144,22 +1169,14 @@ export namespace storm::orm::statements {
         //
         // ⚠ Written as a BLOCKLIST but load-bearing as an ALLOWLIST. It is
         // equivalent to "single-column INTEGER key" ONLY because
-        // is_primary_key_typed_member's whitelist is closed: integrals + UUID,
-        // nothing else. Widen that whitelist — a std::string key, a binary key —
-        // and this returns TRUE for the new type, re-emitting RETURNING <text_pk>
-        // extracted as an int64: #572 verbatim, and it would ship green because
-        // no in-tree model compiles the branch. Widen BOTH together.
-        //
-        // Known limitation (#586): a plain `storm::primary` INTEGER key is
-        // classified DB-generated here, so a caller-assigned integer key cannot
-        // be expressed — even though the DDL already accepts one on both backends
-        // (PG emits GENERATED BY DEFAULT, not ALWAYS; SQLite's INTEGER PRIMARY KEY
-        // is a rowid alias). Supporting it is a matter of ANDing one more term in
-        // here: this predicate already feeds all five decision points that follow
-        // from it (INSERT column list, bind order, default_return_id,
-        // ReturnIdSupported, and #585's conflict-target gate).
+        // is_primary_key_typed_member's whitelist is closed: integrals + UUID +
+        // caller-assigned, nothing else. Widen that whitelist — a std::string key,
+        // a binary key — and this returns TRUE for the new type, re-emitting
+        // RETURNING <text_pk> extracted as an int64: #572 verbatim, and it would
+        // ship green because no in-tree model compiles the branch. Widen BOTH
+        // together.
         static consteval auto pk_is_db_generated_() -> bool {
-            return !has_composite_pk_ && !has_uuid_pk_();
+            return !has_composite_pk_ && !has_uuid_pk_() && !has_caller_assigned_pk_();
         }
 
         // How many columns the key spans, as a plain std::size_t (#501). Needed because
