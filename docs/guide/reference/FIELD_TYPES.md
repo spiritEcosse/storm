@@ -182,7 +182,7 @@ with no uniqueness constraint. Foreign-key fields (`fk<>`) are indexed automatic
 either tag. See [features/INDEXES.md](../features/INDEXES.md) for full coverage, including
 composite (multi-column) indexes via `storm::Index<>` / `storm::UniqueIndex<>`.
 
-## Primary Keys (`primary` / `primary_autoincrement` / `primary_part`)
+## Primary Keys (`primary` / `primary_autoincrement` / `primary_assigned` / `primary_part`)
 
 Every model needs a primary key — `ModelWithPrimaryKey<T>` is a `BaseStatement<T>` constraint,
 so a model without one fails to compile at a named concept.
@@ -194,6 +194,10 @@ struct Person {
 
 struct Event {
     [[= storm::primary_autoincrement]] int id;   // + AUTOINCREMENT (SQLite never-reuse, #379)
+};
+
+struct ExternalRef {
+    [[= storm::primary_assigned]] int id;        // caller supplies the id (#586)
 };
 ```
 
@@ -239,9 +243,11 @@ CREATE TABLE OrderItem (
 
 | Declaration | Why it's rejected |
 |---|---|
-| Two or more `primary` / `primary_autoincrement` members | The accidental double-`primary` typo — the case the separate tag exists to catch |
+| Two or more `primary` / `primary_autoincrement` / `primary_assigned` members | The accidental double-`primary` typo — the case the separate tag exists to catch |
 | `primary` + `primary_part` | Two competing PK declarations — which one is the key? |
 | `primary_autoincrement` + `primary_part` | Unrepresentable in SQL on either backend (above) |
+| `primary_assigned` + `primary_part` | Unrepresentable in SQL — a caller-assigned key is still a single-column INTEGER PRIMARY KEY |
+| `primary_assigned` + `primary_autoincrement` | Conflicting annotations on the same member |
 | Exactly one `primary_part` | That is a plain PK — spell it `primary` |
 | A PK annotation on an m2m / reverse-FK container | Not a column — the key would name something no column definition emits |
 | A PK annotation on `std::optional<T>` | A nullable PK is not a key (SQLite's legacy NULL quirk even admits duplicates, diverging from PG). Applies to a **single** `primary` too — a deliberate widening in #500, since a nullable PK was never correct |
@@ -462,6 +468,11 @@ there is nothing for `RETURNING` to echo back.
 ### UUID Primary Keys (#507)
 
 Storm supports `storm::UUID` as a primary key. UUID PKs are **always client-generated** — Storm does not auto-generate them at the database level (unlike integer `AUTOINCREMENT`/`IDENTITY`).
+
+`storm::UUID` is accepted under any PK annotation, including `primary_assigned` — combining them
+(`[[= storm::primary_assigned]] storm::UUID id;`) is redundant but harmless: `has_uuid_pk_()` and
+`has_caller_assigned_pk_()` are independent checks OR'd together in `pk_is_db_generated_()`, so
+either one alone already routes the model to the caller-supplied-key behavior described below.
 
 ```cpp
 struct User {

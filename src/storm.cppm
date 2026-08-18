@@ -122,14 +122,15 @@ export namespace storm {
     // Purely additive — the `storm::meta::` spelling keeps working. Internal reflection
     // helpers (is_fk_field, find_primary_key, …) stay in storm::meta, not re-exported here.
     //
-    // The free-standing flag annotation objects (#492, plus primary_part from #500)
-    // replace the former
+    // The free-standing flag annotation objects (#492, plus primary_part from #500,
+    // plus primary_assigned from #586) replace the former
     // enum class FieldAttr. Each is an inline constexpr tag object in storm::meta.
     using meta::auto_create;           // NOLINT(misc-unused-using-decls)
     using meta::auto_update;           // NOLINT(misc-unused-using-decls)
     using meta::full_unsigned;         // NOLINT(misc-unused-using-decls)
     using meta::indexed;               // NOLINT(misc-unused-using-decls)
     using meta::primary;               // NOLINT(misc-unused-using-decls)
+    using meta::primary_assigned;      // NOLINT(misc-unused-using-decls) — #586 caller-assigned integer PK
     using meta::primary_autoincrement; // NOLINT(misc-unused-using-decls)
     using meta::primary_part;          // NOLINT(misc-unused-using-decls) — #500 composite PK part
     using meta::signed_storage;        // NOLINT(misc-unused-using-decls)
