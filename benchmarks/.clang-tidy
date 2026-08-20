@@ -1,6 +1,8 @@
 # Clang-Tidy configuration for benchmarks
-# Inherits from root but disables magic numbers check (benchmark parameters are expected)
-InheritParentConfig: true
-Checks: >
-  -cppcoreguidelines-avoid-magic-numbers,
-  -readability-magic-numbers
+#
+# All checks disabled (issue #590). Measured 2026-08-20: clang-tidy's wall time
+# per TU is ~100% check-execution cost over the AST `import storm;` pulls in
+# (parsing itself is ~0s — `--checks='-*'` is instant). benchmarks/** is not
+# analyzed by SonarCloud either, so this trades away that coverage for
+# commit-time speed.
+Checks: '-*'
