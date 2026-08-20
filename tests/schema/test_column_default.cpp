@@ -163,3 +163,13 @@ TYPED_TEST(ColumnDefaultAlterTest, AddTextNotNullColumnOnPopulatedTableSucceeds)
     ASSERT_TRUE(result.has_value()) << "ADD COLUMN text NOT NULL DEFAULT on populated table failed: "
                                     << result.error().message();
 }
+
+// The DEFAULT clause tests above assert generated SQL text only. This exercises
+// the same ColumnDefaultModel's CREATE TABLE through a live connection on both
+// backends, so a DEFAULT value the dialect's parser actually rejects (#568 class)
+// would fail here instead of shipping behind a passing text assertion.
+TYPED_TEST(ColumnDefaultAlterTest, CreateTableWithDefaultsSucceeds) {
+    const auto& conn   = QuerySet<Person, TypeParam>::get_default_connection();
+    auto        result = SchemaStatement<ColumnDefaultModel>::create_table_if_not_exists(conn);
+    ASSERT_TRUE(result.has_value()) << "ColumnDefaultModel DDL failed: " << result.error().message();
+}
