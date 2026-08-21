@@ -65,7 +65,7 @@ def main():
 
     # ── Remove single record ─────────────────────────────────────────
     storm.remove(bob)
-    print(f"\nRemoved: Bob")
+    print("\nRemoved: Bob")
     print(f"Records after remove: {storm.count()}")
 
     # ── Remove all ───────────────────────────────────────────────────

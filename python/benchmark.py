@@ -37,6 +37,12 @@ N_SELECT   = 500     # select-all iterations (table size = N_BULK rows)
 N_WHERE    = 1_000   # filtered-select iterations
 WARMUP     = 3       # discard this many iterations before measuring
 
+MEMORY_DB = ":memory:"
+CREATE_TABLE_SQL = "CREATE TABLE pyperson (id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER NOT NULL)"
+INSERT_SQL = "INSERT INTO pyperson (name, age) VALUES (?, ?)"
+SELECT_ALL_SQL = "SELECT id, name, age FROM pyperson"
+LABEL_RAW_SQLITE3 = "raw sqlite3"
+
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 @dataclass
@@ -75,52 +81,54 @@ def ratio(a: Result, b: Result) -> None:
 
 
 # ── Raw sqlite3 benchmarks ───────────────────────────────────────────────────
+def _raw_seeded_connection(table_size: int) -> sqlite3.Connection:
+    """Open an in-memory connection with pyperson pre-populated (setup only, not timed)."""
+    con = sqlite3.connect(MEMORY_DB)
+    con.execute(CREATE_TABLE_SQL)
+    rows = [(f"Person{i}", i % 100) for i in range(table_size)]
+    con.executemany(INSERT_SQL, rows)
+    con.commit()
+    return con
+
+
 def raw_single_insert(n: int) -> float:
-    con = sqlite3.connect(":memory:", autocommit=True)
-    con.execute("CREATE TABLE pyperson (id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER NOT NULL)")
+    con = sqlite3.connect(MEMORY_DB, isolation_level=None)
+    con.execute(CREATE_TABLE_SQL)
     # warmup
     for i in range(WARMUP):
-        cur = con.execute("INSERT INTO pyperson (name, age) VALUES (?, ?)", (f"W{i}", i))
+        cur = con.execute(INSERT_SQL, (f"W{i}", i))
         _ = cur.lastrowid
     t0 = time.perf_counter()
     for i in range(n):
-        cur = con.execute("INSERT INTO pyperson (name, age) VALUES (?, ?)", (f"Person{i}", i % 100))
+        cur = con.execute(INSERT_SQL, (f"Person{i}", i % 100))
         _ = cur.lastrowid
     return time.perf_counter() - t0
 
 
 def raw_bulk_insert(n: int) -> float:
-    con = sqlite3.connect(":memory:")
-    con.execute("CREATE TABLE pyperson (id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER NOT NULL)")
+    con = sqlite3.connect(MEMORY_DB)
+    con.execute(CREATE_TABLE_SQL)
     con.commit()
     rows = [(f"Person{i}", i % 100) for i in range(n)]
     t0 = time.perf_counter()
-    con.executemany("INSERT INTO pyperson (name, age) VALUES (?, ?)", rows)
+    con.executemany(INSERT_SQL, rows)
     con.commit()
     return time.perf_counter() - t0
 
 
 def raw_select_all(n_iters: int, table_size: int) -> float:
-    con = sqlite3.connect(":memory:")
-    con.execute("CREATE TABLE pyperson (id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER NOT NULL)")
-    rows = [(f"Person{i}", i % 100) for i in range(table_size)]
-    con.executemany("INSERT INTO pyperson (name, age) VALUES (?, ?)", rows)
-    con.commit()
+    con = _raw_seeded_connection(table_size)
     # warmup
     for _ in range(WARMUP):
-        _ = con.execute("SELECT id, name, age FROM pyperson").fetchall()
+        _ = con.execute(SELECT_ALL_SQL).fetchall()
     t0 = time.perf_counter()
     for _ in range(n_iters):
-        _ = con.execute("SELECT id, name, age FROM pyperson").fetchall()
+        _ = con.execute(SELECT_ALL_SQL).fetchall()
     return time.perf_counter() - t0
 
 
 def raw_select_where(n_iters: int, table_size: int) -> float:
-    con = sqlite3.connect(":memory:")
-    con.execute("CREATE TABLE pyperson (id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER NOT NULL)")
-    rows = [(f"Person{i}", i % 100) for i in range(table_size)]
-    con.executemany("INSERT INTO pyperson (name, age) VALUES (?, ?)", rows)
-    con.commit()
+    con = _raw_seeded_connection(table_size)
     for _ in range(WARMUP):
         _ = con.execute("SELECT id, name, age FROM pyperson WHERE age > ?", (30,)).fetchall()
     t0 = time.perf_counter()
@@ -130,11 +138,7 @@ def raw_select_where(n_iters: int, table_size: int) -> float:
 
 
 def raw_count(n_iters: int, table_size: int) -> float:
-    con = sqlite3.connect(":memory:")
-    con.execute("CREATE TABLE pyperson (id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER NOT NULL)")
-    rows = [(f"Person{i}", i % 100) for i in range(table_size)]
-    con.executemany("INSERT INTO pyperson (name, age) VALUES (?, ?)", rows)
-    con.commit()
+    con = _raw_seeded_connection(table_size)
     for _ in range(WARMUP):
         con.execute("SELECT COUNT(*) FROM pyperson").fetchone()
     t0 = time.perf_counter()
@@ -145,7 +149,7 @@ def raw_count(n_iters: int, table_size: int) -> float:
 
 # ── Storm benchmarks ─────────────────────────────────────────────────────────
 def storm_single_insert(n: int) -> float:
-    storm.connect(":memory:")
+    storm.connect(MEMORY_DB)
     storm.create_table()
     for i in range(WARMUP):
         storm.insert(StormPerson(name=f"W{i}", age=i))
@@ -156,7 +160,7 @@ def storm_single_insert(n: int) -> float:
 
 
 def storm_fast_insert(n: int) -> float:
-    storm.connect(":memory:")
+    storm.connect(MEMORY_DB)
     storm.create_table()
     for i in range(WARMUP):
         storm.fast_insert(f"W{i}", i)
@@ -167,7 +171,7 @@ def storm_fast_insert(n: int) -> float:
 
 
 def storm_fast_insert_many(n: int) -> float:
-    storm.connect(":memory:")
+    storm.connect(MEMORY_DB)
     storm.create_table()
     names = [f"Person{i}" for i in range(n)]
     ages = [i % 100 for i in range(n)]
@@ -177,7 +181,7 @@ def storm_fast_insert_many(n: int) -> float:
 
 
 def storm_bulk_insert(n: int) -> float:
-    storm.connect(":memory:")
+    storm.connect(MEMORY_DB)
     storm.create_table()
     people = [StormPerson(name=f"Person{i}", age=i % 100) for i in range(n)]
     t0 = time.perf_counter()
@@ -186,7 +190,7 @@ def storm_bulk_insert(n: int) -> float:
 
 
 def storm_select_all(n_iters: int, table_size: int) -> float:
-    storm.connect(":memory:")
+    storm.connect(MEMORY_DB)
     storm.create_table()
     storm.bulk_insert([StormPerson(name=f"Person{i}", age=i % 100) for i in range(table_size)])
     for _ in range(WARMUP):
@@ -198,7 +202,7 @@ def storm_select_all(n_iters: int, table_size: int) -> float:
 
 
 def storm_select_where(n_iters: int, table_size: int) -> float:
-    storm.connect(":memory:")
+    storm.connect(MEMORY_DB)
     storm.create_table()
     storm.bulk_insert([StormPerson(name=f"Person{i}", age=i % 100) for i in range(table_size)])
     for _ in range(WARMUP):
@@ -210,7 +214,7 @@ def storm_select_where(n_iters: int, table_size: int) -> float:
 
 
 def storm_count(n_iters: int, table_size: int) -> float:
-    storm.connect(":memory:")
+    storm.connect(MEMORY_DB)
     storm.create_table()
     storm.bulk_insert([StormPerson(name=f"Person{i}", age=i % 100) for i in range(table_size)])
     for _ in range(WARMUP):
@@ -222,7 +226,7 @@ def storm_count(n_iters: int, table_size: int) -> float:
 
 
 def storm_select_array(n_iters: int, table_size: int) -> float:
-    storm.connect(":memory:")
+    storm.connect(MEMORY_DB)
     storm.create_table()
     storm.bulk_insert([StormPerson(name=f"Person{i}", age=i % 100) for i in range(table_size)])
     for _ in range(WARMUP):
@@ -235,18 +239,14 @@ def storm_select_array(n_iters: int, table_size: int) -> float:
 
 def raw_select_array(n_iters: int, table_size: int) -> float:
     """raw sqlite3 fetchall() then pack into a numpy structured array."""
-    con = sqlite3.connect(":memory:")
-    con.execute("CREATE TABLE pyperson (id INTEGER PRIMARY KEY, name TEXT NOT NULL, age INTEGER NOT NULL)")
-    rows = [(f"Person{i}", i % 100) for i in range(table_size)]
-    con.executemany("INSERT INTO pyperson (name, age) VALUES (?, ?)", rows)
-    con.commit()
+    con = _raw_seeded_connection(table_size)
     dtype = np.dtype([("id", "<i4"), ("name", "S64"), ("age", "<i4")])
     for _ in range(WARMUP):
-        tuples = con.execute("SELECT id, name, age FROM pyperson").fetchall()
+        tuples = con.execute(SELECT_ALL_SQL).fetchall()
         _ = np.array(tuples, dtype=dtype)
     t0 = time.perf_counter()
     for _ in range(n_iters):
-        tuples = con.execute("SELECT id, name, age FROM pyperson").fetchall()
+        tuples = con.execute(SELECT_ALL_SQL).fetchall()
         _ = np.array(tuples, dtype=dtype)
     return time.perf_counter() - t0
 
@@ -261,7 +261,7 @@ def main() -> None:
 
     # ── INSERT (single) ───────────────────────────────────────────────────
     header("INSERT single row")
-    r_raw = Result("raw sqlite3", N_SINGLE, raw_single_insert(N_SINGLE))
+    r_raw = Result(LABEL_RAW_SQLITE3, N_SINGLE, raw_single_insert(N_SINGLE))
     row(r_raw)
     if HAS_STORM:
         r_storm = Result("Storm insert(Person(...))", N_SINGLE, storm_single_insert(N_SINGLE))
@@ -298,7 +298,7 @@ def main() -> None:
 
     # ── SELECT WHERE ─────────────────────────────────────────────────────
     header(f"SELECT WHERE age>30 (table={N_BULK:,} rows, {N_WHERE:,} iterations)")
-    r_raw = Result("raw sqlite3", N_WHERE, raw_select_where(N_WHERE, N_BULK))
+    r_raw = Result(LABEL_RAW_SQLITE3, N_WHERE, raw_select_where(N_WHERE, N_BULK))
     row(r_raw)
     if HAS_STORM:
         r_storm = Result("Storm select_where()", N_WHERE, storm_select_where(N_WHERE, N_BULK))
@@ -307,7 +307,7 @@ def main() -> None:
 
     # ── COUNT ─────────────────────────────────────────────────────────────
     header(f"COUNT(*) (table={N_BULK:,} rows, {N_WHERE:,} iterations)")
-    r_raw = Result("raw sqlite3", N_WHERE, raw_count(N_WHERE, N_BULK))
+    r_raw = Result(LABEL_RAW_SQLITE3, N_WHERE, raw_count(N_WHERE, N_BULK))
     row(r_raw)
     if HAS_STORM:
         r_storm = Result("Storm count()", N_WHERE, storm_count(N_WHERE, N_BULK))

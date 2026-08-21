@@ -1,3 +1,5 @@
+#include <meta>
+
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
 #include <nanobind/stl/list.h>
@@ -6,28 +8,16 @@
 #include <nanobind/stl/vector.h>
 
 import storm;
-import <array>;
-import <cstdint>;
-import <cstring>;
-import <expected>;
-import <memory>;
-import <meta>;
-import <optional>;
-import <span>;
-import <stdexcept>;
-import <string>;
-import <string_view>;
-import <type_traits>;
-import <vector>;
+import std;
 
 namespace nb = nanobind;
 
 // Minimal model for proof of concept — hardcoded in C++.
 // Phase 2 would register user-defined structs dynamically.
 struct PyPerson {
-    [[= storm::meta::FieldAttr::primary]] int id{};
-    std::string                               name;
-    int                                       age{};
+    [[= storm::primary]] int id{};
+    std::string              name;
+    int                      age{};
 };
 
 using PersonQS = storm::QuerySet<PyPerson, storm::db::sqlite::Connection>;
@@ -81,7 +71,7 @@ namespace {
     // runtime string comparison picks the matching branch.
 
     auto execute_where(const FilterExpr& expr) -> std::vector<PyPerson> {
-        using storm::orm::where::field;
+        using storm::orm::where::Field;
 
         auto run = [](auto&& e) -> std::vector<PyPerson> {
             PersonQS q;
@@ -102,23 +92,23 @@ namespace {
                 auto v  = nb::cast<T>(expr.value);
 
                 if (expr.op == "==")
-                    return run(field<member>() == v);
+                    return run(Field<member>{} == v);
                 if (expr.op == "!=")
-                    return run(field<member>() != v);
+                    return run(Field<member>{} != v);
 
                 if constexpr (std::is_arithmetic_v<T>) {
                     if (expr.op == ">")
-                        return run(field<member>() > v);
+                        return run(Field<member>{} > v);
                     if (expr.op == ">=")
-                        return run(field<member>() >= v);
+                        return run(Field<member>{} >= v);
                     if (expr.op == "<")
-                        return run(field<member>() < v);
+                        return run(Field<member>{} < v);
                     if (expr.op == "<=")
-                        return run(field<member>() <= v);
+                        return run(Field<member>{} <= v);
                 }
                 if constexpr (std::is_same_v<T, std::string>) {
                     if (expr.op == "like")
-                        return run(field<member>().like(v));
+                        return run(Field<member>{}.like(v));
                 }
 
                 throw std::invalid_argument("Unsupported op '" + expr.op + "' for field '" + expr.field_name + "'");
@@ -199,7 +189,8 @@ NB_MODULE(_storm, m) {
 
     // ── Schema management ───────────────────────────────────────────
     m.def("create_table", []() {
-        auto result = storm::create_table_if_not_exists<PyPerson>();
+        auto conn   = PersonQS::get_default_connection();
+        auto result = storm::orm::schema::SchemaStatement<PyPerson>::create_table_if_not_exists(conn);
         if (!result) {
             throw std::runtime_error("Failed to create table: " + std::string(result.error().message()));
         }
@@ -348,7 +339,7 @@ NB_MODULE(_storm, m) {
 
     // ── Remove ──────────────────────────────────────────────────────
     m.def("remove_all", []() {
-        auto result = get_qs().remove_all().execute();
+        auto result = get_qs().erase_all().execute();
         if (!result) {
             throw std::runtime_error("Remove failed: " + std::string(result.error().message()));
         }
@@ -357,7 +348,7 @@ NB_MODULE(_storm, m) {
     m.def(
             "remove",
             [](const PyPerson& person) {
-                auto result = get_qs().remove(person).execute();
+                auto result = get_qs().erase(person).execute();
                 if (!result) {
                     throw std::runtime_error("Remove failed: " + std::string(result.error().message()));
                 }
@@ -368,7 +359,7 @@ NB_MODULE(_storm, m) {
 
     // ── Count ───────────────────────────────────────────────────────
     m.def("count", []() -> int64_t {
-        auto result = get_qs().count().get();
+        auto result = get_qs().count().execute();
         if (!result) {
             throw std::runtime_error("Count failed: " + std::string(result.error().message()));
         }

@@ -23,7 +23,7 @@ Incremental rebuild (bindings.cpp only): **~1.6 seconds**
 
 ## Architecture
 
-- **PyPerson** struct hardcoded in C++ with `[[= storm::meta::FieldAttr::primary]]`
+- **PyPerson** struct hardcoded in C++ with `[[= storm::primary]]`
 - **PersonQS** = `storm::QuerySet<PyPerson, storm::db::sqlite::Connection>`
 - **consteval helpers** pre-compute `std::array<std::meta::info, N>` of field members
 - **`template for` expansion statements** iterate fields at compile time for:
@@ -59,7 +59,7 @@ Incremental rebuild (bindings.cpp only): **~1.6 seconds**
 
 ## Benchmark Results (Fair Comparison)
 
-Uses `autocommit=True` for raw sqlite3 (one commit per insert, matching Storm's behavior).
+Uses `isolation_level=None` for raw sqlite3 (one commit per insert, matching Storm's behavior).
 
 | Operation | raw sqlite3 | Storm | Ratio |
 |---|---|---|---|
@@ -89,7 +89,7 @@ C++ benchmark confirms **98.9% efficiency** for single insert — all Python ove
 ### Python sqlite3 implicit transactions
 
 - `isolation_level=''` (default) auto-wraps DML in `BEGIN DEFERRED...COMMIT`
-- Use `autocommit=True` for fair per-insert benchmarks
+- Use `isolation_level=None` (autocommit) for fair per-insert benchmarks
 - Without this, raw sqlite3 appears ~40% faster than it really is
 
 ## Key Patterns
