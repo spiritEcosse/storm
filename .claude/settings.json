@@ -2,8 +2,6 @@
   "permissions": {
     "allow": [
       "Bash(cmake:*)",
-      "Read(//home/ihor/projects/storm/storm_develop/build/debug/benchmarks/**)",
-      "Read(//home/ihor/projects/storm/storm_develop/**)",
       "Bash(./build/debug/benchmarks/bench_storm:*)",
       "Bash(./build/debug/benchmarks/bench_sqlite:*)",
       "Bash(git stash:*)",
@@ -35,7 +33,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/home/ihor/projects/storm/storm_develop/.claude/rtk-hook.sh"
+            "command": "$CLAUDE_PROJECT_DIR/.claude/rtk-hook.sh"
           }
         ]
       }
