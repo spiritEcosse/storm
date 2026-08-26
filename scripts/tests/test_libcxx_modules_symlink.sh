@@ -99,7 +99,11 @@ message(STATUS "STORM_TEST_BUILD_INCLUDE_DIR=\${LIBCXX_BUILD_INCLUDE_DIR}")
 message(STATUS "STORM_TEST_MODULES_JSON=\${_storm_libcxx_modules_json}")
 EOF
     local rc=0
-    (cd "$workdir" && cmake -B build . > cmake.log 2>&1) || rc=$?
+    # -G Ninja explicitly: storm always builds with Ninja (CMakePresets.json),
+    # and unlike this Mac (Xcode Command Line Tools ships `make`), the
+    # storm-ci container only installs ninja — CMake's platform-default
+    # generator ("Unix Makefiles") has no build program there at all.
+    (cd "$workdir" && cmake -G Ninja -B build . > cmake.log 2>&1) || rc=$?
     return "$rc"
 }
 
@@ -197,6 +201,7 @@ grep_test_var() {
     local varname="$1"
     grep -o "STORM_TEST_${varname}=.*" "$TMP/harness/cmake.log" \
         | tail -1 | sed "s/^STORM_TEST_${varname}=//"
+    return 0
 }
 
 # Shared assertion for the two host-branch scenarios below: cmake must have
@@ -241,6 +246,7 @@ scenario_resolves_linux_amd64_triple_paths() {
         "$LIBCXX/build/include/x86_64-unknown-linux-gnu/c++/v1" \
         "$LIBCXX/build/lib/x86_64-unknown-linux-gnu/libc++.modules.json" \
         "Linux/amd64 resolves the triple-subdirectory layout"
+    return 0
 }
 
 pre_resolves_darwin_arm64_flat_paths() {
@@ -256,6 +262,7 @@ scenario_resolves_darwin_arm64_flat_paths() {
         "" \
         "$LIBCXX/build/lib/libc++.modules.json" \
         "Darwin/arm64 resolves the flat layout with no duplicate -I"
+    return 0
 }
 
 pre_rejects_unsupported_host() {
