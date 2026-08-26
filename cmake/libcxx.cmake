@@ -1,19 +1,22 @@
-if(NOT DEFINED LIBCXX_ROOT)
-  message(
-    FATAL_ERROR
-      "LIBCXX_ROOT is required. Use a CMake preset or set -DLIBCXX_ROOT=<path>."
-  )
-endif()
+# CMAKE_CURRENT_LIST_DIR (not a plain relative path) so this resolves correctly
+# regardless of the including project's source dir — e.g. when
+# scripts/tests/test_libcxx_modules_symlink.sh's harness include()s this file
+# directly from a throwaway project elsewhere.
+include("${CMAKE_CURRENT_LIST_DIR}/clang_p2996_host.cmake")
 
 set(LIBCXX_INCLUDE_DIR "${LIBCXX_ROOT}/build/include/c++/v1")
-set(LIBCXX_BUILD_INCLUDE_DIR
-    "${LIBCXX_ROOT}/build/include/x86_64-unknown-linux-gnu/c++/v1")
+set(LIBCXX_BUILD_INCLUDE_DIR "${_storm_libcxx_build_include_dir}")
 message(STATUS "Using custom libcxx from: ${LIBCXX_ROOT}")
 
-# clang-p2996's libc++.modules.json declares source-path ../../share/libc++/v1/
-# but the build actually places std.cppm / std.compat.cppm under
-# build/modules/c++/v1/. Bridge the two layouts with a symlink so CMake's
-# `import std;` support can find the sources. See issue #326.
+# clang-p2996's libc++.modules.json declares a relative source-path back to
+# build/share/libc++/v1/ (Linux: "../../share/..." from build/lib/<triple>/;
+# macOS flat layout: "../share/..." from build/lib/ — one fewer ".." since
+# there's no triple subdirectory to climb out of). Both conventions resolve to
+# the same ${LIBCXX_ROOT}/build/share/libc++/v1, which is why the one symlink
+# below serves both layouts unchanged. The build actually places std.cppm /
+# std.compat.cppm under build/modules/c++/v1/, not build/share/libc++/v1/, so
+# bridge the two with a symlink so CMake's `import std;` support can find the
+# sources. See issue #326.
 set(_storm_libcxx_modules_dir "${LIBCXX_ROOT}/build/modules/c++/v1")
 set(_storm_libcxx_share_parent "${LIBCXX_ROOT}/build/share/libc++")
 set(_storm_libcxx_share_link "${_storm_libcxx_share_parent}/v1")
@@ -27,8 +30,10 @@ if(EXISTS "${_storm_libcxx_modules_dir}"
                  " -> ${_storm_libcxx_modules_dir}")
 endif()
 
-add_compile_options(-nostdinc++ -I${LIBCXX_INCLUDE_DIR}
-                    -I${LIBCXX_BUILD_INCLUDE_DIR})
+add_compile_options(-nostdinc++ -I${LIBCXX_INCLUDE_DIR})
+if(LIBCXX_BUILD_INCLUDE_DIR)
+  add_compile_options(-I${LIBCXX_BUILD_INCLUDE_DIR})
+endif()
 
 # Reflection flags must be GLOBAL, not per-target. Clang hashes compile flags
 # into the module-cache key and also stamps them into every PCM. If the flags
@@ -43,10 +48,8 @@ add_compile_options(-nostdinc++ -I${LIBCXX_INCLUDE_DIR}
 # every TU and every PCM in the project.
 add_compile_options(-freflection -fannotation-attributes -fexpansion-statements)
 
-add_link_options(
-  -nostdlib++ -L${LIBCXX_ROOT}/build/lib/x86_64-unknown-linux-gnu
-  -Wl,-rpath,${LIBCXX_ROOT}/build/lib/x86_64-unknown-linux-gnu -lc++ -lc++abi
-  -lunwind)
+add_link_options(-nostdlib++ -L${_storm_libcxx_lib_dir}
+                 -Wl,-rpath,${_storm_libcxx_lib_dir} -lc++ -lc++abi -lunwind)
 
 function(apply_clang_flags target_name)
   # import std; migration (issue #326): the Clang-modules header-unit flags

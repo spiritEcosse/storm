@@ -10,13 +10,14 @@ set(CMAKE_EXPERIMENTAL_CXX_IMPORT_STD "f35a9ac6-8463-4d38-8eec-5d6008153e7d")
 # /usr/lib64/libstdc++.modules.json and tries to build bits/std.cc against our
 # libc++ include paths — which fails. See issue #326.
 #
-# LIBCXX_ROOT is passed via preset/-D, so we resolve the JSON path the same way
-# cmake/libcxx.cmake does, but without including it (project() must run first
-# for that). Falls back to letting CMake auto-detect when LIBCXX_ROOT is unset
-# (e.g. plain library configures, where import-std is not used).
+# LIBCXX_ROOT is passed via preset/-D. cmake/clang_p2996_host.cmake resolves the
+# on-disk layout (shared with cmake/libcxx.cmake's compile/link flags — a plain
+# include() of a variable-setting file is safe before project()). Falls back to
+# letting CMake auto-detect when LIBCXX_ROOT is unset (e.g. plain library
+# configures, where import-std is not used).
 if(DEFINED LIBCXX_ROOT)
-  set(CMAKE_CXX_STDLIB_MODULES_JSON
-      "${LIBCXX_ROOT}/build/lib/x86_64-unknown-linux-gnu/libc++.modules.json")
+  include(cmake/clang_p2996_host.cmake)
+  set(CMAKE_CXX_STDLIB_MODULES_JSON "${_storm_libcxx_modules_json}")
 endif()
 
 project(storm)

@@ -58,6 +58,28 @@ jobs:
       - name: Self-test the validator
         run: ./scripts/tests/test_check_agent_frontmatter.sh
 
+  # cmake/clang_p2996_host.cmake resolves clang-p2996's on-disk layout
+  # (Linux/amd64 Docker vs. native macOS/arm64) for CMAKE_CXX_STDLIB_MODULES_JSON
+  # and cmake/libcxx.cmake's compile/link flags. Nothing else in CI exercises
+  # its Darwin branch or its unsupported-host error path (this CI only ever
+  # runs the Linux/amd64 branch for real) — this job runs the fake-root test
+  # harness so both are covered, not just the one this container's host
+  # happens to be. Needs CMake 3.30+ (cmake_minimum_required in the harness),
+  # hence the storm-ci container rather than bare ubuntu-24.04's older apt cmake.
+  clang-p2996-host-layout:
+    name: clang-p2996 host-layout resolution
+    runs-on: ubuntu-24.04
+    container:
+      # Pinned to a specific digest so develop is unaffected by storm-ci image
+      # rebuilds. Bump this when publishing a new image (see docker-ci-image.yml).
+      image: ghcr.io/spiritecosse/storm-ci@sha256:0da07cc20e580c8a7310dca6974bc1d09406c3d367faa099fe26e03b9a449bee
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Test host-layout resolution + import-std symlink behavior
+        run: ./scripts/tests/test_libcxx_modules_symlink.sh
+
   test:
     name: "${{ matrix.preset }} / PG ${{ matrix.postgres }}"
     # ninja-msan is skipped in CI: under import std; (issue #326) GTest's static
