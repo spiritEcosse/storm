@@ -67,7 +67,10 @@ namespace {
     auto install_signal_handlers() -> void {
         struct sigaction sa{};
         sa.sa_handler = &handle_quit_signal;
-        ::sigemptyset(&sa.sa_mask);
+        // Unqualified: sigemptyset is a real function on Linux/glibc but a macro on
+        // macOS's <signal.h> (`#define sigemptyset(set) (*(set) = 0, 0)`), and `::`
+        // in front of a macro invocation does not parse.
+        sigemptyset(&sa.sa_mask);
         sa.sa_flags = 0; // intentionally not SA_RESTART — we want poll() to wake on signal
         ::sigaction(SIGINT, &sa, nullptr);
         ::sigaction(SIGTERM, &sa, nullptr);

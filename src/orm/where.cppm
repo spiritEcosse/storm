@@ -373,6 +373,25 @@ export namespace storm::orm::where {
         );
     }
 
+    // Build a value-owning InExpression from a value pack constructed to TargetType, each element
+    // routed through normalize_operand so the stored element type matches an existing variant arm
+    // for folding categories — enums and narrow/unsigned ints fold to int/int64_t, text to
+    // std::string (#407, same rules as make_comparison_expr). Shared by Field::in and
+    // CollatedField::in so the two bodies cannot drift the way they did for #578: CollatedField::in
+    // used to construct InExpression<FieldType> directly, naming a variant arm that does not exist
+    // for a folding FieldType.
+    template <typename TargetType, typename... Values>
+        requires(std::constructible_from<TargetType, Values> && ...)
+    [[nodiscard]] auto make_in_expr(const std::string& field_name, Values&&... values) -> Expr {
+        using StoredType = decltype(normalize_operand(std::declval<TargetType>()));
+        return Expr(
+                std::make_shared<ExpressionVariant>(InExpression<StoredType>{
+                        .field_name_ = std::move(field_name),
+                        .values_     = {normalize_operand(TargetType{std::forward<Values>(values)})...}
+                })
+        );
+    }
+
     // CollatedField proxy - wraps field name with COLLATE clause
     // Created via fields::Person.name.collate(Collate::NoCase)
     // All comparison operators produce SQL like: "name COLLATE NOCASE = ?"
@@ -387,11 +406,7 @@ export namespace storm::orm::where {
         template <typename... Values>
             requires(std::constructible_from<FieldType, Values> && ...)
         auto in(Values&&... values) const {
-            return Expr(
-                    std::make_shared<ExpressionVariant>(InExpression<FieldType>{
-                            .field_name_ = collated_name_, .values_ = {FieldType{std::forward<Values>(values)}...}
-                    })
-            );
+            return where::make_in_expr<FieldType>(collated_name_, std::forward<Values>(values)...);
         }
 
         template <typename V> auto operator==(V&& value) const -> Expr {
@@ -471,13 +486,7 @@ export namespace storm::orm::where {
         template <typename... Values>
             requires(std::constructible_from<FieldType, Values> && ...)
         auto in(Values&&... values) const {
-            using StoredType = decltype(normalize_operand(std::declval<FieldType>()));
-            return Expr(
-                    std::make_shared<ExpressionVariant>(InExpression<StoredType>{
-                            .field_name_ = std::string(field_name_sv),
-                            .values_     = {normalize_operand(FieldType{std::forward<Values>(values)})...}
-                    })
-            );
+            return where::make_in_expr<FieldType>(std::string(field_name_sv), std::forward<Values>(values)...);
         }
 
         // Comparison operators — enum values are auto-converted to underlying int

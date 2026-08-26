@@ -395,4 +395,79 @@ TYPED_TEST(CollateTest, WhereCollateSqlGeneration) {
             << "SQL should contain 'name COLLATE NOCASE': " << sql;
 }
 
+// ============================================================================
+// COLLATE .in() on type-folding fields (#578)
+//
+// CollatedField::in() used to construct InExpression<FieldType> directly from
+// the declared field type, which fails to compile whenever FieldType needs
+// normalize_operand's fold (enum -> int, narrow/unsigned int -> int/int64_t,
+// text-like -> std::string) to reach an actual ExpressionVariant arm.
+// Field::in() already routed through normalize_operand; these tests cross
+// .collate() with each folding category so the two paths cannot silently
+// diverge again.
+// ============================================================================
+
+template <typename ConnType> class CollateInFoldTest : public StormTestFixture<ExtendedTypes, ConnType> {
+  public:
+    auto on_after_setup(const std::shared_ptr<ConnType>&) -> void override {
+        std::vector<ExtendedTypes> const test_data = {
+                {.id = 1, .label = "alpha", .tiny_signed = 1, .color = Color::Red},
+                {.id = 2, .label = "beta", .tiny_signed = 2, .color = Color::Green},
+                {.id = 3, .label = "GAMMA", .tiny_signed = 3, .color = Color::Blue},
+        };
+
+        QuerySet<ExtendedTypes, ConnType> qs;
+        auto                              result = qs.insert(test_data).execute();
+        ASSERT_TRUE(result.has_value()) << "Failed to insert CollateInFoldTest data";
+    }
+};
+
+TYPED_TEST_SUITE(CollateInFoldTest, SqliteTypes);
+
+TYPED_TEST(CollateInFoldTest, EnumField) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+
+    // Enum folds to int in the variant — used to fail to compile via CollatedField::in().
+    auto result = qs.where(fields::ExtendedTypes.color.collate(Collate::Binary).in(Color::Red, Color::Blue))
+                          .select()
+                          .execute();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value().size(), 2);
+}
+
+TYPED_TEST(CollateInFoldTest, NarrowIntField) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+
+    // signed char folds to int in the variant.
+    auto result = qs.where(fields::ExtendedTypes.tiny_signed.collate(Collate::Binary)
+                                   .in(static_cast<signed char>(1), static_cast<signed char>(3)))
+                          .select()
+                          .execute();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value().size(), 2);
+}
+
+TYPED_TEST(CollateInFoldTest, StringViewOperand) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+
+    // string_view folds to an owning std::string; NOCASE makes "gamma" match the stored "GAMMA".
+    std::string_view const alpha = "alpha";
+    auto result = qs.where(fields::ExtendedTypes.label.collate(Collate::NoCase).in(alpha, "gamma")).select().execute();
+    ASSERT_TRUE(result.has_value());
+    EXPECT_EQ(result.value().size(), 2);
+}
+
+TYPED_TEST(CollateInFoldTest, SqlGenerationPreservesCollate) {
+    QuerySet<ExtendedTypes, TypeParam> qs;
+
+    auto sql_result =
+            qs.where(fields::ExtendedTypes.tiny_signed.collate(Collate::Binary).in(static_cast<signed char>(1)))
+                    .select()
+                    .to_sql();
+    ASSERT_TRUE(sql_result.has_value());
+    const auto& sql = sql_result.value();
+    EXPECT_NE(sql.find("tiny_signed COLLATE BINARY IN"), std::string::npos)
+            << "SQL should contain 'tiny_signed COLLATE BINARY IN': " << sql;
+}
+
 // NOLINTEND(misc-const-correctness,performance-unnecessary-copy-initialization)
