@@ -147,10 +147,29 @@ Pinning `CMAKE_CXX_STANDARD_LIBRARY` alone is not enough — the variable
 isn't always consulted, and `CMAKE_CXX_STDLIB_MODULES_JSON` (CMake 4.2+) is
 the direct override.
 
-**Workaround**: top-level `CMakeLists.txt` sets
-`CMAKE_CXX_STDLIB_MODULES_JSON` to clang-p2996's
-`build/lib/x86_64-unknown-linux-gnu/libc++.modules.json` before `project()`,
-guarded by `if(DEFINED LIBCXX_ROOT)`.
+**Workaround**: top-level `CMakeLists.txt` sets `CMAKE_CXX_STDLIB_MODULES_JSON`
+before `project()`, guarded by `if(DEFINED LIBCXX_ROOT)`. The path depends on
+the host that built clang-p2996: the Linux/Docker (amd64) build installs under
+a target-triple subdirectory
+(`build/lib/x86_64-unknown-linux-gnu/libc++.modules.json`); a native
+macOS/arm64 build installs flat (`build/lib/libc++.modules.json`), since
+`LLVM_ENABLE_RUNTIMES` only creates a per-triple subdirectory when more than
+one target is configured. `cmake/clang_p2996_host.cmake` resolves this ONCE
+(shelling out to `uname -m`, since `CMAKE_HOST_SYSTEM_PROCESSOR` isn't
+resolved yet before `project()`) and is `include()`d by both
+`CMakeLists.txt` and `cmake/libcxx.cmake` — the latter's analogous
+`LIBCXX_INCLUDE_DIR`/`_storm_libcxx_lib_dir` split reuses the same
+resolution rather than re-deriving it.
+
+On the native macOS/arm64 flat layout, `_storm_libcxx_lib_dir` (used for
+`-L`/`-rpath`) is clang-p2996's whole LLVM `build/lib` tree, not a narrow
+per-triple runtime dir like the Linux layout — a wider link search path, and
+it means the resulting binaries link BOTH `@rpath/libunwind.1.dylib` (from
+this dir) and macOS's system `libSystem.B.dylib` (which re-exports its own
+`_Unwind_*`). This works — clang-p2996's libc++abi loads before libSystem,
+so the throw path stays self-consistent — but if exception behavior ever
+looks wrong specifically on native macOS builds, the duplicate unwinder is
+worth checking first.
 
 **Related**: Issue [#326](https://github.com/spiritEcosse/storm/issues/326).
 
