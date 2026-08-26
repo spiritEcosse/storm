@@ -39,7 +39,10 @@ MODE="diff"   # diff | full | all
 # min(nproc, MemAvailable_GB / 2) with a floor of 1; an explicit `-j N` overrides.
 # ~2 GB/job is the headroom budget per import-std clang-tidy invocation.
 _nproc=$(nproc)
-_mem_avail_kb=$(awk '/^MemAvailable:/{print $2}' /proc/meminfo 2>/dev/null)
+# /proc/meminfo doesn't exist off Linux (e.g. macOS) — awk then exits non-zero, which
+# would otherwise kill this script under `set -e` despite the 2>/dev/null. `|| true`
+# lets that fall through to the nproc-only branch below, same as MemAvailable missing.
+_mem_avail_kb=$(awk '/^MemAvailable:/{print $2}' /proc/meminfo 2>/dev/null || true)
 if [[ -n "$_mem_avail_kb" ]]; then
     _mem_jobs=$((_mem_avail_kb / 1024 / 1024 / 2))   # MemAvailable(GB) / 2
     [[ "$_mem_jobs" -lt 1 ]] && _mem_jobs=1

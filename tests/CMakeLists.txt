@@ -109,7 +109,14 @@ target_include_directories(
 # defer test listing to ctest time (not build time) so MSAN_OPTIONS from
 # CMakePresets.json applies when the binary runs. Without this, cmake --build
 # runs the binary with no MSAN env → abort.
-gtest_discover_tests(${PROJECT_NAME} DISCOVERY_MODE PRE_TEST)
+#
+# DISCOVERY_TIMEOUT raised from CMake's 5s default: with ~3000 registered
+# TYPED_TESTs, --gtest_list_tests takes low single-digit seconds even under
+# normal load, but on a busy shared/loaded machine that's enough to blow past 5s
+# and fail the whole ctest run with "Process terminated due to timeout" before
+# any test actually runs.
+gtest_discover_tests(${PROJECT_NAME} DISCOVERY_MODE PRE_TEST DISCOVERY_TIMEOUT
+                     120)
 
 # Add Clang-specific flags (modules and reflection) to tests (same as Storm
 # library)

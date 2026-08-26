@@ -22,6 +22,7 @@
 
 #include <benchmark/benchmark.h>
 
+#include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/un.h>
@@ -219,7 +220,9 @@ namespace bench_dashboard {
             return nullptr;
         }
 
-        const int fd = ::socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+        // SOCK_CLOEXEC on the socket() call itself is Linux-only (BSD/macOS sockets don't
+        // accept it) — fcntl(F_SETFD) is the portable equivalent both platforms support.
+        const int fd = ::socket(AF_UNIX, SOCK_DGRAM, 0);
         if (fd < 0) {
             std::
                     fprintf( // NOLINT(cppcoreguidelines-pro-type-vararg)
@@ -229,6 +232,7 @@ namespace bench_dashboard {
                     );
             return nullptr;
         }
+        ::fcntl(fd, F_SETFD, FD_CLOEXEC); // NOLINT(cppcoreguidelines-pro-type-vararg)
 
         sockaddr_un addr{};
         addr.sun_family = AF_UNIX;

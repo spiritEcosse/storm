@@ -10,6 +10,7 @@
 
 module;
 
+#include <fcntl.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/un.h>
@@ -67,10 +68,13 @@ export namespace bench_dashboard {
                 return "socket path too long";
             }
 
-            fd_ = ::socket(AF_UNIX, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+            // SOCK_CLOEXEC on the socket() call itself is Linux-only (BSD/macOS sockets don't
+            // accept it) — fcntl(F_SETFD) is the portable equivalent both platforms support.
+            fd_ = ::socket(AF_UNIX, SOCK_DGRAM, 0);
             if (fd_ < 0) {
                 return std::string{"socket(): "} + std::strerror(errno); // NOLINT(concurrency-mt-unsafe)
             }
+            ::fcntl(fd_, F_SETFD, FD_CLOEXEC); // NOLINT(cppcoreguidelines-pro-type-vararg)
 
             ::unlink(std::string{path}.c_str()); // best-effort stale cleanup
 
