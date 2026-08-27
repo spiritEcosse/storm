@@ -1,7 +1,18 @@
-#include <gtest/gtest.h>
-#include <meta>
+#pragma once
 
-#include "test_db_helpers.h"
+// Shared test body for test_composite_pk_crud_sqlite.cpp / test_composite_pk_crud_pg.cpp — the two
+// single-backend TUs of a compile-time TU split (see test_db_helpers.h,
+// DatabaseTypesSqliteHalf/DatabaseTypesPgHalf). Splitting a 2-backend TU into
+// two lets ninja compile them in parallel instead of serially instantiating
+// both backends in one TU; keeping the body here (instead of duplicating it
+// into both .cpp files) removes the risk of the two halves silently drifting.
+//
+// The includer must #define STORM_SPLIT_TYPES / STORM_SPLIT_TYPE_NAMES to one
+// backend's ::testing::Types<> alias / NameGenerator before #include-ing this
+// file, and #undef both afterward. Never include this file directly.
+#if !defined(STORM_SPLIT_TYPES) || !defined(STORM_SPLIT_TYPE_NAMES)
+#error "test_composite_pk_crud_body.h: define STORM_SPLIT_TYPES/STORM_SPLIT_TYPE_NAMES before including"
+#endif
 
 import storm;
 import std;
@@ -25,71 +36,68 @@ import std;
 
 namespace {
 
-    // Composite-PK fixture. The table is created from the generated DDL, since
-    // ensure_tables() drives the same schema path. Anchors the connection on
-    // Person but creates no Person table.
-    template <typename Model, typename ConnType> class CompositePkFixture : public StormTestFixture<Person, ConnType> {
-      public:
-        auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
-            const std::string ddl = storm::test::is_postgresql<ConnType>()
-                                            ? storm::create_table_sql<Model, storm::orm::schema::Dialect::PostgreSQL>()
-                                            : storm::create_table_sql<Model>();
-            ASSERT_TRUE(conn->execute(ddl).has_value()) << ddl;
-        }
+// Composite-PK fixture. The table is created from the generated DDL, since
+// ensure_tables() drives the same schema path. Anchors the connection on
+// Person but creates no Person table.
+template <typename Model, typename ConnType> class CompositePkFixture : public StormTestFixture<Person, ConnType> {
+  public:
+    auto on_setup(const std::shared_ptr<ConnType> &conn) -> void override {
+        const std::string ddl = storm::test::is_postgresql<ConnType>()
+                                    ? storm::create_table_sql<Model, storm::orm::schema::Dialect::PostgreSQL>()
+                                    : storm::create_table_sql<Model>();
+        ASSERT_TRUE(conn->execute(ddl).has_value()) << ddl;
+    }
 
-        static auto seed(std::string_view sql) -> void {
-            const auto& conn = storm::QuerySet<Person, ConnType>::get_default_connection();
-            ASSERT_TRUE(conn->execute(std::string(sql)).has_value()) << sql;
-        }
+    static auto seed(std::string_view sql) -> void {
+        const auto &conn = storm::QuerySet<Person, ConnType>::get_default_connection();
+        ASSERT_TRUE(conn->execute(std::string(sql)).has_value()) << sql;
+    }
 
-        static auto row_count() -> int {
-            storm::QuerySet<Model, ConnType> qs;
-            auto                             result = qs.count().execute();
-            return result.has_value() ? static_cast<int>(result.value()) : -1;
-        }
+    static auto row_count() -> int {
+        storm::QuerySet<Model, ConnType> qs;
+        auto result = qs.count().execute();
+        return result.has_value() ? static_cast<int>(result.value()) : -1;
+    }
 
-        // The single row matching `filter`, or nullopt when the filter matches
-        // nothing. Every "did the right row change?" assertion below reads
-        // through this, so the key-matching check is written once.
-        static auto find_one(const auto& filter) -> std::optional<Model> {
-            storm::QuerySet<Model, ConnType> qs;
-            auto                             rows = qs.where(filter).select().execute();
-            if (!rows.has_value() || rows.value().empty()) {
-                return std::nullopt;
-            }
-            return *rows.value().begin();
+    // The single row matching `filter`, or nullopt when the filter matches
+    // nothing. Every "did the right row change?" assertion below reads
+    // through this, so the key-matching check is written once.
+    static auto find_one(const auto &filter) -> std::optional<Model> {
+        storm::QuerySet<Model, ConnType> qs;
+        auto rows = qs.where(filter).select().execute();
+        if (!rows.has_value() || rows.value().empty()) {
+            return std::nullopt;
         }
-    };
+        return *rows.value().begin();
+    }
+};
 
-    // --- OrderLine: 2-part int key -------------------------------------------
+// --- OrderLine: 2-part int key -------------------------------------------
 
-    template <typename ConnType> class OrderLineTest : public CompositePkFixture<OrderLine, ConnType> {
-      public:
-        auto on_after_setup(const std::shared_ptr<ConnType>& /*conn*/) -> void override {
-            this->seed(
-                    "INSERT INTO OrderLine (order_id, product_id, quantity, note) VALUES "
-                    "(1, 10, 5, 'a'), (1, 20, 7, 'b'), (2, 10, 9, 'c'), (2, 20, 11, 'd')"
-            );
-        }
+template <typename ConnType> class OrderLineTest : public CompositePkFixture<OrderLine, ConnType> {
+  public:
+    auto on_after_setup(const std::shared_ptr<ConnType> & /*conn*/) -> void override {
+        this->seed("INSERT INTO OrderLine (order_id, product_id, quantity, note) VALUES "
+                   "(1, 10, 5, 'a'), (1, 20, 7, 'b'), (2, 10, 9, 'c'), (2, 20, 11, 'd')");
+    }
 
-        // quantity of one key, or -1 when the row is gone.
-        static auto quantity_of(int order_id, int product_id) -> int {
-            auto row = OrderLineTest::find_one(
-                    fields::OrderLine.order_id == order_id && fields::OrderLine.product_id == product_id
-            );
-            return row ? row->quantity : -1;
-        }
-    };
+    // quantity of one key, or -1 when the row is gone.
+    static auto quantity_of(int order_id, int product_id) -> int {
+        auto row = OrderLineTest::find_one(fields::OrderLine.order_id == order_id &&
+                                           fields::OrderLine.product_id == product_id);
+        return row ? row->quantity : -1;
+    }
+};
 
 } // namespace
 
-TYPED_TEST_SUITE(OrderLineTest, DatabaseTypes);
+TYPED_TEST_SUITE(OrderLineTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
 
 // --- DELETE: single row -----------------------------------------------------
 
 TYPED_TEST(OrderLineTest, DeleteSingleMatchesFullKeyOnly) {
     storm::QuerySet<OrderLine, TypeParam> qs;
-    const OrderLine                       target{.order_id = 1, .product_id = 20};
+    const OrderLine target{.order_id = 1, .product_id = 20};
     ASSERT_TRUE(qs.erase(target).execute().has_value());
 
     EXPECT_EQ(this->row_count(), 3);
@@ -110,7 +118,7 @@ TYPED_TEST(OrderLineTest, DeletePartialKeyMatchDoesNotDelete) {
 
 TYPED_TEST(OrderLineTest, DeleteNoMatchIsNotAnError) {
     storm::QuerySet<OrderLine, TypeParam> qs;
-    const OrderLine                       target{.order_id = 77, .product_id = 88};
+    const OrderLine target{.order_id = 77, .product_id = 88};
     EXPECT_TRUE(qs.erase(target).execute().has_value());
     EXPECT_EQ(this->row_count(), 4);
 }
@@ -119,9 +127,9 @@ TYPED_TEST(OrderLineTest, DeleteNoMatchIsNotAnError) {
 
 TYPED_TEST(OrderLineTest, DeleteBatchMatchesEachFullKey) {
     storm::QuerySet<OrderLine, TypeParam> qs;
-    const std::vector<OrderLine>          targets{
-                     {.order_id = 1, .product_id = 10},
-                     {.order_id = 2, .product_id = 20},
+    const std::vector<OrderLine> targets{
+        {.order_id = 1, .product_id = 10},
+        {.order_id = 2, .product_id = 20},
     };
     ASSERT_TRUE(qs.erase(std::span<const OrderLine>(targets)).execute().has_value());
 
@@ -137,7 +145,7 @@ TYPED_TEST(OrderLineTest, DeleteBatchMatchesEachFullKey) {
 
 TYPED_TEST(OrderLineTest, DeleteEmptyBatchIsANoOp) {
     storm::QuerySet<OrderLine, TypeParam> qs;
-    const std::vector<OrderLine>          empty;
+    const std::vector<OrderLine> empty;
     EXPECT_TRUE(qs.erase(std::span<const OrderLine>(empty)).execute().has_value());
     EXPECT_EQ(this->row_count(), 4);
 }
@@ -146,7 +154,7 @@ TYPED_TEST(OrderLineTest, DeleteEmptyBatchIsANoOp) {
 
 TYPED_TEST(OrderLineTest, UpdateSingleMatchesFullKeyOnly) {
     storm::QuerySet<OrderLine, TypeParam> qs;
-    const OrderLine                       updated{.order_id = 1, .product_id = 20, .quantity = 700, .note = "B"};
+    const OrderLine updated{.order_id = 1, .product_id = 20, .quantity = 700, .note = "B"};
     ASSERT_TRUE(qs.update(updated).execute().has_value());
 
     EXPECT_EQ(this->quantity_of(1, 20), 700) << "the full-key row is updated";
@@ -156,7 +164,7 @@ TYPED_TEST(OrderLineTest, UpdateSingleMatchesFullKeyOnly) {
 
 TYPED_TEST(OrderLineTest, UpdatePartialKeyMatchUpdatesNothing) {
     storm::QuerySet<OrderLine, TypeParam> qs;
-    const OrderLine                       updated{.order_id = 1, .product_id = 99, .quantity = 700};
+    const OrderLine updated{.order_id = 1, .product_id = 99, .quantity = 700};
     ASSERT_TRUE(qs.update(updated).execute().has_value());
 
     EXPECT_EQ(this->quantity_of(1, 10), 5);
@@ -169,7 +177,7 @@ TYPED_TEST(OrderLineTest, UpdatePartialKeyMatchUpdatesNothing) {
 // stale offset would either write the wrong row or fail outright.
 TYPED_TEST(OrderLineTest, UpdateBindsEveryKeyPartAtTheRightOffset) {
     storm::QuerySet<OrderLine, TypeParam> qs;
-    const OrderLine                       updated{.order_id = 2, .product_id = 10, .quantity = 42, .note = "z"};
+    const OrderLine updated{.order_id = 2, .product_id = 10, .quantity = 42, .note = "z"};
     ASSERT_TRUE(qs.update(updated).execute().has_value());
 
     EXPECT_EQ(this->quantity_of(2, 10), 42) << "the SET values and the key both landed correctly";
@@ -181,9 +189,9 @@ TYPED_TEST(OrderLineTest, UpdateBindsEveryKeyPartAtTheRightOffset) {
 
 TYPED_TEST(OrderLineTest, UpdateBatchAppliesPerKey) {
     storm::QuerySet<OrderLine, TypeParam> qs;
-    const std::vector<OrderLine>          updates{
-                     {.order_id = 1, .product_id = 10, .quantity = 100, .note = "x"},
-                     {.order_id = 2, .product_id = 20, .quantity = 200, .note = "y"},
+    const std::vector<OrderLine> updates{
+        {.order_id = 1, .product_id = 10, .quantity = 100, .note = "x"},
+        {.order_id = 2, .product_id = 20, .quantity = 200, .note = "y"},
     };
     ASSERT_TRUE(qs.update(std::span<const OrderLine>(updates)).execute().has_value());
 
@@ -195,7 +203,7 @@ TYPED_TEST(OrderLineTest, UpdateBatchAppliesPerKey) {
 
 TYPED_TEST(OrderLineTest, UpdateEmptyBatchIsANoOp) {
     storm::QuerySet<OrderLine, TypeParam> qs;
-    const std::vector<OrderLine>          empty;
+    const std::vector<OrderLine> empty;
     EXPECT_TRUE(qs.update(std::span<const OrderLine>(empty)).execute().has_value());
     EXPECT_EQ(this->quantity_of(1, 10), 5);
 }
@@ -203,29 +211,26 @@ TYPED_TEST(OrderLineTest, UpdateEmptyBatchIsANoOp) {
 // ── Mixed-type key parts (int + std::string) ─────────────────────────────────
 
 namespace {
-    template <typename ConnType> class InventoryTest : public CompositePkFixture<Inventory, ConnType> {
-      public:
-        auto on_after_setup(const std::shared_ptr<ConnType>& /*conn*/) -> void override {
-            this->seed(
-                    "INSERT INTO Inventory (warehouse, sku, on_hand) VALUES "
-                    "(1, 'apple', 5), (1, 'pear', 7), (2, 'apple', 9)"
-            );
-        }
+template <typename ConnType> class InventoryTest : public CompositePkFixture<Inventory, ConnType> {
+  public:
+    auto on_after_setup(const std::shared_ptr<ConnType> & /*conn*/) -> void override {
+        this->seed("INSERT INTO Inventory (warehouse, sku, on_hand) VALUES "
+                   "(1, 'apple', 5), (1, 'pear', 7), (2, 'apple', 9)");
+    }
 
-        static auto on_hand_of(int warehouse, std::string_view sku) -> int {
-            auto row = InventoryTest::find_one(
-                    fields::Inventory.warehouse == warehouse && fields::Inventory.sku == std::string(sku)
-            );
-            return row ? row->on_hand : -1;
-        }
-    };
+    static auto on_hand_of(int warehouse, std::string_view sku) -> int {
+        auto row = InventoryTest::find_one(fields::Inventory.warehouse == warehouse &&
+                                           fields::Inventory.sku == std::string(sku));
+        return row ? row->on_hand : -1;
+    }
+};
 } // namespace
 
-TYPED_TEST_SUITE(InventoryTest, DatabaseTypes);
+TYPED_TEST_SUITE(InventoryTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
 
 TYPED_TEST(InventoryTest, DeleteWithTextKeyPart) {
     storm::QuerySet<Inventory, TypeParam> qs;
-    const Inventory                       target{.warehouse = 1, .sku = "apple"};
+    const Inventory target{.warehouse = 1, .sku = "apple"};
     ASSERT_TRUE(qs.erase(target).execute().has_value());
 
     EXPECT_EQ(this->on_hand_of(1, "apple"), -1);
@@ -235,7 +240,7 @@ TYPED_TEST(InventoryTest, DeleteWithTextKeyPart) {
 
 TYPED_TEST(InventoryTest, UpdateWithTextKeyPart) {
     storm::QuerySet<Inventory, TypeParam> qs;
-    const Inventory                       updated{.warehouse = 2, .sku = "apple", .on_hand = 900};
+    const Inventory updated{.warehouse = 2, .sku = "apple", .on_hand = 900};
     ASSERT_TRUE(qs.update(updated).execute().has_value());
 
     EXPECT_EQ(this->on_hand_of(2, "apple"), 900);
@@ -244,9 +249,9 @@ TYPED_TEST(InventoryTest, UpdateWithTextKeyPart) {
 
 TYPED_TEST(InventoryTest, DeleteBatchWithTextKeyPart) {
     storm::QuerySet<Inventory, TypeParam> qs;
-    const std::vector<Inventory>          targets{
-                     {.warehouse = 1, .sku = "pear"},
-                     {.warehouse = 2, .sku = "apple"},
+    const std::vector<Inventory> targets{
+        {.warehouse = 1, .sku = "pear"},
+        {.warehouse = 2, .sku = "apple"},
     };
     ASSERT_TRUE(qs.erase(std::span<const Inventory>(targets)).execute().has_value());
 
@@ -258,32 +263,29 @@ TYPED_TEST(InventoryTest, DeleteBatchWithTextKeyPart) {
 // ── Three-part key ───────────────────────────────────────────────────────────
 
 namespace {
-    template <typename ConnType> class LedgerTest : public CompositePkFixture<Ledger, ConnType> {
-      public:
-        auto on_after_setup(const std::shared_ptr<ConnType>& /*conn*/) -> void override {
-            this->seed(
-                    "INSERT INTO Ledger (region, account, period, balance) VALUES "
-                    "(1, 'cash', 202601, 10.5), (1, 'cash', 202602, 20.5), (1, 'debt', 202601, 30.5)"
-            );
-        }
+template <typename ConnType> class LedgerTest : public CompositePkFixture<Ledger, ConnType> {
+  public:
+    auto on_after_setup(const std::shared_ptr<ConnType> & /*conn*/) -> void override {
+        this->seed("INSERT INTO Ledger (region, account, period, balance) VALUES "
+                   "(1, 'cash', 202601, 10.5), (1, 'cash', 202602, 20.5), (1, 'debt', 202601, 30.5)");
+    }
 
-        static auto balance_of(int region, std::string_view account, std::int64_t period) -> double {
-            auto row = LedgerTest::find_one(
-                    fields::Ledger.region == region && fields::Ledger.account == std::string(account) &&
-                    fields::Ledger.period == period
-            );
-            return row ? row->balance : -1.0;
-        }
-    };
+    static auto balance_of(int region, std::string_view account, std::int64_t period) -> double {
+        auto row =
+            LedgerTest::find_one(fields::Ledger.region == region && fields::Ledger.account == std::string(account) &&
+                                 fields::Ledger.period == period);
+        return row ? row->balance : -1.0;
+    }
+};
 } // namespace
 
-TYPED_TEST_SUITE(LedgerTest, DatabaseTypes);
+TYPED_TEST_SUITE(LedgerTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
 
 // Two of the three parts match — the row must NOT be touched. This is the case
 // a 2-of-3 AND-join would get wrong.
 TYPED_TEST(LedgerTest, DeleteRequiresAllThreeParts) {
     storm::QuerySet<Ledger, TypeParam> qs;
-    const Ledger                       target{.region = 1, .account = "cash", .period = 209912};
+    const Ledger target{.region = 1, .account = "cash", .period = 209912};
     ASSERT_TRUE(qs.erase(target).execute().has_value());
 
     EXPECT_DOUBLE_EQ(this->balance_of(1, "cash", 202601), 10.5) << "no row matches all three parts";
@@ -293,7 +295,7 @@ TYPED_TEST(LedgerTest, DeleteRequiresAllThreeParts) {
 
 TYPED_TEST(LedgerTest, DeleteThreePartKey) {
     storm::QuerySet<Ledger, TypeParam> qs;
-    const Ledger                       target{.region = 1, .account = "cash", .period = 202602};
+    const Ledger target{.region = 1, .account = "cash", .period = 202602};
     ASSERT_TRUE(qs.erase(target).execute().has_value());
 
     EXPECT_DOUBLE_EQ(this->balance_of(1, "cash", 202602), -1.0);
@@ -303,7 +305,7 @@ TYPED_TEST(LedgerTest, DeleteThreePartKey) {
 
 TYPED_TEST(LedgerTest, UpdateThreePartKey) {
     storm::QuerySet<Ledger, TypeParam> qs;
-    const Ledger                       updated{.region = 1, .account = "debt", .period = 202601, .balance = 99.5};
+    const Ledger updated{.region = 1, .account = "debt", .period = 202601, .balance = 99.5};
     ASSERT_TRUE(qs.update(updated).execute().has_value());
 
     EXPECT_DOUBLE_EQ(this->balance_of(1, "debt", 202601), 99.5);
@@ -312,9 +314,9 @@ TYPED_TEST(LedgerTest, UpdateThreePartKey) {
 
 TYPED_TEST(LedgerTest, DeleteBatchThreePartKey) {
     storm::QuerySet<Ledger, TypeParam> qs;
-    const std::vector<Ledger>          targets{
-                     {.region = 1, .account = "cash", .period = 202601},
-                     {.region = 1, .account = "debt", .period = 202601},
+    const std::vector<Ledger> targets{
+        {.region = 1, .account = "cash", .period = 202601},
+        {.region = 1, .account = "debt", .period = 202601},
     };
     ASSERT_TRUE(qs.erase(std::span<const Ledger>(targets)).execute().has_value());
 
@@ -330,55 +332,55 @@ TYPED_TEST(LedgerTest, DeleteBatchThreePartKey) {
 // wrong value silently hits the wrong row.
 
 namespace {
-    template <typename ConnType> class StockEntryTest : public CompositePkFixture<StockEntry, ConnType> {
-      public:
-        // The FK target table must exist before the referencing table.
-        auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
-            ASSERT_TRUE((storm::test::ensure_tables<ConnType, Person>(conn))) << "Failed to create Person";
-            CompositePkFixture<StockEntry, ConnType>::on_setup(conn);
-        }
+template <typename ConnType> class StockEntryTest : public CompositePkFixture<StockEntry, ConnType> {
+  public:
+    // The FK target table must exist before the referencing table.
+    auto on_setup(const std::shared_ptr<ConnType> &conn) -> void override {
+        ASSERT_TRUE((storm::test::ensure_tables<ConnType, Person>(conn))) << "Failed to create Person";
+        CompositePkFixture<StockEntry, ConnType>::on_setup(conn);
+    }
 
-        // Shared by the UPDATE/DELETE fixture and the INSERT fixture (#502).
-        static auto seed_persons() -> void {
-            storm::QuerySet<Person, ConnType> people;
-            for (int i = 1; i <= 2; ++i) {
-                const Person person{.id = i, .name = std::format("W{}", i), .age = 30};
-                ASSERT_TRUE(people.insert(person).execute().has_value());
-            }
+    // Shared by the UPDATE/DELETE fixture and the INSERT fixture (#502).
+    static auto seed_persons() -> void {
+        storm::QuerySet<Person, ConnType> people;
+        for (int i = 1; i <= 2; ++i) {
+            const Person person{.id = i, .name = std::format("W{}", i), .age = 30};
+            ASSERT_TRUE(people.insert(person).execute().has_value());
         }
+    }
 
-        auto on_after_setup(const std::shared_ptr<ConnType>& /*conn*/) -> void override {
-            StockEntryTest::seed_persons();
-            this->seed("INSERT INTO StockEntry (warehouse_id, sku, qty) VALUES (1, 10, 5), (1, 20, 7), (2, 10, 9)");
-        }
+    auto on_after_setup(const std::shared_ptr<ConnType> & /*conn*/) -> void override {
+        StockEntryTest::seed_persons();
+        this->seed("INSERT INTO StockEntry (warehouse_id, sku, qty) VALUES (1, 10, 5), (1, 20, 7), (2, 10, 9)");
+    }
 
-        // Selects every row and matches the key in C++ rather than in a WHERE clause.
-        // Filtering with fields::StockEntry.warehouse would compare the FK MEMBER rather
-        // than its "warehouse_id" column — an unrelated gap in the WHERE layer (nothing
-        // in the tree filters on an FK member today), and leaning on it here would make
-        // this test fail for a reason unrelated to the key binding it exists to check.
-        // The tables hold three rows, so the scan costs nothing.
-        static auto qty_of(int warehouse_id, int sku) -> int {
-            storm::QuerySet<StockEntry, ConnType> qs;
-            auto                                  rows = qs.select().execute();
-            if (!rows.has_value()) {
-                return -1;
-            }
-            for (const StockEntry& row : rows.value()) {
-                if (row.warehouse.id == warehouse_id && row.sku == sku) {
-                    return row.qty;
-                }
-            }
+    // Selects every row and matches the key in C++ rather than in a WHERE clause.
+    // Filtering with fields::StockEntry.warehouse would compare the FK MEMBER rather
+    // than its "warehouse_id" column — an unrelated gap in the WHERE layer (nothing
+    // in the tree filters on an FK member today), and leaning on it here would make
+    // this test fail for a reason unrelated to the key binding it exists to check.
+    // The tables hold three rows, so the scan costs nothing.
+    static auto qty_of(int warehouse_id, int sku) -> int {
+        storm::QuerySet<StockEntry, ConnType> qs;
+        auto rows = qs.select().execute();
+        if (!rows.has_value()) {
             return -1;
         }
-    };
+        for (const StockEntry &row : rows.value()) {
+            if (row.warehouse.id == warehouse_id && row.sku == sku) {
+                return row.qty;
+            }
+        }
+        return -1;
+    }
+};
 } // namespace
 
-TYPED_TEST_SUITE(StockEntryTest, DatabaseTypes);
+TYPED_TEST_SUITE(StockEntryTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
 
 TYPED_TEST(StockEntryTest, DeleteByFkCompositeKey) {
     storm::QuerySet<StockEntry, TypeParam> qs;
-    const StockEntry                       target{.warehouse = {.id = 1}, .sku = 20};
+    const StockEntry target{.warehouse = {.id = 1}, .sku = 20};
     ASSERT_TRUE(qs.erase(target).execute().has_value());
 
     EXPECT_EQ(this->qty_of(1, 20), -1) << "the full-key row is deleted";
@@ -388,7 +390,7 @@ TYPED_TEST(StockEntryTest, DeleteByFkCompositeKey) {
 
 TYPED_TEST(StockEntryTest, UpdateByFkCompositeKey) {
     storm::QuerySet<StockEntry, TypeParam> qs;
-    const StockEntry                       updated{.warehouse = {.id = 2}, .sku = 10, .qty = 900};
+    const StockEntry updated{.warehouse = {.id = 2}, .sku = 10, .qty = 900};
     ASSERT_TRUE(qs.update(updated).execute().has_value());
 
     EXPECT_EQ(this->qty_of(2, 10), 900);
@@ -397,9 +399,9 @@ TYPED_TEST(StockEntryTest, UpdateByFkCompositeKey) {
 
 TYPED_TEST(StockEntryTest, DeleteBatchByFkCompositeKey) {
     storm::QuerySet<StockEntry, TypeParam> qs;
-    const std::vector<StockEntry>          targets{
-                     {.warehouse = {.id = 1}, .sku = 10},
-                     {.warehouse = {.id = 2}, .sku = 10},
+    const std::vector<StockEntry> targets{
+        {.warehouse = {.id = 1}, .sku = 10},
+        {.warehouse = {.id = 2}, .sku = 10},
     };
     ASSERT_TRUE(qs.erase(std::span<const StockEntry>(targets)).execute().has_value());
 
@@ -414,37 +416,37 @@ TYPED_TEST(StockEntryTest, DeleteBatchByFkCompositeKey) {
 // twice plus a remainder.
 
 namespace {
-    template <typename ConnType> class LargeBatchTest : public CompositePkFixture<OrderLine, ConnType> {
-      public:
-        static constexpr int ROWS = 900;
+template <typename ConnType> class LargeBatchTest : public CompositePkFixture<OrderLine, ConnType> {
+  public:
+    static constexpr int ROWS = 900;
 
-        auto on_after_setup(const std::shared_ptr<ConnType>& /*conn*/) -> void override {
-            std::string sql = "INSERT INTO OrderLine (order_id, product_id, quantity, note) VALUES ";
-            for (int i = 0; i < ROWS; ++i) {
-                if (i > 0) {
-                    sql += ", ";
-                }
-                sql += std::format("({}, {}, {}, 'n')", i, i * 2, i);
+    auto on_after_setup(const std::shared_ptr<ConnType> & /*conn*/) -> void override {
+        std::string sql = "INSERT INTO OrderLine (order_id, product_id, quantity, note) VALUES ";
+        for (int i = 0; i < ROWS; ++i) {
+            if (i > 0) {
+                sql += ", ";
             }
-            this->seed(sql);
+            sql += std::format("({}, {}, {}, 'n')", i, i * 2, i);
         }
+        this->seed(sql);
+    }
 
-        // Keys (i, 2i) for i in [from, ROWS).
-        static auto keys_from(int from) -> std::vector<OrderLine> {
-            std::vector<OrderLine> targets;
-            targets.reserve(static_cast<std::size_t>(ROWS - from));
-            for (int i = from; i < ROWS; ++i) {
-                targets.push_back({.order_id = i, .product_id = i * 2});
-            }
-            return targets;
+    // Keys (i, 2i) for i in [from, ROWS).
+    static auto keys_from(int from) -> std::vector<OrderLine> {
+        std::vector<OrderLine> targets;
+        targets.reserve(static_cast<std::size_t>(ROWS - from));
+        for (int i = from; i < ROWS; ++i) {
+            targets.push_back({.order_id = i, .product_id = i * 2});
         }
-    };
+        return targets;
+    }
+};
 } // namespace
 
-TYPED_TEST_SUITE(LargeBatchTest, DatabaseTypes);
+TYPED_TEST_SUITE(LargeBatchTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
 
 TYPED_TEST(LargeBatchTest, ChunkedDeleteSpansMultipleChunks) {
-    const std::vector<OrderLine>          targets = LargeBatchTest<TypeParam>::keys_from(0);
+    const std::vector<OrderLine> targets = LargeBatchTest<TypeParam>::keys_from(0);
     storm::QuerySet<OrderLine, TypeParam> qs;
     ASSERT_TRUE(qs.erase(std::span<const OrderLine>(targets)).execute().has_value());
     EXPECT_EQ(this->row_count(), 0) << "every key across every chunk is deleted";
@@ -453,7 +455,7 @@ TYPED_TEST(LargeBatchTest, ChunkedDeleteSpansMultipleChunks) {
 // The same batch minus one key: the survivor proves the chunked path deletes the
 // keys it was given rather than everything it touched.
 TYPED_TEST(LargeBatchTest, ChunkedDeleteLeavesUnlistedKeys) {
-    const std::vector<OrderLine>          targets = LargeBatchTest<TypeParam>::keys_from(1);
+    const std::vector<OrderLine> targets = LargeBatchTest<TypeParam>::keys_from(1);
     storm::QuerySet<OrderLine, TypeParam> qs;
     ASSERT_TRUE(qs.erase(std::span<const OrderLine>(targets)).execute().has_value());
     EXPECT_EQ(this->row_count(), 1) << "the one unlisted key survives";
@@ -461,15 +463,15 @@ TYPED_TEST(LargeBatchTest, ChunkedDeleteLeavesUnlistedKeys) {
 
 TYPED_TEST(LargeBatchTest, ChunkedUpdateSpansMultipleChunks) {
     std::vector<OrderLine> updates = LargeBatchTest<TypeParam>::keys_from(0);
-    for (OrderLine& row : updates) {
+    for (OrderLine &row : updates) {
         row.quantity = 1000 + row.order_id;
-        row.note     = "u";
+        row.note = "u";
     }
     storm::QuerySet<OrderLine, TypeParam> qs;
     ASSERT_TRUE(qs.update(std::span<const OrderLine>(updates)).execute().has_value());
 
     storm::QuerySet<OrderLine, TypeParam> check;
-    auto                                  updated = check.where(fields::OrderLine.quantity >= 1000).count().execute();
+    auto updated = check.where(fields::OrderLine.quantity >= 1000).count().execute();
     ASSERT_TRUE(updated.has_value());
     EXPECT_EQ(updated.value(), LargeBatchTest<TypeParam>::ROWS);
 }
@@ -479,32 +481,32 @@ TYPED_TEST(LargeBatchTest, ChunkedUpdateSpansMultipleChunks) {
 // unchanged by the composite widening.
 
 namespace {
-    template <typename ConnType> class SinglePkRegressionTest : public StormTestFixture<Person, ConnType> {
-      public:
-        auto on_after_setup(const std::shared_ptr<ConnType>& /*conn*/) -> void override {
-            storm::QuerySet<Person, ConnType> qs;
-            for (int i = 1; i <= 3; ++i) {
-                const Person person{.id = i, .name = std::format("P{}", i), .age = 20 + i};
-                ASSERT_TRUE(qs.insert(person).execute().has_value());
-            }
+template <typename ConnType> class SinglePkRegressionTest : public StormTestFixture<Person, ConnType> {
+  public:
+    auto on_after_setup(const std::shared_ptr<ConnType> & /*conn*/) -> void override {
+        storm::QuerySet<Person, ConnType> qs;
+        for (int i = 1; i <= 3; ++i) {
+            const Person person{.id = i, .name = std::format("P{}", i), .age = 20 + i};
+            ASSERT_TRUE(qs.insert(person).execute().has_value());
         }
+    }
 
-        static auto age_of(int person_id) -> int {
-            storm::QuerySet<Person, ConnType> qs;
-            auto                              rows = qs.where(fields::Person.id == person_id).select().execute();
-            if (!rows.has_value() || rows.value().empty()) {
-                return -1;
-            }
-            return rows.value().begin()->age;
+    static auto age_of(int person_id) -> int {
+        storm::QuerySet<Person, ConnType> qs;
+        auto rows = qs.where(fields::Person.id == person_id).select().execute();
+        if (!rows.has_value() || rows.value().empty()) {
+            return -1;
         }
-    };
+        return rows.value().begin()->age;
+    }
+};
 } // namespace
 
-TYPED_TEST_SUITE(SinglePkRegressionTest, DatabaseTypes);
+TYPED_TEST_SUITE(SinglePkRegressionTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
 
 TYPED_TEST(SinglePkRegressionTest, SingleDeleteStillWorks) {
     storm::QuerySet<Person, TypeParam> qs;
-    const Person                       target{.id = 2};
+    const Person target{.id = 2};
     ASSERT_TRUE(qs.erase(target).execute().has_value());
     EXPECT_EQ(this->age_of(2), -1);
     EXPECT_EQ(this->age_of(1), 21);
@@ -512,7 +514,7 @@ TYPED_TEST(SinglePkRegressionTest, SingleDeleteStillWorks) {
 
 TYPED_TEST(SinglePkRegressionTest, SingleUpdateStillWorks) {
     storm::QuerySet<Person, TypeParam> qs;
-    const Person                       updated{.id = 3, .name = "P3", .age = 99};
+    const Person updated{.id = 3, .name = "P3", .age = 99};
     ASSERT_TRUE(qs.update(updated).execute().has_value());
     EXPECT_EQ(this->age_of(3), 99);
     EXPECT_EQ(this->age_of(1), 21);
@@ -520,7 +522,7 @@ TYPED_TEST(SinglePkRegressionTest, SingleUpdateStillWorks) {
 
 TYPED_TEST(SinglePkRegressionTest, BatchDeleteStillWorks) {
     storm::QuerySet<Person, TypeParam> qs;
-    const std::vector<Person>          targets{{.id = 1}, {.id = 3}};
+    const std::vector<Person> targets{{.id = 1}, {.id = 3}};
     ASSERT_TRUE(qs.erase(std::span<const Person>(targets)).execute().has_value());
     EXPECT_EQ(this->age_of(1), -1);
     EXPECT_EQ(this->age_of(3), -1);
@@ -534,24 +536,22 @@ TYPED_TEST(SinglePkRegressionTest, BatchDeleteStillWorks) {
 // surfaces the PRIMARY KEY violation as an Error.
 
 namespace {
-    // Insert tests need an EMPTY table, so they use the base fixture directly.
-    template <typename ConnType> class OrderLineInsertTest : public CompositePkFixture<OrderLine, ConnType> {};
-    template <typename ConnType> class InventoryInsertTest : public CompositePkFixture<Inventory, ConnType> {};
-    template <typename ConnType> class LedgerInsertTest : public CompositePkFixture<Ledger, ConnType> {};
+// Insert tests need an EMPTY table, so they use the base fixture directly.
+template <typename ConnType> class OrderLineInsertTest : public CompositePkFixture<OrderLine, ConnType> {};
+template <typename ConnType> class InventoryInsertTest : public CompositePkFixture<Inventory, ConnType> {};
+template <typename ConnType> class LedgerInsertTest : public CompositePkFixture<Ledger, ConnType> {};
 } // namespace
 
-TYPED_TEST_SUITE(OrderLineInsertTest, DatabaseTypes);
-TYPED_TEST_SUITE(InventoryInsertTest, DatabaseTypes);
-TYPED_TEST_SUITE(LedgerInsertTest, DatabaseTypes);
+TYPED_TEST_SUITE(OrderLineInsertTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
+TYPED_TEST_SUITE(InventoryInsertTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
+TYPED_TEST_SUITE(LedgerInsertTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
 
 TYPED_TEST(OrderLineInsertTest, SingleInsertLandsEveryKeyPart) {
     storm::QuerySet<OrderLine, TypeParam> qs;
-    const OrderLine                       row{.order_id = 7, .product_id = 42, .quantity = 3, .note = "a"};
-    auto                                  result = qs.insert(row).execute();
-    static_assert(
-            std::is_same_v<decltype(result), std::expected<void, typename TypeParam::Error>>,
-            "composite insert has nothing to return — the caller supplied the whole key"
-    );
+    const OrderLine row{.order_id = 7, .product_id = 42, .quantity = 3, .note = "a"};
+    auto result = qs.insert(row).execute();
+    static_assert(std::is_same_v<decltype(result), std::expected<void, typename TypeParam::Error>>,
+                  "composite insert has nothing to return — the caller supplied the whole key");
     ASSERT_TRUE(result.has_value());
 
     EXPECT_EQ(this->row_count(), 1);
@@ -566,11 +566,11 @@ TYPED_TEST(OrderLineInsertTest, SingleInsertLandsEveryKeyPart) {
 // shifted one column left — order_id would have received product_id's value.
 TYPED_TEST(OrderLineInsertTest, FirstKeyPartIsNotDefaultedOrShifted) {
     storm::QuerySet<OrderLine, TypeParam> qs;
-    const OrderLine                       row{.order_id = 5, .product_id = 6, .quantity = 9, .note = "x"};
+    const OrderLine row{.order_id = 5, .product_id = 6, .quantity = 9, .note = "x"};
     ASSERT_TRUE(qs.insert(row).execute().has_value());
 
     EXPECT_FALSE(this->find_one(fields::OrderLine.order_id == 6).has_value())
-            << "product_id's value must not land in order_id";
+        << "product_id's value must not land in order_id";
     auto found = this->find_one(fields::OrderLine.order_id == 5 && fields::OrderLine.product_id == 6);
     ASSERT_TRUE(found.has_value());
     EXPECT_EQ(found->quantity, 9) << "every non-key value landed in its own column";
@@ -580,8 +580,8 @@ TYPED_TEST(OrderLineInsertTest, FirstKeyPartIsNotDefaultedOrShifted) {
 TYPED_TEST(OrderLineInsertTest, ExplicitReturnIdNoIsAcceptedAndIdentical) {
     using storm::orm::statements::ReturnId;
     storm::QuerySet<OrderLine, TypeParam> qs;
-    const OrderLine                       row{.order_id = 1, .product_id = 2, .quantity = 1, .note = "n"};
-    auto                                  result = qs.template insert<ReturnId::No>(row).execute();
+    const OrderLine row{.order_id = 1, .product_id = 2, .quantity = 1, .note = "n"};
+    auto result = qs.template insert<ReturnId::No>(row).execute();
     static_assert(std::is_same_v<decltype(result), std::expected<void, typename TypeParam::Error>>);
     ASSERT_TRUE(result.has_value());
     EXPECT_EQ(this->row_count(), 1);
@@ -590,8 +590,7 @@ TYPED_TEST(OrderLineInsertTest, ExplicitReturnIdNoIsAcceptedAndIdentical) {
 TYPED_TEST(OrderLineInsertTest, DuplicateFullKeyIsAnError) {
     storm::QuerySet<OrderLine, TypeParam> qs;
     ASSERT_TRUE(
-            qs.insert(OrderLine{.order_id = 1, .product_id = 10, .quantity = 5, .note = "a"}).execute().has_value()
-    );
+        qs.insert(OrderLine{.order_id = 1, .product_id = 10, .quantity = 5, .note = "a"}).execute().has_value());
 
     auto result = qs.insert(OrderLine{.order_id = 1, .product_id = 10, .quantity = 99, .note = "b"}).execute();
     EXPECT_FALSE(result.has_value()) << "a duplicate composite key violates the PRIMARY KEY constraint";
@@ -602,23 +601,20 @@ TYPED_TEST(OrderLineInsertTest, DuplicateFullKeyIsAnError) {
 TYPED_TEST(OrderLineInsertTest, SharedSinglePartIsNotADuplicate) {
     storm::QuerySet<OrderLine, TypeParam> qs;
     ASSERT_TRUE(
-            qs.insert(OrderLine{.order_id = 1, .product_id = 10, .quantity = 1, .note = "a"}).execute().has_value()
-    );
+        qs.insert(OrderLine{.order_id = 1, .product_id = 10, .quantity = 1, .note = "a"}).execute().has_value());
     EXPECT_TRUE(
-            qs.insert(OrderLine{.order_id = 1, .product_id = 20, .quantity = 2, .note = "b"}).execute().has_value()
-    );
+        qs.insert(OrderLine{.order_id = 1, .product_id = 20, .quantity = 2, .note = "b"}).execute().has_value());
     EXPECT_TRUE(
-            qs.insert(OrderLine{.order_id = 2, .product_id = 10, .quantity = 3, .note = "c"}).execute().has_value()
-    );
+        qs.insert(OrderLine{.order_id = 2, .product_id = 10, .quantity = 3, .note = "c"}).execute().has_value());
     EXPECT_EQ(this->row_count(), 3);
 }
 
 TYPED_TEST(OrderLineInsertTest, BatchInsertLandsEveryRow) {
     storm::QuerySet<OrderLine, TypeParam> qs;
-    const std::vector<OrderLine>          rows{
-                     {.order_id = 1, .product_id = 10, .quantity = 5, .note = "a"},
-                     {.order_id = 1, .product_id = 20, .quantity = 7, .note = "b"},
-                     {.order_id = 2, .product_id = 10, .quantity = 9, .note = "c"},
+    const std::vector<OrderLine> rows{
+        {.order_id = 1, .product_id = 10, .quantity = 5, .note = "a"},
+        {.order_id = 1, .product_id = 20, .quantity = 7, .note = "b"},
+        {.order_id = 2, .product_id = 10, .quantity = 9, .note = "c"},
     };
     ASSERT_TRUE(qs.insert(std::span<const OrderLine>(rows)).execute().has_value());
     EXPECT_EQ(this->row_count(), 3);
@@ -630,7 +626,7 @@ TYPED_TEST(OrderLineInsertTest, BatchInsertLandsEveryRow) {
 
 TYPED_TEST(OrderLineInsertTest, EmptyBatchIsANoOp) {
     storm::QuerySet<OrderLine, TypeParam> qs;
-    const std::vector<OrderLine>          empty;
+    const std::vector<OrderLine> empty;
     EXPECT_TRUE(qs.insert(std::span<const OrderLine>(empty)).execute().has_value());
     EXPECT_EQ(this->row_count(), 0);
 }
@@ -639,7 +635,7 @@ TYPED_TEST(OrderLineInsertTest, EmptyBatchIsANoOp) {
 // in the statement: OrderLine binds 4 params/row, so one bulk statement caps at
 // 999/4 == 249 rows and 250 forces the chunked path (one max chunk + remainder).
 TYPED_TEST(OrderLineInsertTest, BatchAtTheChunkBoundary) {
-    constexpr int          ROWS = 250;
+    constexpr int ROWS = 250;
     std::vector<OrderLine> rows;
     rows.reserve(ROWS);
     for (int i = 0; i < ROWS; ++i) {
@@ -650,7 +646,7 @@ TYPED_TEST(OrderLineInsertTest, BatchAtTheChunkBoundary) {
     EXPECT_EQ(this->row_count(), ROWS);
 
     auto last =
-            this->find_one(fields::OrderLine.order_id == ROWS - 1 && fields::OrderLine.product_id == (ROWS - 1) * 2);
+        this->find_one(fields::OrderLine.order_id == ROWS - 1 && fields::OrderLine.product_id == (ROWS - 1) * 2);
     ASSERT_TRUE(last.has_value()) << "the row past the chunk boundary landed with its full key";
     EXPECT_EQ(last->quantity, ROWS - 1);
 }
@@ -679,18 +675,14 @@ TYPED_TEST(InventoryInsertTest, DuplicateTextKeyIsAnError) {
 TYPED_TEST(LedgerInsertTest, ThreePartKeyInsert) {
     storm::QuerySet<Ledger, TypeParam> qs;
     ASSERT_TRUE(
-            qs.insert(Ledger{.region = 1, .account = "cash", .period = 202601, .balance = 10.5}).execute().has_value()
-    );
+        qs.insert(Ledger{.region = 1, .account = "cash", .period = 202601, .balance = 10.5}).execute().has_value());
     // Differs in exactly ONE part each — none is a duplicate of the first row.
     EXPECT_TRUE(
-            qs.insert(Ledger{.region = 2, .account = "cash", .period = 202601, .balance = 1.0}).execute().has_value()
-    );
+        qs.insert(Ledger{.region = 2, .account = "cash", .period = 202601, .balance = 1.0}).execute().has_value());
     EXPECT_TRUE(
-            qs.insert(Ledger{.region = 1, .account = "debt", .period = 202601, .balance = 2.0}).execute().has_value()
-    );
+        qs.insert(Ledger{.region = 1, .account = "debt", .period = 202601, .balance = 2.0}).execute().has_value());
     EXPECT_TRUE(
-            qs.insert(Ledger{.region = 1, .account = "cash", .period = 202602, .balance = 3.0}).execute().has_value()
-    );
+        qs.insert(Ledger{.region = 1, .account = "cash", .period = 202602, .balance = 3.0}).execute().has_value());
     EXPECT_EQ(this->row_count(), 4);
 }
 
@@ -698,17 +690,17 @@ TYPED_TEST(LedgerInsertTest, ThreePartKeyInsert) {
 // An FK part binds the REFERENCED row's key into the "<name>_id" column.
 
 namespace {
-    // Inherits StockEntryTest's Person-table setup and qty_of matcher; overrides
-    // the seeding so the StockEntry table starts EMPTY for the INSERT tests.
-    template <typename ConnType> class StockEntryInsertTest : public StockEntryTest<ConnType> {
-      public:
-        auto on_after_setup(const std::shared_ptr<ConnType>& /*conn*/) -> void override {
-            StockEntryTest<ConnType>::seed_persons();
-        }
-    };
+// Inherits StockEntryTest's Person-table setup and qty_of matcher; overrides
+// the seeding so the StockEntry table starts EMPTY for the INSERT tests.
+template <typename ConnType> class StockEntryInsertTest : public StockEntryTest<ConnType> {
+  public:
+    auto on_after_setup(const std::shared_ptr<ConnType> & /*conn*/) -> void override {
+        StockEntryTest<ConnType>::seed_persons();
+    }
+};
 } // namespace
 
-TYPED_TEST_SUITE(StockEntryInsertTest, DatabaseTypes);
+TYPED_TEST_SUITE(StockEntryInsertTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
 
 TYPED_TEST(StockEntryInsertTest, FkKeyPartBindsTheReferencedKey) {
     storm::QuerySet<StockEntry, TypeParam> qs;
@@ -732,30 +724,28 @@ TYPED_TEST(StockEntryInsertTest, DuplicateFkKeyIsAnError) {
 // the std::optional<int64_t>/int64_t single-PK proxies.
 
 namespace {
-    template <typename ConnType> class OrderLineUpsertTest : public CompositePkFixture<OrderLine, ConnType> {};
+template <typename ConnType> class OrderLineUpsertTest : public CompositePkFixture<OrderLine, ConnType> {};
 } // namespace
 
-TYPED_TEST_SUITE(OrderLineUpsertTest, DatabaseTypes);
+TYPED_TEST_SUITE(OrderLineUpsertTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
 
 TYPED_TEST(OrderLineUpsertTest, DoNothingSkipsOnConflict) {
     storm::QuerySet<OrderLine, TypeParam> qs;
-    const OrderLine                       first{.order_id = 1, .product_id = 10, .quantity = 5, .note = "a"};
-    auto                                  inserted = qs.insert(first)
-                            .template on_conflict<fields::OrderLine.order_id, fields::OrderLine.product_id>()
-                            .nothing()
-                            .execute();
-    static_assert(
-            std::is_same_v<decltype(inserted), std::expected<void, typename TypeParam::Error>>,
-            "a composite key has nothing to RETURN, even for DO NOTHING"
-    );
+    const OrderLine first{.order_id = 1, .product_id = 10, .quantity = 5, .note = "a"};
+    auto inserted = qs.insert(first)
+                        .template on_conflict<fields::OrderLine.order_id, fields::OrderLine.product_id>()
+                        .nothing()
+                        .execute();
+    static_assert(std::is_same_v<decltype(inserted), std::expected<void, typename TypeParam::Error>>,
+                  "a composite key has nothing to RETURN, even for DO NOTHING");
     ASSERT_TRUE(inserted.has_value());
     EXPECT_EQ(this->row_count(), 1);
 
     const OrderLine conflicting{.order_id = 1, .product_id = 10, .quantity = 99, .note = "b"};
-    auto            skipped = qs.insert(conflicting)
-                           .template on_conflict<fields::OrderLine.order_id, fields::OrderLine.product_id>()
-                           .nothing()
-                           .execute();
+    auto skipped = qs.insert(conflicting)
+                       .template on_conflict<fields::OrderLine.order_id, fields::OrderLine.product_id>()
+                       .nothing()
+                       .execute();
     ASSERT_TRUE(skipped.has_value());
     EXPECT_EQ(this->row_count(), 1) << "the conflicting insert must be skipped, not applied";
 
@@ -766,22 +756,20 @@ TYPED_TEST(OrderLineUpsertTest, DoNothingSkipsOnConflict) {
 
 TYPED_TEST(OrderLineUpsertTest, DoUpdateOverwritesListedColumn) {
     storm::QuerySet<OrderLine, TypeParam> qs;
-    const OrderLine                       first{.order_id = 2, .product_id = 20, .quantity = 5, .note = "a"};
-    auto                                  seeded = qs.insert(first)
-                          .template on_conflict<fields::OrderLine.order_id, fields::OrderLine.product_id>()
-                          .template update<fields::OrderLine.quantity>()
-                          .execute();
+    const OrderLine first{.order_id = 2, .product_id = 20, .quantity = 5, .note = "a"};
+    auto seeded = qs.insert(first)
+                      .template on_conflict<fields::OrderLine.order_id, fields::OrderLine.product_id>()
+                      .template update<fields::OrderLine.quantity>()
+                      .execute();
     ASSERT_TRUE(seeded.has_value());
 
     const OrderLine conflicting{.order_id = 2, .product_id = 20, .quantity = 99, .note = "b"};
-    auto            updated = qs.insert(conflicting)
-                           .template on_conflict<fields::OrderLine.order_id, fields::OrderLine.product_id>()
-                           .template update<fields::OrderLine.quantity>()
-                           .execute();
-    static_assert(
-            std::is_same_v<decltype(updated), std::expected<void, typename TypeParam::Error>>,
-            "a composite key has nothing to RETURN for DO UPDATE either"
-    );
+    auto updated = qs.insert(conflicting)
+                       .template on_conflict<fields::OrderLine.order_id, fields::OrderLine.product_id>()
+                       .template update<fields::OrderLine.quantity>()
+                       .execute();
+    static_assert(std::is_same_v<decltype(updated), std::expected<void, typename TypeParam::Error>>,
+                  "a composite key has nothing to RETURN for DO UPDATE either");
     ASSERT_TRUE(updated.has_value());
     EXPECT_EQ(this->row_count(), 1);
 
@@ -794,18 +782,18 @@ TYPED_TEST(OrderLineUpsertTest, DoUpdateOverwritesListedColumn) {
 // A key that shares only ONE part is not a conflict at all — both rows land.
 TYPED_TEST(OrderLineUpsertTest, PartialKeyMatchIsNotAConflict) {
     storm::QuerySet<OrderLine, TypeParam> qs;
-    const OrderLine                       first{.order_id = 3, .product_id = 30, .quantity = 1, .note = "a"};
-    auto                                  first_result = qs.insert(first)
-                                .template on_conflict<fields::OrderLine.order_id, fields::OrderLine.product_id>()
-                                .nothing()
-                                .execute();
+    const OrderLine first{.order_id = 3, .product_id = 30, .quantity = 1, .note = "a"};
+    auto first_result = qs.insert(first)
+                            .template on_conflict<fields::OrderLine.order_id, fields::OrderLine.product_id>()
+                            .nothing()
+                            .execute();
     ASSERT_TRUE(first_result.has_value());
 
     const OrderLine same_order{.order_id = 3, .product_id = 31, .quantity = 2, .note = "b"};
-    auto            second_result = qs.insert(same_order)
-                                 .template on_conflict<fields::OrderLine.order_id, fields::OrderLine.product_id>()
-                                 .nothing()
-                                 .execute();
+    auto second_result = qs.insert(same_order)
+                             .template on_conflict<fields::OrderLine.order_id, fields::OrderLine.product_id>()
+                             .nothing()
+                             .execute();
     ASSERT_TRUE(second_result.has_value());
     EXPECT_EQ(this->row_count(), 2) << "sharing only order_id is not a full-key conflict";
 }
@@ -813,29 +801,27 @@ TYPED_TEST(OrderLineUpsertTest, PartialKeyMatchIsNotAConflict) {
 // Mixed-type key parts (int + std::string) — proves the conflict target and the
 // bound VALUES both dispatch per part type, not just for an all-int key.
 namespace {
-    template <typename ConnType> class InventoryUpsertTest : public CompositePkFixture<Inventory, ConnType> {};
+template <typename ConnType> class InventoryUpsertTest : public CompositePkFixture<Inventory, ConnType> {};
 } // namespace
 
-TYPED_TEST_SUITE(InventoryUpsertTest, DatabaseTypes);
+TYPED_TEST_SUITE(InventoryUpsertTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
 
 TYPED_TEST(InventoryUpsertTest, DoUpdateOverwritesListedColumnWithTextKeyPart) {
     storm::QuerySet<Inventory, TypeParam> qs;
-    const Inventory                       first{.warehouse = 1, .sku = "apple", .on_hand = 5};
-    auto                                  seeded = qs.insert(first)
-                          .template on_conflict<fields::Inventory.warehouse, fields::Inventory.sku>()
-                          .template update<fields::Inventory.on_hand>()
-                          .execute();
+    const Inventory first{.warehouse = 1, .sku = "apple", .on_hand = 5};
+    auto seeded = qs.insert(first)
+                      .template on_conflict<fields::Inventory.warehouse, fields::Inventory.sku>()
+                      .template update<fields::Inventory.on_hand>()
+                      .execute();
     ASSERT_TRUE(seeded.has_value());
 
     const Inventory conflicting{.warehouse = 1, .sku = "apple", .on_hand = 900};
-    auto            updated = qs.insert(conflicting)
-                           .template on_conflict<fields::Inventory.warehouse, fields::Inventory.sku>()
-                           .template update<fields::Inventory.on_hand>()
-                           .execute();
-    static_assert(
-            std::is_same_v<decltype(updated), std::expected<void, typename TypeParam::Error>>,
-            "a composite key has nothing to RETURN, even with a text key part"
-    );
+    auto updated = qs.insert(conflicting)
+                       .template on_conflict<fields::Inventory.warehouse, fields::Inventory.sku>()
+                       .template update<fields::Inventory.on_hand>()
+                       .execute();
+    static_assert(std::is_same_v<decltype(updated), std::expected<void, typename TypeParam::Error>>,
+                  "a composite key has nothing to RETURN, even with a text key part");
     ASSERT_TRUE(updated.has_value());
     EXPECT_EQ(this->row_count(), 1);
 
@@ -846,18 +832,16 @@ TYPED_TEST(InventoryUpsertTest, DoUpdateOverwritesListedColumnWithTextKeyPart) {
 
 TYPED_TEST(InventoryUpsertTest, DoNothingSkipsOnConflictWithTextKeyPart) {
     storm::QuerySet<Inventory, TypeParam> qs;
-    const Inventory                       first{.warehouse = 2, .sku = "pear", .on_hand = 3};
-    auto                                  inserted = qs.insert(first)
-                            .template on_conflict<fields::Inventory.warehouse, fields::Inventory.sku>()
-                            .nothing()
-                            .execute();
+    const Inventory first{.warehouse = 2, .sku = "pear", .on_hand = 3};
+    auto inserted =
+        qs.insert(first).template on_conflict<fields::Inventory.warehouse, fields::Inventory.sku>().nothing().execute();
     ASSERT_TRUE(inserted.has_value());
 
     const Inventory conflicting{.warehouse = 2, .sku = "pear", .on_hand = 999};
-    auto            skipped = qs.insert(conflicting)
-                           .template on_conflict<fields::Inventory.warehouse, fields::Inventory.sku>()
-                           .nothing()
-                           .execute();
+    auto skipped = qs.insert(conflicting)
+                       .template on_conflict<fields::Inventory.warehouse, fields::Inventory.sku>()
+                       .nothing()
+                       .execute();
     ASSERT_TRUE(skipped.has_value());
 
     auto row = this->find_one(fields::Inventory.warehouse == 2 && fields::Inventory.sku == std::string("pear"));

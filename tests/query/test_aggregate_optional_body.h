@@ -1,5 +1,18 @@
-#include <gtest/gtest.h>
-#include "test_db_helpers.h"
+#pragma once
+
+// Shared test body for test_aggregate_optional_sqlite.cpp / test_aggregate_optional_pg.cpp — the two
+// single-backend TUs of a compile-time TU split (see test_db_helpers.h,
+// DatabaseTypesSqliteHalf/DatabaseTypesPgHalf). Splitting a 2-backend TU into
+// two lets ninja compile them in parallel instead of serially instantiating
+// both backends in one TU; keeping the body here (instead of duplicating it
+// into both .cpp files) removes the risk of the two halves silently drifting.
+//
+// The includer must #define STORM_SPLIT_TYPES / STORM_SPLIT_TYPE_NAMES to one
+// backend's ::testing::Types<> alias / NameGenerator before #include-ing this
+// file, and #undef both afterward. Never include this file directly.
+#if !defined(STORM_SPLIT_TYPES) || !defined(STORM_SPLIT_TYPE_NAMES)
+#error "test_aggregate_optional_body.h: define STORM_SPLIT_TYPES/STORM_SPLIT_TYPE_NAMES before including"
+#endif
 
 import storm;
 import std;
@@ -7,7 +20,9 @@ import std;
 using storm::QuerySet;
 
 #include "test_models.h" // NOSONAR cpp:S954
+
 #include "test_seed_helpers.h"
+
 #include "test_aggregate_fixture.h"
 
 // =============================================================================
@@ -16,7 +31,7 @@ using storm::QuerySet;
 
 template <typename ConnType> class OptionalAggregateTest : public StormTestFixture<Person, ConnType> {
   public:
-    auto on_after_setup(const std::shared_ptr<ConnType>&) -> void override {
+    auto on_after_setup(const std::shared_ptr<ConnType> &) -> void override {
         qs = std::make_unique<QuerySet<Person, ConnType>>();
     }
 
@@ -28,15 +43,14 @@ template <typename ConnType> class OptionalAggregateTest : public StormTestFixtu
     // NOLINTNEXTLINE(cppcoreguidelines-non-private-member-variables-in-classes,misc-non-private-member-variables-in-classes)
     std::unique_ptr<QuerySet<Person, ConnType>> qs; // NOSONAR cpp:S3656
 };
-
-TYPED_TEST_SUITE(OptionalAggregateTest, DatabaseTypes);
+TYPED_TEST_SUITE(OptionalAggregateTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
 
 TYPED_TEST(OptionalAggregateTest, CountWithNullValues) {
     ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
-            {.name = "Alice", .salary = 50000.0, .score = 25},
-            {.name = "Bob", .salary = 60000.0, .score = std::nullopt},
-            {.name = "Charlie", .salary = 70000.0, .score = 35},
-            {.name = "Dave", .salary = 80000.0, .score = std::nullopt},
+        {.name = "Alice", .salary = 50000.0, .score = 25},
+        {.name = "Bob", .salary = 60000.0, .score = std::nullopt},
+        {.name = "Charlie", .salary = 70000.0, .score = 35},
+        {.name = "Dave", .salary = 80000.0, .score = std::nullopt},
     })));
 
     auto count_all = this->qs->count().execute();
@@ -50,9 +64,9 @@ TYPED_TEST(OptionalAggregateTest, CountWithNullValues) {
 
 TYPED_TEST(OptionalAggregateTest, SumWithNullValues) {
     ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
-            {.name = "Alice", .salary = 50000.0, .score = 25},
-            {.name = "Bob", .salary = 60000.0, .score = std::nullopt},
-            {.name = "Charlie", .salary = 70000.0, .score = 35},
+        {.name = "Alice", .salary = 50000.0, .score = 25},
+        {.name = "Bob", .salary = 60000.0, .score = std::nullopt},
+        {.name = "Charlie", .salary = 70000.0, .score = 35},
     })));
 
     auto sum = this->qs->template sum<fields::Person.score>().execute();
@@ -62,9 +76,9 @@ TYPED_TEST(OptionalAggregateTest, SumWithNullValues) {
 
 TYPED_TEST(OptionalAggregateTest, AvgWithNullValues) {
     ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
-            {.name = "Alice", .salary = 50000.0, .score = 20},
-            {.name = "Bob", .salary = 60000.0, .score = std::nullopt},
-            {.name = "Charlie", .salary = 70000.0, .score = 40},
+        {.name = "Alice", .salary = 50000.0, .score = 20},
+        {.name = "Bob", .salary = 60000.0, .score = std::nullopt},
+        {.name = "Charlie", .salary = 70000.0, .score = 40},
     })));
 
     auto avg = this->qs->template avg<fields::Person.score>().execute();
@@ -75,10 +89,10 @@ TYPED_TEST(OptionalAggregateTest, AvgWithNullValues) {
 
 TYPED_TEST(OptionalAggregateTest, MinMaxWithNullValues) {
     ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
-            {.name = "Alice", .salary = 50000.0, .score = 25},
-            {.name = "Bob", .salary = 60000.0, .score = std::nullopt},
-            {.name = "Charlie", .salary = 70000.0, .score = 45},
-            {.name = "Dave", .salary = 80000.0, .score = std::nullopt},
+        {.name = "Alice", .salary = 50000.0, .score = 25},
+        {.name = "Bob", .salary = 60000.0, .score = std::nullopt},
+        {.name = "Charlie", .salary = 70000.0, .score = 45},
+        {.name = "Dave", .salary = 80000.0, .score = std::nullopt},
     })));
 
     auto min_val = this->qs->template min<fields::Person.score>().execute();
@@ -94,11 +108,11 @@ TYPED_TEST(OptionalAggregateTest, MinMaxWithNullValues) {
 
 TYPED_TEST(OptionalAggregateTest, CountDistinctWithNullValues) {
     ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
-            {.name = "Alice", .salary = 50000.0, .score = 30},
-            {.name = "Bob", .salary = 60000.0, .score = std::nullopt},
-            {.name = "Charlie", .salary = 70000.0, .score = 30},
-            {.name = "Dave", .salary = 80000.0, .score = std::nullopt},
-            {.name = "Eve", .salary = 90000.0, .score = 40},
+        {.name = "Alice", .salary = 50000.0, .score = 30},
+        {.name = "Bob", .salary = 60000.0, .score = std::nullopt},
+        {.name = "Charlie", .salary = 70000.0, .score = 30},
+        {.name = "Dave", .salary = 80000.0, .score = std::nullopt},
+        {.name = "Eve", .salary = 90000.0, .score = 40},
     })));
 
     auto result = this->qs->template count_distinct<fields::Person.score>().execute();
@@ -108,17 +122,17 @@ TYPED_TEST(OptionalAggregateTest, CountDistinctWithNullValues) {
 
 TYPED_TEST(OptionalAggregateTest, GroupByWithAllNullValuesInGroupColumn) {
     ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
-            {.name = "Alice", .salary = 50000.0, .score = std::nullopt},
-            {.name = "Bob", .salary = 60000.0, .score = std::nullopt},
-            {.name = "Charlie", .salary = 70000.0, .score = std::nullopt},
+        {.name = "Alice", .salary = 50000.0, .score = std::nullopt},
+        {.name = "Bob", .salary = 60000.0, .score = std::nullopt},
+        {.name = "Charlie", .salary = 70000.0, .score = std::nullopt},
     })));
 
     auto result = this->qs->template group_by<fields::Person.score>().count().execute();
     ASSERT_TRUE(result.has_value()) << "GROUP BY with all NULL values failed";
     EXPECT_EQ(result.value().size(), 1);
 
-    auto& groups = result.value();
-    auto  it     = groups.begin();
+    auto &groups = result.value();
+    auto it = groups.begin();
     ASSERT_NE(it, groups.end());
     auto [score_key, count_val] = *it;
     EXPECT_FALSE(score_key.has_value()) << "Expected NULL group key";
@@ -127,22 +141,22 @@ TYPED_TEST(OptionalAggregateTest, GroupByWithAllNullValuesInGroupColumn) {
 
 TYPED_TEST(OptionalAggregateTest, GroupByWithMixedNullAndNonNullValues) {
     ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
-            {.name = "Alice", .salary = 50000.0, .score = 25},
-            {.name = "Bob", .salary = 60000.0, .score = std::nullopt},
-            {.name = "Charlie", .salary = 70000.0, .score = 25},
-            {.name = "Dave", .salary = 80000.0, .score = std::nullopt},
-            {.name = "Eve", .salary = 90000.0, .score = 30},
+        {.name = "Alice", .salary = 50000.0, .score = 25},
+        {.name = "Bob", .salary = 60000.0, .score = std::nullopt},
+        {.name = "Charlie", .salary = 70000.0, .score = 25},
+        {.name = "Dave", .salary = 80000.0, .score = std::nullopt},
+        {.name = "Eve", .salary = 90000.0, .score = 30},
     })));
 
     auto result = this->qs->template group_by<fields::Person.score>().count().execute();
     ASSERT_TRUE(result.has_value()) << "GROUP BY with mixed NULL values failed";
     EXPECT_EQ(result.value().size(), 3) << "Expected 3 groups (NULL, 25, 30)";
 
-    std::int64_t null_count   = 0; // NOLINT(misc-const-correctness) - modified in loop
+    std::int64_t null_count = 0;   // NOLINT(misc-const-correctness) - modified in loop
     std::int64_t age_25_count = 0; // NOLINT(misc-const-correctness) - modified in loop
     std::int64_t age_30_count = 0; // NOLINT(misc-const-correctness) - modified in loop
 
-    for (const auto& [score_key, count_val] : result.value()) {
+    for (const auto &[score_key, count_val] : result.value()) {
         if (!score_key.has_value()) {
             null_count = count_val;
         } else if (score_key.value() == 25) {
@@ -165,8 +179,8 @@ TYPED_TEST(OptionalAggregateTest, GroupByWithMixedNullAndNonNullValues) {
 
 TYPED_TEST(OptionalAggregateTest, MinOverEmptySetIsNullopt) {
     ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
-            {.name = "Alice", .age = 25},
-            {.name = "Bob", .age = 35},
+        {.name = "Alice", .age = 25},
+        {.name = "Bob", .age = 35},
     })));
 
     auto result = this->qs->where(fields::Person.age > 9999).template min<fields::Person.age>().execute();
@@ -176,8 +190,8 @@ TYPED_TEST(OptionalAggregateTest, MinOverEmptySetIsNullopt) {
 
 TYPED_TEST(OptionalAggregateTest, MaxOverEmptySetIsNullopt) {
     ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
-            {.name = "Alice", .age = 25},
-            {.name = "Bob", .age = 35},
+        {.name = "Alice", .age = 25},
+        {.name = "Bob", .age = 35},
     })));
 
     auto result = this->qs->where(fields::Person.age > 9999).template max<fields::Person.age>().execute();
@@ -187,8 +201,8 @@ TYPED_TEST(OptionalAggregateTest, MaxOverEmptySetIsNullopt) {
 
 TYPED_TEST(OptionalAggregateTest, AvgOverEmptySetIsNullopt) {
     ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
-            {.name = "Alice", .age = 25},
-            {.name = "Bob", .age = 35},
+        {.name = "Alice", .age = 25},
+        {.name = "Bob", .age = 35},
     })));
 
     auto result = this->qs->where(fields::Person.age > 9999).template avg<fields::Person.age>().execute();
@@ -198,7 +212,7 @@ TYPED_TEST(OptionalAggregateTest, AvgOverEmptySetIsNullopt) {
 
 TYPED_TEST(OptionalAggregateTest, MinMaxAvgOverEmptySetVsRealZeroAreDistinguishable) {
     ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
-            {.name = "Zero", .age = 0},
+        {.name = "Zero", .age = 0},
     })));
 
     // Real zero: a row with age == 0 -> the aggregate IS 0, present.
@@ -215,7 +229,7 @@ TYPED_TEST(OptionalAggregateTest, MinMaxAvgOverEmptySetVsRealZeroAreDistinguisha
 
 TYPED_TEST(OptionalAggregateTest, SumOverEmptySetKeepsZeroConvention) {
     ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
-            {.name = "Alice", .age = 25},
+        {.name = "Alice", .age = 25},
     })));
 
     auto result = this->qs->where(fields::Person.age > 9999).template sum<fields::Person.age>().execute();
@@ -225,7 +239,7 @@ TYPED_TEST(OptionalAggregateTest, SumOverEmptySetKeepsZeroConvention) {
 
 TYPED_TEST(OptionalAggregateTest, CountOverEmptySetIsZero) {
     ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
-            {.name = "Alice", .age = 25},
+        {.name = "Alice", .age = 25},
     })));
 
     auto result = this->qs->where(fields::Person.age > 9999).count().execute();
@@ -237,13 +251,13 @@ TYPED_TEST(OptionalAggregateTest, CountOverEmptySetIsZero) {
 TYPED_TEST(OptionalAggregateTest, GroupByAvgOfAllNullColumnInGroupIsNullopt) {
     // Two rows share department-less grouping key (name), score all NULL -> AVG(score) is NULL per group.
     ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
-            {.name = "Solo", .salary = 50000.0, .score = std::nullopt},
+        {.name = "Solo", .salary = 50000.0, .score = std::nullopt},
     })));
 
     auto result = this->qs->template group_by<fields::Person.name>().template avg<fields::Person.score>().execute();
     ASSERT_TRUE(result.has_value()) << result.error().message();
     ASSERT_EQ(result.value().size(), 1U);
-    auto it                 = result.value().begin();
+    auto it = result.value().begin();
     auto [name_key, avg_sc] = *it;
     EXPECT_FALSE(avg_sc.has_value()) << "AVG of an all-NULL column within a group must be nullopt";
 }
@@ -252,13 +266,13 @@ TYPED_TEST(OptionalAggregateTest, GroupByAvgOfAllNullColumnInGroupIsNullopt) {
 // Negative Number Tests
 // =============================================================================
 
-TYPED_TEST_SUITE(AggregateTest, DatabaseTypes);
+TYPED_TEST_SUITE(AggregateTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
 
 TYPED_TEST(AggregateTest, NegativeNumbersInSum) {
     ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
-            {.name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3},
-            {.name = "Bob", .age = 5, .salary = 60000.0, .years_experience = 5},
-            {.name = "Charlie", .age = -3, .salary = 70000.0, .years_experience = 7},
+        {.name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3},
+        {.name = "Bob", .age = 5, .salary = 60000.0, .years_experience = 5},
+        {.name = "Charlie", .age = -3, .salary = 70000.0, .years_experience = 7},
     })));
 
     auto sum = this->qs->template sum<fields::Person.age>().execute();
@@ -268,9 +282,9 @@ TYPED_TEST(AggregateTest, NegativeNumbersInSum) {
 
 TYPED_TEST(AggregateTest, NegativeNumbersInAvg) {
     ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
-            {.name = "Alice", .age = -12, .salary = 50000.0, .years_experience = 3},
-            {.name = "Bob", .age = 6, .salary = 60000.0, .years_experience = 5},
-            {.name = "Charlie", .age = 0, .salary = 70000.0, .years_experience = 7},
+        {.name = "Alice", .age = -12, .salary = 50000.0, .years_experience = 3},
+        {.name = "Bob", .age = 6, .salary = 60000.0, .years_experience = 5},
+        {.name = "Charlie", .age = 0, .salary = 70000.0, .years_experience = 7},
     })));
 
     auto avg = this->qs->template avg<fields::Person.age>().execute();
@@ -281,10 +295,10 @@ TYPED_TEST(AggregateTest, NegativeNumbersInAvg) {
 
 TYPED_TEST(AggregateTest, NegativeNumbersInMinMax) {
     ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
-            {.name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3},
-            {.name = "Bob", .age = 5, .salary = 60000.0, .years_experience = 5},
-            {.name = "Charlie", .age = -20, .salary = 70000.0, .years_experience = 7},
-            {.name = "Dave", .age = 15, .salary = 80000.0, .years_experience = 10},
+        {.name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3},
+        {.name = "Bob", .age = 5, .salary = 60000.0, .years_experience = 5},
+        {.name = "Charlie", .age = -20, .salary = 70000.0, .years_experience = 7},
+        {.name = "Dave", .age = 15, .salary = 80000.0, .years_experience = 10},
     })));
 
     auto min_val = this->qs->template min<fields::Person.age>().execute();
@@ -300,9 +314,9 @@ TYPED_TEST(AggregateTest, NegativeNumbersInMinMax) {
 
 TYPED_TEST(AggregateTest, NegativeNumbersInCount) {
     ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
-            {.name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3},
-            {.name = "Bob", .age = -5, .salary = 60000.0, .years_experience = 5},
-            {.name = "Charlie", .age = 0, .salary = 70000.0, .years_experience = 7},
+        {.name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3},
+        {.name = "Bob", .age = -5, .salary = 60000.0, .years_experience = 5},
+        {.name = "Charlie", .age = 0, .salary = 70000.0, .years_experience = 7},
     })));
 
     auto count = this->qs->count().execute();
@@ -316,11 +330,11 @@ TYPED_TEST(AggregateTest, NegativeNumbersInCount) {
 
 TYPED_TEST(AggregateTest, NegativeNumbersInWhere) {
     ASSERT_TRUE((storm::test::batch_insert<Person, TypeParam>(std::vector<Person>{
-            {.name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3},
-            {.name = "Bob", .age = -5, .salary = 60000.0, .years_experience = 5},
-            {.name = "Charlie", .age = 0, .salary = 70000.0, .years_experience = 7},
-            {.name = "Dave", .age = 5, .salary = 80000.0, .years_experience = 10},
-            {.name = "Eve", .age = 10, .salary = 90000.0, .years_experience = 15},
+        {.name = "Alice", .age = -10, .salary = 50000.0, .years_experience = 3},
+        {.name = "Bob", .age = -5, .salary = 60000.0, .years_experience = 5},
+        {.name = "Charlie", .age = 0, .salary = 70000.0, .years_experience = 7},
+        {.name = "Dave", .age = 5, .salary = 80000.0, .years_experience = 10},
+        {.name = "Eve", .age = 10, .salary = 90000.0, .years_experience = 15},
     })));
 
     auto result = this->qs->where(fields::Person.age < 0).count().execute();

@@ -1,28 +1,45 @@
-#include <gtest/gtest.h>
-#include "test_db_helpers.h"
+#pragma once
+
+// Shared test body for test_crud_sqlite.cpp / test_crud_pg.cpp — the two
+// single-backend TUs of a compile-time TU split (see test_db_helpers.h,
+// DatabaseTypesSqliteHalf/DatabaseTypesPgHalf). Splitting a 2-backend TU into
+// two lets ninja compile them in parallel instead of serially instantiating
+// both backends in one TU; keeping the body here (instead of duplicating it
+// into both .cpp files) removes the risk of the two halves silently drifting.
+//
+// The includer must #define STORM_SPLIT_TYPES / STORM_SPLIT_TYPE_NAMES to one
+// backend's ::testing::Types<> alias / NameGenerator before #include-ing this
+// file, and #undef both afterward. Never include this file directly.
+#if !defined(STORM_SPLIT_TYPES) || !defined(STORM_SPLIT_TYPE_NAMES)
+#error "test_crud_body.h: define STORM_SPLIT_TYPES/STORM_SPLIT_TYPE_NAMES before including"
+#endif
+
 #include <sqlite3.h>
 
 import storm;
 import std;
 
 #include "test_models.h" // NOSONAR cpp:S954
+
 #include "test_seed_helpers.h"
+
 #include "test_yaml_register.h"
+
 #include "test_parser.hpp"
 
 // Common base fixture for Erase/Update tests — shared setup + helpers.
 template <typename ConnType> class PersonCrudTestBase : public StormTestFixture<Person, ConnType> {
   protected:
-    auto on_after_setup(const std::shared_ptr<ConnType>&) -> void override {
+    auto on_after_setup(const std::shared_ptr<ConnType> &) -> void override {
         std::vector<Person> const initial = {
-                {.name = "Alice", .age = 30},
-                {.name = "Bob", .age = 25},
-                {.name = "Charlie", .age = 35},
+            {.name = "Alice", .age = 30},
+            {.name = "Bob", .age = 25},
+            {.name = "Charlie", .age = 35},
         };
         ASSERT_TRUE((storm::test::batch_insert<Person, ConnType>(initial)));
     }
 
-    static auto insert_persons_range(storm::QuerySet<Person, ConnType>& qs, int from, int to) -> void {
+    static auto insert_persons_range(storm::QuerySet<Person, ConnType> &qs, int from, int to) -> void {
         std::vector<Person> batch;
         batch.reserve(static_cast<std::size_t>(to) - static_cast<std::size_t>(from) + 1U);
         for (int i = from; i <= to; i++) {
@@ -34,7 +51,7 @@ template <typename ConnType> class PersonCrudTestBase : public StormTestFixture<
 
     static auto countPersons() -> int {
         storm::QuerySet<Person, ConnType> qs;
-        auto                              result = qs.count().execute();
+        auto result = qs.count().execute();
         if (!result.has_value()) {
             return -1;
         }
@@ -43,15 +60,14 @@ template <typename ConnType> class PersonCrudTestBase : public StormTestFixture<
 
     static auto personExists(int person_id) -> bool {
         const storm::QuerySet<Person, ConnType> qs;
-        auto                                    result = qs.where(fields::Person.id == person_id).select().execute();
+        auto result = qs.where(fields::Person.id == person_id).select().execute();
         return result.has_value() && !result.value().empty();
     }
 };
 
 // Test QuerySet.erase() functionality
 template <typename ConnType> class QuerySetEraseTest : public PersonCrudTestBase<ConnType> {};
-
-TYPED_TEST_SUITE(QuerySetEraseTest, DatabaseTypes);
+TYPED_TEST_SUITE(QuerySetEraseTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
 
 TYPED_TEST(QuerySetEraseTest, DatabaseSetup) {
     // Verify database was created and populated correctly
@@ -98,12 +114,12 @@ TYPED_TEST(QuerySetEraseTest, EraseBatchPerformance) {
     auto start_individual = std::chrono::steady_clock::now();
     for (int i = 1; i <= 50; i++) {
         Person const person{.id = i, .name = std::format("Person{}", i), .age = 20 + (i % 60)};
-        auto         result = queryset.erase(person).execute();
+        auto result = queryset.erase(person).execute();
         ASSERT_TRUE(result.has_value()) << "Individual erase should succeed";
     }
     auto end_individual = std::chrono::steady_clock::now();
     auto duration_individual =
-            std::chrono::duration_cast<std::chrono::microseconds>(end_individual - start_individual).count();
+        std::chrono::duration_cast<std::chrono::microseconds>(end_individual - start_individual).count();
 
     // Prepare batch for batch erase
     std::vector<Person> batch;
@@ -113,9 +129,9 @@ TYPED_TEST(QuerySetEraseTest, EraseBatchPerformance) {
 
     // Measure batch erase
     auto start_batch = std::chrono::steady_clock::now();
-    auto result      = queryset.erase(std::span<const Person>(batch)).execute();
+    auto result = queryset.erase(std::span<const Person>(batch)).execute();
     ASSERT_TRUE(result.has_value()) << "Batch erase should succeed";
-    auto end_batch      = std::chrono::steady_clock::now();
+    auto end_batch = std::chrono::steady_clock::now();
     auto duration_batch = std::chrono::duration_cast<std::chrono::microseconds>(end_batch - start_batch).count();
 
     // Log performance comparison (batch should be faster)
@@ -206,7 +222,7 @@ template <typename ConnType> class QuerySetUpdateTest : public PersonCrudTestBas
     // Helper function to get person by ID using the ORM
     static auto getPerson(int person_id) -> std::optional<Person> {
         const storm::QuerySet<Person, ConnType> qs;
-        auto                                    result = qs.where(fields::Person.id == person_id).select().execute();
+        auto result = qs.where(fields::Person.id == person_id).select().execute();
         if (!result.has_value() || result.value().empty()) {
             return std::nullopt;
         }
@@ -214,7 +230,7 @@ template <typename ConnType> class QuerySetUpdateTest : public PersonCrudTestBas
     }
 };
 
-TYPED_TEST_SUITE(QuerySetUpdateTest, DatabaseTypes);
+TYPED_TEST_SUITE(QuerySetUpdateTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
 
 TYPED_TEST(QuerySetUpdateTest, DatabaseSetup) {
     // Verify database was created and populated correctly
@@ -243,7 +259,7 @@ TYPED_TEST(QuerySetUpdateTest, UpdateMultipleTimes) {
 
     // Update Alice multiple times
     Person const alice_v1{.id = 1, .name = "Alice A", .age = 31};
-    auto         result1 = queryset.update(alice_v1).execute();
+    auto result1 = queryset.update(alice_v1).execute();
     ASSERT_TRUE(result1.has_value()) << "First update should succeed";
 
     auto check1 = this->getPerson(1);
@@ -252,7 +268,7 @@ TYPED_TEST(QuerySetUpdateTest, UpdateMultipleTimes) {
     EXPECT_EQ(check1->age, 31);
 
     Person const alice_v2{.id = 1, .name = "Alice B", .age = 32};
-    auto         result2 = queryset.update(alice_v2).execute();
+    auto result2 = queryset.update(alice_v2).execute();
     ASSERT_TRUE(result2.has_value()) << "Second update should succeed";
 
     auto check2 = this->getPerson(1);
@@ -261,7 +277,7 @@ TYPED_TEST(QuerySetUpdateTest, UpdateMultipleTimes) {
     EXPECT_EQ(check2->age, 32);
 
     Person const alice_v3{.id = 1, .name = "Alice C", .age = 33};
-    auto         result3 = queryset.update(alice_v3).execute();
+    auto result3 = queryset.update(alice_v3).execute();
     ASSERT_TRUE(result3.has_value()) << "Third update should succeed";
 
     auto check3 = this->getPerson(1);
@@ -276,7 +292,7 @@ TYPED_TEST(QuerySetUpdateTest, UpdateCachedStatementReuse) {
     // Perform multiple updates to verify statement caching works correctly
     for (int i = 0; i < 10; ++i) {
         Person const updated_alice{.id = 1, .name = std::format("Alice V{}", i), .age = 30 + i};
-        auto         result = queryset.update(updated_alice).execute();
+        auto result = queryset.update(updated_alice).execute();
         ASSERT_TRUE(result.has_value()) << "Update iteration " << i << " should succeed";
 
         auto alice = this->getPerson(1);
@@ -298,7 +314,7 @@ TYPED_TEST(QuerySetUpdateTest, UpdateCachedStatementReuse) {
 
 template <typename ConnType> class TransactionTest : public StormTestFixture<SimpleRecord, ConnType> {
   public:
-    auto on_after_setup(const std::shared_ptr<ConnType>&) -> void override {
+    auto on_after_setup(const std::shared_ptr<ConnType> &) -> void override {
         qs = std::make_unique<storm::QuerySet<SimpleRecord, ConnType>>();
     }
 
@@ -310,7 +326,7 @@ template <typename ConnType> class TransactionTest : public StormTestFixture<Sim
     std::unique_ptr<storm::QuerySet<SimpleRecord, ConnType>> qs;
 };
 
-TYPED_TEST_SUITE(TransactionTest, DatabaseTypes);
+TYPED_TEST_SUITE(TransactionTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
 
 TYPED_TEST(TransactionTest, MultiRowUpdateInTransaction) {
     std::vector<SimpleRecord> const people = {{0, "P1", 1}, {0, "P2", 2}, {0, "P3", 3}};
@@ -322,7 +338,7 @@ TYPED_TEST(TransactionTest, MultiRowUpdateInTransaction) {
     ASSERT_TRUE(select_result.has_value());
 
     std::vector<SimpleRecord> updates;
-    for (const auto& p : select_result.value()) {
+    for (const auto &p : select_result.value()) {
         updates.push_back({p.id, p.name, p.value + 100});
     }
 
@@ -331,7 +347,7 @@ TYPED_TEST(TransactionTest, MultiRowUpdateInTransaction) {
 
     auto verify_result = this->qs->select().execute();
     ASSERT_TRUE(verify_result.has_value());
-    for (const auto& p : verify_result.value()) {
+    for (const auto &p : verify_result.value()) {
         EXPECT_GT(p.value, 100);
     }
 }
@@ -351,13 +367,13 @@ TYPED_TEST(TransactionTest, EmptyBatchOperations) {
 
 TYPED_TEST(TransactionTest, SingleRowOperations) {
     SimpleRecord const p1{0, "Single", 42};
-    auto               insert_result = this->qs->insert(p1).execute();
+    auto insert_result = this->qs->insert(p1).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     std::int64_t const id = insert_result.value();
 
     SimpleRecord const updated{static_cast<int>(id), "Updated", 99};
-    auto               update_result = this->qs->update(updated).execute();
+    auto update_result = this->qs->update(updated).execute();
     ASSERT_TRUE(update_result.has_value());
 
     auto select_result = this->qs->select().execute();
@@ -378,12 +394,11 @@ TYPED_TEST(TransactionTest, SingleRowOperations) {
 
 template <typename ConnType> class QueryResetTest : public StormTestFixture<Person, ConnType> {
   protected:
-    auto on_after_setup(const std::shared_ptr<ConnType>&) -> void override {
+    auto on_after_setup(const std::shared_ptr<ConnType> &) -> void override {
         qs = std::make_unique<storm::QuerySet<Person, ConnType>>();
 
         ASSERT_TRUE((storm::test::batch_insert<Person, ConnType>(
-                std::vector<Person>(storm::test::PEOPLE_25.begin(), storm::test::PEOPLE_25.end())
-        )));
+            std::vector<Person>(storm::test::PEOPLE_25.begin(), storm::test::PEOPLE_25.end()))));
     }
 
     auto TearDown() -> void override {
@@ -395,7 +410,7 @@ template <typename ConnType> class QueryResetTest : public StormTestFixture<Pers
     std::unique_ptr<storm::QuerySet<Person, ConnType>> qs;
 };
 
-TYPED_TEST_SUITE(QueryResetTest, DatabaseTypes);
+TYPED_TEST_SUITE(QueryResetTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
 
 TYPED_TEST(QueryResetTest, ResetClearsAllState) {
     auto filtered = this->qs->where(fields::Person.age > 25);

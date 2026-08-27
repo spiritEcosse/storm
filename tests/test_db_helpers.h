@@ -42,6 +42,29 @@ class Connection;
 // Type list for TYPED_TEST_SUITE — runs each test against both backends
 using DatabaseTypes = ::testing::Types<storm::db::sqlite::Connection, storm::db::postgresql::Connection>;
 
+// Single-backend halves of DatabaseTypes, for splitting a slow TYPED_TEST TU into two
+// TUs (one per backend) so ninja can compile them in parallel instead of serially
+// instantiating both backends in one compiler process. Pair each with the matching
+// NameGenerator below so gtest's generated test IDs don't collide between the two TUs
+// when linked into the same binary — by default gtest suffixes a suite's tests by the
+// type's index in the list, and both halves have a single-element list starting at
+// index 0 (e.g. both would register "FooTest/0.Bar" without the NameGenerator).
+//
+// Usage:
+//   TYPED_TEST_SUITE(FooTest, DatabaseTypesSqliteHalf, DatabaseTypesSqliteHalfNames);
+using DatabaseTypesSqliteHalf = ::testing::Types<storm::db::sqlite::Connection>;
+using DatabaseTypesPgHalf = ::testing::Types<storm::db::postgresql::Connection>;
+
+class DatabaseTypesSqliteHalfNames {
+  public:
+    template <typename T> static auto GetName(int /*index*/) -> std::string { return "Sqlite"; }
+};
+
+class DatabaseTypesPgHalfNames {
+  public:
+    template <typename T> static auto GetName(int /*index*/) -> std::string { return "Postgresql"; }
+};
+
 namespace storm::test {
 
 namespace detail {

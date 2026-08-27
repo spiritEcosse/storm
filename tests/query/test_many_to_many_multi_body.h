@@ -1,6 +1,19 @@
-#include <gtest/gtest.h>
-#include <meta>
-#include "test_db_helpers.h"
+#pragma once
+
+// Shared test body for test_many_to_many_multi_sqlite.cpp / test_many_to_many_multi_pg.cpp — the two
+// single-backend TUs of a compile-time TU split (see test_db_helpers.h,
+// DatabaseTypesSqliteHalf/DatabaseTypesPgHalf). Splitting a 2-backend TU into
+// two lets ninja compile them in parallel instead of serially instantiating
+// both backends in one TU; keeping the body here (instead of duplicating it
+// into both .cpp files) removes the risk of the two halves silently drifting.
+//
+// The includer must #define STORM_SPLIT_TYPES / STORM_SPLIT_TYPE_NAMES to one
+// backend's ::testing::Types<> alias / NameGenerator before #include-ing this
+// file, and #undef both afterward. Never include this file directly.
+#if !defined(STORM_SPLIT_TYPES) || !defined(STORM_SPLIT_TYPE_NAMES)
+#error "test_many_to_many_multi_body.h: define STORM_SPLIT_TYPES/STORM_SPLIT_TYPE_NAMES before including"
+#endif
+
 #include "plf_hive/plf_hive.h"
 
 // NOLINTBEGIN(misc-const-correctness)
@@ -10,7 +23,8 @@ import std;
 
 using storm::QuerySet;
 
-#include "test_models.h"     // NOSONAR cpp:S954
+#include "test_models.h" // NOSONAR cpp:S954
+
 #include "test_m2m_models.h" // NOSONAR cpp:S954
 
 // ============================================================================
@@ -29,30 +43,15 @@ static_assert(!CanJoin<Member, fields::Member.courses, fields::Member.courses>);
 static_assert(!CanJoin<Message, fields::Message.sender, fields::Member.courses>);
 
 // ============================================================================
-// Schema: one auto junction table per m2m field (#392)
-// ============================================================================
-
-TEST(MultiM2MSchemaTest, OneJunctionTablePerM2MField) {
-    const auto& sqls =
-            storm::orm::schema::SchemaStatement<Member>::junction_table_sqls<storm::orm::schema::Dialect::SQLite>();
-    ASSERT_EQ(sqls.size(), 2U);
-    EXPECT_TRUE(sqls[0].contains("CREATE TABLE Member_Course")) << sqls[0];
-    EXPECT_TRUE(sqls[0].contains("PRIMARY KEY (Member_id, Course_id)")) << sqls[0];
-    EXPECT_TRUE(sqls[1].contains("CREATE TABLE Member_Club")) << sqls[1];
-    EXPECT_TRUE(sqls[1].contains("PRIMARY KEY (Member_id, Club_id)")) << sqls[1];
-}
-
-// ============================================================================
 // SQL shape: Q1 + one Q2 per relation, "; "-separated (#392)
 // ============================================================================
 
 template <typename ConnType> class MultiM2MSqlTest : public StormTestFixture<Member, ConnType, Course, Club> {};
-
-TYPED_TEST_SUITE(MultiM2MSqlTest, DatabaseTypes);
+TYPED_TEST_SUITE(MultiM2MSqlTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
 
 TYPED_TEST(MultiM2MSqlTest, MultiM2MJoinSqlShape) {
     QuerySet<Member, TypeParam> qs;
-    auto                        sql = qs.template join<fields::Member.courses, fields::Member.clubs>().select().sql();
+    auto sql = qs.template join<fields::Member.courses, fields::Member.clubs>().select().sql();
     // Q1 — base entities, once.
     EXPECT_TRUE(sql.contains("SELECT id, name, age FROM Member; ")) << sql;
     // Q2a — courses relation, filtered by the base subquery.
@@ -66,15 +65,15 @@ TYPED_TEST(MultiM2MSqlTest, MultiM2MJoinSqlShape) {
 
 TYPED_TEST(MultiM2MSqlTest, MultiM2MModifiersBoundTheSharedBaseSet) {
     QuerySet<Member, TypeParam> qs;
-    auto                        sql = qs.template join<fields::Member.courses, fields::Member.clubs>()
-                       .where(fields::Member.age > 18)
-                       .limit(2)
-                       .select()
-                       .sql();
+    auto sql = qs.template join<fields::Member.courses, fields::Member.clubs>()
+                   .where(fields::Member.age > 18)
+                   .limit(2)
+                   .select()
+                   .sql();
     // WHERE/LIMIT appear in Q1 and in BOTH Q2 IN-subqueries.
     EXPECT_TRUE(sql.contains("SELECT id, name, age FROM Member WHERE age > ? LIMIT 2; ")) << sql;
     constexpr std::string_view bounded = "IN (SELECT id FROM Member WHERE age > ? LIMIT 2)";
-    std::size_t                hits    = 0;
+    std::size_t hits = 0;
     for (std::size_t pos = sql.find(bounded); pos != std::string::npos; pos = sql.find(bounded, pos + 1)) {
         ++hits;
     }
@@ -89,16 +88,16 @@ TYPED_TEST(MultiM2MSqlTest, MultiM2MModifiersBoundTheSharedBaseSet) {
 
 template <typename ConnType> class MultiM2MSeededTest : public StormTestFixture<Member, ConnType, Course, Club> {
   public:
-    auto on_after_setup(const std::shared_ptr<ConnType>& /*conn*/) -> void override {
+    auto on_after_setup(const std::shared_ptr<ConnType> & /*conn*/) -> void override {
         storm::test::seed_members<ConnType>();
     }
 };
 
-TYPED_TEST_SUITE(MultiM2MSeededTest, DatabaseTypes);
+TYPED_TEST_SUITE(MultiM2MSeededTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
 
 // Finds the member with the given name; nullptr if absent.
-template <typename Hive> auto find_member(Hive& rows, std::string_view name) -> Member* {
-    for (auto& m : rows) {
+template <typename Hive> auto find_member(Hive &rows, std::string_view name) -> Member * {
+    for (auto &m : rows) {
         if (m.name == name) {
             return &m;
         }
@@ -112,7 +111,7 @@ TYPED_TEST(MultiM2MSeededTest, InnerJoinLoadsBothAndDropsEntitiesEmptyInAnyRelat
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     // Only Ann is non-empty in BOTH relations.
     ASSERT_EQ(rows->size(), 1U);
-    auto* ann = find_member(*rows, "Ann");
+    auto *ann = find_member(*rows, "Ann");
     ASSERT_NE(ann, nullptr);
     ASSERT_EQ(ann->courses.size(), 2U);
     EXPECT_EQ(ann->courses[0].title, "Math");
@@ -127,20 +126,20 @@ TYPED_TEST(MultiM2MSeededTest, LeftJoinKeepsAllAndFillsRelationsIndependently) {
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     ASSERT_EQ(rows->size(), 4U);
 
-    auto* ben = find_member(*rows, "Ben"); // courses only
+    auto *ben = find_member(*rows, "Ben"); // courses only
     ASSERT_NE(ben, nullptr);
     ASSERT_EQ(ben->courses.size(), 1U);
     EXPECT_EQ(ben->courses[0].title, "Math");
     EXPECT_TRUE(ben->clubs.empty());
 
-    auto* cat = find_member(*rows, "Cat"); // clubs only
+    auto *cat = find_member(*rows, "Cat"); // clubs only
     ASSERT_NE(cat, nullptr);
     EXPECT_TRUE(cat->courses.empty());
     ASSERT_EQ(cat->clubs.size(), 2U);
     EXPECT_EQ(cat->clubs[0].name, "Chess");
     EXPECT_EQ(cat->clubs[1].name, "Robotics");
 
-    auto* dan = find_member(*rows, "Dan"); // both empty
+    auto *dan = find_member(*rows, "Dan"); // both empty
     ASSERT_NE(dan, nullptr);
     EXPECT_TRUE(dan->courses.empty());
     EXPECT_TRUE(dan->clubs.empty());
@@ -150,18 +149,18 @@ TYPED_TEST(MultiM2MSeededTest, WhereOrderLimitBoundTheSharedBaseSet) {
     QuerySet<Member, TypeParam> qs;
     // age > 18 keeps all; ORDER BY age + LIMIT 2 bounds the BASE set to Ann, Ben.
     auto rows = qs.template left_join<fields::Member.courses, fields::Member.clubs>()
-                        .where(fields::Member.age > 18)
-                        .template order_by<fields::Member.age>()
-                        .limit(2)
-                        .select()
-                        .execute();
+                    .where(fields::Member.age > 18)
+                    .template order_by<fields::Member.age>()
+                    .limit(2)
+                    .select()
+                    .execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     ASSERT_EQ(rows->size(), 2U);
-    auto* ann = find_member(*rows, "Ann");
+    auto *ann = find_member(*rows, "Ann");
     ASSERT_NE(ann, nullptr);
     EXPECT_EQ(ann->courses.size(), 2U);
     EXPECT_EQ(ann->clubs.size(), 1U);
-    auto* ben = find_member(*rows, "Ben");
+    auto *ben = find_member(*rows, "Ben");
     ASSERT_NE(ben, nullptr);
     EXPECT_EQ(ben->courses.size(), 1U);
     EXPECT_TRUE(ben->clubs.empty());
@@ -170,10 +169,10 @@ TYPED_TEST(MultiM2MSeededTest, WhereOrderLimitBoundTheSharedBaseSet) {
 
 TYPED_TEST(MultiM2MSeededTest, EmptyResultSet) {
     QuerySet<Member, TypeParam> qs;
-    auto                        rows = qs.template join<fields::Member.courses, fields::Member.clubs>()
-                        .where(fields::Member.age > 99)
-                        .select()
-                        .execute();
+    auto rows = qs.template join<fields::Member.courses, fields::Member.clubs>()
+                    .where(fields::Member.age > 99)
+                    .select()
+                    .execute();
     ASSERT_TRUE(rows.has_value()) << rows.error().message();
     EXPECT_TRUE(rows->empty());
 }
@@ -188,9 +187,9 @@ TYPED_TEST(MultiM2MSeededTest, FirstAndGetLoadBothRelations) {
     EXPECT_EQ((*first)->clubs.size(), 1U);
 
     auto got = qs.template left_join<fields::Member.courses, fields::Member.clubs>()
-                       .where(fields::Member.name == "Cat")
-                       .get()
-                       .execute();
+                   .where(fields::Member.name == "Cat")
+                   .get()
+                   .execute();
     ASSERT_TRUE(got.has_value()) << got.error().message();
     EXPECT_TRUE(got->courses.empty());
     EXPECT_EQ(got->clubs.size(), 2U);
@@ -198,11 +197,11 @@ TYPED_TEST(MultiM2MSeededTest, FirstAndGetLoadBothRelations) {
 
 TYPED_TEST(MultiM2MSeededTest, RowsGeneratorYieldsBothRelations) {
     QuerySet<Member, TypeParam> qs;
-    auto                        joined        = qs.template left_join<fields::Member.courses, fields::Member.clubs>();
-    std::size_t                 seen          = 0;
-    std::size_t                 total_courses = 0;
-    std::size_t                 total_clubs   = 0;
-    for (auto&& row : joined.rows()) {
+    auto joined = qs.template left_join<fields::Member.courses, fields::Member.clubs>();
+    std::size_t seen = 0;
+    std::size_t total_courses = 0;
+    std::size_t total_clubs = 0;
+    for (auto &&row : joined.rows()) {
         ASSERT_TRUE(row.has_value()) << row.error().message();
         ++seen;
         total_courses += row->courses.size();
@@ -227,10 +226,10 @@ TYPED_TEST(MultiM2MSeededTest, CountOverMultiM2MCountsCartesianTuples) {
 // carries an FK to Topic, so the chained join selects t3.topic_id (#392).
 template <typename ConnType> class M2MRelatedFkTest : public StormTestFixture<Tutor, ConnType, Lesson, Topic> {};
 
-TYPED_TEST_SUITE(M2MRelatedFkTest, DatabaseTypes);
+TYPED_TEST_SUITE(M2MRelatedFkTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
 
 TYPED_TEST(M2MRelatedFkTest, M2MWithFkRelatedModelLoadsAndCounts) {
-    auto                       conn = QuerySet<Tutor, TypeParam>::get_default_connection();
+    auto conn = QuerySet<Tutor, TypeParam>::get_default_connection();
     QuerySet<Topic, TypeParam> tqs;
     ASSERT_TRUE(tqs.insert(Topic{.name = "Algebra"}).execute().has_value());
     QuerySet<Lesson, TypeParam> lqs;
@@ -257,8 +256,8 @@ TYPED_TEST(M2MRelatedFkTest, M2MWithFkRelatedModelLoadsAndCounts) {
 // (single-relation) query on the same QuerySet.
 TYPED_TEST(MultiM2MSeededTest, RepeatedAndSwitchedQueriesUseCacheCorrectly) {
     QuerySet<Member, TypeParam> qs;
-    auto                        multi     = qs.template join<fields::Member.courses, fields::Member.clubs>();
-    auto                        first_run = multi.select().execute();
+    auto multi = qs.template join<fields::Member.courses, fields::Member.clubs>();
+    auto first_run = multi.select().execute();
     ASSERT_TRUE(first_run.has_value()) << first_run.error().message();
     auto second_run = multi.select().execute();
     ASSERT_TRUE(second_run.has_value()) << second_run.error().message();
@@ -267,7 +266,7 @@ TYPED_TEST(MultiM2MSeededTest, RepeatedAndSwitchedQueriesUseCacheCorrectly) {
     auto single = qs.template join<fields::Member.courses>().select().execute();
     ASSERT_TRUE(single.has_value()) << single.error().message();
     ASSERT_EQ(single->size(), 2U); // Ann, Ben — clubs no longer constrain
-    auto* ben = find_member(*single, "Ben");
+    auto *ben = find_member(*single, "Ben");
     ASSERT_NE(ben, nullptr);
     EXPECT_TRUE(ben->clubs.empty()); // single-relation join never fills clubs
 }

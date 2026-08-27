@@ -151,8 +151,24 @@ echo ""
 #   code is still linted through the four tests/yaml/test_unified_yaml_*.cpp TUs
 #   that include it, each of which has a real compile-commands entry.
 #
-#   The last two entries joined the list with the fields:: proxies (#518). Both
-#   call storm::field_specs_for inside a `consteval` block, which is a harder
+#   The 12 *_body.h files are the compile-time TU-split bodies (each holds the
+#   shared TYPED_TEST_SUITE/TYPED_TEST content for one _sqlite.cpp/_pg.cpp pair):
+#   tests/crud/test_composite_fk_join_body.h, tests/crud/test_composite_pk_crud_body.h,
+#   tests/crud/test_crud_body.h, tests/query/test_aggregate_having_body.h,
+#   tests/query/test_aggregate_optional_body.h, tests/query/test_composite_m2m_junction_body.h,
+#   tests/query/test_composite_m2m_through_body.h,
+#   tests/query/test_fk_column_name_orderby_aggregate_body.h,
+#   tests/query/test_many_to_many_body.h, tests/query/test_many_to_many_multi_body.h,
+#   tests/query/test_reverse_fk_body.h, tests/schema/test_fk_fields_body.h.
+#   Same shape as tests/test_unified_yaml_body.h above: each guards on two macros
+#   (STORM_SPLIT_TYPES / STORM_SPLIT_TYPE_NAMES) that the including .cpp defines
+#   before the #include, so parsed standalone the #error guard fires. Linted
+#   through the 24 tests/**/*_sqlite.cpp / *_pg.cpp TUs that include them, each
+#   with a real compile-commands entry.
+#
+#   tests/tools/storm_schema/models.h and shared/models.h joined the list with
+#   the fields:: proxies (#518). Both call storm::field_specs_for inside a
+#   `consteval` block, which is a harder
 #   dependency on `import storm;` than the [[= storm::*]] annotations alone —
 #   shared/models.h parsed standalone before that and does not now. Their
 #   #include <meta> also drags libc++'s own <meta> into a non-C++26 parse, which
@@ -197,6 +213,18 @@ is_known_unparseable() {
         tests/crud/test_composite_pk_models.h) return 0 ;;
         tests/test_parser.hpp) return 0 ;;
         tests/test_unified_yaml_body.h) return 0 ;;
+        tests/crud/test_composite_fk_join_body.h) return 0 ;;
+        tests/crud/test_composite_pk_crud_body.h) return 0 ;;
+        tests/crud/test_crud_body.h) return 0 ;;
+        tests/query/test_aggregate_having_body.h) return 0 ;;
+        tests/query/test_aggregate_optional_body.h) return 0 ;;
+        tests/query/test_composite_m2m_junction_body.h) return 0 ;;
+        tests/query/test_composite_m2m_through_body.h) return 0 ;;
+        tests/query/test_fk_column_name_orderby_aggregate_body.h) return 0 ;;
+        tests/query/test_many_to_many_body.h) return 0 ;;
+        tests/query/test_many_to_many_multi_body.h) return 0 ;;
+        tests/query/test_reverse_fk_body.h) return 0 ;;
+        tests/schema/test_fk_fields_body.h) return 0 ;;
         tests/tools/storm_schema/models.h) return 0 ;;
         benchmarks/bench_register.h) return 0 ;;
         benchmarks/models.hpp) return 0 ;;

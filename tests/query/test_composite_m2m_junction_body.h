@@ -1,13 +1,23 @@
-#include <gtest/gtest.h>
-#include <meta>
-#include <plf_hive/plf_hive.h> // NOSONAR cpp:S954 — must precede `import std;` (see test_m2m_models.h)
+#pragma once
 
-#include "test_db_helpers.h"
+// Shared test body for test_composite_m2m_junction_sqlite.cpp / test_composite_m2m_junction_pg.cpp — the two
+// single-backend TUs of a compile-time TU split (see test_db_helpers.h,
+// DatabaseTypesSqliteHalf/DatabaseTypesPgHalf). Splitting a 2-backend TU into
+// two lets ninja compile them in parallel instead of serially instantiating
+// both backends in one TU; keeping the body here (instead of duplicating it
+// into both .cpp files) removes the risk of the two halves silently drifting.
+//
+// The includer must #define STORM_SPLIT_TYPES / STORM_SPLIT_TYPE_NAMES to one
+// backend's ::testing::Types<> alias / NameGenerator before #include-ing this
+// file, and #undef both afterward. Never include this file directly.
+#if !defined(STORM_SPLIT_TYPES) || !defined(STORM_SPLIT_TYPE_NAMES)
+#error "test_composite_m2m_junction_body.h: define STORM_SPLIT_TYPES/STORM_SPLIT_TYPE_NAMES before including"
+#endif
 
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954 — StormTestFixture, DatabaseTypes
+#include "test_models.h" // NOSONAR cpp:S954 — StormTestFixture
 
 // Must follow test_models.h: the composite-PK models name storm:: annotations.
 #include "crud/test_composite_pk_models.h" // NOSONAR cpp:S954
@@ -27,96 +37,88 @@ import std;
 
 namespace {
 
-    template <typename ConnType>
-    class CompositeOwnerJunctionCreateTest : public StormTestFixture<LedgerWithTags, ConnType, LedgerTag> {};
+template <typename ConnType>
+class CompositeOwnerJunctionCreateTest : public StormTestFixture<LedgerWithTags, ConnType, LedgerTag> {};
 
-    template <typename ConnType>
-    class CompositeRelatedJunctionCreateTest : public StormTestFixture<TagRegistry, ConnType, CatalogEntry> {};
+template <typename ConnType>
+class CompositeRelatedJunctionCreateTest : public StormTestFixture<TagRegistry, ConnType, CatalogEntry> {};
 
-    template <typename ConnType>
-    class CompositeBothSidesJunctionCreateTest : public StormTestFixture<ShelfAssignment, ConnType, StorageBin> {};
+template <typename ConnType>
+class CompositeBothSidesJunctionCreateTest : public StormTestFixture<ShelfAssignment, ConnType, StorageBin> {};
 
-    template <typename ConnType>
-    class MultiRelationCompositeOwnerTest : public StormTestFixture<ShelfAssignment, ConnType, StorageBin, LedgerTag> {
-    };
+template <typename ConnType>
+class MultiRelationCompositeOwnerTest : public StormTestFixture<ShelfAssignment, ConnType, StorageBin, LedgerTag> {};
 
-    // ── Shared seeding ───────────────────────────────────────────────────────
-    // Each helper plants the SAME decoy shape its suite depends on: rows that
-    // agree on one PK part and differ in another, so a comparison that stops
-    // early conflates them. Sharing the seeding keeps every test in a suite
-    // agreeing on which pairs are linked — a per-test copy that drifted would
-    // weaken the decoy silently rather than fail.
+// ── Shared seeding ───────────────────────────────────────────────────────
+// Each helper plants the SAME decoy shape its suite depends on: rows that
+// agree on one PK part and differ in another, so a comparison that stops
+// early conflates them. Sharing the seeding keeps every test in a suite
+// agreeing on which pairs are linked — a per-test copy that drifted would
+// weaken the decoy silently rather than fail.
 
-    // Two entries sharing catalog_id == 7, differing in entry_no (3 vs 4).
-    template <typename ConnType> auto seed_catalog_entries() -> void {
-        storm::QuerySet<CatalogEntry, ConnType> entry_qs;
-        ASSERT_TRUE(
-                entry_qs.insert(CatalogEntry{.catalog_id = 7, .entry_no = 3, .title = "widget"}).execute().has_value()
-        );
-        ASSERT_TRUE(
-                entry_qs.insert(CatalogEntry{.catalog_id = 7, .entry_no = 4, .title = "gadget"}).execute().has_value()
-        );
+// Two entries sharing catalog_id == 7, differing in entry_no (3 vs 4).
+template <typename ConnType> auto seed_catalog_entries() -> void {
+    storm::QuerySet<CatalogEntry, ConnType> entry_qs;
+    ASSERT_TRUE(entry_qs.insert(CatalogEntry{.catalog_id = 7, .entry_no = 3, .title = "widget"}).execute().has_value());
+    ASSERT_TRUE(entry_qs.insert(CatalogEntry{.catalog_id = 7, .entry_no = 4, .title = "gadget"}).execute().has_value());
+}
+
+// Junction column lists, paired with the VALUES tuples each test links.
+constexpr std::string_view REGISTRY_ENTRY_COLS =
+    "TagRegistry_CatalogEntry (TagRegistry_id, CatalogEntry_catalog_id, CatalogEntry_entry_no)";
+constexpr std::string_view SHELF_TAG_COLS =
+    "ShelfAssignment_LedgerTag (ShelfAssignment_warehouse_no, ShelfAssignment_shelf_code, LedgerTag_id)";
+constexpr std::string_view SHELF_BIN_COLS =
+    "ShelfAssignment_StorageBin (ShelfAssignment_warehouse_no, ShelfAssignment_shelf_code, "
+    "StorageBin_aisle, StorageBin_bin_code, StorageBin_revision)";
+
+// Seeds LedgerTag rows 1..n ('audit', then 'review'). LedgerTag is
+// autoincrement, so ids are positional — the junction tuples reference them
+// by the 1-based order inserted here.
+auto seed_tags(const auto &conn, int count) -> void {
+    for (const auto *label : std::array{"audit", "review"} | std::views::take(count)) {
+        ASSERT_TRUE(conn->execute(std::format("INSERT INTO LedgerTag (label) VALUES ('{}')", label)).has_value());
     }
+}
 
-    // Junction column lists, paired with the VALUES tuples each test links.
-    constexpr std::string_view REGISTRY_ENTRY_COLS =
-            "TagRegistry_CatalogEntry (TagRegistry_id, CatalogEntry_catalog_id, CatalogEntry_entry_no)";
-    constexpr std::string_view SHELF_TAG_COLS =
-            "ShelfAssignment_LedgerTag (ShelfAssignment_warehouse_no, ShelfAssignment_shelf_code, LedgerTag_id)";
-    constexpr std::string_view SHELF_BIN_COLS =
-            "ShelfAssignment_StorageBin (ShelfAssignment_warehouse_no, ShelfAssignment_shelf_code, "
-            "StorageBin_aisle, StorageBin_bin_code, StorageBin_revision)";
-
-    // Seeds LedgerTag rows 1..n ('audit', then 'review'). LedgerTag is
-    // autoincrement, so ids are positional — the junction tuples reference them
-    // by the 1-based order inserted here.
-    auto seed_tags(const auto& conn, int count) -> void {
-        for (const auto* label : std::array{"audit", "review"} | std::views::take(count)) {
-            ASSERT_TRUE(conn->execute(std::format("INSERT INTO LedgerTag (label) VALUES ('{}')", label)).has_value());
-        }
+// Inserts each "(...)" tuple into the named junction. Junction rows are written
+// as raw SQL throughout the m2m suites — Storm has no junction write path.
+auto link_junction_rows(const auto &conn, std::string_view table_and_cols, auto rows) -> void {
+    for (const auto *row : rows) {
+        ASSERT_TRUE(conn->execute(std::format("INSERT INTO {} VALUES {}", table_and_cols, row)).has_value());
     }
+}
 
-    // Inserts each "(...)" tuple into the named junction. Junction rows are written
-    // as raw SQL throughout the m2m suites — Storm has no junction write path.
-    auto link_junction_rows(const auto& conn, std::string_view table_and_cols, auto rows) -> void {
-        for (const auto* row : rows) {
-            ASSERT_TRUE(conn->execute(std::format("INSERT INTO {} VALUES {}", table_and_cols, row)).has_value());
-        }
-    }
+// Two bins sharing aisle=4 and bin_code="B12", differing only in `revision` —
+// the LAST part, so a key comparison that stops early conflates them.
+template <typename ConnType> auto seed_bins() -> void {
+    storm::QuerySet<StorageBin, ConnType> bin_qs;
+    ASSERT_TRUE(
+        bin_qs.insert(StorageBin{.aisle = 4, .bin_code = "B12", .revision = 9, .capacity = 2.5}).execute().has_value());
+    ASSERT_TRUE(bin_qs.insert(StorageBin{.aisle = 4, .bin_code = "B12", .revision = 10, .capacity = 3.5})
+                    .execute()
+                    .has_value());
+}
 
-    // Two bins sharing aisle=4 and bin_code="B12", differing only in `revision` —
-    // the LAST part, so a key comparison that stops early conflates them.
-    template <typename ConnType> auto seed_bins() -> void {
-        storm::QuerySet<StorageBin, ConnType> bin_qs;
-        ASSERT_TRUE(bin_qs.insert(StorageBin{.aisle = 4, .bin_code = "B12", .revision = 9, .capacity = 2.5})
-                            .execute()
-                            .has_value());
-        ASSERT_TRUE(bin_qs.insert(StorageBin{.aisle = 4, .bin_code = "B12", .revision = 10, .capacity = 3.5})
-                            .execute()
-                            .has_value());
+// Shelf S-1, and optionally S-2 sharing its warehouse_no. Tests that count
+// junction PAIRS seed only S-1, so the second shelf is opt-in rather than
+// baked in — it would change their expected count.
+template <typename ConnType> auto seed_shelves(bool with_second = true) -> void {
+    storm::QuerySet<ShelfAssignment, ConnType> shelf_qs;
+    ASSERT_TRUE(
+        shelf_qs.insert(ShelfAssignment{.warehouse_no = 2, .shelf_code = "S-1", .priority = 5}).execute().has_value());
+    if (with_second) {
+        ASSERT_TRUE(shelf_qs.insert(ShelfAssignment{.warehouse_no = 2, .shelf_code = "S-2", .priority = 6})
+                        .execute()
+                        .has_value());
     }
-
-    // Shelf S-1, and optionally S-2 sharing its warehouse_no. Tests that count
-    // junction PAIRS seed only S-1, so the second shelf is opt-in rather than
-    // baked in — it would change their expected count.
-    template <typename ConnType> auto seed_shelves(bool with_second = true) -> void {
-        storm::QuerySet<ShelfAssignment, ConnType> shelf_qs;
-        ASSERT_TRUE(shelf_qs.insert(ShelfAssignment{.warehouse_no = 2, .shelf_code = "S-1", .priority = 5})
-                            .execute()
-                            .has_value());
-        if (with_second) {
-            ASSERT_TRUE(shelf_qs.insert(ShelfAssignment{.warehouse_no = 2, .shelf_code = "S-2", .priority = 6})
-                                .execute()
-                                .has_value());
-        }
-    }
+}
 
 } // namespace
-
-TYPED_TEST_SUITE(CompositeOwnerJunctionCreateTest, DatabaseTypes);
-TYPED_TEST_SUITE(CompositeRelatedJunctionCreateTest, DatabaseTypes);
-TYPED_TEST_SUITE(CompositeBothSidesJunctionCreateTest, DatabaseTypes);
-TYPED_TEST_SUITE(MultiRelationCompositeOwnerTest, DatabaseTypes);
+TYPED_TEST_SUITE(CompositeOwnerJunctionCreateTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
+TYPED_TEST_SUITE(CompositeRelatedJunctionCreateTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
+TYPED_TEST_SUITE(CompositeBothSidesJunctionCreateTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
+TYPED_TEST_SUITE(MultiRelationCompositeOwnerTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
 
 // Composite OWNER (3-part, mixed types) + single-PK related. Before this task
 // the emitted FK clause was "REFERENCES LedgerWithTags(id)" — LedgerWithTags has
@@ -131,35 +133,30 @@ TYPED_TEST_SUITE(MultiRelationCompositeOwnerTest, DatabaseTypes);
 // tags landed on WHICH ledger, not merely how many.
 TYPED_TEST(CompositeOwnerJunctionCreateTest, M2MEagerLoadStitchesOnFullCompositeOwnerKey) {
     using LedgerQs = storm::QuerySet<LedgerWithTags, TypeParam>;
-    auto conn      = LedgerQs::get_default_connection();
+    auto conn = LedgerQs::get_default_connection();
 
     // Two ledgers sharing the FIRST PK part (region == 1) and differing only in
     // later parts. If the stitch keyed on region alone — the single-column
     // fallback the old code would have had to use — both ledgers would receive
     // both tags.
-    LedgerQs   ledger_qs;
+    LedgerQs ledger_qs;
     const auto ins_a =
-            ledger_qs.insert(LedgerWithTags{.region = 1, .account = "acct-a", .period = 202601, .balance = 1.0})
-                    .execute();
+        ledger_qs.insert(LedgerWithTags{.region = 1, .account = "acct-a", .period = 202601, .balance = 1.0}).execute();
     ASSERT_TRUE(ins_a.has_value());
     const auto ins_b =
-            ledger_qs.insert(LedgerWithTags{.region = 1, .account = "acct-b", .period = 202602, .balance = 2.0})
-                    .execute();
+        ledger_qs.insert(LedgerWithTags{.region = 1, .account = "acct-b", .period = 202602, .balance = 2.0}).execute();
     ASSERT_TRUE(ins_b.has_value());
 
     ASSERT_TRUE(conn->execute("INSERT INTO LedgerTag (label) VALUES ('audit')").has_value());
     ASSERT_TRUE(conn->execute("INSERT INTO LedgerTag (label) VALUES ('review')").has_value());
 
     // acct-a gets BOTH tags; acct-b gets only 'review'.
-    for (const auto* row : {"(1, 'acct-a', 202601, 1)", "(1, 'acct-a', 202601, 2)", "(1, 'acct-b', 202602, 2)"}) {
+    for (const auto *row : {"(1, 'acct-a', 202601, 1)", "(1, 'acct-a', 202601, 2)", "(1, 'acct-b', 202602, 2)"}) {
         const auto link = conn->execute(
-                std::format(
-                        "INSERT INTO LedgerWithTags_LedgerTag "
+            std::format("INSERT INTO LedgerWithTags_LedgerTag "
                         "(LedgerWithTags_region, LedgerWithTags_account, LedgerWithTags_period, LedgerTag_id) VALUES "
                         "{}",
-                        row
-                )
-        );
+                        row));
         ASSERT_TRUE(link.has_value());
     }
 
@@ -167,7 +164,7 @@ TYPED_TEST(CompositeOwnerJunctionCreateTest, M2MEagerLoadStitchesOnFullComposite
     ASSERT_TRUE(results.has_value());
     ASSERT_EQ(results->size(), 2U);
 
-    for (const auto& ledger : *results) {
+    for (const auto &ledger : *results) {
         if (ledger.account == "acct-a") {
             EXPECT_EQ(ledger.tags.size(), 2U) << "acct-a must receive exactly its own two tags";
         } else {
@@ -182,10 +179,9 @@ TYPED_TEST(CompositeOwnerJunctionCreateTest, M2MEagerLoadStitchesOnFullComposite
 // INNER drops it. Same post-stitch filter semantics as the single-PK path.
 TYPED_TEST(CompositeOwnerJunctionCreateTest, LeftJoinKeepsCompositeOwnerWithNoTags) {
     using LedgerQs = storm::QuerySet<LedgerWithTags, TypeParam>;
-    LedgerQs   ledger_qs;
+    LedgerQs ledger_qs;
     const auto inserted =
-            ledger_qs.insert(LedgerWithTags{.region = 9, .account = "lonely", .period = 202609, .balance = 0.0})
-                    .execute();
+        ledger_qs.insert(LedgerWithTags{.region = 9, .account = "lonely", .period = 202609, .balance = 0.0}).execute();
     ASSERT_TRUE(inserted.has_value());
 
     const auto left = ledger_qs.template left_join<fields::LedgerWithTags.tags>().select().execute();
@@ -200,39 +196,34 @@ TYPED_TEST(CompositeOwnerJunctionCreateTest, LeftJoinKeepsCompositeOwnerWithNoTa
 
 TYPED_TEST(CompositeOwnerJunctionCreateTest, JunctionTableIsCreatedOnLiveBackend) {
     using LedgerQs = storm::QuerySet<LedgerWithTags, TypeParam>;
-    auto conn      = LedgerQs::get_default_connection();
+    auto conn = LedgerQs::get_default_connection();
     // Round-trip a junction row through raw SQL: the ORM has no junction write
     // path (existing m2m tests populate junctions this way too), so this is the
     // only way to prove the emitted columns actually exist and accept data.
     ASSERT_TRUE(conn->execute("INSERT INTO LedgerTag (label) VALUES ('audit')").has_value());
     storm::QuerySet<LedgerWithTags, TypeParam> ledger_qs;
-    const auto                                 ledger_inserted =
-            ledger_qs.insert(LedgerWithTags{.region = 1, .account = "acct-a", .period = 202601, .balance = 10.5})
-                    .execute();
+    const auto ledger_inserted =
+        ledger_qs.insert(LedgerWithTags{.region = 1, .account = "acct-a", .period = 202601, .balance = 10.5}).execute();
     ASSERT_TRUE(ledger_inserted.has_value());
-    auto link = conn->execute(
-            "INSERT INTO LedgerWithTags_LedgerTag "
-            "(LedgerWithTags_region, LedgerWithTags_account, LedgerWithTags_period, LedgerTag_id) "
-            "VALUES (1, 'acct-a', 202601, 1)"
-    );
+    auto link = conn->execute("INSERT INTO LedgerWithTags_LedgerTag "
+                              "(LedgerWithTags_region, LedgerWithTags_account, LedgerWithTags_period, LedgerTag_id) "
+                              "VALUES (1, 'acct-a', 202601, 1)");
     EXPECT_TRUE(link.has_value()) << "composite-owner junction must accept a row keyed on all 3 owner parts";
 }
 
 // Single-PK owner + composite (2-part) RELATED — the mirror direction.
 TYPED_TEST(CompositeRelatedJunctionCreateTest, JunctionTableIsCreatedOnLiveBackend) {
-    using RegistryQs                              = storm::QuerySet<TagRegistry, TypeParam>;
-    auto                                     conn = RegistryQs::get_default_connection();
+    using RegistryQs = storm::QuerySet<TagRegistry, TypeParam>;
+    auto conn = RegistryQs::get_default_connection();
     storm::QuerySet<CatalogEntry, TypeParam> entry_qs;
-    const auto                               entry_inserted =
-            entry_qs.insert(CatalogEntry{.catalog_id = 7, .entry_no = 3, .title = "widget"}).execute();
+    const auto entry_inserted =
+        entry_qs.insert(CatalogEntry{.catalog_id = 7, .entry_no = 3, .title = "widget"}).execute();
     ASSERT_TRUE(entry_inserted.has_value());
     storm::QuerySet<TagRegistry, TypeParam> registry_qs;
     const auto registry_inserted = registry_qs.insert(TagRegistry{.label = "featured"}).execute();
     ASSERT_TRUE(registry_inserted.has_value());
-    auto link = conn->execute(
-            "INSERT INTO TagRegistry_CatalogEntry "
-            "(TagRegistry_id, CatalogEntry_catalog_id, CatalogEntry_entry_no) VALUES (1, 7, 3)"
-    );
+    auto link = conn->execute("INSERT INTO TagRegistry_CatalogEntry "
+                              "(TagRegistry_id, CatalogEntry_catalog_id, CatalogEntry_entry_no) VALUES (1, 7, 3)");
     EXPECT_TRUE(link.has_value()) << "composite-related junction must accept a row keyed on both related parts";
 }
 
@@ -254,7 +245,7 @@ TYPED_TEST(CompositeRelatedJunctionCreateTest, JunctionTableIsCreatedOnLiveBacke
 // join<>().select() and join<>().count() for real on both backends.
 TYPED_TEST(CompositeRelatedJunctionCreateTest, M2MEagerLoadStitchesOverCompositeRelatedKey) {
     using RegistryQs = storm::QuerySet<TagRegistry, TypeParam>;
-    auto conn        = RegistryQs::get_default_connection();
+    auto conn = RegistryQs::get_default_connection();
 
     // Entries share catalog_id == 7 and differ only in entry_no — a partial-key
     // match on catalog_id alone would make either junction row resolve to both.
@@ -269,7 +260,7 @@ TYPED_TEST(CompositeRelatedJunctionCreateTest, M2MEagerLoadStitchesOverComposite
     const auto results = registry_qs.template join<fields::TagRegistry.entries>().select().execute();
     ASSERT_TRUE(results.has_value()) << results.error().message();
     ASSERT_EQ(results->size(), 1U);
-    const auto& registry = *results->begin();
+    const auto &registry = *results->begin();
     ASSERT_EQ(registry.entries.size(), 1U) << "a match on catalog_id alone would also pull in entry_no=4";
     EXPECT_EQ(registry.entries.begin()->catalog_id, 7);
     EXPECT_EQ(registry.entries.begin()->entry_no, 3);
@@ -281,7 +272,7 @@ TYPED_TEST(CompositeRelatedJunctionCreateTest, M2MEagerLoadStitchesOverComposite
 // the same widening independently — count() exercises it end to end.
 TYPED_TEST(CompositeRelatedJunctionCreateTest, CountOverCompositeRelatedM2MCountsPairs) {
     using RegistryQs = storm::QuerySet<TagRegistry, TypeParam>;
-    auto conn        = RegistryQs::get_default_connection();
+    auto conn = RegistryQs::get_default_connection();
 
     seed_catalog_entries<TypeParam>();
 
@@ -297,22 +288,20 @@ TYPED_TEST(CompositeRelatedJunctionCreateTest, CountOverCompositeRelatedM2MCount
 // Composite on BOTH sides: 5 junction columns, 5-column PK, two multi-column FK
 // clauses. The widest junction shape the tree produces.
 TYPED_TEST(CompositeBothSidesJunctionCreateTest, JunctionTableIsCreatedOnLiveBackend) {
-    using ShelfQs                               = storm::QuerySet<ShelfAssignment, TypeParam>;
-    auto                                   conn = ShelfQs::get_default_connection();
+    using ShelfQs = storm::QuerySet<ShelfAssignment, TypeParam>;
+    auto conn = ShelfQs::get_default_connection();
     storm::QuerySet<StorageBin, TypeParam> bin_qs;
-    const auto                             bin_inserted =
-            bin_qs.insert(StorageBin{.aisle = 4, .bin_code = "B12", .revision = 9, .capacity = 2.5}).execute();
+    const auto bin_inserted =
+        bin_qs.insert(StorageBin{.aisle = 4, .bin_code = "B12", .revision = 9, .capacity = 2.5}).execute();
     ASSERT_TRUE(bin_inserted.has_value());
     storm::QuerySet<ShelfAssignment, TypeParam> shelf_qs;
-    const auto                                  shelf_inserted =
-            shelf_qs.insert(ShelfAssignment{.warehouse_no = 2, .shelf_code = "S-1", .priority = 5}).execute();
+    const auto shelf_inserted =
+        shelf_qs.insert(ShelfAssignment{.warehouse_no = 2, .shelf_code = "S-1", .priority = 5}).execute();
     ASSERT_TRUE(shelf_inserted.has_value());
-    auto link = conn->execute(
-            "INSERT INTO ShelfAssignment_StorageBin "
-            "(ShelfAssignment_warehouse_no, ShelfAssignment_shelf_code, "
-            "StorageBin_aisle, StorageBin_bin_code, StorageBin_revision) "
-            "VALUES (2, 'S-1', 4, 'B12', 9)"
-    );
+    auto link = conn->execute("INSERT INTO ShelfAssignment_StorageBin "
+                              "(ShelfAssignment_warehouse_no, ShelfAssignment_shelf_code, "
+                              "StorageBin_aisle, StorageBin_bin_code, StorageBin_revision) "
+                              "VALUES (2, 'S-1', 4, 'B12', 9)");
     EXPECT_TRUE(link.has_value()) << "both-sides-composite junction must accept a row keyed on all 5 columns";
 }
 
@@ -322,7 +311,7 @@ TYPED_TEST(CompositeBothSidesJunctionCreateTest, JunctionTableIsCreatedOnLiveBac
 // related entity's own columns at offset 2. Decoys share a PK part on BOTH sides.
 TYPED_TEST(CompositeBothSidesJunctionCreateTest, M2MEagerLoadStitchesOverBothCompositeKeys) {
     using ShelfQs = storm::QuerySet<ShelfAssignment, TypeParam>;
-    auto conn     = ShelfQs::get_default_connection();
+    auto conn = ShelfQs::get_default_connection();
 
     seed_bins<TypeParam>();
     seed_shelves<TypeParam>();
@@ -335,11 +324,11 @@ TYPED_TEST(CompositeBothSidesJunctionCreateTest, M2MEagerLoadStitchesOverBothCom
     ASSERT_TRUE(results.has_value()) << results.error().message();
     ASSERT_EQ(results->size(), 2U);
 
-    for (const auto& shelf : *results) {
+    for (const auto &shelf : *results) {
         ASSERT_EQ(shelf.bins.size(), 1U) << "shelf " << shelf.shelf_code
                                          << " must receive exactly its own bin — a partial match on either side "
                                             "(warehouse_no alone, or aisle/bin_code without revision) gives it both";
-        const auto& bin = *shelf.bins.begin();
+        const auto &bin = *shelf.bins.begin();
         EXPECT_EQ(bin.aisle, 4);
         EXPECT_EQ(bin.bin_code, "B12");
         if (shelf.shelf_code == "S-1") {
@@ -355,7 +344,7 @@ TYPED_TEST(CompositeBothSidesJunctionCreateTest, M2MEagerLoadStitchesOverBothCom
 
 TYPED_TEST(CompositeBothSidesJunctionCreateTest, CountOverBothCompositeM2MCountsPairs) {
     using ShelfQs = storm::QuerySet<ShelfAssignment, TypeParam>;
-    auto conn     = ShelfQs::get_default_connection();
+    auto conn = ShelfQs::get_default_connection();
 
     seed_bins<TypeParam>();
     seed_shelves<TypeParam>(/*with_second=*/false); // only S-1: the count is over PAIRS
@@ -371,8 +360,8 @@ TYPED_TEST(CompositeBothSidesJunctionCreateTest, CountOverBothCompositeM2MCounts
 TYPED_TEST(CompositeBothSidesJunctionCreateTest, LeftJoinKeepsBothCompositeOwnerWithNoBins) {
     storm::QuerySet<ShelfAssignment, TypeParam> shelf_qs;
     ASSERT_TRUE(shelf_qs.insert(ShelfAssignment{.warehouse_no = 8, .shelf_code = "lonely", .priority = 1})
-                        .execute()
-                        .has_value());
+                    .execute()
+                    .has_value());
 
     const auto left = shelf_qs.template left_join<fields::ShelfAssignment.bins>().select().execute();
     ASSERT_TRUE(left.has_value()) << left.error().message();
@@ -400,7 +389,7 @@ TYPED_TEST(CompositeBothSidesJunctionCreateTest, LeftJoinKeepsBothCompositeOwner
 // fail outright.
 TYPED_TEST(MultiRelationCompositeOwnerTest, TwoRelationsOnACompositeOwnerStitchIndependently) {
     using ShelfQs = storm::QuerySet<ShelfAssignment, TypeParam>;
-    auto conn     = ShelfQs::get_default_connection();
+    auto conn = ShelfQs::get_default_connection();
 
     seed_bins<TypeParam>();
     seed_shelves<TypeParam>();
@@ -412,13 +401,13 @@ TYPED_TEST(MultiRelationCompositeOwnerTest, TwoRelationsOnACompositeOwnerStitchI
     link_junction_rows(conn, SHELF_BIN_COLS, std::array{"(2, 'S-1', 4, 'B12', 9)", "(2, 'S-2', 4, 'B12', 10)"});
     link_junction_rows(conn, SHELF_TAG_COLS, std::array{"(2, 'S-1', 1)", "(2, 'S-2', 2)"});
 
-    ShelfQs    shelf_qs;
+    ShelfQs shelf_qs;
     const auto results =
-            shelf_qs.template join<fields::ShelfAssignment.bins, fields::ShelfAssignment.tags>().select().execute();
+        shelf_qs.template join<fields::ShelfAssignment.bins, fields::ShelfAssignment.tags>().select().execute();
     ASSERT_TRUE(results.has_value()) << results.error().message();
     ASSERT_EQ(results->size(), 2U);
 
-    for (const auto& shelf : *results) {
+    for (const auto &shelf : *results) {
         ASSERT_EQ(shelf.bins.size(), 1U) << "shelf " << shelf.shelf_code << " must get exactly its own bin";
         ASSERT_EQ(shelf.tags.size(), 1U) << "shelf " << shelf.shelf_code << " must get exactly its own tag";
         if (shelf.shelf_code == "S-1") {
@@ -436,7 +425,7 @@ TYPED_TEST(MultiRelationCompositeOwnerTest, TwoRelationsOnACompositeOwnerStitchI
 // relation but not the other keeps the empty container rather than dropping.
 TYPED_TEST(MultiRelationCompositeOwnerTest, LeftJoinFillsEachRelationIndependently) {
     using ShelfQs = storm::QuerySet<ShelfAssignment, TypeParam>;
-    auto conn     = ShelfQs::get_default_connection();
+    auto conn = ShelfQs::get_default_connection();
 
     seed_bins<TypeParam>();
     seed_shelves<TypeParam>(/*with_second=*/false); // S-1 only
@@ -445,13 +434,12 @@ TYPED_TEST(MultiRelationCompositeOwnerTest, LeftJoinFillsEachRelationIndependent
     // S-1 gets a bin but NO tag.
     link_junction_rows(conn, SHELF_BIN_COLS, std::array{"(2, 'S-1', 4, 'B12', 9)"});
 
-    ShelfQs    shelf_qs;
-    const auto results = shelf_qs.template left_join<fields::ShelfAssignment.bins, fields::ShelfAssignment.tags>()
-                                 .select()
-                                 .execute();
+    ShelfQs shelf_qs;
+    const auto results =
+        shelf_qs.template left_join<fields::ShelfAssignment.bins, fields::ShelfAssignment.tags>().select().execute();
     ASSERT_TRUE(results.has_value()) << results.error().message();
     ASSERT_EQ(results->size(), 1U);
-    const auto& shelf = *results->begin();
+    const auto &shelf = *results->begin();
     EXPECT_EQ(shelf.bins.size(), 1U);
     EXPECT_TRUE(shelf.tags.empty()) << "an unlinked relation must stay empty, not borrow the other's rows";
 }
@@ -463,7 +451,7 @@ TYPED_TEST(MultiRelationCompositeOwnerTest, LeftJoinFillsEachRelationIndependent
 // AND-joins one equality per owner PK part, nesting the two loops.
 TYPED_TEST(MultiRelationCompositeOwnerTest, CountOverTwoRelationsChainsBothJunctionsWithDistinctAliases) {
     using ShelfQs = storm::QuerySet<ShelfAssignment, TypeParam>;
-    auto conn     = ShelfQs::get_default_connection();
+    auto conn = ShelfQs::get_default_connection();
 
     seed_bins<TypeParam>();
     seed_shelves<TypeParam>(/*with_second=*/false); // S-1 only
@@ -475,9 +463,9 @@ TYPED_TEST(MultiRelationCompositeOwnerTest, CountOverTwoRelationsChainsBothJunct
     link_junction_rows(conn, SHELF_BIN_COLS, std::array{"(2, 'S-1', 4, 'B12', 9)", "(2, 'S-1', 4, 'B12', 10)"});
     link_junction_rows(conn, SHELF_TAG_COLS, std::array{"(2, 'S-1', 1)", "(2, 'S-1', 2)"});
 
-    ShelfQs    shelf_qs;
+    ShelfQs shelf_qs;
     const auto count =
-            shelf_qs.template join<fields::ShelfAssignment.bins, fields::ShelfAssignment.tags>().count().execute();
+        shelf_qs.template join<fields::ShelfAssignment.bins, fields::ShelfAssignment.tags>().count().execute();
     ASSERT_TRUE(count.has_value()) << count.error().message();
     EXPECT_EQ(count.value(), 4) << "2 bins x 2 tags for S-1; a shared junction alias breaks the chain";
 }
