@@ -123,7 +123,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 ```bash
 # Debug (tests + coverage on by default)
 cmake --preset ninja-debug && cmake --build --preset ninja-debug
-ctest --preset ninja-debug
+./build/debug/tests/storm_tests   # ~33s. `ctest --preset ninja-debug` also works but is ~7.8x slower (docs/internals/testing/TESTING.md#local-test-suite-speed)
 
 # Release dev (tests + bench on by default)
 cmake --preset ninja-release && cmake --build --preset ninja-release
@@ -226,8 +226,10 @@ git add -A && git commit -m "message"
 # Smart skips: no C++/cmake → skip all; cmake-only → tests+coverage+cmake-format; C++ only-bench → skip tests/coverage
 # Self-heal (#489): commit.sh configures + fully builds build/release before clang-tidy
 #   (BMIs + mock binaries, so no missing compile_commands.json / std.pcm) and
-#   build/debug before ctest (so no storm_mock_tests_NOT_BUILT). No-op on the warm
-#   path; covers both the git-hook path and a manual ./commit.sh on a fresh worktree.
+#   build/debug before running the test binaries directly (so none of the three
+#   — storm_tests, storm_mock_tests, storm_pq_mock_tests — is missing). No-op on
+#   the warm path; covers both the git-hook path and a manual ./commit.sh on a
+#   fresh worktree.
 
 git push
 # Pre-push hook (.githooks/pre-push): SonarCloud gate disabled (C++26 not yet supported)
@@ -718,7 +720,13 @@ auto r = storm::transaction(conn, [&](auto& txn) -> std::expected<int, Error> {
 ## Testing
 
 ```bash
-# SQLite + PostgreSQL (STORM_PG_CONNSTR injected by testPreset; PG skips gracefully if not running)
+# SQLite + PostgreSQL — fast path, run the binary directly (~33s vs ~260s via
+# ctest — see docs/internals/testing/TESTING.md#local-test-suite-speed)
+STORM_PG_CONNSTR="host=/var/run/postgresql dbname=storm_db user=storm_db" \
+    ./build/debug/tests/storm_tests
+
+# Same, via ctest (slower; gives per-test filtering/listing via -R/-N). CI also
+# uses ctest, but via `--test-dir` with its own connstr, not this preset.
 ctest --preset ninja-debug
 
 # SQLite only
@@ -728,7 +736,7 @@ ctest --preset ninja-debug-sqlite
 ./build/debug/tests/storm_tests --gtest_filter="SelectTest.*"
 ```
 
-See [docs/internals/testing/TESTING.md](docs/internals/testing/TESTING.md) for PostgreSQL test isolation details.
+See [docs/internals/testing/TESTING.md](docs/internals/testing/TESTING.md) for PostgreSQL test isolation details and the local test-speed findings.
 
 ### Thorough Testing Checklist
 

@@ -3,6 +3,11 @@
 Storm targets ≥95% of raw SQLite efficiency. This page collects the
 performance guidelines, hot-path tips, and the benchmarking/testing workflow.
 
+> **Note**: this page is about ORM/query performance (the SQL Storm generates
+> and executes). For local *test-suite* run speed (how fast `ctest`/the gtest
+> binaries finish), see
+> [TESTING.md#local-test-suite-speed](../testing/TESTING.md#local-test-suite-speed).
+
 ## Guidelines
 
 ### Core Philosophy
@@ -562,3 +567,24 @@ void raw_benchmark(int batch_size) { ... }  // Same decision logic
 
 - [Adding Features](../building/ADDING_FEATURES.md) - Development workflow
 - [Benchmarks](https://github.com/spiritEcosse/storm/blob/develop/benchmarks/README.md) - Current benchmark results
+
+## Local Test PostgreSQL Tuning
+
+Not query performance — this is durability tuning for the **local dev
+PostgreSQL instance used to run the test suite** (see
+[TESTING.md#local-test-suite-speed](../testing/TESTING.md#local-test-suite-speed)
+for the full before/after numbers). On a Postgres that holds only throwaway
+test schemas, set in `postgresql.conf`:
+
+```conf
+fsync = off
+synchronous_commit = off
+```
+
+Then `brew services restart postgresql@16` (or the equivalent for your install).
+Measured 2026-08-27: cut the PG portion of the test suite from ~30.2s to ~25.7s
+(−15%), full suite from ~38s to ~33s wall (−12%).
+
+**⚠️ Never do this on an instance holding real data** — `fsync = off` means a
+power loss or crash can corrupt or lose committed transactions. Fine for a
+disposable test DB; not fine for anything else.

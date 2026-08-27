@@ -9,11 +9,14 @@ modes with different scopes.
 Before running clang-tidy, `commit.sh` configures and fully builds the release
 target set (BMIs + mock test binaries) — not just `--target storm` — so a fresh
 worktree doesn't fail with "module BMI not found" (clang-tidy on files that
-`import std;`/`import storm;` need the BMIs) or `storm_mock_tests_NOT_BUILT`
-later at the `ctest` stage. It similarly ensures `build/debug` is built before
-running `ctest`. Both guards are file-check-and-build: a no-op (fast) on an
-already-warm build directory, so this doesn't add cost on the common path — it
-only matters the first time you commit from a new worktree.
+`import std;`/`import storm;` need the BMIs) or a missing test binary later at
+the test stage (the test stage runs `storm_tests`, `storm_mock_tests`, and
+`storm_pq_mock_tests` directly — see
+[TESTING.md#local-test-suite-speed](../testing/TESTING.md#local-test-suite-speed)
+for why it doesn't use `ctest`). It similarly ensures `build/debug` is built
+before running those binaries. Both guards are file-check-and-build: a no-op
+(fast) on an already-warm build directory, so this doesn't add cost on the
+common path — it only matters the first time you commit from a new worktree.
 
 ## The three clang-tidy modes
 

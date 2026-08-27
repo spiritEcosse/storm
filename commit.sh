@@ -294,20 +294,71 @@ if [[ "$RUN_BENCH_RELEASE" == true ]]; then
 fi
 
 # --- Step 4: tests ---
-# `ctest` only runs tests, it never builds them. The mock test binaries are
-# discovered PRE_TEST (they must be executed to enumerate their cases), so on a
-# fresh/stale build/debug ctest reports `storm_mock_tests_NOT_BUILT` (and the
-# other mock targets) instead of running them (#489). Self-heal first: configure
-# build/debug if absent, then build the FULL default debug target set so every
-# mock binary exists. Both are no-ops on the warm path (config guarded by a file
-# check; the ninja build short-circuits when up to date).
+# Run the three gtest binaries directly instead of `ctest --preset ninja-debug`:
+# ctest registers each of the ~3000 individual gtest cases as its own CTest test
+# (gtest_discover_tests DISCOVERY_MODE PRE_TEST), so it re-launches the whole
+# storm_tests process per test case. Measured 2026-08-27: ~260s via ctest vs
+# ~33s running the binaries once each (7.8x) — see
+# docs/internals/testing/TESTING.md#local-test-suite-speed. Self-heal first:
+# configure build/debug if absent, then build the FULL default debug target set
+# so every binary (main + both mocks) exists — otherwise a fresh/stale worktree
+# would be missing them (#489). Both are no-ops on the warm path (config guarded
+# by a file check; the ninja build short-circuits when up to date).
 if [[ "$RUN_TESTS" == true ]]; then
     build_debug_then_test() {
         if [[ ! -f "build/debug/build.ninja" ]]; then
             cmake --preset ninja-debug || return 1
         fi
         cmake --build --preset ninja-debug || return 1
-        ctest --preset ninja-debug
+
+        # Soft default (not an override): an already-exported STORM_PG_CONNSTR
+        # wins, matching scripts/coverage-run-batched.sh's policy for the same
+        # variable — a hard override here would silently point tests at a
+        # different DB than coverage uses in the same commit.sh run. Also
+        # duplicated in CMakePresets.json's ninja-debug testPreset; keep in sync.
+        : "${STORM_PG_CONNSTR:=host=/var/run/postgresql dbname=storm_db user=storm_db}"
+        export STORM_PG_CONNSTR
+
+        # PG unreachable means every PG-backed test GTEST_SKIPs (gtest still
+        # exits 0), so the gate would otherwise report PASS having silently run
+        # only the SQLite half. Warn loudly rather than fail: CLAUDE.md
+        # documents PG-skip-if-not-running as accepted behavior, so this
+        # matches scripts/coverage-run-batched.sh's WARN (not fail) policy.
+        if command -v pg_isready > /dev/null 2>&1 \
+           && ! pg_isready -d "$STORM_PG_CONNSTR" > /dev/null 2>&1; then
+            echo -e "${RED}  WARN: PostgreSQL unreachable at [$STORM_PG_CONNSTR] — PG tests will SKIP${RESET}"
+        fi
+
+        # Run all three regardless of earlier failures (matches ctest's
+        # run-everything-then-report behavior) so a storm_tests failure
+        # doesn't hide an unrelated mock-test failure from this run's log.
+        # Bounded with `timeout`: ctest applied a 1500s default per-test
+        # TIMEOUT, which a bare invocation has no equivalent of — without this
+        # a hung/deadlocked test would hang the pre-commit gate indefinitely.
+        # `timeout` isn't stock on macOS (BSD userland has neither `timeout`
+        # nor `gtimeout` — it's only present via `brew install coreutils`),
+        # so degrade gracefully to unbounded rather than fail outright.
+        local timeout_bin=""
+        if command -v timeout > /dev/null 2>&1; then
+            timeout_bin="timeout"
+        elif command -v gtimeout > /dev/null 2>&1; then
+            timeout_bin="gtimeout"
+        fi
+        run_with_timeout() {
+            local secs="$1"
+            shift
+            if [[ -n "$timeout_bin" ]]; then
+                "$timeout_bin" "$secs" "$@"
+            else
+                "$@"
+            fi
+            return $?
+        }
+        local overall=0
+        run_with_timeout 900 ./build/debug/tests/storm_tests --gtest_brief=1 || overall=1
+        run_with_timeout 60 ./build/debug/tests/mock_sqlite/storm_mock_tests --gtest_brief=1 || overall=1
+        run_with_timeout 60 ./build/debug/tests/mock_libpq/storm_pq_mock_tests --gtest_brief=1 || overall=1
+        return $overall
     }
     run_step_live "tests (SQLite + PostgreSQL)" "$LOG_TESTS" build_debug_then_test || true
 fi

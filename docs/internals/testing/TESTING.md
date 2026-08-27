@@ -36,7 +36,12 @@ See [benchmarks/README.md](https://github.com/spiritEcosse/storm/blob/develop/be
 ## Running Tests
 
 ```bash
-# SQLite + PostgreSQL (STORM_PG_CONNSTR injected by testPreset; PG skips gracefully if not running)
+# SQLite + PostgreSQL — fast path, run the binary directly (see "Local Test
+# Suite Speed" below for why this beats `ctest --preset ninja-debug`)
+STORM_PG_CONNSTR="host=/var/run/postgresql dbname=storm_db user=storm_db" \
+    ./build/debug/tests/storm_tests
+
+# Same, via ctest (slower, but gives per-test filtering/listing via -R/-N)
 ctest --preset ninja-debug
 
 # SQLite only
@@ -58,6 +63,41 @@ ctest --preset ninja-tsan
 ```
 
 See [SANITIZERS.md](SANITIZERS.md) for full details on sanitizer presets.
+
+## Local Test Suite Speed
+
+Measured 2026-08-27 on the full `storm_tests` binary (2961 tests, SQLite + PostgreSQL):
+
+| Approach | Wall time | Notes |
+|---|---:|---|
+| `./build/debug/tests/storm_tests` (direct) | ~33s | gtest's own in-process loop, one process |
+| `ctest --preset ninja-debug` | ~260s (7.8x slower) | `gtest_discover_tests` registers each test case as its own CTest test, so ctest re-launches the whole 129MB binary process per test — that per-process overhead swamps the preset's `jobs: 50` parallelism (and 50 also oversubscribes an 8-core machine) |
+
+**Takeaway**: for local iteration, run the gtest binaries directly. `commit.sh`'s
+test step does this (three binaries: `storm_tests`, `mock_sqlite/storm_mock_tests`,
+`mock_libpq/storm_pq_mock_tests`). `ctest` is still useful locally for `-R`/`-N`
+filtering/listing. CI also uses `ctest` (via `ctest --test-dir build/<dir>`, with
+its own service-container connstr, not the `ninja-debug` testPreset), where
+per-test pass/fail visibility in the Actions UI matters more than raw wall time.
+
+**Known divergence**: `ctest`'s per-test-case registration incidentally gave
+each test its own OS process. Running all ~3000 cases in one process locally
+means `thread_local`/static state (the per-process PG schema name in
+`storm::test::detail::current_test_schema`, `QuerySet`'s default-connection
+thread-local) now persists across tests within a run in a way CI's per-process
+model doesn't reproduce. Nothing is currently known to depend on this, but a
+future test that leaks such state could pass locally and fail in CI (or vice
+versa) with no code change between them — worth knowing if that ever happens.
+
+Within that ~33s, PostgreSQL-backed tests are ~80% of the time (~30s) vs
+SQLite's ~12% (~4.6s) despite running slightly fewer tests — PG pays a real
+network/socket round-trip per query that SQLite's in-process engine doesn't.
+One lever that helps: on a local dev Postgres used only for this test suite
+(never for real data), setting `fsync = off` and `synchronous_commit = off` in
+`postgresql.conf` cut the PG bucket from ~30.2s to ~25.7s (−15%) and the full
+run from ~38s to ~33s wall (−12%) — see
+[PERFORMANCE.md](../performance/PERFORMANCE.md#local-test-postgresql-tuning)
+for the exact config and the durability caveat.
 
 ## PostgreSQL Test Isolation
 
@@ -105,14 +145,13 @@ TEST(YourTestSuite, YourTestCase) {
 
 ## Current Test Statistics
 
-- **104 unit tests** (100% passing)
-- Test execution time: ~0.5 seconds
-- Coverage areas:
-  - FK field operations (17 tests)
-  - SELECT operations (12 tests)
-  - CRUD operations (44 tests)
-  - Type support (14 tests)
-  - WHERE clauses (24 tests)
+Per-category counts go stale fast as the suite grows, so this tracks only the
+total, measured alongside [Local Test Suite Speed](#local-test-suite-speed):
+
+- **2,961 tests** across 373 test suites in `storm_tests` (SQLite + PostgreSQL,
+  TYPED_TEST'd), plus 22 in `storm_mock_tests` and 37 in `storm_pq_mock_tests`
+  (mock error-path binaries) — 100% passing
+- ~33s wall time running the binaries directly (measured 2026-08-27)
 
 ## Writing New Tests
 
@@ -129,7 +168,7 @@ TEST(YourTestSuite, YourTestCase) {
 
 ## Test Maintenance
 
-- Run tests before committing: `ctest --preset ninja-debug`
+- Run tests before committing: `./commit.sh` (or `./build/debug/tests/storm_tests` directly — see [Local Test Suite Speed](#local-test-suite-speed))
 - Update tests when changing APIs
 - Add regression tests for fixed bugs
 - Keep tests fast (use in-memory database)
