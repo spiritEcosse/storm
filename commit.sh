@@ -352,6 +352,7 @@ if [[ "$RUN_TESTS" == true ]]; then
             else
                 "$@"
             fi
+            return $?
         }
         local overall=0
         run_with_timeout 900 ./build/debug/tests/storm_tests --gtest_brief=1 || overall=1
