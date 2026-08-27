@@ -22,7 +22,15 @@ You will execute and analyze tests for the Storm ORM project, which uses cutting
 
 ### Full Test Suite
 ```bash
-ctest --preset ninja-debug
+# Fast path: run the gtest binaries directly (~33s). ctest re-launches the
+# whole storm_tests binary per individual test case (gtest_discover_tests
+# PRE_TEST), which measured ~260s (7.8x slower) — see
+# docs/internals/testing/TESTING.md#local-test-suite-speed. Use `ctest --preset
+# ninja-debug` instead only when you need its -R/-N filtering/listing.
+STORM_PG_CONNSTR="host=/var/run/postgresql dbname=storm_db user=storm_db" \
+    ./build/debug/tests/storm_tests \
+    && ./build/debug/tests/mock_sqlite/storm_mock_tests \
+    && ./build/debug/tests/mock_libpq/storm_pq_mock_tests
 ```
 
 ### Specific Test Patterns
@@ -132,8 +140,12 @@ Provide test results in this structure:
 For any non-trivial change, run all three test tiers:
 
 ```bash
-# 1. Debug suite (SQLite + PostgreSQL)
-ctest --preset ninja-debug
+# 1. Debug suite (SQLite + PostgreSQL) — see "Full Test Suite" above for why
+# this runs the binaries directly instead of `ctest --preset ninja-debug`
+STORM_PG_CONNSTR="host=/var/run/postgresql dbname=storm_db user=storm_db" \
+    ./build/debug/tests/storm_tests \
+    && ./build/debug/tests/mock_sqlite/storm_mock_tests \
+    && ./build/debug/tests/mock_libpq/storm_pq_mock_tests
 
 # 2. ASAN + UBSAN (memory safety + undefined behavior)
 cmake --preset ninja-asan-ubsan && cmake --build --preset ninja-asan-ubsan
