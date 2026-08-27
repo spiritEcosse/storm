@@ -1,5 +1,18 @@
-#include <gtest/gtest.h>
-#include "test_db_helpers.h"
+#pragma once
+
+// Shared test body for test_fk_fields_sqlite.cpp / test_fk_fields_pg.cpp — the two
+// single-backend TUs of a compile-time TU split (see test_db_helpers.h,
+// DatabaseTypesSqliteHalf/DatabaseTypesPgHalf). Splitting a 2-backend TU into
+// two lets ninja compile them in parallel instead of serially instantiating
+// both backends in one TU; keeping the body here (instead of duplicating it
+// into both .cpp files) removes the risk of the two halves silently drifting.
+//
+// The includer must #define STORM_SPLIT_TYPES / STORM_SPLIT_TYPE_NAMES to one
+// backend's ::testing::Types<> alias / NameGenerator before #include-ing this
+// file, and #undef both afterward. Never include this file directly.
+#if !defined(STORM_SPLIT_TYPES) || !defined(STORM_SPLIT_TYPE_NAMES)
+#error "test_fk_fields_body.h: define STORM_SPLIT_TYPES/STORM_SPLIT_TYPE_NAMES before including"
+#endif
 
 // NOLINTBEGIN(misc-const-correctness)
 
@@ -7,70 +20,63 @@ import storm;
 import std;
 
 #include "test_models.h"
+
 #include "test_seed_helpers.h"
 
 // ── Local structs (used only in this file) ──────────────────────────────────
 struct NullableFKMessage {
-    [[= storm::primary]] int                id{};
+    [[= storm::primary]] int id{};
     [[= storm::fk<>]] std::optional<Person> sender;
-    [[= storm::fk<>]] Person                receiver;
-    std::string                             text;
+    [[= storm::fk<>]] Person receiver;
+    std::string text;
 };
 struct Project {
     [[= storm::primary]] int id{};
     [[= storm::fk<>]] Person manager;
-    std::string              title;
-    double                   budget{};
+    std::string title;
+    double budget{};
 };
 struct Measurement {
     [[= storm::primary]] int id{};
-    std::string              sensor_name;
-    float                    temperature{};
-    long long                timestamp{};
+    std::string sensor_name;
+    float temperature{};
+    long long timestamp{};
 };
 struct Counter {
     [[= storm::primary]] int id{};
-    std::string              name;
-    long                     count{};
+    std::string name;
+    long count{};
 };
 struct Reading {
-    [[= storm::primary]] int      id{};
+    [[= storm::primary]] int id{};
     [[= storm::fk<>]] Measurement measurement;
-    std::string                   reading_type;
-    float                         value{};
+    std::string reading_type;
+    float value{};
 };
 struct Summary {
-    [[= storm::primary]] int  id{};
+    [[= storm::primary]] int id{};
     [[= storm::fk<>]] Counter counter;
-    std::string               report_type;
+    std::string report_type;
 };
 
 // fields:: selector proxies (#518).
 namespace fields {
 
-    struct NullableFKMessageT;
-    consteval {
-        std::meta::define_aggregate(^^NullableFKMessageT, storm::field_specs_for(^^NullableFKMessage));
-    }
-    inline constexpr NullableFKMessageT NullableFKMessage{};
+struct NullableFKMessageT;
+consteval { std::meta::define_aggregate(^^NullableFKMessageT, storm::field_specs_for(^^NullableFKMessage)); }
+inline constexpr NullableFKMessageT NullableFKMessage{};
 
-    struct ProjectT;
-    consteval {
-        std::meta::define_aggregate(^^ProjectT, storm::field_specs_for(^^Project));
-    }
-    inline constexpr ProjectT Project{};
+struct ProjectT;
+consteval { std::meta::define_aggregate(^^ProjectT, storm::field_specs_for(^^Project)); }
+inline constexpr ProjectT Project{};
 
-    struct ReadingT;
-    consteval {
-        std::meta::define_aggregate(^^ReadingT, storm::field_specs_for(^^Reading));
-    }
-    inline constexpr ReadingT Reading{};
+struct ReadingT;
+consteval { std::meta::define_aggregate(^^ReadingT, storm::field_specs_for(^^Reading)); }
+inline constexpr ReadingT Reading{};
 
-    struct SummaryT;
-    consteval {
-        std::meta::define_aggregate(^^SummaryT, storm::field_specs_for(^^Summary));
-    }
-    inline constexpr SummaryT Summary{};
+struct SummaryT;
+consteval { std::meta::define_aggregate(^^SummaryT, storm::field_specs_for(^^Summary)); }
+inline constexpr SummaryT Summary{};
 
 } // namespace fields
 
@@ -110,33 +116,30 @@ static_assert(!join_accepts<fields::Person.name>);      // member of another mod
 
 // Test fixture for FK field operations — templated on database backend
 template <typename ConnType> class FKFieldTest : public StormTestFixture<Person, ConnType, Task> {};
-
-TYPED_TEST_SUITE(FKFieldTest, DatabaseTypes);
+TYPED_TEST_SUITE(FKFieldTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
 
 // Test: INSERT with FK field binds only the PK value
 TYPED_TEST(FKFieldTest, InsertWithFKField) {
     QuerySet<Person, TypeParam> user_qs;
-    QuerySet<Task, TypeParam>   message_qs;
+    QuerySet<Task, TypeParam> message_qs;
 
     // Insert users first
     Person const alice{.id = 0, .name = "Alice", .age = 30};
     Person const bob{.id = 0, .name = "Bob", .age = 25};
-    auto         alice_result = user_qs.insert(alice).execute();
-    auto         bob_result   = user_qs.insert(bob).execute();
+    auto alice_result = user_qs.insert(alice).execute();
+    auto bob_result = user_qs.insert(bob).execute();
     ASSERT_TRUE(alice_result.has_value()) << "Alice INSERT failed: " << alice_result.error().message();
     ASSERT_TRUE(bob_result.has_value()) << "Bob INSERT failed: " << bob_result.error().message();
 
     std::int64_t const alice_id = alice_result.value();
-    std::int64_t const bob_id   = bob_result.value();
+    std::int64_t const bob_id = bob_result.value();
 
     // Insert a task with FK to Alice (assignee) and Bob (reviewer)
     // Only assignee.id and reviewer.id are used, other fields are ignored
-    Task const msg{
-            .id          = 0,
-            .assignee    = Person{.id = static_cast<int>(alice_id), .name = "ignored", .age = 0},
-            .reviewer    = Person{.id = static_cast<int>(bob_id), .name = "ignored", .age = 0},
-            .description = "Hello World"
-    };
+    Task const msg{.id = 0,
+                   .assignee = Person{.id = static_cast<int>(alice_id), .name = "ignored", .age = 0},
+                   .reviewer = Person{.id = static_cast<int>(bob_id), .name = "ignored", .age = 0},
+                   .description = "Hello World"};
 
     auto msg_result = message_qs.insert(msg).execute();
     ASSERT_TRUE(msg_result.has_value()) << "Task INSERT failed: " << msg_result.error().message();
@@ -145,8 +148,8 @@ TYPED_TEST(FKFieldTest, InsertWithFKField) {
     EXPECT_GT(msg_id, 0) << "Expected valid message ID";
 
     // Verify FKs were stored correctly by querying database directly
-    const auto& conn     = QuerySet<Person, TypeParam>::get_default_connection();
-    auto        stmt_res = conn->prepare("SELECT assignee_id, reviewer_id FROM Task WHERE id = ?");
+    const auto &conn = QuerySet<Person, TypeParam>::get_default_connection();
+    auto stmt_res = conn->prepare("SELECT assignee_id, reviewer_id FROM Task WHERE id = ?");
     ASSERT_TRUE(stmt_res.has_value());
 
     auto stmt = std::move(stmt_res.value());
@@ -164,25 +167,23 @@ TYPED_TEST(FKFieldTest, InsertWithFKField) {
 // Test: SELECT with FK field populates only the PK
 TYPED_TEST(FKFieldTest, SelectWithFKFieldPartialPopulation) {
     QuerySet<Person, TypeParam> user_qs;
-    QuerySet<Task, TypeParam>   message_qs;
+    QuerySet<Task, TypeParam> message_qs;
 
     // Insert users
     Person const bob{.id = 0, .name = "Bob", .age = 25};
     Person const charlie{.id = 0, .name = "Charlie", .age = 35};
-    auto         bob_result     = user_qs.insert(bob).execute();
-    auto         charlie_result = user_qs.insert(charlie).execute();
+    auto bob_result = user_qs.insert(bob).execute();
+    auto charlie_result = user_qs.insert(charlie).execute();
     ASSERT_TRUE(bob_result.has_value());
     ASSERT_TRUE(charlie_result.has_value());
-    std::int64_t const bob_id     = bob_result.value();
+    std::int64_t const bob_id = bob_result.value();
     std::int64_t const charlie_id = charlie_result.value();
 
     // Insert a task from Bob to Charlie
-    Task const msg{
-            .id          = 0,
-            .assignee    = Person{.id = static_cast<int>(bob_id), .name = "", .age = 0},
-            .reviewer    = Person{.id = static_cast<int>(charlie_id), .name = "", .age = 0},
-            .description = "Test message"
-    };
+    Task const msg{.id = 0,
+                   .assignee = Person{.id = static_cast<int>(bob_id), .name = "", .age = 0},
+                   .reviewer = Person{.id = static_cast<int>(charlie_id), .name = "", .age = 0},
+                   .description = "Test message"};
     auto msg_result = message_qs.insert(msg).execute();
     ASSERT_TRUE(msg_result.has_value());
 
@@ -190,7 +191,7 @@ TYPED_TEST(FKFieldTest, SelectWithFKFieldPartialPopulation) {
     auto select_result = message_qs.select().execute();
     ASSERT_TRUE(select_result.has_value()) << "SELECT failed: " << select_result.error().message();
 
-    const auto& messages = select_result.value();
+    const auto &messages = select_result.value();
     ASSERT_EQ(messages.size(), 1) << "Expected exactly one task";
 
     // Verify task fields
@@ -210,14 +211,11 @@ TYPED_TEST(FKFieldTest, SelectWithFKFieldPartialPopulation) {
 // Test: Batch INSERT with FK fields
 TYPED_TEST(FKFieldTest, BatchInsertWithFKFields) {
     QuerySet<Person, TypeParam> user_qs;
-    QuerySet<Task, TypeParam>   message_qs;
+    QuerySet<Task, TypeParam> message_qs;
 
     // Insert users (IDs will be auto-generated)
-    std::vector<Person> users =
-            {Person{.name = "Alice", .age = 30},
-             Person{.name = "Bob", .age = 25},
-             Person{.name = "Charlie", .age = 35},
-             Person{.name = "Dave", .age = 40}};
+    std::vector<Person> users = {Person{.name = "Alice", .age = 30}, Person{.name = "Bob", .age = 25},
+                                 Person{.name = "Charlie", .age = 35}, Person{.name = "Dave", .age = 40}};
     auto user_result = user_qs.insert(users).execute();
     ASSERT_TRUE(user_result.has_value());
 
@@ -230,13 +228,12 @@ TYPED_TEST(FKFieldTest, BatchInsertWithFKFields) {
     int const first_user_id = user_select.value().begin()->id;
 
     // Insert tasks with FK references
-    std::vector<Task> tasks =
-            {Task{.assignee    = Person{.id = first_user_id},
-                  .reviewer    = Person{.id = first_user_id},
-                  .description = "Task from Alice to Bob"},
-             Task{.assignee    = Person{.id = first_user_id},
-                  .reviewer    = Person{.id = first_user_id},
-                  .description = "Task from Charlie to Dave"}};
+    std::vector<Task> tasks = {Task{.assignee = Person{.id = first_user_id},
+                                    .reviewer = Person{.id = first_user_id},
+                                    .description = "Task from Alice to Bob"},
+                               Task{.assignee = Person{.id = first_user_id},
+                                    .reviewer = Person{.id = first_user_id},
+                                    .description = "Task from Charlie to Dave"}};
 
     auto msg_result = message_qs.insert(tasks).execute();
     ASSERT_TRUE(msg_result.has_value()) << "Batch INSERT failed: " << msg_result.error().message();
@@ -245,7 +242,7 @@ TYPED_TEST(FKFieldTest, BatchInsertWithFKFields) {
     auto select_result = message_qs.select().execute();
     ASSERT_TRUE(select_result.has_value());
 
-    const auto& retrieved_messages = select_result.value();
+    const auto &retrieved_messages = select_result.value();
     ASSERT_EQ(retrieved_messages.size(), 2);
 
     // Verify FK values
@@ -260,7 +257,7 @@ TYPED_TEST(FKFieldTest, BatchInsertWithFKFields) {
 // Test: UPDATE with FK field
 TYPED_TEST(FKFieldTest, UpdateWithFKField) {
     QuerySet<Person, TypeParam> user_qs;
-    QuerySet<Task, TypeParam>   message_qs;
+    QuerySet<Task, TypeParam> message_qs;
 
     // Insert users
     Person const alice{.id = 0, .name = "Alice", .age = 30};
@@ -268,40 +265,36 @@ TYPED_TEST(FKFieldTest, UpdateWithFKField) {
     Person const charlie{.id = 0, .name = "Charlie", .age = 35};
     Person const dave{.id = 0, .name = "Dave", .age = 40};
 
-    auto alice_result   = user_qs.insert(alice).execute();
-    auto bob_result     = user_qs.insert(bob).execute();
+    auto alice_result = user_qs.insert(alice).execute();
+    auto bob_result = user_qs.insert(bob).execute();
     auto charlie_result = user_qs.insert(charlie).execute();
-    auto dave_result    = user_qs.insert(dave).execute();
+    auto dave_result = user_qs.insert(dave).execute();
 
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     ASSERT_TRUE(charlie_result.has_value());
     ASSERT_TRUE(dave_result.has_value());
 
-    std::int64_t const alice_id   = alice_result.value();
-    std::int64_t const bob_id     = bob_result.value();
+    std::int64_t const alice_id = alice_result.value();
+    std::int64_t const bob_id = bob_result.value();
     std::int64_t const charlie_id = charlie_result.value();
-    std::int64_t const dave_id    = dave_result.value();
+    std::int64_t const dave_id = dave_result.value();
 
     // Insert task assigned to Alice, reviewed by Bob
-    Task const msg{
-            .id          = 0,
-            .assignee    = Person{.id = static_cast<int>(alice_id), .name = "", .age = 0},
-            .reviewer    = Person{.id = static_cast<int>(bob_id), .name = "", .age = 0},
-            .description = "Original message"
-    };
+    Task const msg{.id = 0,
+                   .assignee = Person{.id = static_cast<int>(alice_id), .name = "", .age = 0},
+                   .reviewer = Person{.id = static_cast<int>(bob_id), .name = "", .age = 0},
+                   .description = "Original message"};
     auto msg_result = message_qs.insert(msg).execute();
     ASSERT_TRUE(msg_result.has_value());
 
     std::int64_t const msg_id = msg_result.value();
 
     // Update task: change assignee to Charlie, reviewer to Dave, and description
-    Task const updated_msg{
-            .id          = static_cast<int>(msg_id),
-            .assignee    = Person{.id = static_cast<int>(charlie_id), .name = "", .age = 0},
-            .reviewer    = Person{.id = static_cast<int>(dave_id), .name = "", .age = 0},
-            .description = "Updated message"
-    };
+    Task const updated_msg{.id = static_cast<int>(msg_id),
+                           .assignee = Person{.id = static_cast<int>(charlie_id), .name = "", .age = 0},
+                           .reviewer = Person{.id = static_cast<int>(dave_id), .name = "", .age = 0},
+                           .description = "Updated message"};
 
     auto update_result = message_qs.update(updated_msg).execute();
     ASSERT_TRUE(update_result.has_value()) << "UPDATE failed: " << update_result.error().message();
@@ -310,7 +303,7 @@ TYPED_TEST(FKFieldTest, UpdateWithFKField) {
     auto select_result = message_qs.select().execute();
     ASSERT_TRUE(select_result.has_value());
 
-    const auto& messages = select_result.value();
+    const auto &messages = select_result.value();
     ASSERT_EQ(messages.size(), 1);
 
     EXPECT_EQ(messages.begin()->id, msg_id);
@@ -322,26 +315,25 @@ TYPED_TEST(FKFieldTest, UpdateWithFKField) {
 // Test: DELETE with FK field
 TYPED_TEST(FKFieldTest, DeleteWithFKField) {
     QuerySet<Person, TypeParam> user_qs;
-    QuerySet<Task, TypeParam>   message_qs;
+    QuerySet<Task, TypeParam> message_qs;
 
     // Insert users
     Person const alice{.id = 0, .name = "Alice", .age = 30};
     Person const bob{.id = 0, .name = "Bob", .age = 25};
-    auto         alice_result = user_qs.insert(alice).execute();
-    auto         bob_result   = user_qs.insert(bob).execute();
+    auto alice_result = user_qs.insert(alice).execute();
+    auto bob_result = user_qs.insert(bob).execute();
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     std::int64_t const alice_id = alice_result.value();
-    std::int64_t const bob_id   = bob_result.value();
+    std::int64_t const bob_id = bob_result.value();
 
     // Insert tasks assigned to Alice, reviewed by Bob
-    std::vector<Task> tasks =
-            {Task{.assignee    = Person{.id = static_cast<int>(alice_id)},
-                  .reviewer    = Person{.id = static_cast<int>(bob_id)},
-                  .description = "Task 1"},
-             Task{.assignee    = Person{.id = static_cast<int>(alice_id)},
-                  .reviewer    = Person{.id = static_cast<int>(bob_id)},
-                  .description = "Task 2"}};
+    std::vector<Task> tasks = {Task{.assignee = Person{.id = static_cast<int>(alice_id)},
+                                    .reviewer = Person{.id = static_cast<int>(bob_id)},
+                                    .description = "Task 1"},
+                               Task{.assignee = Person{.id = static_cast<int>(alice_id)},
+                                    .reviewer = Person{.id = static_cast<int>(bob_id)},
+                                    .description = "Task 2"}};
 
     auto msg_result = message_qs.insert(tasks).execute();
     ASSERT_TRUE(msg_result.has_value());
@@ -352,18 +344,16 @@ TYPED_TEST(FKFieldTest, DeleteWithFKField) {
     ASSERT_EQ(msg_select.value().size(), 2);
 
     // Get the first task's ID to delete
-    auto      it           = msg_select.value().begin();
+    auto it = msg_select.value().begin();
     int const first_msg_id = it->id;
     ++it;
     int const second_msg_id = it->id;
 
     // Delete first task
-    Task const to_delete{
-            .id          = first_msg_id,
-            .assignee    = Person{.id = static_cast<int>(alice_id)},
-            .reviewer    = Person{.id = static_cast<int>(bob_id)},
-            .description = ""
-    };
+    Task const to_delete{.id = first_msg_id,
+                         .assignee = Person{.id = static_cast<int>(alice_id)},
+                         .reviewer = Person{.id = static_cast<int>(bob_id)},
+                         .description = ""};
 
     auto delete_result = message_qs.erase(to_delete).execute();
     ASSERT_TRUE(delete_result.has_value()) << "DELETE failed: " << delete_result.error().message();
@@ -372,7 +362,7 @@ TYPED_TEST(FKFieldTest, DeleteWithFKField) {
     auto select_result = message_qs.select().execute();
     ASSERT_TRUE(select_result.has_value());
 
-    const auto& remaining_messages = select_result.value();
+    const auto &remaining_messages = select_result.value();
     ASSERT_EQ(remaining_messages.size(), 1);
     EXPECT_EQ(remaining_messages.begin()->id, second_msg_id);
     EXPECT_EQ(remaining_messages.begin()->description, "Task 2");
@@ -381,11 +371,11 @@ TYPED_TEST(FKFieldTest, DeleteWithFKField) {
 // Test: Multiple FK fields to same type
 TYPED_TEST(FKFieldTest, MultipleFKFieldsToSameType) {
     QuerySet<Person, TypeParam> user_qs;
-    QuerySet<Task, TypeParam>   conv_qs;
+    QuerySet<Task, TypeParam> conv_qs;
 
     // Create conversation table
-    const auto& conn               = QuerySet<Person, TypeParam>::get_default_connection();
-    auto        create_conv_result = storm::orm::schema::SchemaStatement<Task>::create_table_if_not_exists(conn);
+    const auto &conn = QuerySet<Person, TypeParam>::get_default_connection();
+    auto create_conv_result = storm::orm::schema::SchemaStatement<Task>::create_table_if_not_exists(conn);
     ASSERT_TRUE(create_conv_result.has_value());
 
     // Insert users
@@ -393,21 +383,19 @@ TYPED_TEST(FKFieldTest, MultipleFKFieldsToSameType) {
     Person const bob{.id = 0, .name = "Bob", .age = 25};
 
     auto alice_result = user_qs.insert(alice).execute();
-    auto bob_result   = user_qs.insert(bob).execute();
+    auto bob_result = user_qs.insert(bob).execute();
 
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
 
     std::int64_t const alice_id = alice_result.value();
-    std::int64_t const bob_id   = bob_result.value();
+    std::int64_t const bob_id = bob_result.value();
 
     // Insert task assigned to Alice, reviewed by Bob
-    Task const conv{
-            .id          = 0,
-            .assignee    = Person{.id = static_cast<int>(alice_id)},
-            .reviewer    = Person{.id = static_cast<int>(bob_id)},
-            .description = "Hello Bob!"
-    };
+    Task const conv{.id = 0,
+                    .assignee = Person{.id = static_cast<int>(alice_id)},
+                    .reviewer = Person{.id = static_cast<int>(bob_id)},
+                    .description = "Hello Bob!"};
 
     auto conv_result = conv_qs.insert(conv).execute();
     ASSERT_TRUE(conv_result.has_value()) << "Task INSERT failed: " << conv_result.error().message();
@@ -416,7 +404,7 @@ TYPED_TEST(FKFieldTest, MultipleFKFieldsToSameType) {
     auto select_result = conv_qs.select().execute();
     ASSERT_TRUE(select_result.has_value());
 
-    const auto& conversations = select_result.value();
+    const auto &conversations = select_result.value();
     ASSERT_EQ(conversations.size(), 1);
 
     EXPECT_EQ(conversations.begin()->assignee.id, alice_id) << "Assignee FK should be Alice";
@@ -427,25 +415,23 @@ TYPED_TEST(FKFieldTest, MultipleFKFieldsToSameType) {
 // Test: Phase 2 - JOIN populates FK object fully
 TYPED_TEST(FKFieldTest, JoinFullyPopulatesFKObject) {
     QuerySet<Person, TypeParam> user_qs;
-    QuerySet<Task, TypeParam>   message_qs;
+    QuerySet<Task, TypeParam> message_qs;
 
     // Insert users
     Person const alice{.id = 0, .name = "Alice", .age = 30};
     Person const bob{.id = 0, .name = "Bob", .age = 25};
-    auto         alice_result = user_qs.insert(alice).execute();
-    auto         bob_result   = user_qs.insert(bob).execute();
+    auto alice_result = user_qs.insert(alice).execute();
+    auto bob_result = user_qs.insert(bob).execute();
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     std::int64_t const alice_id = alice_result.value();
-    std::int64_t const bob_id   = bob_result.value();
+    std::int64_t const bob_id = bob_result.value();
 
     // Insert task assigned to Alice, reviewed by Bob
-    Task const msg{
-            .id          = 0,
-            .assignee    = Person{.id = static_cast<int>(alice_id)},
-            .reviewer    = Person{.id = static_cast<int>(bob_id)},
-            .description = "Hello from JOIN!"
-    };
+    Task const msg{.id = 0,
+                   .assignee = Person{.id = static_cast<int>(alice_id)},
+                   .reviewer = Person{.id = static_cast<int>(bob_id)},
+                   .description = "Hello from JOIN!"};
     auto msg_result = message_qs.insert(msg).execute();
     ASSERT_TRUE(msg_result.has_value());
 
@@ -453,7 +439,7 @@ TYPED_TEST(FKFieldTest, JoinFullyPopulatesFKObject) {
     auto join_result = message_qs.template join<fields::Task.assignee>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "JOIN failed: " << join_result.error().message();
 
-    const auto& messages = join_result.value();
+    const auto &messages = join_result.value();
     ASSERT_EQ(messages.size(), 1);
 
     // Verify task fields
@@ -474,25 +460,23 @@ TYPED_TEST(FKFieldTest, JoinFullyPopulatesFKObject) {
 // Test: Phase 3 - Multi-JOIN populates multiple FK objects fully
 TYPED_TEST(FKFieldTest, JoinMultipleFKFields) {
     QuerySet<Person, TypeParam> user_qs;
-    QuerySet<Task, TypeParam>   message_qs;
+    QuerySet<Task, TypeParam> message_qs;
 
     // Insert users
     Person const alice{.id = 0, .name = "Alice", .age = 30};
     Person const bob{.id = 0, .name = "Bob", .age = 25};
-    auto         alice_result = user_qs.insert(alice).execute();
-    auto         bob_result   = user_qs.insert(bob).execute();
+    auto alice_result = user_qs.insert(alice).execute();
+    auto bob_result = user_qs.insert(bob).execute();
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     std::int64_t const alice_id = alice_result.value();
-    std::int64_t const bob_id   = bob_result.value();
+    std::int64_t const bob_id = bob_result.value();
 
     // Insert task assigned to Alice, reviewed by Bob
-    Task const msg{
-            .id          = 0,
-            .assignee    = Person{.id = static_cast<int>(alice_id)},
-            .reviewer    = Person{.id = static_cast<int>(bob_id)},
-            .description = "Hello from multi-JOIN!"
-    };
+    Task const msg{.id = 0,
+                   .assignee = Person{.id = static_cast<int>(alice_id)},
+                   .reviewer = Person{.id = static_cast<int>(bob_id)},
+                   .description = "Hello from multi-JOIN!"};
     auto msg_result = message_qs.insert(msg).execute();
     ASSERT_TRUE(msg_result.has_value());
 
@@ -500,7 +484,7 @@ TYPED_TEST(FKFieldTest, JoinMultipleFKFields) {
     auto join_result = message_qs.template join<fields::Task.assignee, fields::Task.reviewer>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "Multi-JOIN failed: " << join_result.error().message();
 
-    const auto& messages = join_result.value();
+    const auto &messages = join_result.value();
     ASSERT_EQ(messages.size(), 1);
 
     // Verify task fields
@@ -521,11 +505,11 @@ TYPED_TEST(FKFieldTest, JoinMultipleFKFields) {
 // Test: LEFT JOIN returns all messages even when FK doesn't match
 TYPED_TEST(FKFieldTest, LeftJoinReturnsAllMessages) {
     QuerySet<Person, TypeParam> user_qs;
-    QuerySet<Task, TypeParam>   message_qs;
+    QuerySet<Task, TypeParam> message_qs;
 
     // Insert only one user (Alice)
     Person const alice{.id = 0, .name = "Alice", .age = 30};
-    auto         alice_result = user_qs.insert(alice).execute();
+    auto alice_result = user_qs.insert(alice).execute();
     ASSERT_TRUE(alice_result.has_value());
     std::int64_t const alice_id = alice_result.value();
 
@@ -533,19 +517,17 @@ TYPED_TEST(FKFieldTest, LeftJoinReturnsAllMessages) {
     // joined in the query below. With referential integrity always on (#412) the
     // reviewer_id must reference an existing row; the point of this test is that a
     // non-JOINed FK stays default in the result, not that a dangling FK is stored.
-    Task const msg{
-            .id          = 0,
-            .assignee    = Person{.id = static_cast<int>(alice_id)},
-            .reviewer    = Person{.id = static_cast<int>(alice_id)},
-            .description = "Reviewer not joined"
-    };
+    Task const msg{.id = 0,
+                   .assignee = Person{.id = static_cast<int>(alice_id)},
+                   .reviewer = Person{.id = static_cast<int>(alice_id)},
+                   .description = "Reviewer not joined"};
     ASSERT_TRUE(message_qs.insert(msg).execute().has_value());
 
     // LEFT JOIN on assignee only — reviewer is not fetched, so it stays default.
     auto join_result = message_qs.template left_join<fields::Task.assignee>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "LEFT JOIN failed: " << join_result.error().message();
 
-    const auto& messages = join_result.value();
+    const auto &messages = join_result.value();
     ASSERT_EQ(messages.size(), 1) << "LEFT JOIN should return all tasks";
 
     // Verify assignee is fully populated (exists)
@@ -564,25 +546,23 @@ TYPED_TEST(FKFieldTest, LeftJoinReturnsAllMessages) {
 // Test: LEFT JOIN with multiple FK fields
 TYPED_TEST(FKFieldTest, LeftJoinMultipleFKFields) {
     QuerySet<Person, TypeParam> user_qs;
-    QuerySet<Task, TypeParam>   message_qs;
+    QuerySet<Task, TypeParam> message_qs;
 
     // Insert users
     Person const alice{.id = 0, .name = "Alice", .age = 30};
     Person const bob{.id = 0, .name = "Bob", .age = 25};
-    auto         alice_result = user_qs.insert(alice).execute();
-    auto         bob_result   = user_qs.insert(bob).execute();
+    auto alice_result = user_qs.insert(alice).execute();
+    auto bob_result = user_qs.insert(bob).execute();
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     std::int64_t const alice_id = alice_result.value();
-    std::int64_t const bob_id   = bob_result.value();
+    std::int64_t const bob_id = bob_result.value();
 
     // Insert task assigned to Alice, reviewed by Bob
-    Task const msg{
-            .id          = 0,
-            .assignee    = Person{.id = static_cast<int>(alice_id)},
-            .reviewer    = Person{.id = static_cast<int>(bob_id)},
-            .description = "Hello with LEFT JOIN"
-    };
+    Task const msg{.id = 0,
+                   .assignee = Person{.id = static_cast<int>(alice_id)},
+                   .reviewer = Person{.id = static_cast<int>(bob_id)},
+                   .description = "Hello with LEFT JOIN"};
     auto msg_result = message_qs.insert(msg).execute();
     ASSERT_TRUE(msg_result.has_value());
 
@@ -590,7 +570,7 @@ TYPED_TEST(FKFieldTest, LeftJoinMultipleFKFields) {
     auto join_result = message_qs.template left_join<fields::Task.assignee, fields::Task.reviewer>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "Multi LEFT JOIN failed: " << join_result.error().message();
 
-    const auto& messages = join_result.value();
+    const auto &messages = join_result.value();
     ASSERT_EQ(messages.size(), 1);
 
     // Verify both FK objects are fully populated
@@ -609,7 +589,7 @@ TYPED_TEST(FKFieldTest, LeftJoinMultipleFKFields) {
 // Test fixture for nullable FK fields — templated on database backend
 template <typename ConnType> class NullableFKTest : public StormTestFixture<Person, ConnType, NullableFKMessage> {};
 
-TYPED_TEST_SUITE(NullableFKTest, DatabaseTypes);
+TYPED_TEST_SUITE(NullableFKTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
 
 // Test: SELECT with NULL FK values
 TYPED_TEST(NullableFKTest, SelectWithNullFKField) {
@@ -617,21 +597,21 @@ TYPED_TEST(NullableFKTest, SelectWithNullFKField) {
 
     // Insert a receiver user so the NOT NULL receiver_id is satisfied
     QuerySet<Person, TypeParam> user_qs;
-    Person const                bob{.id = 0, .name = "Bob", .age = 25};
-    auto                        bob_result = user_qs.insert(bob).execute();
+    Person const bob{.id = 0, .name = "Bob", .age = 25};
+    auto bob_result = user_qs.insert(bob).execute();
     ASSERT_TRUE(bob_result.has_value());
     Person const receiver{.id = static_cast<int>(bob_result.value())};
 
     // Insert message with NULL sender (std::nullopt) via ORM
     NullableFKMessage const msg{.id = 0, .sender = std::nullopt, .receiver = receiver, .text = "no sender"};
-    auto                    insert_result = message_qs.insert(msg).execute();
+    auto insert_result = message_qs.insert(msg).execute();
     ASSERT_TRUE(insert_result.has_value()) << "INSERT with nullopt FK failed: " << insert_result.error().message();
 
     // SELECT should return message with sender == nullopt
     auto select_result = message_qs.select().execute();
     ASSERT_TRUE(select_result.has_value()) << "SELECT with NULL FK failed: " << select_result.error().message();
 
-    const auto& messages = select_result.value();
+    const auto &messages = select_result.value();
     ASSERT_EQ(messages.size(), 1);
 
     auto it = messages.begin();
@@ -641,26 +621,26 @@ TYPED_TEST(NullableFKTest, SelectWithNullFKField) {
 
 // Test: SELECT with non-null optional FK — covers extract_column_fast non-null branch (base.cppm lines 439-441)
 TYPED_TEST(NullableFKTest, SelectWithNonNullFKField) {
-    QuerySet<Person, TypeParam>            user_qs;
+    QuerySet<Person, TypeParam> user_qs;
     QuerySet<NullableFKMessage, TypeParam> message_qs;
 
     // Insert a user to serve as sender and receiver
     Person const bob{.id = 0, .name = "Bob", .age = 25};
-    auto         bob_result = user_qs.insert(bob).execute();
+    auto bob_result = user_qs.insert(bob).execute();
     ASSERT_TRUE(bob_result.has_value());
     Person const bob_fk{.id = static_cast<int>(bob_result.value())};
 
     // Insert message with non-null sender (optional FK with value)
     NullableFKMessage const msg{.id = 0, .sender = bob_fk, .receiver = bob_fk, .text = "with sender"};
-    auto                    insert_result = message_qs.insert(msg).execute();
+    auto insert_result = message_qs.insert(msg).execute();
     ASSERT_TRUE(insert_result.has_value())
-            << "INSERT with non-null optional FK failed: " << insert_result.error().message();
+        << "INSERT with non-null optional FK failed: " << insert_result.error().message();
 
     // Plain SELECT (no join) triggers extract_column_fast for optional FK — non-null path
     auto select_result = message_qs.select().execute();
     ASSERT_TRUE(select_result.has_value()) << "SELECT failed: " << select_result.error().message();
 
-    const auto& messages = select_result.value();
+    const auto &messages = select_result.value();
     ASSERT_EQ(messages.size(), 1);
 
     auto it = messages.begin();
@@ -671,25 +651,25 @@ TYPED_TEST(NullableFKTest, SelectWithNonNullFKField) {
 
 // Test: LEFT JOIN with NULL FK values
 TYPED_TEST(NullableFKTest, LeftJoinWithNullFKField) {
-    QuerySet<Person, TypeParam>            user_qs;
+    QuerySet<Person, TypeParam> user_qs;
     QuerySet<NullableFKMessage, TypeParam> message_qs;
 
     // Insert a receiver user
     Person const alice{.id = 0, .name = "Alice", .age = 30};
-    auto         alice_result = user_qs.insert(alice).execute();
+    auto alice_result = user_qs.insert(alice).execute();
     ASSERT_TRUE(alice_result.has_value());
     Person const receiver{.id = static_cast<int>(alice_result.value())};
 
     // Insert message with NULL sender via ORM
     NullableFKMessage const msg{.id = 0, .sender = std::nullopt, .receiver = receiver, .text = "NULL sender message"};
-    auto                    insert_result = message_qs.insert(msg).execute();
+    auto insert_result = message_qs.insert(msg).execute();
     ASSERT_TRUE(insert_result.has_value());
 
     // LEFT JOIN on sender - should return message even with NULL sender_id
     auto join_result = message_qs.template left_join<fields::NullableFKMessage.sender>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "LEFT JOIN with NULL FK failed: " << join_result.error().message();
 
-    const auto& messages = join_result.value();
+    const auto &messages = join_result.value();
     ASSERT_EQ(messages.size(), 1) << "LEFT JOIN should return message with NULL FK";
 
     auto it = messages.begin();
@@ -699,14 +679,14 @@ TYPED_TEST(NullableFKTest, LeftJoinWithNullFKField) {
 
 // Test: LEFT JOIN with mix of NULL and valid FKs
 TYPED_TEST(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
-    QuerySet<Person, TypeParam>            user_qs;
+    QuerySet<Person, TypeParam> user_qs;
     QuerySet<NullableFKMessage, TypeParam> message_qs;
 
     // Insert users
     Person const alice{.id = 0, .name = "Alice", .age = 30};
     Person const bob{.id = 0, .name = "Bob", .age = 25};
-    auto         alice_result = user_qs.insert(alice).execute();
-    auto         bob_result   = user_qs.insert(bob).execute();
+    auto alice_result = user_qs.insert(alice).execute();
+    auto bob_result = user_qs.insert(bob).execute();
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
     Person const alice_fk{.id = static_cast<int>(alice_result.value())};
@@ -724,12 +704,12 @@ TYPED_TEST(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
     auto join_result = message_qs.template left_join<fields::NullableFKMessage.sender>().select().execute();
     ASSERT_TRUE(join_result.has_value());
 
-    const auto& messages = join_result.value();
+    const auto &messages = join_result.value();
     ASSERT_EQ(messages.size(), 2) << "LEFT JOIN should return all messages";
 
     bool found_alice = false;
-    bool found_null  = false;
-    for (const auto& m : messages) {
+    bool found_null = false;
+    for (const auto &m : messages) {
         if (m.text == "From Alice") {
             found_alice = true;
             ASSERT_TRUE(m.sender.has_value()) << "Alice's message should have a sender";
@@ -748,11 +728,11 @@ TYPED_TEST(NullableFKTest, LeftJoinWithMixedNullAndValidFKs) {
 // Test fixture for extended type support in JOINs — templated on database backend
 template <typename ConnType> class ExtendedTypesJoinTest : public StormTestFixture<Person, ConnType, Project> {};
 
-TYPED_TEST_SUITE(ExtendedTypesJoinTest, DatabaseTypes);
+TYPED_TEST_SUITE(ExtendedTypesJoinTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
 
 // Test: JOIN with extended types (double, bool, optional)
 TYPED_TEST(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
-    QuerySet<Person, TypeParam>  employee_qs;
+    QuerySet<Person, TypeParam> employee_qs;
     QuerySet<Project, TypeParam> project_qs;
 
     // Insert employees with extended types
@@ -760,37 +740,31 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
     Person const bob{.id = 0, .name = "Bob Johnson", .salary = 87500.75, .is_active = false, .nickname = std::nullopt};
 
     auto alice_result = employee_qs.insert(alice).execute();
-    auto bob_result   = employee_qs.insert(bob).execute();
+    auto bob_result = employee_qs.insert(bob).execute();
 
     ASSERT_TRUE(alice_result.has_value()) << "Failed to insert Alice: " << alice_result.error().message();
     ASSERT_TRUE(bob_result.has_value()) << "Failed to insert Bob: " << bob_result.error().message();
 
     std::int64_t const alice_id = alice_result.value();
-    std::int64_t const bob_id   = bob_result.value();
+    std::int64_t const bob_id = bob_result.value();
 
     // Insert projects managed by Alice and Bob
-    Project const proj1{
-            .id = 0,
-            .manager =
-                    Person{.id        = static_cast<int>(alice_id),
-                           .name      = "",
-                           .salary    = 0.0,
-                           .is_active = false,
-                           .nickname  = std::nullopt},
-            .title  = "Web Redesign",
-            .budget = 50000.0
-    };
-    Project const proj2{
-            .id = 0,
-            .manager =
-                    Person{.id        = static_cast<int>(bob_id),
-                           .name      = "",
-                           .salary    = 0.0,
-                           .is_active = false,
-                           .nickname  = std::nullopt},
-            .title  = "Mobile App",
-            .budget = 75000.0
-    };
+    Project const proj1{.id = 0,
+                        .manager = Person{.id = static_cast<int>(alice_id),
+                                          .name = "",
+                                          .salary = 0.0,
+                                          .is_active = false,
+                                          .nickname = std::nullopt},
+                        .title = "Web Redesign",
+                        .budget = 50000.0};
+    Project const proj2{.id = 0,
+                        .manager = Person{.id = static_cast<int>(bob_id),
+                                          .name = "",
+                                          .salary = 0.0,
+                                          .is_active = false,
+                                          .nickname = std::nullopt},
+                        .title = "Mobile App",
+                        .budget = 75000.0};
 
     auto proj1_result = project_qs.insert(proj1).execute();
     auto proj2_result = project_qs.insert(proj2).execute();
@@ -802,14 +776,14 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
     auto join_result = project_qs.template join<fields::Project.manager>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "JOIN failed: " << join_result.error().message();
 
-    const auto& projects = join_result.value();
+    const auto &projects = join_result.value();
     ASSERT_EQ(projects.size(), 2) << "Should retrieve both projects";
 
     // Find Alice's project and verify all extended types
     bool found_alice_project = false;
-    bool found_bob_project   = false;
+    bool found_bob_project = false;
 
-    for (const auto& proj : projects) {
+    for (const auto &proj : projects) {
         if (proj.title == "Web Redesign") {
             found_alice_project = true;
 
@@ -843,7 +817,7 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
 
             // Test optional<string> without value (NULL in DB)
             EXPECT_FALSE(proj.manager.nickname.has_value())
-                    << "Optional nickname should be empty (nullopt) for Bob when NULL in DB";
+                << "Optional nickname should be empty (nullopt) for Bob when NULL in DB";
 
             // Verify project fields
             EXPECT_DOUBLE_EQ(proj.budget, 75000.0) << "Project budget should be correct";
@@ -857,11 +831,11 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithExtendedTypes) {
 // Test: Multi-JOIN with extended types
 TYPED_TEST(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
     QuerySet<Person, TypeParam> employee_qs;
-    QuerySet<Task, TypeParam>   task_qs;
+    QuerySet<Task, TypeParam> task_qs;
 
     // Create Task table
-    const auto& conn               = QuerySet<Person, TypeParam>::get_default_connection();
-    auto        create_task_result = storm::orm::schema::SchemaStatement<Task>::create_table_if_not_exists(conn);
+    const auto &conn = QuerySet<Person, TypeParam>::get_default_connection();
+    auto create_task_result = storm::orm::schema::SchemaStatement<Task>::create_table_if_not_exists(conn);
     ASSERT_TRUE(create_task_result.has_value());
 
     // Insert employees
@@ -869,31 +843,27 @@ TYPED_TEST(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
     Person const bob{.id = 0, .name = "Bob", .salary = 87500.0, .is_active = false, .nickname = std::nullopt};
 
     auto alice_result = employee_qs.insert(alice).execute();
-    auto bob_result   = employee_qs.insert(bob).execute();
+    auto bob_result = employee_qs.insert(bob).execute();
 
     ASSERT_TRUE(alice_result.has_value());
     ASSERT_TRUE(bob_result.has_value());
 
     std::int64_t const alice_id = alice_result.value();
-    std::int64_t const bob_id   = bob_result.value();
+    std::int64_t const bob_id = bob_result.value();
 
     // Insert task: Alice assigned, Bob reviewing
-    Task const task{
-            .id = 0,
-            .assignee =
-                    Person{.id        = static_cast<int>(alice_id),
-                           .name      = "",
-                           .salary    = 0.0,
-                           .is_active = false,
-                           .nickname  = std::nullopt},
-            .reviewer =
-                    Person{.id        = static_cast<int>(bob_id),
-                           .name      = "",
-                           .salary    = 0.0,
-                           .is_active = false,
-                           .nickname  = std::nullopt},
-            .description = "Implement feature X"
-    };
+    Task const task{.id = 0,
+                    .assignee = Person{.id = static_cast<int>(alice_id),
+                                       .name = "",
+                                       .salary = 0.0,
+                                       .is_active = false,
+                                       .nickname = std::nullopt},
+                    .reviewer = Person{.id = static_cast<int>(bob_id),
+                                       .name = "",
+                                       .salary = 0.0,
+                                       .is_active = false,
+                                       .nickname = std::nullopt},
+                    .description = "Implement feature X"};
 
     auto task_result = task_qs.insert(task).execute();
     ASSERT_TRUE(task_result.has_value());
@@ -903,7 +873,7 @@ TYPED_TEST(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
     auto join_result = task_qs.template join<fields::Task.assignee, fields::Task.reviewer>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "Multi-JOIN failed: " << join_result.error().message();
 
-    const auto& tasks = join_result.value();
+    const auto &tasks = join_result.value();
     ASSERT_EQ(tasks.size(), 1);
 
     // Verify assignee (Alice) - all extended types
@@ -927,25 +897,25 @@ TYPED_TEST(ExtendedTypesJoinTest, MultiJoinWithExtendedTypes) {
 // Test: JOIN with float and long long types (coverage for extract_typed_field)
 TYPED_TEST(ExtendedTypesJoinTest, JoinWithFloatAndLongLongTypes) {
     QuerySet<Measurement, TypeParam> measurement_qs;
-    QuerySet<Reading, TypeParam>     reading_qs;
+    QuerySet<Reading, TypeParam> reading_qs;
 
     // Create tables
-    const auto& conn = QuerySet<Person, TypeParam>::get_default_connection();
+    const auto &conn = QuerySet<Person, TypeParam>::get_default_connection();
 
     auto create_measurement_result = storm::orm::schema::SchemaStatement<Measurement>::create_table_if_not_exists(conn);
     ASSERT_TRUE(create_measurement_result.has_value())
-            << "Failed to create Measurement table: " << create_measurement_result.error().message();
+        << "Failed to create Measurement table: " << create_measurement_result.error().message();
 
     auto create_reading_result = storm::orm::schema::SchemaStatement<Reading>::create_table_if_not_exists(conn);
     ASSERT_TRUE(create_reading_result.has_value())
-            << "Failed to create Reading table: " << create_reading_result.error().message();
+        << "Failed to create Reading table: " << create_reading_result.error().message();
 
     // Insert measurement with float and long long
     Measurement const meas{
-            .id          = 0,
-            .sensor_name = "TempSensor1",
-            .temperature = 23.5F,
-            .timestamp   = 1700000000000LL // Large timestamp
+        .id = 0,
+        .sensor_name = "TempSensor1",
+        .temperature = 23.5F,
+        .timestamp = 1700000000000LL // Large timestamp
     };
 
     auto meas_result = measurement_qs.insert(meas).execute();
@@ -955,14 +925,11 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithFloatAndLongLongTypes) {
 
     // Insert reading referencing the measurement
     Reading const reading{
-            .id = 0,
-            .measurement =
-                    Measurement{
-                            .id = static_cast<int>(meas_id), .sensor_name = "", .temperature = 0.0F, .timestamp = 0LL
-                    },
-            .reading_type = "Humidity",
-            .value        = 65.3F
-    };
+        .id = 0,
+        .measurement =
+            Measurement{.id = static_cast<int>(meas_id), .sensor_name = "", .temperature = 0.0F, .timestamp = 0LL},
+        .reading_type = "Humidity",
+        .value = 65.3F};
 
     auto reading_result = reading_qs.insert(reading).execute();
     ASSERT_TRUE(reading_result.has_value()) << "Failed to insert reading: " << reading_result.error().message();
@@ -971,7 +938,7 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithFloatAndLongLongTypes) {
     auto join_result = reading_qs.template join<fields::Reading.measurement>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "JOIN failed: " << join_result.error().message();
 
-    const auto& readings = join_result.value();
+    const auto &readings = join_result.value();
     ASSERT_EQ(readings.size(), 1) << "Should retrieve one reading";
 
     // Verify float type extraction
@@ -980,7 +947,7 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithFloatAndLongLongTypes) {
 
     // Verify long long type extraction
     EXPECT_EQ(readings.begin()->measurement.timestamp, 1700000000000LL)
-            << "Long long field (timestamp) should be correct";
+        << "Long long field (timestamp) should be correct";
 
     // Verify other fields
     EXPECT_EQ(readings.begin()->measurement.id, meas_id);
@@ -994,15 +961,15 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithLongType) {
     QuerySet<Summary, TypeParam> summary_qs;
 
     // Create tables
-    const auto& conn = QuerySet<Person, TypeParam>::get_default_connection();
+    const auto &conn = QuerySet<Person, TypeParam>::get_default_connection();
 
     auto create_counter_result = storm::orm::schema::SchemaStatement<Counter>::create_table_if_not_exists(conn);
     ASSERT_TRUE(create_counter_result.has_value())
-            << "Failed to create Counter table: " << create_counter_result.error().message();
+        << "Failed to create Counter table: " << create_counter_result.error().message();
 
     auto create_summary_result = storm::orm::schema::SchemaStatement<Summary>::create_table_if_not_exists(conn);
     ASSERT_TRUE(create_summary_result.has_value())
-            << "Failed to create Summary table: " << create_summary_result.error().message();
+        << "Failed to create Summary table: " << create_summary_result.error().message();
 
     // Insert counter with long value
     Counter const cnt{.id = 0, .name = "PageViews", .count = 9876543210L};
@@ -1014,8 +981,7 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithLongType) {
 
     // Insert summary referencing the counter
     Summary const sum{
-            .id = 0, .counter = Counter{.id = static_cast<int>(cnt_id), .name = "", .count = 0L}, .report_type = "Daily"
-    };
+        .id = 0, .counter = Counter{.id = static_cast<int>(cnt_id), .name = "", .count = 0L}, .report_type = "Daily"};
 
     auto sum_result = summary_qs.insert(sum).execute();
     ASSERT_TRUE(sum_result.has_value()) << "Failed to insert summary: " << sum_result.error().message();
@@ -1024,7 +990,7 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithLongType) {
     auto join_result = summary_qs.template join<fields::Summary.counter>().select().execute();
     ASSERT_TRUE(join_result.has_value()) << "JOIN failed: " << join_result.error().message();
 
-    const auto& summaries = join_result.value();
+    const auto &summaries = join_result.value();
     ASSERT_EQ(summaries.size(), 1) << "Should retrieve one summary";
 
     // Verify long type extraction
@@ -1042,41 +1008,41 @@ TYPED_TEST(ExtendedTypesJoinTest, JoinWithLongType) {
 
 template <typename ConnType> class JoinTypeExtractionTest : public StormTestFixture<Person, ConnType, Message> {
   public:
-    auto on_after_setup(const std::shared_ptr<ConnType>&) -> void override {
+    auto on_after_setup(const std::shared_ptr<ConnType> &) -> void override {
         person_qs = std::make_unique<QuerySet<Person, ConnType>>();
-        msg_qs    = std::make_unique<QuerySet<Message, ConnType>>();
+        msg_qs = std::make_unique<QuerySet<Message, ConnType>>();
 
         std::vector<Person> const people = {
-                Person{.name      = "Alice",
-                       .salary    = 4.5,
-                       .is_active = true,
-                       .score     = std::optional<int>(100),
-                       .nickname  = std::optional<std::string>("Alice bio")},
-                Person{.name = "Bob", .salary = 3.2},
-                Person{.name = "Charlie", .salary = 4.9, .is_active = true, .score = std::optional<int>(95)},
+            Person{.name = "Alice",
+                   .salary = 4.5,
+                   .is_active = true,
+                   .score = std::optional<int>(100),
+                   .nickname = std::optional<std::string>("Alice bio")},
+            Person{.name = "Bob", .salary = 3.2},
+            Person{.name = "Charlie", .salary = 4.9, .is_active = true, .score = std::optional<int>(95)},
         };
         ASSERT_TRUE((storm::test::batch_insert<Person, ConnType>(people)));
 
         std::vector<Message> const messages = {
-                {.content = "Post by Alice", .value = 100, .sender = {.id = 1}},
-                {.content = "Another Alice post", .value = 200, .sender = {.id = 1}},
-                {.content = "Post by Bob", .value = 50, .sender = {.id = 2}},
-                {.content = "Charlie post", .value = 150, .sender = {.id = 3}},
+            {.content = "Post by Alice", .value = 100, .sender = {.id = 1}},
+            {.content = "Another Alice post", .value = 200, .sender = {.id = 1}},
+            {.content = "Post by Bob", .value = 50, .sender = {.id = 2}},
+            {.content = "Charlie post", .value = 150, .sender = {.id = 3}},
         };
         ASSERT_TRUE((storm::test::batch_insert<Message, ConnType>(messages)));
     }
 
     auto TearDown() -> void override {
         person_qs = nullptr;
-        msg_qs    = nullptr;
+        msg_qs = nullptr;
         StormTestFixture<Person, ConnType, Message>::TearDown();
     }
 
-    std::unique_ptr<QuerySet<Person, ConnType>>  person_qs;
+    std::unique_ptr<QuerySet<Person, ConnType>> person_qs;
     std::unique_ptr<QuerySet<Message, ConnType>> msg_qs;
 };
 
-TYPED_TEST_SUITE(JoinTypeExtractionTest, DatabaseTypes);
+TYPED_TEST_SUITE(JoinTypeExtractionTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
 
 TYPED_TEST(JoinTypeExtractionTest, JoinExtractsFloatField) {
     auto result = this->msg_qs->template join<fields::Message.sender>().select().execute();
@@ -1084,7 +1050,7 @@ TYPED_TEST(JoinTypeExtractionTest, JoinExtractsFloatField) {
     ASSERT_TRUE(result.has_value()) << "JOIN with float field should succeed";
     ASSERT_FALSE(result.value().empty());
 
-    for (const auto& msg : result.value()) {
+    for (const auto &msg : result.value()) {
         if (msg.sender.name == "Alice") {
             EXPECT_NEAR(msg.sender.salary, 4.5, 0.01);
         } else if (msg.sender.name == "Bob") {
@@ -1101,7 +1067,7 @@ TYPED_TEST(JoinTypeExtractionTest, JoinExtractsBoolField) {
     ASSERT_TRUE(result.has_value()) << "JOIN with bool field should succeed";
     ASSERT_FALSE(result.value().empty());
 
-    for (const auto& msg : result.value()) {
+    for (const auto &msg : result.value()) {
         if (msg.sender.name == "Alice") {
             EXPECT_TRUE(msg.sender.is_active);
         } else if (msg.sender.name == "Bob") {
@@ -1118,7 +1084,7 @@ TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalIntWithValue) {
     ASSERT_TRUE(result.has_value()) << "JOIN with optional int should succeed";
     ASSERT_FALSE(result.value().empty());
 
-    for (const auto& msg : result.value()) {
+    for (const auto &msg : result.value()) {
         if (msg.sender.name == "Alice") {
             ASSERT_TRUE(msg.sender.score.has_value());
             EXPECT_EQ(msg.sender.score.value(), 100);
@@ -1135,7 +1101,7 @@ TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalIntNull) {
     ASSERT_TRUE(result.has_value()) << "JOIN with NULL optional should succeed";
     ASSERT_FALSE(result.value().empty());
 
-    for (const auto& msg : result.value()) {
+    for (const auto &msg : result.value()) {
         if (msg.sender.name == "Bob") {
             EXPECT_FALSE(msg.sender.score.has_value());
         }
@@ -1148,7 +1114,7 @@ TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalStringWithValue) {
     ASSERT_TRUE(result.has_value()) << "JOIN with optional string should succeed";
     ASSERT_FALSE(result.value().empty());
 
-    for (const auto& msg : result.value()) {
+    for (const auto &msg : result.value()) {
         if (msg.sender.name == "Alice") {
             ASSERT_TRUE(msg.sender.nickname.has_value());
             EXPECT_EQ(msg.sender.nickname.value(), "Alice bio");
@@ -1162,7 +1128,7 @@ TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalStringNull) {
     ASSERT_TRUE(result.has_value()) << "JOIN with NULL optional string should succeed";
     ASSERT_FALSE(result.value().empty());
 
-    for (const auto& msg : result.value()) {
+    for (const auto &msg : result.value()) {
         if (msg.sender.name == "Bob" || msg.sender.name == "Charlie") {
             EXPECT_FALSE(msg.sender.nickname.has_value());
         }
@@ -1171,15 +1137,15 @@ TYPED_TEST(JoinTypeExtractionTest, JoinExtractsOptionalStringNull) {
 
 TYPED_TEST(JoinTypeExtractionTest, JoinWithOrderBy) {
     auto result = this->msg_qs->template join<fields::Message.sender>()
-                          .template order_by<fields::Message.value>()
-                          .select()
-                          .execute();
+                      .template order_by<fields::Message.value>()
+                      .select()
+                      .execute();
 
     ASSERT_TRUE(result.has_value()) << "JOIN with ORDER BY should succeed";
     EXPECT_EQ(result.value().size(), 4);
 
-    auto it         = result.value().begin();
-    int  prev_value = 0;
+    auto it = result.value().begin();
+    int prev_value = 0;
     while (it != result.value().end()) {
         EXPECT_GE(it->value, prev_value);
         prev_value = it->value;

@@ -34,7 +34,11 @@ tests/mock_sqlite/test_sqlite_mock.cpp:        duplicate
 tests/schema/test_sql_inspection.cpp:            file-size
 tests/schema/test_types.cpp:                     file-size, duplicate, length
 tests/crud/test_insert_returning.cpp:            duplicate
-tests/crud/test_composite_pk_crud.cpp:           file-size
+# Split from the original test_composite_pk_crud.cpp into two single-backend TUs
+# (see test_composite_pk_crud_sqlite.cpp/_pg.cpp) that share one test body via
+# test_composite_pk_crud_body.h (#define STORM_SPLIT_TYPES + #include) — the .cpp
+# wrappers stay tiny, the shared body carries the full test surface once.
+tests/crud/test_composite_pk_crud_body.h:        file-size
 tests/errors/test_sqlite_errors.cpp:            file-size, duplicate
 tests/mock_libpq/mock_libpq.cpp:                parameters
 tests/mock_sqlite/mock_sqlite3.cpp:             duplicate
@@ -48,7 +52,10 @@ tests/query/test_rows.cpp:                       duplicate
 tests/query/test_sql_verify.cpp:                  duplicate
 tests/query/test_values.cpp:                     duplicate
 tests/query/test_where.cpp:                      duplicate
-tests/schema/test_fk_fields.cpp:                  file-size, duplicate, length
+# Split into two single-backend TUs sharing one body via test_fk_fields_body.h
+# (#define STORM_SPLIT_TYPES + #include) — the .cpp wrappers stay tiny, the
+# shared body carries the full (pre-existing file-size/duplicate/length) surface.
+tests/schema/test_fk_fields_body.h:               file-size, duplicate, length
 tests/schema/test_sql_inspection.cpp:             duplicate
 tests/test_parser.hpp:                            file-size, duplicate
 # duplicate (#566): each expected_*_ddl builder's PRIMARY KEY / FOREIGN KEY tail

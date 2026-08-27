@@ -1,13 +1,23 @@
-#include <gtest/gtest.h>
-#include <meta>
-#include <plf_hive/plf_hive.h> // NOSONAR cpp:S954 — must precede `import std;` (see test_m2m_models.h)
+#pragma once
 
-#include "test_db_helpers.h"
+// Shared test body for test_composite_m2m_through_sqlite.cpp / test_composite_m2m_through_pg.cpp — the two
+// single-backend TUs of a compile-time TU split (see test_db_helpers.h,
+// DatabaseTypesSqliteHalf/DatabaseTypesPgHalf). Splitting a 2-backend TU into
+// two lets ninja compile them in parallel instead of serially instantiating
+// both backends in one TU; keeping the body here (instead of duplicating it
+// into both .cpp files) removes the risk of the two halves silently drifting.
+//
+// The includer must #define STORM_SPLIT_TYPES / STORM_SPLIT_TYPE_NAMES to one
+// backend's ::testing::Types<> alias / NameGenerator before #include-ing this
+// file, and #undef both afterward. Never include this file directly.
+#if !defined(STORM_SPLIT_TYPES) || !defined(STORM_SPLIT_TYPE_NAMES)
+#error "test_composite_m2m_through_body.h: define STORM_SPLIT_TYPES/STORM_SPLIT_TYPE_NAMES before including"
+#endif
 
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954 — StormTestFixture, DatabaseTypes
+#include "test_models.h" // NOSONAR cpp:S954 — StormTestFixture
 
 // Must follow test_models.h: the composite-PK models name storm:: annotations.
 #include "crud/test_composite_pk_models.h" // NOSONAR cpp:S954
@@ -37,66 +47,62 @@ import std;
 
 namespace {
 
-    template <typename ConnType>
-    class ThroughCompositeOwnerTest : public StormTestFixture<RegionEntry, ConnType, ThroughTopic, RegionEntryLink> {};
+template <typename ConnType>
+class ThroughCompositeOwnerTest : public StormTestFixture<RegionEntry, ConnType, ThroughTopic, RegionEntryLink> {};
 
-    template <typename ConnType>
-    class ThroughCompositeRelatedTest : public StormTestFixture<ShelfOwner, ConnType, ShelfCode, ShelfCodeLink> {};
+template <typename ConnType>
+class ThroughCompositeRelatedTest : public StormTestFixture<ShelfOwner, ConnType, ShelfCode, ShelfCodeLink> {};
 
-    // Person is the FK part's target, so it must exist before FkPartEntry.
-    template <typename ConnType>
-    class ThroughFkPartTest : public StormTestFixture<Person, ConnType, ThroughTopic, FkPartEntry, FkPartLink> {};
+// Person is the FK part's target, so it must exist before FkPartEntry.
+template <typename ConnType>
+class ThroughFkPartTest : public StormTestFixture<Person, ConnType, ThroughTopic, FkPartEntry, FkPartLink> {};
 
-    template <typename ConnType>
-    class ThroughBothSidesTest : public StormTestFixture<Person, ConnType, ShelfCode, BothSidesOwner, BothSidesLink> {};
+template <typename ConnType>
+class ThroughBothSidesTest : public StormTestFixture<Person, ConnType, ShelfCode, BothSidesOwner, BothSidesLink> {};
 
-    // Two topics, 'audit' then 'review' — autoincrement, so ids are 1 and 2.
-    template <typename ConnType> auto seed_topics() -> void {
-        storm::QuerySet<ThroughTopic, ConnType> topic_qs;
-        ASSERT_TRUE(topic_qs.insert(ThroughTopic{.label = "audit"}).execute().has_value());
-        ASSERT_TRUE(topic_qs.insert(ThroughTopic{.label = "review"}).execute().has_value());
-    }
+// Two topics, 'audit' then 'review' — autoincrement, so ids are 1 and 2.
+template <typename ConnType> auto seed_topics() -> void {
+    storm::QuerySet<ThroughTopic, ConnType> topic_qs;
+    ASSERT_TRUE(topic_qs.insert(ThroughTopic{.label = "audit"}).execute().has_value());
+    ASSERT_TRUE(topic_qs.insert(ThroughTopic{.label = "review"}).execute().has_value());
+}
 
-    // Shared seeding for the FK-part suite: topics, one depot Person (the FK
-    // part's target), and entry sku 10 linked to BOTH topics. `with_decoy` adds
-    // entry sku 20 — sharing the FK part (warehouse == 1) and linked to 'review'
-    // only — which is what makes a stitch keyed on the FK part alone observable.
-    // The aggregate test omits it so its COUNT has one unambiguous expected value.
-    template <typename ConnType> auto seed_fk_part_entries(bool with_decoy) -> void {
-        seed_topics<ConnType>();
+// Shared seeding for the FK-part suite: topics, one depot Person (the FK
+// part's target), and entry sku 10 linked to BOTH topics. `with_decoy` adds
+// entry sku 20 — sharing the FK part (warehouse == 1) and linked to 'review'
+// only — which is what makes a stitch keyed on the FK part alone observable.
+// The aggregate test omits it so its COUNT has one unambiguous expected value.
+template <typename ConnType> auto seed_fk_part_entries(bool with_decoy) -> void {
+    seed_topics<ConnType>();
 
-        storm::QuerySet<Person, ConnType> person_qs;
-        ASSERT_TRUE(person_qs.insert(Person{.name = "depot-1", .age = 30}).execute().has_value());
+    storm::QuerySet<Person, ConnType> person_qs;
+    ASSERT_TRUE(person_qs.insert(Person{.name = "depot-1", .age = 30}).execute().has_value());
 
-        storm::QuerySet<FkPartEntry, ConnType> entry_qs;
+    storm::QuerySet<FkPartEntry, ConnType> entry_qs;
+    ASSERT_TRUE(entry_qs.insert(FkPartEntry{.warehouse = {.id = 1}, .sku = 10, .title = "ten"}).execute().has_value());
+
+    storm::QuerySet<FkPartLink, ConnType> link_qs;
+    ASSERT_TRUE(link_qs.insert(FkPartLink{.entry = {.warehouse = {.id = 1}, .sku = 10}, .topic = {.id = 1}})
+                    .execute()
+                    .has_value());
+    ASSERT_TRUE(link_qs.insert(FkPartLink{.entry = {.warehouse = {.id = 1}, .sku = 10}, .topic = {.id = 2}})
+                    .execute()
+                    .has_value());
+
+    if (with_decoy) {
         ASSERT_TRUE(
-                entry_qs.insert(FkPartEntry{.warehouse = {.id = 1}, .sku = 10, .title = "ten"}).execute().has_value()
-        );
-
-        storm::QuerySet<FkPartLink, ConnType> link_qs;
-        ASSERT_TRUE(link_qs.insert(FkPartLink{.entry = {.warehouse = {.id = 1}, .sku = 10}, .topic = {.id = 1}})
-                            .execute()
-                            .has_value());
-        ASSERT_TRUE(link_qs.insert(FkPartLink{.entry = {.warehouse = {.id = 1}, .sku = 10}, .topic = {.id = 2}})
-                            .execute()
-                            .has_value());
-
-        if (with_decoy) {
-            ASSERT_TRUE(entry_qs.insert(FkPartEntry{.warehouse = {.id = 1}, .sku = 20, .title = "twenty"})
-                                .execute()
-                                .has_value());
-            ASSERT_TRUE(link_qs.insert(FkPartLink{.entry = {.warehouse = {.id = 1}, .sku = 20}, .topic = {.id = 2}})
-                                .execute()
-                                .has_value());
-        }
+            entry_qs.insert(FkPartEntry{.warehouse = {.id = 1}, .sku = 20, .title = "twenty"}).execute().has_value());
+        ASSERT_TRUE(link_qs.insert(FkPartLink{.entry = {.warehouse = {.id = 1}, .sku = 20}, .topic = {.id = 2}})
+                        .execute()
+                        .has_value());
     }
+}
 
 } // namespace
-
-TYPED_TEST_SUITE(ThroughCompositeOwnerTest, DatabaseTypes);
-TYPED_TEST_SUITE(ThroughCompositeRelatedTest, DatabaseTypes);
-TYPED_TEST_SUITE(ThroughFkPartTest, DatabaseTypes);
-TYPED_TEST_SUITE(ThroughBothSidesTest, DatabaseTypes);
+TYPED_TEST_SUITE(ThroughCompositeOwnerTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
+TYPED_TEST_SUITE(ThroughCompositeRelatedTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
+TYPED_TEST_SUITE(ThroughFkPartTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
+TYPED_TEST_SUITE(ThroughBothSidesTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
 
 // Composite (2-part) OWNER through an explicit junction model. Both parts are
 // plain columns, so the FK and junction rules still agree here — this is the
@@ -117,20 +123,20 @@ TYPED_TEST(ThroughCompositeOwnerTest, StitchesOnFullCompositeOwnerKey) {
     // A/audit, A/review, B/review.
     storm::QuerySet<RegionEntryLink, TypeParam> link_qs;
     ASSERT_TRUE(link_qs.insert(RegionEntryLink{.entry = {.region = 1, .code = "A"}, .topic = {.id = 1}, .note = "n1"})
-                        .execute()
-                        .has_value());
+                    .execute()
+                    .has_value());
     ASSERT_TRUE(link_qs.insert(RegionEntryLink{.entry = {.region = 1, .code = "A"}, .topic = {.id = 2}, .note = "n2"})
-                        .execute()
-                        .has_value());
+                    .execute()
+                    .has_value());
     ASSERT_TRUE(link_qs.insert(RegionEntryLink{.entry = {.region = 1, .code = "B"}, .topic = {.id = 2}, .note = "n3"})
-                        .execute()
-                        .has_value());
+                    .execute()
+                    .has_value());
 
     const auto results = entry_qs.template join<fields::RegionEntry.topics>().select().execute();
     ASSERT_TRUE(results.has_value()) << results.error().message();
     ASSERT_EQ(results->size(), 2U);
 
-    for (const auto& entry : *results) {
+    for (const auto &entry : *results) {
         if (entry.code == "A") {
             EXPECT_EQ(entry.topics.size(), 2U) << "entry A must receive exactly its own two topics";
         } else {
@@ -171,8 +177,7 @@ TYPED_TEST(ThroughCompositeRelatedTest, JoinsRelatedOnFullCompositeKey) {
     // comparison that stops after the first part would also attach C2.
     storm::QuerySet<ShelfCodeLink, TypeParam> link_qs;
     ASSERT_TRUE(
-            link_qs.insert(ShelfCodeLink{.owner = {.id = 1}, .code = {.aisle = 4, .code = "C1"}}).execute().has_value()
-    );
+        link_qs.insert(ShelfCodeLink{.owner = {.id = 1}, .code = {.aisle = 4, .code = "C1"}}).execute().has_value());
 
     const auto results = owner_qs.template join<fields::ShelfOwner.codes>().select().execute();
     ASSERT_TRUE(results.has_value()) << results.error().message();
@@ -192,7 +197,7 @@ TYPED_TEST(ThroughCompositeRelatedTest, JoinsRelatedOnFullCompositeKey) {
 // Pupil/Course/Enrollment is the canonical single-PK through model from #203.
 TYPED_TEST(ThroughCompositeOwnerTest, SinglePkThroughSqlIsUnchanged) {
     storm::QuerySet<Pupil, TypeParam> qs;
-    const auto                        sql = qs.template join<fields::Pupil.courses>().select().sql();
+    const auto sql = qs.template join<fields::Pupil.courses>().select().sql();
     EXPECT_TRUE(sql.contains("FROM Enrollment t2 INNER JOIN Course t3 ON t2.course_id = t3.id")) << sql;
     EXPECT_TRUE(sql.contains("WHERE t2.pupil_id IN (SELECT id FROM Pupil)")) << sql;
 }
@@ -203,7 +208,7 @@ TYPED_TEST(ThroughCompositeOwnerTest, SinglePkThroughSqlIsUnchanged) {
 // Through branch bleeding into it.
 TYPED_TEST(ThroughCompositeOwnerTest, AutoJunctionCompositeSqlIsUnchanged) {
     storm::QuerySet<LedgerWithTags, TypeParam> qs;
-    const auto                                 sql = qs.template join<fields::LedgerWithTags.tags>().select().sql();
+    const auto sql = qs.template join<fields::LedgerWithTags.tags>().select().sql();
     EXPECT_TRUE(sql.contains("t2.LedgerWithTags_region, t2.LedgerWithTags_account, t2.LedgerWithTags_period")) << sql;
     EXPECT_TRUE(sql.contains("ON t2.LedgerTag_id = t3.id")) << sql;
 }
@@ -225,13 +230,13 @@ TYPED_TEST(ThroughFkPartTest, StitchesOnCompositeKeyWithForeignKeyPart) {
     ASSERT_TRUE(results.has_value()) << results.error().message();
     ASSERT_EQ(results->size(), 2U);
 
-    for (const auto& entry : *results) {
+    for (const auto &entry : *results) {
         if (entry.sku == 10) {
             EXPECT_EQ(entry.topics.size(), 2U) << "sku 10 must receive exactly its own two topics";
         } else {
             EXPECT_EQ(entry.sku, 20);
             ASSERT_EQ(entry.topics.size(), 1U)
-                    << "sku 20 must not inherit sku 10's topics via a stitch keyed on the FK part alone";
+                << "sku 20 must not inherit sku 10's topics via a stitch keyed on the FK part alone";
             EXPECT_EQ(entry.topics.begin()->label, "review");
         }
     }
@@ -268,35 +273,30 @@ TYPED_TEST(ThroughBothSidesTest, JoinsWhenBothSidesAreComposite) {
     // Two owners sharing the FK part (depot == 1) and differing in `slot`.
     storm::QuerySet<BothSidesOwner, TypeParam> owner_qs;
     ASSERT_TRUE(
-            owner_qs.insert(BothSidesOwner{.depot = {.id = 1}, .slot = 1, .name = "slot-one"}).execute().has_value()
-    );
+        owner_qs.insert(BothSidesOwner{.depot = {.id = 1}, .slot = 1, .name = "slot-one"}).execute().has_value());
     ASSERT_TRUE(
-            owner_qs.insert(BothSidesOwner{.depot = {.id = 1}, .slot = 2, .name = "slot-two"}).execute().has_value()
-    );
+        owner_qs.insert(BothSidesOwner{.depot = {.id = 1}, .slot = 2, .name = "slot-two"}).execute().has_value());
 
     // slot 1 → D1 and D2; slot 2 → D2 only.
     storm::QuerySet<BothSidesLink, TypeParam> link_qs;
     ASSERT_TRUE(
-            link_qs.insert(BothSidesLink{.owner = {.depot = {.id = 1}, .slot = 1}, .code = {.aisle = 7, .code = "D1"}})
-                    .execute()
-                    .has_value()
-    );
+        link_qs.insert(BothSidesLink{.owner = {.depot = {.id = 1}, .slot = 1}, .code = {.aisle = 7, .code = "D1"}})
+            .execute()
+            .has_value());
     ASSERT_TRUE(
-            link_qs.insert(BothSidesLink{.owner = {.depot = {.id = 1}, .slot = 1}, .code = {.aisle = 7, .code = "D2"}})
-                    .execute()
-                    .has_value()
-    );
+        link_qs.insert(BothSidesLink{.owner = {.depot = {.id = 1}, .slot = 1}, .code = {.aisle = 7, .code = "D2"}})
+            .execute()
+            .has_value());
     ASSERT_TRUE(
-            link_qs.insert(BothSidesLink{.owner = {.depot = {.id = 1}, .slot = 2}, .code = {.aisle = 7, .code = "D2"}})
-                    .execute()
-                    .has_value()
-    );
+        link_qs.insert(BothSidesLink{.owner = {.depot = {.id = 1}, .slot = 2}, .code = {.aisle = 7, .code = "D2"}})
+            .execute()
+            .has_value());
 
     const auto results = owner_qs.template join<fields::BothSidesOwner.codes>().select().execute();
     ASSERT_TRUE(results.has_value()) << results.error().message();
     ASSERT_EQ(results->size(), 2U);
 
-    for (const auto& owner : *results) {
+    for (const auto &owner : *results) {
         if (owner.slot == 1) {
             EXPECT_EQ(owner.codes.size(), 2U) << "slot 1 must receive exactly its own two codes";
         } else {
