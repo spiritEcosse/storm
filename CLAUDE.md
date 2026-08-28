@@ -218,6 +218,8 @@ These rules are enforced by SonarCloud analysis. Follow them when writing new co
 - `S954`: `#include "test_models.h"` MUST come after `import storm;` — can't move to top
 
 ### Commit & Push Workflow
+
+**The standard case — committing everything (`git add -A`):**
 ```bash
 git status --short           # Show files
 # Get user approval
@@ -230,10 +232,31 @@ git add -A && git commit -m "message"
 #   — storm_tests, storm_mock_tests, storm_pq_mock_tests — is missing). No-op on
 #   the warm path; covers both the git-hook path and a manual ./commit.sh on a
 #   fresh worktree.
+# The hook reformats + re-stages (git add -u) BEFORE the commit object is
+# created, so this single command already captures the final, formatted
+# state — no separate format-then-commit dance needed (#605).
 
 git push
 # Pre-push hook (.githooks/pre-push): SonarCloud gate disabled (C++26 not yet supported)
 # See: https://github.com/spiritEcosse/storm/issues/113
+```
+
+**If the hook fails on a later step (tidy/tests/coverage):** the tree is
+already reformatted and staged by that point (format runs first, step 1-2).
+Just fix the reported failure and re-run `git commit -m "message"` — no need
+to `git add -A` again unless you touched more files.
+
+**Scoped/partial commit (staging specific files, not `-A`):** the hook's
+`format`/`cmake-format` targets scan the **whole tree**, not just staged
+files (`cmake/format.cmake` has no staged-file filter), and its `git add -u`
+re-stage applies to every tracked file, not just the ones you staged. That
+can pull unrelated formatting fixes into your commit. To keep a scoped
+commit clean, format first and review before staging:
+```bash
+cmake --build --preset ninja-debug --target format          # clang-format (C++)
+cmake --build --preset ninja-debug --target cmake-format    # cmake-format (CMake)
+git status --short            # confirm only your intended files changed
+git add <files> && git commit -m "message"
 ```
 
 ### Benchmarking (Release only!)
