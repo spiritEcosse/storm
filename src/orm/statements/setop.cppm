@@ -95,6 +95,22 @@ export namespace storm::orm::statements {
             if (!stmt) [[unlikely]] {
                 return std::unexpected(stmt.error());
             }
+            // #600: requested HERE and not in the shared ready_statement() prologue.
+            // to_sql() shares that prologue but never executes or resets afterwards,
+            // so opting in there would strand result_format_ = 1 on a CACHED statement
+            // for the next caller that finds it by identical SQL text — precisely the
+            // inheritance reset() exists to prevent. execute_query_loop() resets on
+            // its way out, so the flag never outlives this call.
+            //
+            // The invariant that makes the base model's whole-row classification the
+            // right question is NOT "every operand selects the same column list" — an
+            // operand carrying a join contributes its join's complete SQL, which is
+            // base + JOINED columns (see QuerySet::capture_operand). It is that the
+            // reader here only ever consumes the LEADING field_count_ columns, via
+            // extract_all_columns, and both join SQL builders emit the base model's
+            // columns first. So the columns actually decoded are always exactly T's
+            // own, whatever trails them.
+            Base::request_binary_results(*stmt, Base::pg_binary_safe_row_);
             return execute_query_loop(*stmt);
         }
 

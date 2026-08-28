@@ -300,6 +300,7 @@ export namespace storm::orm::statements {
             if (!prepare_result) [[unlikely]] {
                 return std::unexpected(prepare_result.error());
             }
+            Base::request_binary_results(*prepare_result, Base::pg_binary_safe_row_);
             return execute_single_row(*prepare_result, [](Statement* stmt, T& obj) {
                 Base::extract_all_columns(stmt, obj);
             });
@@ -325,6 +326,7 @@ export namespace storm::orm::statements {
             if (!prepare_result) [[unlikely]] {
                 return std::unexpected(prepare_result.error());
             }
+            Base::request_binary_results(*prepare_result, Base::pg_binary_safe_row_);
             return execute_exact_one(*prepare_result, [](Statement* stmt, T& obj) {
                 Base::extract_all_columns(stmt, obj);
             });
@@ -383,6 +385,11 @@ export namespace storm::orm::statements {
                     return yield_error(bind_result.error());
                 }
             }
+            // Same rule as execute()'s dispatch (#600), !join_wrapper included and
+            // equally defensive-only. The statement is dedicated (prepare(), not the
+            // cache) and moves into the coroutine frame from here, so the flag has to
+            // survive Statement's swap-based move — which is why swap() carries it.
+            Base::request_binary_results(&stmt, Base::pg_binary_safe_row_ && !join_wrapper);
 
             // conn and stmt move into the selected coroutine's frame — the statement
             // (and the connection it needs) live until generator destruction.
@@ -578,6 +585,13 @@ export namespace storm::orm::statements {
                 return std::unexpected(prepare_result.error());
             }
             const auto& join_wrapper = clauses.join_wrapper;
+            // #600: a joined row carries the JOINED model's columns too, and the
+            // wrapper is type-erased by the time it reaches here — so only an
+            // unjoined row can be classified. A join keeps the text path.
+            // !join_wrapper is defensive rather than load-bearing: an FK join can
+            // only exist on a model with an FK member, which member_pg_binary_safe
+            // already forces unsafe, so the left operand is false there anyway.
+            Base::request_binary_results(*prepare_result, Base::pg_binary_safe_row_ && !join_wrapper);
             if (join_wrapper) {
                 return loop_fn(*prepare_result, [&join_wrapper](Statement* stmt, T& obj) {
                     join_wrapper->extract_row(stmt, &obj);
@@ -811,6 +825,10 @@ export namespace storm::orm::statements {
             if (!stmt) {
                 return std::unexpected(stmt.error());
             }
+            // Q1 returns the BASE entity's own columns and nothing else, so it
+            // takes the base model's classification (#600). Q2 — the related /
+            // owner rows — deliberately does not: that model is not in scope here.
+            Base::request_binary_results(*stmt, Base::pg_binary_safe_row_);
             return execute_query_loop(*stmt, [](Statement* s, T& obj) { Base::extract_all_columns(s, obj); });
         }
 

@@ -1098,6 +1098,56 @@ export namespace storm::orm::statements {
             );
         }();
 
+        // ── PostgreSQL binary result format (#600 Phase 1) ────────────────────
+        //
+        // Can a statement returning EVERY column of T ask libpq for binary
+        // results? The format flag is per statement, not per column, so this is
+        // a whole-row AND: one column outside the decodable set puts the entire
+        // statement back on the text path it has always used. False costs only
+        // speed; true on the wrong model silently corrupts data, so every
+        // uncertain shape answers false.
+        //
+        // Two exclusions live HERE rather than in the type-level predicate,
+        // because neither is visible from the C++ type alone:
+        //   - a storm::full_unsigned member is PG NUMERIC(20,0) while sharing
+        //     std::uint64_t with a signed_storage member (plain BIGINT), so the
+        //     two must be told apart by ANNOTATION;
+        //   - an FK member's columns are the TARGET's key, not the member's own
+        //     type (and a composite target spans N of them, #504). Classifying
+        //     those is a straightforward widening, deferred — FK models stay on
+        //     text, exactly as today.
+        template <std::meta::info Member> static consteval auto member_pg_binary_safe() -> bool {
+            if constexpr (is_fk_field(Member) || storm::meta::has_full_unsigned_attr(Member)) {
+                return false;
+            } else {
+                using FieldType = std::remove_cvref_t<typename[:std::meta::type_of(Member):]>;
+                return ColumnExtractor::is_pg_binary_safe_column_v<FieldType>;
+            }
+        }
+
+        template <std::size_t... Is>
+        static consteval auto pg_binary_safe_row_impl(std::index_sequence<Is...> /*unused*/) -> bool {
+            return (member_pg_binary_safe<all_members_[Is]>() && ...);
+        }
+
+        static constexpr bool pg_binary_safe_row_ = pg_binary_safe_row_impl(std::make_index_sequence<field_count_>{});
+
+        // Ask the backend for binary results, when the backend has that knob.
+        // PostgreSQL-only by design (issue #600, design question 4): the
+        // `requires` probe is false for SQLite — whose sqlite3_column_* API is
+        // already native binary — so this compiles away there and neither
+        // db::DatabaseStatement nor any generic call site has to know about it.
+        //
+        // Must be called AFTER prepare_cached (a cache hit reset()s the
+        // statement, clearing the flag) and BEFORE the first step.
+        template <typename Statement>
+        __attribute__((always_inline)) static auto request_binary_results(Statement* stmt, bool binary) noexcept
+                -> void {
+            if constexpr (requires { stmt->set_result_binary(bool{}); }) {
+                stmt->set_result_binary(binary);
+            }
+        }
+
         // One clock read per operation, but only for models that actually have a timestamp
         // field — otherwise the call compiles away entirely (no regression on plain models).
         [[nodiscard]] __attribute__((always_inline)) static auto batch_now() noexcept
