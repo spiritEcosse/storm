@@ -51,6 +51,36 @@ export namespace storm::orm::statements {
                                                  std::is_same_v<FT, std::filesystem::path> ||
                                                  std::is_same_v<FT, utilities::UUID> || std::is_same_v<FT, std::string>;
 
+        // PostgreSQL binary-result-format safety (#600 Phase 1). libpq's result
+        // format is a per-STATEMENT flag, so a statement may only ask for binary
+        // when EVERY column it returns decodes as a plain byte reinterpretation:
+        // a network-order fixed width (BOOLEAN/BIGINT/REAL/DOUBLE PRECISION) or
+        // raw bytes (TEXT/BYTEA).
+        //
+        // Deliberately EXCLUDES year_month_day / time_point / UUID even though
+        // they share is_text_stored_v's C++ extraction path: on PostgreSQL those
+        // are native DATE / TIMESTAMP / UUID columns whose binary wire form is
+        // NOT their text form (int32 days, int64 microseconds, 16 raw bytes), so
+        // extract_text_like would parse binary garbage as a date string. Also
+        // excluded, but only reachable at the MEMBER level: a storm::full_unsigned
+        // member is PG NUMERIC(20,0) (base-10000 digit groups) while sharing the
+        // very same C++ type as a signed_storage member — see BaseStatement's
+        // member_pg_binary_safe.
+        //
+        // Enums and chrono durations are BIGINT on PostgreSQL and would decode
+        // correctly, but are left out of Phase 1's tested surface.
+        template <typename FT>
+        static constexpr bool is_pg_binary_safe_v =
+                std::is_same_v<FT, bool> || is_int_stored_v<FT> || is_int64_stored_v<FT> || is_floating_stored_v<FT> ||
+                is_blob_stored_v<FT> || std::is_same_v<FT, std::string> || std::is_same_v<FT, std::filesystem::path>;
+
+        // Column-level form of the above: a nullable column is decoded by
+        // unwrapping the optional and reading its inner type (extract_column_value
+        // checks is_null first, and PQgetisnull is format-independent), so the
+        // inner type is what decides.
+        template <typename FT>
+        static constexpr bool is_pg_binary_safe_column_v = is_pg_binary_safe_v<utilities::optional_inner_type_t<FT>>;
+
         // ---- Storage-class extraction helpers --------------------------------------------
         // Each helper handles one storage class. extract_column_value() dispatches to
         // exactly one helper per FieldType. All marked always_inline so the call site

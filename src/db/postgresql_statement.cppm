@@ -71,6 +71,7 @@ export namespace storm::db::postgresql {
             swap(first.blob_buffer_, second.blob_buffer_);
             swap(first.blob_decoded_size_, second.blob_decoded_size_);
             swap(first.blob_decoded_col_, second.blob_decoded_col_);
+            swap(first.binary_results_, second.binary_results_);
         }
 
         // Delete copy operations
@@ -164,6 +165,17 @@ export namespace storm::db::postgresql {
             return {};
         }
 
+        // Request binary (true) or text (false) RESULT format for the next
+        // execute() (#600). Text stays the default: the flag is per STATEMENT, not
+        // per column, so only a caller that has proved every selected column is a
+        // plain byte reinterpretation may flip it, AFTER prepare_cached() (which
+        // reset()s on a cache hit, clearing this) and BEFORE the first step().
+        // PG-only — SQLite's column API is already binary, so the ORM finds this
+        // via a `requires` probe instead of db::DatabaseStatement growing a knob.
+        template <typename = void> __attribute__((always_inline)) auto set_result_binary(bool binary) noexcept -> void {
+            binary_results_ = binary;
+        }
+
         template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto execute() noexcept -> std::expected<void, Error> {
             clear_result();
@@ -178,7 +190,7 @@ export namespace storm::db::postgresql {
                     param_count_ > 0 ? param_ptrs_.data() : nullptr,
                     param_count_ > 0 ? param_lengths_.data() : nullptr,
                     param_count_ > 0 ? param_formats_.data() : nullptr,
-                    0 // Text result format
+                    binary_results_ ? kBinaryFormat : kTextFormat // #600
             );
 
             const ExecStatusType status = PQresultStatus(result_);
@@ -227,10 +239,13 @@ export namespace storm::db::postgresql {
             return NO_MORE_ROWS;
         }
 
-        // Reset statement for reuse - clear params and result
+        // Reset statement for reuse - clear params and result.
+        // Also drops back to text result format (#600): a cached statement is reset
+        // on every cache hit, so the next caller starts from the safe default.
         template <typename = void> __attribute__((always_inline)) auto reset() noexcept -> void {
             clear_result();
             clear_params();
+            binary_results_ = false;
         }
 
         template <typename = void> __attribute__((always_inline)) auto finalize() noexcept -> void {
@@ -308,18 +323,27 @@ export namespace storm::db::postgresql {
         // Column extraction methods
         template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto extract_int(int col_index) const noexcept -> int {
+            if (binary_results_) {
+                return static_cast<int>(decode_binary_int(col_index));
+            }
             const char* val = PQgetvalue(result_, current_row_, col_index);
             return static_cast<int>(std::strtol(val, nullptr, 10)); // NOSONAR - known-valid DB integer string
         }
 
         template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto extract_int64(int col_index) const noexcept -> std::int64_t {
+            if (binary_results_) {
+                return decode_binary_int(col_index);
+            }
             const char* val = PQgetvalue(result_, current_row_, col_index);
             return std::strtoll(val, nullptr, 10);
         }
 
         template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto extract_double(int col_index) const noexcept -> double {
+            if (binary_results_) {
+                return decode_binary_floating(col_index);
+            }
             const char* val = PQgetvalue(result_, current_row_, col_index);
             return std::strtod(val, nullptr);
         }
@@ -353,12 +377,20 @@ export namespace storm::db::postgresql {
         template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto extract_bool(int col_index) const noexcept -> bool {
             const char* val = PQgetvalue(result_, current_row_, col_index);
+            if (binary_results_) {
+                // One byte, 0x00/0x01. libpq NUL-terminates every value, so a
+                // zero-length NULL reads '\0' → false rather than off the end.
+                return val[0] != 0;
+            }
             // PostgreSQL returns 't'/'f' for boolean, or '1'/'0'
             return val[0] == 't' || val[0] == '1';
         }
 
         template <typename = void>
         [[nodiscard]] __attribute__((always_inline)) auto extract_float(int col_index) const noexcept -> float {
+            if (binary_results_) {
+                return static_cast<float>(decode_binary_floating(col_index));
+            }
             const char* val = PQgetvalue(result_, current_row_, col_index);
             return std::strtof(val, nullptr);
         }
@@ -370,6 +402,14 @@ export namespace storm::db::postgresql {
             if (PQgetisnull(result_, current_row_, col_index) != 0) {
                 blob_decoded_size_ = 0;
                 return nullptr;
+            }
+            if (binary_results_) {
+                // BYTEA's binary form IS the raw bytes: no "\x" envelope, no copy.
+                // Clearing blob_decoded_col_ routes extract_bytes() to PQgetlength,
+                // already the exact byte count of what is returned here.
+                blob_decoded_col_  = -1;
+                blob_decoded_size_ = 0;
+                return PQgetvalue(result_, current_row_, col_index);
             }
             const char* hex_str = PQgetvalue(result_, current_row_, col_index);
             const int   hex_len = PQgetlength(result_, current_row_, col_index);
@@ -410,6 +450,59 @@ export namespace storm::db::postgresql {
         }
 
       private:
+        // Binary result decoding (#600). PG sends NETWORK byte order, so each
+        // fixed-width read is a byte load + byteswap on a little-endian host;
+        // float4/8 send raw IEEE-754 bits, hence bit_cast, not a conversion.
+        static constexpr int         kTextFormat   = 0;
+        static constexpr int         kBinaryFormat = 1;
+        static constexpr std::size_t kInt16Bytes   = 2;
+        static constexpr std::size_t kInt32Bytes   = 4;
+        static constexpr std::size_t kInt64Bytes   = 8;
+
+        // Load sizeof(UInt) network-order bytes at `val` as a host-order unsigned.
+        template <typename UInt> [[nodiscard]] static auto load_network(const char* val) noexcept -> UInt {
+            UInt raw{};
+            std::memcpy(&raw, val, sizeof(UInt));
+            if constexpr (std::endian::native == std::endian::little) {
+                return std::byteswap(raw);
+            } else {
+                return raw; // LCOV_EXCL_LINE — no big-endian host in CI
+            }
+        }
+
+        // Width comes from the SERVER, not from the caller's C++ type: Storm's PG
+        // schema maps EVERY integer field (int, short, char, unsigned) to BIGINT,
+        // so extract_int() routinely faces an 8-byte int8 — a fixed 4-byte read
+        // would return the high half (0 for small positives) and look plausible.
+        // A NULL is zero-length and decodes to 0, as strtoll("") does on text.
+        [[nodiscard]] auto decode_binary_int(int col_index) const noexcept -> std::int64_t {
+            const char* val = PQgetvalue(result_, current_row_, col_index);
+            switch (static_cast<std::size_t>(PQgetlength(result_, current_row_, col_index))) {
+            case kInt64Bytes:
+                return static_cast<std::int64_t>(load_network<std::uint64_t>(val));
+            case kInt32Bytes:
+                return static_cast<std::int32_t>(load_network<std::uint32_t>(val));
+            case kInt16Bytes:
+                return static_cast<std::int16_t>(load_network<std::uint16_t>(val));
+            default:
+                return 0;
+            }
+        }
+
+        // Same width-from-the-server rule for float8/float4; one decoder returning
+        // double, with extract_float() narrowing exactly as text-path strtof() did.
+        [[nodiscard]] auto decode_binary_floating(int col_index) const noexcept -> double {
+            const char* val = PQgetvalue(result_, current_row_, col_index);
+            switch (static_cast<std::size_t>(PQgetlength(result_, current_row_, col_index))) {
+            case kInt64Bytes:
+                return std::bit_cast<double>(load_network<std::uint64_t>(val));
+            case kInt32Bytes:
+                return static_cast<double>(std::bit_cast<float>(load_network<std::uint32_t>(val)));
+            default:
+                return 0.0;
+            }
+        }
+
         static constexpr auto hex_digit(char ch) noexcept -> unsigned char {
             if (ch >= '0' && ch <= '9') {
                 return static_cast<unsigned char>(ch - '0');
@@ -496,6 +589,10 @@ export namespace storm::db::postgresql {
         std::vector<unsigned char> blob_buffer_;
         std::size_t                blob_decoded_size_ = 0;
         int                        blob_decoded_col_  = -1;
+
+        // Whether the next execute() asks libpq for binary results (#600). A bool,
+        // not libpq's 0/1 int — converted only at the PQexecPrepared call site.
+        bool binary_results_ = false;
     };
 
 } // namespace storm::db::postgresql

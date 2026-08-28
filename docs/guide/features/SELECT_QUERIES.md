@@ -1,6 +1,6 @@
 # SELECT Queries
 
-Storm ORM provides highly optimized SELECT operations achieving **74% of raw SQLite performance** (13.07M rows/sec) through statement-level caching and optimized row extraction.
+Storm ORM provides highly optimized SELECT operations achieving **74% of raw SQLite performance** (13.07M rows/sec) through statement-level caching and optimized row extraction. On PostgreSQL, binary result format further accelerates extraction when all columns support byte-wise decoding.
 
 ## Overview
 
@@ -10,7 +10,8 @@ Key optimizations:
 - **Optimized string extraction** - Direct construction using sqlite3_column_bytes()
 - **Move semantics** - For optional field assignments
 - **Inline extraction** - Compiler hints for hot paths
-- **74% efficiency** - 13.07M rows/sec (vs 17.67M raw SQLite)
+- **PostgreSQL binary results** - Binary format (~34% faster) when all columns are binary-safe (#600)
+- **74% efficiency** - 13.07M rows/sec on SQLite (vs 17.67M raw SQLite)
 
 ## Basic Usage
 
@@ -97,6 +98,8 @@ For measured performance, see [Statement Caching](../../internals/architecture/S
 
 ### Repeated SELECT Example
 
+
+
 ```cpp
 // First call - creates and caches statement
 auto result1 = queryset.select();  // Slower (cache miss)
@@ -116,6 +119,66 @@ cache. Each is keyed by its own SQL text, so a JOIN query and a plain SELECT
 naturally resolve to distinct cache entries without any per-query-type cache —
 the `cached_join_stmt_` / `cached_stmt_` members that once held separate handles
 were removed in #214.
+
+## PostgreSQL Binary Result Format (#600)
+
+When selecting from PostgreSQL, Storm automatically optimizes column extraction by requesting binary result format from libpq — but **only when all columns in the statement can be safely decoded as raw bytes**. This is transparent: no API call is needed, and the optimization activates automatically for compatible models.
+
+### When You Get Binary Format (~34% Faster Extraction)
+
+Binary format is used for SELECT queries on any model where **every** column belongs to the safe set:
+
+**Safe types for binary decoding:**
+- All integer types: `bool`, `int`, `int32_t`, `int64_t`, `unsigned int`, `unsigned long`, etc.
+- Floating-point: `double`, `float`
+- Text: `std::string`, `std::filesystem::path`
+- Binary: `std::vector<uint8_t>` (BLOB)
+- Optional variants: `std::optional<safe_type>`
+
+### When You Stay on Text Format
+
+If your model includes **any** of these column types, the entire statement falls back to text format (the safe default — same as before #600):
+
+| Type | Reason |
+|---|---|
+| `std::chrono::year_month_day` | Binary wire format differs from text |
+| `std::chrono::system_clock::time_point` | Binary wire format differs from text |
+| `storm::UUID` | Binary wire format differs from text |
+| `std::uint64_t` with `storm::full_unsigned` | Stored as `NUMERIC(20,0)` in PG, not `BIGINT` |
+| FK fields | Binary classification deferred to future work |
+
+**Example: mixed model stays on text**
+
+```cpp
+struct Article {
+    [[= storm::primary]] int id;
+    std::string title;              // ✅ safe
+    std::chrono::system_clock::time_point created_at;  // ❌ unsafe
+};
+// All columns extracted as text because of created_at
+```
+
+### Where Binary Format is Used
+
+- `select()` — base entities
+- `first()` / `get()` — single-row results
+- `rows()` generator — streaming results
+- m2m/reverse-FK eager-load Q1 — base entities only
+- `values<>()` projections — only projected columns classified
+- `distinct<>()` projections — only projected columns classified
+- Set operations (`union_`, `except_`, `intersect_`) — base model classification
+
+**Not included**: aggregates (`sum()`, `avg()`, `min()`, `max()`), RETURNING-id paths, m2m Q2 eager loads. These have separate wire-type considerations.
+
+### Performance Expectation
+
+Original issue #600 measured ~34% faster extraction on isolated libpq microbenchmarks (50K rows × 3 numeric columns). Exact speedup inside Storm's full Release-build extraction path is pending benchmark harness expansion (#601). SQLite shows zero measurable regression (the feature is PG-only via compile-time concept probing).
+
+### SQLite is Unchanged
+
+SQLite already extracts binary natively via `sqlite3_column_*` — there's no text-format path to optimize. The binary-format feature is PostgreSQL-specific and compiles away entirely on SQLite.
+
+See [PostgreSQL Binary Results (Architecture)](../../internals/architecture/POSTGRESQL_BINARY_RESULTS.md) for the compile-time classification logic and design rationale.
 
 ## Row Extraction Optimizations
 

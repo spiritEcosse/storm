@@ -11,6 +11,7 @@ export module storm_orm_statements_projection;
 import std;
 
 import storm_db_concept;
+import storm_orm_field_attr; // storm::meta::has_full_unsigned_attr (#600 projection classification)
 import storm_orm_statements_base;
 import storm_orm_statements_extract;
 import storm_orm_statements_join;
@@ -157,6 +158,46 @@ export namespace storm::orm::statements {
             return result;
         }
 
+        // PostgreSQL binary result format (#600). A projection returns only the
+        // fields it names, so it is classified from those types directly rather
+        // than from the whole model — a model with one unsafe column can still
+        // project its safe ones over the binary path. An FK selector's type is
+        // the target STRUCT, which is not in the safe set, so those fall back to
+        // text exactly like BaseStatement's own FK members do.
+        //
+        // The full_unsigned check cannot be folded into the type predicate: such
+        // a member is PG NUMERIC(20,0) yet shares std::uint64_t with an ordinary
+        // signed_storage member, so only the ANNOTATION tells them apart — the
+        // same split BaseStatement::member_pg_binary_safe makes.
+        template <std::size_t I> static consteval auto projected_field_pg_binary_safe() -> bool {
+            // An FK selector's column holds the TARGET's key, not this member's own
+            // (struct) type — rejected explicitly, mirroring
+            // BaseStatement::member_pg_binary_safe, rather than left to fall out of
+            // "a model struct happens not to be in the safe set". full_unsigned is
+            // rejected alongside it for the same reason as that function: it shares
+            // std::uint64_t with an ordinary signed_storage member, so only the
+            // ANNOTATION tells them apart.
+            if constexpr (storm::meta::is_fk_field(member_infos_[I]) ||
+                          storm::meta::has_full_unsigned_attr(member_infos_[I])) {
+                return false;
+            } else {
+                return ColumnExtractor::is_pg_binary_safe_column_v<std::tuple_element_t<I, FieldTypesTuple>>;
+            }
+        }
+        template <std::size_t... Is>
+        static consteval auto projection_pg_binary_safe_impl(std::index_sequence<Is...> /*unused*/) -> bool {
+            return (projected_field_pg_binary_safe<Is>() && ...);
+        }
+        // Public so the classification can be asserted directly: it is the one
+        // decision here that no round-trip can observe (a projection wrongly called
+        // UNSAFE still returns correct values, just over the text path), so without
+        // a static_assert on it this could be pinned to a constant and every
+        // behavioural test would still pass.
+      public:
+        static constexpr bool projection_pg_binary_safe_ =
+                projection_pg_binary_safe_impl(std::make_index_sequence<NumFields>{});
+
+      private:
         // Pre-computed SQL generated at compile-time
         static constexpr auto           projection_sql_array_  = build_projection_sql_array();
         static inline const std::string projection_sql_string_ = std::string(projection_sql_array_);
@@ -210,6 +251,18 @@ export namespace storm::orm::statements {
             if (!stmt_result) [[unlikely]] {
                 return std::unexpected(stmt_result.error());
             }
+            // #600: requested HERE and not in the shared prepare_and_bind() prologue.
+            // to_sql() shares that prologue but never executes or resets afterwards,
+            // so opting in there would strand result_format_ = 1 on a CACHED statement
+            // for the next caller that finds it by identical SQL text — precisely the
+            // inheritance reset() exists to prevent. execute_query_loop() resets on
+            // its way out, so the flag never outlives this call.
+            //
+            // Unlike SelectStatement, the JOIN form needs no extra guard: build_sql
+            // replaces the join's field list with THIS projection's ("t1.col, ...") —
+            // the same NumFields columns, of the same types — so a join changes which
+            // rows come back, never their shape.
+            Base::request_binary_results(*stmt_result, projection_pg_binary_safe_);
             return execute_query_loop(*stmt_result);
         }
 
