@@ -568,6 +568,38 @@ void raw_benchmark(int batch_size) { ... }  // Same decision logic
 - [Adding Features](../building/ADDING_FEATURES.md) - Development workflow
 - [Benchmarks](https://github.com/spiritEcosse/storm/blob/develop/benchmarks/README.md) - Current benchmark results
 
+## PostgreSQL Binary Result Format (#600 Phase 1)
+
+The PostgreSQL backend requests libpq **binary result format** for SELECT-shaped queries
+when every selected column is a plain byte reinterpretation (bool/int/int64/double/float/
+text/blob) — decoding network-byte-order bytes (`memcpy` + `std::byteswap` + `bit_cast`)
+instead of paying the `strtol`/`strtoll`/`strtod`/`val[0]=='t'` ASCII-parse cost text
+format pays on every column of every row. Classification is a compile-time whole-statement
+AND, since libpq's format flag is per-statement, not per-column — one unsafe column
+(`DATE`/`TIMESTAMP`/`UUID`/`storm::full_unsigned`/an FK member) keeps the entire statement
+on the text path, unchanged from before this feature existed. SQLite is untouched (it
+already extracts binary natively via `sqlite3_column_*`) — confirmed via an interleaved
+A/B benchmark showing zero measurable delta (max 0.38%, inside a ~2.8% noise floor).
+
+**Measured performance**: the original issue's own standalone raw-libpq microbenchmark
+(isolated from Storm's build, not exercising the real extraction path) measured ~34%
+faster bulk SELECT extraction (66.4% of text's time, 50k rows × 3 numeric columns).
+**`storm_bench` currently has no PostgreSQL benchmark coverage at all** — every one of
+its 184 benchmarks runs against a hardcoded SQLite `:memory:` connection — so the exact
+speedup inside Storm's real Release-build extraction path is unverified; see
+[issue #601](https://github.com/spiritEcosse/storm/issues/601) for the follow-up to add a
+PG dimension to the bench harness. Until that lands, treat the 34% figure as a
+mechanism-level estimate, not a measured Storm result.
+
+Aggregates (`sum()`/`avg()`/`min()`/`max()`) and the RETURNING-id paths on `insert()`/
+`update()`/`erase()` are deliberately **not** wired to binary format — verified against a
+live PG server that their wire types don't match what the ORM extracts as (e.g.
+`SUM(int_col)` returns PG `numeric`, not `bigint`), so wiring them naively would silently
+corrupt results. See
+[docs/internals/architecture/POSTGRESQL_BINARY_RESULTS.md](../architecture/POSTGRESQL_BINARY_RESULTS.md)
+for the full design (safe/unsafe type table, classification logic, why each exclusion
+exists).
+
 ## Local Test PostgreSQL Tuning
 
 Not query performance — this is durability tuning for the **local dev
