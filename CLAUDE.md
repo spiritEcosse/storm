@@ -546,6 +546,20 @@ so the concept genuinely rejects. Orthogonal to `Entity` (whole model type) and 
 
 See [docs/guide/reference/FIELD_TYPES.md](docs/guide/reference/FIELD_TYPES.md).
 
+**PostgreSQL binary result format (#600 Phase 1)**: PG SELECT-shaped queries request libpq
+binary result format — decoding network-byte-order bytes instead of ASCII-parsing text —
+whenever every selected column is a plain byte reinterpretation (bool/int/int64/double/
+float/text/blob), a compile-time whole-statement classification (`BaseStatement::
+pg_binary_safe_row_`) since libpq's format flag is per-statement, not per-column. `DATE`/
+`TIMESTAMP`/`UUID`/`full_unsigned`/FK members keep the whole statement on text, unchanged.
+PG-only via an `if constexpr (requires { stmt->set_result_binary(bool{}); })` probe —
+SQLite is untouched and the feature compiles away entirely there. Aggregates and
+RETURNING-id paths are deliberately not wired (their PG wire types don't match what the
+ORM extracts as; see the architecture doc). `storm_bench` has no PostgreSQL coverage yet
+(#601), so the ~34% figure cited is from an isolated raw-libpq microbenchmark, not a
+measured Storm result. See
+[docs/internals/architecture/POSTGRESQL_BINARY_RESULTS.md](docs/internals/architecture/POSTGRESQL_BINARY_RESULTS.md).
+
 ## Known Compiler Issues
 
 - **Module cache corruption**: Run build twice
