@@ -125,21 +125,22 @@ forget it until [#570], and `WHERE` (every comparison operator, `like()`,
 `between()`, `is_null()`/`is_not_null()`, and the `collate()` path) did until
 [#575] — all failed at runtime with `no such column: sender`.
 
-**`in()` does not support an FK member yet** (tracked as [#610]) — it is
-rejected at compile time rather than mis-emitted. `in()`'s operand is
-constructed to the member's declared type, which for a plain column is the
-bindable value itself but for an FK member is the **related model type**
-(e.g. `Person` for `Message::sender`), not its key — there is no key type to
-construct an `int` against. Filter with `==` comparisons chained through
-`||` instead, or wait for #610.
+**`in()` works on a single-column FK member** ([#610]) —
+`fields::Message.sender.in(1, 2, 3)` constructs each value against the FK
+**target's primary-key type** (not the related model type) and emits
+`sender_id IN (?, ?, ?)`. Comparing a field to a non-bindable operand (e.g.
+`fields::Message.sender == some_person_object`, passing a model struct
+instead of its key) is likewise a clean compile-time rejection rather than a
+hard error inside SQL generation.
 
 **One limitation.** If the FK's target has a *composite* primary key, the
 member has no single column — it spreads over `<member>_<part>` columns
 (e.g. `line_order_id`, `line_product_id`). `ORDER BY`, `COUNT(DISTINCT)` and
-`WHERE` all reject such a member at **compile time**, since none has a
-correct multi-column form: `ORDER BY`'s `ASC`/`DESC` would bind to the last
-part only, `COUNT(DISTINCT a, b)` is a syntax error in SQLite while
-PostgreSQL reads it as a row constructor, and `WHERE`'s row-value syntax
+`WHERE` (including `in()`) all reject such a member at **compile time**,
+since none has a correct multi-column form: `ORDER BY`'s `ASC`/`DESC` would
+bind to the last part only, `COUNT(DISTINCT a, b)` is a syntax error in
+SQLite while PostgreSQL reads it as a row constructor, `in()` has no single
+key type to construct each value against, and `WHERE`'s row-value syntax
 `(a, b) = (?, ?)` (used by [#501]'s composite-PK UPDATE/DELETE) would only
 ever be well-defined for `==`/`!=`, not for `>`, `LIKE`, `BETWEEN`, etc. — so
 `WHERE` stays rejected uniformly rather than accepting equality alone. Order,
