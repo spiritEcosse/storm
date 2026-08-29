@@ -15,6 +15,14 @@ set -u
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DETECTOR="$REPO_ROOT/scripts/detect-changes.sh"
 
+# Expected KEY=value strings, named once so scenarios below don't repeat the
+# same literal (SonarCloud S1192).
+SRC_TRUE="HAS_SRC_CHANGES=true";     SRC_FALSE="HAS_SRC_CHANGES=false"
+TEST_TRUE="HAS_TEST_CHANGES=true";   TEST_FALSE="HAS_TEST_CHANGES=false"
+CPP_TRUE="HAS_CPP_CHANGES=true";     CPP_FALSE="HAS_CPP_CHANGES=false"
+CMAKE_TRUE="HAS_CMAKE_CHANGES=true"; CMAKE_FALSE="HAS_CMAKE_CHANGES=false"
+BENCH_TRUE="HAS_BENCH_CHANGES=true"; BENCH_FALSE="HAS_BENCH_CHANGES=false"
+
 PASS=0
 FAIL=0
 FAILED_TESTS=()
@@ -87,15 +95,14 @@ assert_flags() {
 scenario_src_file_sets_src_and_cpp() {
     assert_flags "src/foo.cppm sets HAS_SRC_CHANGES + HAS_CPP_CHANGES" \
         "src/foo.cppm" \
-        --expect "HAS_SRC_CHANGES=true" "HAS_CPP_CHANGES=true" \
-                 "HAS_TEST_CHANGES=false" "HAS_CMAKE_CHANGES=false" "HAS_BENCH_CHANGES=false"
+        --expect "$SRC_TRUE" "$CPP_TRUE" "$TEST_FALSE" "$CMAKE_FALSE" "$BENCH_FALSE"
     return 0
 }
 
 scenario_test_file_sets_test_and_cpp() {
     assert_flags "tests/test_foo.cpp sets HAS_TEST_CHANGES + HAS_CPP_CHANGES" \
         "tests/test_foo.cpp" \
-        --expect "HAS_TEST_CHANGES=true" "HAS_CPP_CHANGES=true" "HAS_SRC_CHANGES=false"
+        --expect "$TEST_TRUE" "$CPP_TRUE" "$SRC_FALSE"
     return 0
 }
 
@@ -105,36 +112,35 @@ scenario_header_outside_src_still_sets_cpp() {
     # HAS_SRC/TEST_CHANGES don't apply.
     assert_flags "include/storm/storm.h sets HAS_CPP_CHANGES only" \
         "include/storm/storm.h" \
-        --expect "HAS_CPP_CHANGES=true" "HAS_SRC_CHANGES=false" "HAS_TEST_CHANGES=false"
+        --expect "$CPP_TRUE" "$SRC_FALSE" "$TEST_FALSE"
     return 0
 }
 
 scenario_cmake_file_sets_cmake_only() {
     assert_flags "cmake/foo.cmake sets HAS_CMAKE_CHANGES only" \
         "cmake/foo.cmake" \
-        --expect "HAS_CMAKE_CHANGES=true" "HAS_CPP_CHANGES=false" "HAS_SRC_CHANGES=false"
+        --expect "$CMAKE_TRUE" "$CPP_FALSE" "$SRC_FALSE"
     return 0
 }
 
 scenario_cmakelists_sets_cmake() {
     assert_flags "CMakeLists.txt sets HAS_CMAKE_CHANGES" \
         "src/CMakeLists.txt" \
-        --expect "HAS_CMAKE_CHANGES=true"
+        --expect "$CMAKE_TRUE"
     return 0
 }
 
 scenario_bench_file_sets_bench_only() {
     assert_flags "benchmarks/foo.cpp sets HAS_BENCH_CHANGES + HAS_CPP_CHANGES" \
         "benchmarks/foo.cpp" \
-        --expect "HAS_BENCH_CHANGES=true" "HAS_CPP_CHANGES=true" "HAS_SRC_CHANGES=false"
+        --expect "$BENCH_TRUE" "$CPP_TRUE" "$SRC_FALSE"
     return 0
 }
 
 scenario_docs_only_sets_nothing() {
     assert_flags "docs/README.md sets no flags" \
         "docs/README.md" \
-        --expect "HAS_SRC_CHANGES=false" "HAS_TEST_CHANGES=false" "HAS_CPP_CHANGES=false" \
-                 "HAS_CMAKE_CHANGES=false" "HAS_BENCH_CHANGES=false"
+        --expect "$SRC_FALSE" "$TEST_FALSE" "$CPP_FALSE" "$CMAKE_FALSE" "$BENCH_FALSE"
     return 0
 }
 
@@ -142,7 +148,7 @@ scenario_empty_input_sets_nothing() {
     local out rc
     out="$(printf '' | "$DETECTOR")"
     rc=$?
-    if [[ $rc -eq 0 ]] && grep -qxF "HAS_SRC_CHANGES=false" <<< "$out"; then
+    if [[ $rc -eq 0 ]] && grep -qxF "$SRC_FALSE" <<< "$out"; then
         pass "empty input exits 0 with every flag false"
     else
         fail "empty input — rc=$rc, output: $out"
@@ -153,7 +159,7 @@ scenario_empty_input_sets_nothing() {
 scenario_mixed_files_ors_flags() {
     assert_flags "docs + src together still sets HAS_SRC_CHANGES" \
         "docs/README.md" "src/foo.cppm" \
-        --expect "HAS_SRC_CHANGES=true" "HAS_CPP_CHANGES=true"
+        --expect "$SRC_TRUE" "$CPP_TRUE"
     return 0
 }
 
