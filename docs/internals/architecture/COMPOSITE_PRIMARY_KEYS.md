@@ -372,3 +372,35 @@ is how "caller assigns" gets *declared*: unlike a UUID (empty = unset), an integ
 indistinguishable from a deliberately-assigned zero, so it needs an annotation rather than a
 runtime check.
 
+### #573 — UPDATE/DELETE by an unset UUID key silently no-opped
+
+`BaseStatement::bind_one_pk_part` bound every by-key PK part (the WHERE clause `update(obj)` /
+`erase(obj)` use) through the generic `bind_value_by_type` → `bind_parameter_value` →
+`utilities::bind_uuid`, which **auto-generates a fresh random UUID when the value is empty**.
+Correct for a non-PK UUID column (an unset `storm::UUID` field on INSERT should get a value); wrong
+for a KEY used to locate a row. An unset key silently bound a random UUID into the WHERE clause,
+matched zero rows, and reported success — the #501/#502 failure mode (a hardcode/wrong-path only a
+non-default model shape reaches) one call site over, this time on the READ-back-by-key side rather
+than DDL or INSERT.
+
+INSERT already had the right guard (`bind_optional_or_uuid_pk_field` → `utilities::bind_uuid_pk`,
+which rejects an empty value instead of generating one — see "UUID-PK path was dead code until
+#565" above). The fix routes `bind_one_pk_part` through the same `bind_uuid_pk`, dispatched
+`if constexpr` on the part's own type (or, for an FK part, the referenced row's PK type via
+`find_fk_primary_key<FKType>()`) so an integer-PK model's bind is byte-identical to before — no
+runtime branch added to the single-row UPDATE/DELETE hot path.
+
+**Known residual gaps (not fixed here — same root cause, different call sites, tracked
+separately as #608 / #609):**
+
+- **INSERT of a composite key whose FK part targets a UUID key still auto-generates (#608).**
+  `bind_field_at_index` dispatches `is_fk_field(member)` *before* it would reach the UUID-PK guard,
+  so an FK `primary_part` never sees `bind_uuid_pk` on INSERT — only the by-key WHERE path (this
+  issue) and a bare (non-FK) UUID PK member (#565) are guarded. Not silent — SQLite (`PRAGMA
+  foreign_keys = ON`) and PostgreSQL both reject the fabricated key with a FOREIGN KEY constraint
+  error — but it names the wrong problem instead of #573's own guard message.
+- **A `.where(field == storm::UUID{})` filter comparison still auto-generates (#609).** WHERE
+  operands bind through `ComparisonExpr`/`InExpression`/`BetweenExpr` → `bind_parameter_value` →
+  `bind_uuid`, one level below where this fix landed — genuinely silent (no FK constraint to catch
+  it), whether or not `field` happens to be the PK.
+

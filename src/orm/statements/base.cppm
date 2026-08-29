@@ -1657,6 +1657,30 @@ export namespace storm::orm::statements {
             return result;
         }
 
+        // Bind a single PK-part VALUE at `index`, without advancing it. A UUID value is
+        // routed through bind_uuid_pk rather than bind_value_by_type (#573): the generic
+        // path falls into utilities::bind_uuid, which AUTO-GENERATES a fresh random UUID
+        // when the value is empty — correct for a non-PK UUID column, wrong for a KEY. An
+        // unset key would silently bind a random UUID into the WHERE clause, match zero
+        // rows, and report success. bind_uuid_pk rejects the empty value instead, the same
+        // guard INSERT already applies to a bare (non-FK) UUID PK member via
+        // bind_optional_or_uuid_pk_field — INSERT of a composite key whose FK PART targets
+        // a UUID key does NOT yet route through this guard (#608). The dispatch is
+        // `if constexpr` on the value's own type, so a non-UUID value compiles to exactly
+        // the bind_value_by_type call this replaces.
+        template <typename ConnType, typename ValueType>
+        [[nodiscard]] __attribute__((always_inline)) static auto
+        bind_pk_scalar(typename ConnType::Statement& stmt, int index, const ValueType& value) noexcept
+                -> std::expected<void, typename ConnType::Error> {
+            if constexpr (std::is_same_v<ValueType, storm::orm::utilities::UUID>) {
+                return utilities::bind_uuid_pk<typename ConnType::Statement, typename ConnType::Error>(
+                        stmt, index, value
+                );
+            } else {
+                return bind_value_by_type<ConnType>(stmt, index, value);
+            }
+        }
+
         // Bind one primary-key part at `index`. An FK part (the canonical
         // association-table shape) stores the referenced row's key, so bind THAT, not the
         // whole object — the same value the "<name>_id" column holds.
@@ -1671,9 +1695,9 @@ export namespace storm::orm::statements {
                 -> std::expected<void, typename ConnType::Error> {
             if constexpr (is_fk_field(Member)) {
                 using FKType = std::remove_cvref_t<decltype(obj.[:Member:])>;
-                return bind_value_by_type<ConnType>(stmt, index, obj.[:Member:].[:find_fk_primary_key<FKType>():]);
+                return bind_pk_scalar<ConnType>(stmt, index, obj.[:Member:].[:find_fk_primary_key<FKType>():]);
             } else {
-                return bind_value_by_type<ConnType>(stmt, index, obj.[:Member:]);
+                return bind_pk_scalar<ConnType>(stmt, index, obj.[:Member:]);
             }
         }
 

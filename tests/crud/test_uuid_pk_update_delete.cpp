@@ -1,0 +1,382 @@
+#include <gtest/gtest.h>
+#include <meta>
+
+#include "test_db_helpers.h"
+
+import storm;
+import std;
+
+#include "test_models.h" // NOSONAR cpp:S954 — StormTestFixture, ensure_tables
+
+// ── #573: UPDATE/DELETE by an unset UUID primary key silently no-ops ─────────
+//
+// bind_one_pk_part (src/orm/statements/base.cppm) routed every PK part through
+// bind_value_by_type -> bind_parameter_value -> utilities::bind_uuid, which
+// AUTO-GENERATES a fresh random UUID when the value is empty. Correct for a
+// non-PK UUID column, wrong for a KEY: the by-key WHERE clause bound a random
+// UUID, matched zero rows, and reported success — a silent no-op write with no
+// diagnostic. INSERT already guarded against this via bind_uuid_pk; the fix
+// routes bind_one_pk_part through the same guard.
+//
+// Three shapes, each round-tripped when the key IS set and rejected with
+// INSERT's own error message when it is not: a plain single UUID PK, a
+// composite key with a storm::UUID part, and an FK part whose target has a
+// UUID key.
+
+// NOLINTBEGIN(readability-implicit-bool-conversion)
+
+namespace {
+
+    // Plain single UUID PK — the minimal shape the defect needs.
+    struct UuidKeyedDoc {
+        [[= storm::primary]] storm::UUID id{};
+        std::string                      title;
+    };
+
+    // Composite key with a storm::UUID part alongside a plain int part.
+    struct UuidComposite {
+        [[= storm::primary_part]] storm::UUID  doc_id{};
+        [[= storm::primary_part]] std::int64_t version{};
+        std::string                            content;
+    };
+
+    // FK target with a UUID key.
+    struct UuidOwner {
+        [[= storm::primary]] storm::UUID id{};
+        std::string                      name;
+    };
+
+    // Composite key whose FK part's TARGET has a UUID key. bind_one_pk_part
+    // resolves an FK part to the referenced row's key (find_fk_primary_key), so
+    // that referenced value can itself be a storm::UUID — the same association-
+    // table shape as StockEntry/Person (test_composite_pk_models.h), widened to a
+    // UUID-keyed owner.
+    struct UuidRefEntry {
+        [[= storm::primary_part]][[= storm::fk<>]] UuidOwner owner;
+        [[= storm::primary_part]] int                        sku{};
+        int                                                  qty{};
+    };
+
+    constexpr std::string_view kDocUuid    = "11111111-1111-4111-8111-111111111111";
+    constexpr std::string_view kDocUuid2   = "22222222-2222-4222-8222-222222222222";
+    constexpr std::string_view kOwnerUuid  = "33333333-3333-4333-8333-333333333333";
+    constexpr std::string_view kOwnerUuid2 = "44444444-4444-4444-8444-444444444444";
+
+    constexpr std::string_view kExpectedError =
+            "Primary key UUID must be explicitly set; auto-generation not allowed for PKs";
+
+    // Shared by every fixture below — avoids repeating the same three-line body
+    // per model.
+    template <typename Model, typename ConnType> auto count_rows() -> int {
+        storm::QuerySet<Model, ConnType> qs;
+        auto                             result = qs.count().execute();
+        return result.has_value() ? static_cast<int>(result.value()) : -1;
+    }
+
+} // namespace
+
+namespace fields {
+
+    struct UuidKeyedDocT;
+    consteval {
+        std::meta::define_aggregate(^^UuidKeyedDocT, storm::field_specs_for(^^UuidKeyedDoc));
+    }
+    inline constexpr UuidKeyedDocT UuidKeyedDoc{};
+
+    struct UuidCompositeT;
+    consteval {
+        std::meta::define_aggregate(^^UuidCompositeT, storm::field_specs_for(^^UuidComposite));
+    }
+    inline constexpr UuidCompositeT UuidComposite{};
+
+} // namespace fields
+
+// ============================================================================
+// Plain single UUID PK
+// ============================================================================
+
+namespace {
+
+    template <typename ConnType> class UuidKeyedDocTest : public StormTestFixture<UuidKeyedDoc, ConnType> {
+      public:
+        // Two rows, not one: a test that only checks "the row count dropped to
+        // zero" or "the one row changed" would pass identically against a WHERE
+        // clause that matched every row. Seeding a second, untouched row lets
+        // every round-trip assertion below prove the UUID key is load-bearing in
+        // the emitted predicate, not just present.
+        auto on_after_setup(const std::shared_ptr<ConnType>& /*conn*/) -> void override {
+            storm::QuerySet<UuidKeyedDoc, ConnType> qs;
+            ASSERT_TRUE(qs.template insert<storm::orm::statements::ReturnId::No>(
+                                  UuidKeyedDoc{.id = storm::UUID{kDocUuid}, .title = "Original"}
+            )
+                                .execute()
+                                .has_value());
+            ASSERT_TRUE(qs.template insert<storm::orm::statements::ReturnId::No>(
+                                  UuidKeyedDoc{.id = storm::UUID{kDocUuid2}, .title = "Other"}
+            )
+                                .execute()
+                                .has_value());
+        }
+
+        static auto title_of(std::string_view id) -> std::string {
+            storm::QuerySet<UuidKeyedDoc, ConnType> qs;
+            auto rows = qs.where(fields::UuidKeyedDoc.id == storm::UUID{id}).select().execute();
+            if (!rows.has_value() || rows.value().empty()) {
+                return "<missing>";
+            }
+            return rows.value().begin()->title;
+        }
+    };
+
+} // namespace
+TYPED_TEST_SUITE(UuidKeyedDocTest, DatabaseTypes);
+
+// The core defect: an unset key must ERROR, not silently match zero rows.
+TYPED_TEST(UuidKeyedDocTest, UpdateWithEmptyKeyIsRejected) {
+    storm::QuerySet<UuidKeyedDoc, TypeParam> qs;
+    auto result = qs.update(UuidKeyedDoc{.id = storm::UUID{}, .title = "changed"}).execute();
+    ASSERT_FALSE(result.has_value()) << "an unset UUID key must not silently no-op";
+    EXPECT_EQ(result.error().message(), kExpectedError) << "must match INSERT's own guard message";
+    EXPECT_EQ(this->title_of(kDocUuid), "Original") << "the existing row must be untouched";
+}
+
+TYPED_TEST(UuidKeyedDocTest, EraseWithEmptyKeyIsRejected) {
+    storm::QuerySet<UuidKeyedDoc, TypeParam> qs;
+    auto result = qs.erase(UuidKeyedDoc{.id = storm::UUID{}, .title = "irrelevant"}).execute();
+    ASSERT_FALSE(result.has_value()) << "an unset UUID key must not silently delete a random row";
+    EXPECT_EQ(result.error().message(), kExpectedError);
+    EXPECT_EQ((count_rows<UuidKeyedDoc, TypeParam>()), 2) << "both existing rows must survive";
+}
+
+// A SET key still round-trips correctly, and touches ONLY the matching row.
+TYPED_TEST(UuidKeyedDocTest, UpdateWithSetKeyUpdatesTheMatchingRow) {
+    storm::QuerySet<UuidKeyedDoc, TypeParam> qs;
+    auto result = qs.update(UuidKeyedDoc{.id = storm::UUID{kDocUuid}, .title = "Updated"}).execute();
+    ASSERT_TRUE(result.has_value()) << result.error().message();
+    EXPECT_EQ(this->title_of(kDocUuid), "Updated");
+    EXPECT_EQ(this->title_of(kDocUuid2), "Other") << "the other row's key must discriminate it from the update";
+}
+
+TYPED_TEST(UuidKeyedDocTest, EraseWithSetKeyDeletesTheMatchingRow) {
+    storm::QuerySet<UuidKeyedDoc, TypeParam> qs;
+    auto result = qs.erase(UuidKeyedDoc{.id = storm::UUID{kDocUuid}, .title = "irrelevant"}).execute();
+    ASSERT_TRUE(result.has_value()) << result.error().message();
+    EXPECT_EQ((count_rows<UuidKeyedDoc, TypeParam>()), 1);
+    EXPECT_EQ(this->title_of(kDocUuid2), "Other") << "the other row's key must discriminate it from the delete";
+}
+
+// Batch UPDATE/DELETE route through the same bind_pk_values_impl fold as the
+// single-row path; an empty key anywhere in the batch must reject the WHOLE
+// call, not silently skip just that element.
+//
+// Batch UPDATE (update.cppm execute_batch) wraps every row in one
+// TransactionGuard and returns as soon as one reset_bind_execute fails —
+// without calling commit() — so an EARLIER successful row in the same batch
+// must be rolled back too.
+TYPED_TEST(UuidKeyedDocTest, BatchUpdateWithOneEmptyKeyRollsBackTheEarlierRow) {
+    storm::QuerySet<UuidKeyedDoc, TypeParam> qs;
+    const std::vector<UuidKeyedDoc>          updates{
+                     {.id = storm::UUID{kDocUuid}, .title = "Updated"},
+                     {.id = storm::UUID{}, .title = "Bad"},
+    };
+    auto result = qs.update(std::span<const UuidKeyedDoc>(updates)).execute();
+    ASSERT_FALSE(result.has_value()) << "any empty key in the batch must be rejected";
+    EXPECT_EQ(result.error().message(), kExpectedError);
+    EXPECT_EQ(this->title_of(kDocUuid), "Original")
+            << "the earlier successful UPDATE in the same batch must be rolled back";
+}
+
+// Batch DELETE (erase.cppm bind_pks_and_execute) binds every row's key into
+// ONE bulk "IN" statement before calling execute() once — a bind failure on
+// any row means the statement never runs at all, so nothing is deleted.
+TYPED_TEST(UuidKeyedDocTest, BatchEraseWithOneEmptyKeyDeletesNothing) {
+    storm::QuerySet<UuidKeyedDoc, TypeParam> qs;
+    const std::vector<UuidKeyedDoc>          targets{
+                     {.id = storm::UUID{kDocUuid}, .title = "irrelevant"},
+                     {.id = storm::UUID{}, .title = "irrelevant"},
+    };
+    auto result = qs.erase(std::span<const UuidKeyedDoc>(targets)).execute();
+    ASSERT_FALSE(result.has_value()) << "any empty key in the batch must be rejected";
+    EXPECT_EQ(result.error().message(), kExpectedError);
+    EXPECT_EQ((count_rows<UuidKeyedDoc, TypeParam>()), 2) << "the bulk DELETE must not have executed at all";
+}
+
+// ============================================================================
+// Composite key with a storm::UUID part
+// ============================================================================
+
+namespace {
+
+    template <typename ConnType> class UuidCompositeTest : public StormTestFixture<UuidComposite, ConnType> {
+      public:
+        // The second row shares `version` with the first but differs in `doc_id`
+        // — the only case that proves the UUID part itself discriminates in the
+        // emitted predicate, rather than the int part alone doing all the work
+        // (which PartialKeyMatchUpdatesNothing below already covers separately).
+        auto on_after_setup(const std::shared_ptr<ConnType>& /*conn*/) -> void override {
+            storm::QuerySet<UuidComposite, ConnType> qs;
+            ASSERT_TRUE(qs.insert(UuidComposite{.doc_id = storm::UUID{kDocUuid}, .version = 1, .content = "Original"})
+                                .execute()
+                                .has_value());
+            ASSERT_TRUE(qs.insert(UuidComposite{.doc_id = storm::UUID{kDocUuid2}, .version = 1, .content = "Other doc"})
+                                .execute()
+                                .has_value());
+        }
+
+        static auto content_of(std::string_view doc_id, std::int64_t version) -> std::string {
+            storm::QuerySet<UuidComposite, ConnType> qs;
+            auto rows = qs.where(fields::UuidComposite.doc_id == storm::UUID{doc_id} &&
+                                 fields::UuidComposite.version == version)
+                                .select()
+                                .execute();
+            if (!rows.has_value() || rows.value().empty()) {
+                return "<missing>";
+            }
+            return rows.value().begin()->content;
+        }
+    };
+
+} // namespace
+TYPED_TEST_SUITE(UuidCompositeTest, DatabaseTypes);
+
+TYPED_TEST(UuidCompositeTest, UpdateWithEmptyUuidPartIsRejected) {
+    storm::QuerySet<UuidComposite, TypeParam> qs;
+    auto result = qs.update(UuidComposite{.doc_id = storm::UUID{}, .version = 1, .content = "changed"}).execute();
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().message(), kExpectedError);
+    EXPECT_EQ(this->content_of(kDocUuid, 1), "Original");
+}
+
+TYPED_TEST(UuidCompositeTest, EraseWithEmptyUuidPartIsRejected) {
+    storm::QuerySet<UuidComposite, TypeParam> qs;
+    auto result = qs.erase(UuidComposite{.doc_id = storm::UUID{}, .version = 1, .content = "irrelevant"}).execute();
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().message(), kExpectedError);
+    EXPECT_EQ((count_rows<UuidComposite, TypeParam>()), 2);
+}
+
+// The other row shares `version` — only the UUID part differs — so this also
+// proves the UUID part is load-bearing in the emitted predicate.
+TYPED_TEST(UuidCompositeTest, UpdateWithSetKeyUpdatesTheMatchingRow) {
+    storm::QuerySet<UuidComposite, TypeParam> qs;
+    auto                                      result =
+            qs.update(UuidComposite{.doc_id = storm::UUID{kDocUuid}, .version = 1, .content = "Updated"}).execute();
+    ASSERT_TRUE(result.has_value()) << result.error().message();
+    EXPECT_EQ(this->content_of(kDocUuid, 1), "Updated");
+    EXPECT_EQ(this->content_of(kDocUuid2, 1), "Other doc") << "the other row's doc_id must discriminate it";
+}
+
+TYPED_TEST(UuidCompositeTest, EraseWithSetKeyDeletesTheMatchingRow) {
+    storm::QuerySet<UuidComposite, TypeParam> qs;
+    auto                                      result =
+            qs.erase(UuidComposite{.doc_id = storm::UUID{kDocUuid}, .version = 1, .content = "irrelevant"}).execute();
+    ASSERT_TRUE(result.has_value()) << result.error().message();
+    EXPECT_EQ((count_rows<UuidComposite, TypeParam>()), 1);
+    EXPECT_EQ(this->content_of(kDocUuid2, 1), "Other doc") << "the other row's doc_id must discriminate it";
+}
+
+// A mismatched second (int) part must not match — proves the UUID part alone
+// isn't treated as the whole key.
+TYPED_TEST(UuidCompositeTest, PartialKeyMatchUpdatesNothing) {
+    storm::QuerySet<UuidComposite, TypeParam> qs;
+    auto                                      result =
+            qs.update(UuidComposite{.doc_id = storm::UUID{kDocUuid}, .version = 99, .content = "changed"}).execute();
+    ASSERT_TRUE(result.has_value()) << result.error().message();
+    EXPECT_EQ(this->content_of(kDocUuid, 1), "Original") << "a different version part must not match";
+}
+
+// ============================================================================
+// FK part whose target has a UUID key
+// ============================================================================
+
+namespace {
+
+    template <typename ConnType> class UuidRefEntryTest : public StormTestFixture<UuidRefEntry, ConnType> {
+      public:
+        // The FK target table must exist before the referencing table.
+        auto on_setup(const std::shared_ptr<ConnType>& conn) -> void override {
+            ASSERT_TRUE((storm::test::ensure_tables<ConnType, UuidOwner>(conn))) << "Failed to create UuidOwner";
+            StormTestFixture<UuidRefEntry, ConnType>::on_setup(conn);
+        }
+
+        // A second owner + row with the SAME sku proves the FK part's UUID value
+        // itself discriminates in the emitted predicate, not just sku alone.
+        auto on_after_setup(const std::shared_ptr<ConnType>& /*conn*/) -> void override {
+            storm::QuerySet<UuidOwner, ConnType> owner_qs;
+            ASSERT_TRUE(owner_qs.template insert<storm::orm::statements::ReturnId::No>(
+                                        UuidOwner{.id = storm::UUID{kOwnerUuid}, .name = "Owner"}
+            )
+                                .execute()
+                                .has_value());
+            ASSERT_TRUE(owner_qs.template insert<storm::orm::statements::ReturnId::No>(
+                                        UuidOwner{.id = storm::UUID{kOwnerUuid2}, .name = "Other owner"}
+            )
+                                .execute()
+                                .has_value());
+
+            storm::QuerySet<UuidRefEntry, ConnType> qs;
+            ASSERT_TRUE(qs.insert(UuidRefEntry{.owner = {.id = storm::UUID{kOwnerUuid}}, .sku = 10, .qty = 5})
+                                .execute()
+                                .has_value());
+            ASSERT_TRUE(qs.insert(UuidRefEntry{.owner = {.id = storm::UUID{kOwnerUuid2}}, .sku = 10, .qty = 7})
+                                .execute()
+                                .has_value());
+        }
+
+        // Selects every row and matches the key in C++ — filtering on the FK member
+        // itself is out of scope here (see the identical rationale in
+        // test_composite_pk_crud_body.h's StockEntryTest::qty_of).
+        static auto qty_of(std::string_view owner_id, int sku) -> int {
+            storm::QuerySet<UuidRefEntry, ConnType> qs;
+            auto                                    rows = qs.select().execute();
+            if (!rows.has_value()) {
+                return -1;
+            }
+            for (const UuidRefEntry& row : rows.value()) {
+                if (row.owner.id.value == owner_id && row.sku == sku) {
+                    return row.qty;
+                }
+            }
+            return -1;
+        }
+    };
+
+} // namespace
+TYPED_TEST_SUITE(UuidRefEntryTest, DatabaseTypes);
+
+TYPED_TEST(UuidRefEntryTest, UpdateWithEmptyOwnerKeyIsRejected) {
+    storm::QuerySet<UuidRefEntry, TypeParam> qs;
+    auto result = qs.update(UuidRefEntry{.owner = {.id = storm::UUID{}}, .sku = 10, .qty = 900}).execute();
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().message(), kExpectedError);
+    EXPECT_EQ(this->qty_of(kOwnerUuid, 10), 5);
+}
+
+TYPED_TEST(UuidRefEntryTest, EraseWithEmptyOwnerKeyIsRejected) {
+    storm::QuerySet<UuidRefEntry, TypeParam> qs;
+    auto result = qs.erase(UuidRefEntry{.owner = {.id = storm::UUID{}}, .sku = 10}).execute();
+    ASSERT_FALSE(result.has_value());
+    EXPECT_EQ(result.error().message(), kExpectedError);
+    EXPECT_EQ((count_rows<UuidRefEntry, TypeParam>()), 2);
+}
+
+// The other row shares `sku` — only the FK part's owner UUID differs — so
+// this proves that value reaches the owner_id placeholder rather than some
+// other slot.
+TYPED_TEST(UuidRefEntryTest, UpdateWithSetOwnerKeyUpdatesTheMatchingRow) {
+    storm::QuerySet<UuidRefEntry, TypeParam> qs;
+    auto result = qs.update(UuidRefEntry{.owner = {.id = storm::UUID{kOwnerUuid}}, .sku = 10, .qty = 900}).execute();
+    ASSERT_TRUE(result.has_value()) << result.error().message();
+    EXPECT_EQ(this->qty_of(kOwnerUuid, 10), 900);
+    EXPECT_EQ(this->qty_of(kOwnerUuid2, 10), 7) << "the other owner's row must be untouched";
+}
+
+TYPED_TEST(UuidRefEntryTest, EraseWithSetOwnerKeyDeletesTheMatchingRow) {
+    storm::QuerySet<UuidRefEntry, TypeParam> qs;
+    auto result = qs.erase(UuidRefEntry{.owner = {.id = storm::UUID{kOwnerUuid}}, .sku = 10}).execute();
+    ASSERT_TRUE(result.has_value()) << result.error().message();
+    EXPECT_EQ((count_rows<UuidRefEntry, TypeParam>()), 1);
+    EXPECT_EQ(this->qty_of(kOwnerUuid2, 10), 7) << "the other owner's row must survive";
+}
+
+// NOLINTEND(readability-implicit-bool-conversion)

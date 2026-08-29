@@ -506,7 +506,11 @@ qs.insert(user).execute();  // std::expected<void, Error> — nothing to return 
   one junction. See
   [REFERENTIAL_INTEGRITY.md](../features/REFERENTIAL_INTEGRITY.md#junction-column-type-follows-the-referenced-key-565).
 - **Foreign keys, m2m, and reverse-FK eager loading** work identically to integer PKs, with **no performance impact** — integer PKs are byte-identical (zero codegen overhead).
-- **SELECT / UPDATE / DELETE by UUID PK** work identically to integer PKs. The WHERE clause binds the UUID value the same way as non-PK UUID columns.
+- **SELECT by UUID PK** works identically to integer PKs.
+- **UPDATE / DELETE by UUID PK reject an unset (empty) key** with the same error INSERT raises
+  ("Primary key UUID must be explicitly set; auto-generation not allowed for PKs", #573) instead of
+  silently matching zero rows. The by-key WHERE clause binds the key through the PK-specific
+  binder, not the auto-generating binder non-PK UUID columns use.
 - **Thread safety**: Same as integer PKs — per-thread `QuerySet` instances with thread-local connections.
 
 **Example with foreign keys:**
