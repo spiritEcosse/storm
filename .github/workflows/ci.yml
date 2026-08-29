@@ -7,6 +7,87 @@ on:
     branches: [develop]
 
 jobs:
+  # Classifies the diff (PR: against the exact base commit recorded on the PR
+  # event; push: against the pre-push SHA) via scripts/detect-changes.sh —
+  # the same script commit.sh uses for its staged-file smart skips, so both
+  # places agree on what counts as "src/tests/cmake changed". `run_heavy`
+  # gates the expensive `test` / `coverage` / `clang-p2996-host-layout` jobs
+  # below: a PR touching only docs/ or unrelated top-level files skips
+  # straight to green on those instead of spinning up the full matrix. A
+  # required status check whose job is skipped via job-level `if:` is
+  # reported by GitHub as passed, so this does not block merges on develop's
+  # branch protection.
+  #
+  # Fail-closed by design: this job's output defaults every consumer's `if:`
+  # to "run" unless it explicitly says `run_heavy == 'false'` (see those
+  # jobs below) — so a failed/erroring changes job, or a detect-changes.sh
+  # that produced no output, runs the full suite instead of silently
+  # skipping it. Also always runs heavy jobs when anything CI itself
+  # consumes changes (workflows, scripts/, .githooks/, CMakePresets.json,
+  # commit.sh) — see the grep below — so an edit to that plumbing gets
+  # verified by the very jobs it configures instead of skipping itself.
+  changes:
+    name: detect changed files
+    runs-on: ubuntu-24.04
+    outputs:
+      run_heavy: ${{ steps.detect.outputs.run_heavy }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Self-test detect-changes.sh
+        run: ./scripts/tests/test_detect_changes.sh
+
+      - name: Detect changed files
+        id: detect
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            # The exact base commit GitHub recorded when the PR event fired —
+            # not a live lookup of origin/develop's current tip, which could
+            # have moved since (and would then diff in develop's own newer
+            # commits alongside the PR's).
+            files=$(git diff --name-only "$BASE_SHA" HEAD)
+          elif [ -n "$BEFORE_SHA" ] && [ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]; then
+            files=$(git diff --name-only "$BEFORE_SHA" HEAD)
+          else
+            # New/recreated branch, or no usable prior SHA — nothing to
+            # safely diff against. Default to the safe choice: run
+            # everything, rather than guessing at a diff base.
+            echo "No prior SHA to diff against — defaulting to run_heavy=true"
+            echo "run_heavy=true" | tee -a "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "Changed files:"
+          echo "$files"
+
+          detected=$(printf '%s\n' "$files" | ./scripts/detect-changes.sh)
+          eval "$detected"
+          : "${HAS_SRC_CHANGES:?detect-changes.sh produced no output}"
+
+          run_heavy=false
+          if [[ "$HAS_SRC_CHANGES" == true || "$HAS_TEST_CHANGES" == true \
+             || "$HAS_CPP_CHANGES" == true || "$HAS_CMAKE_CHANGES" == true \
+             || "$HAS_BENCH_CHANGES" == true ]]; then
+            run_heavy=true
+          fi
+
+          # Anything CI itself reads or runs forces a full run, regardless of
+          # the src/tests/cmake classification above.
+          if grep -qE '^(\.github/workflows/|scripts/|\.githooks/|CMakePresets\.json$|commit\.sh$)' <<< "$files"; then
+            run_heavy=true
+          fi
+
+          echo "run_heavy=$run_heavy" | tee -a "$GITHUB_OUTPUT"
+
   # The storm-ci image digest is pinned in more than one workflow (ci.yml and
   # clang-tidy-sweep.yml). A job's `container.image` is resolved before any step
   # runs, so it cannot read `env:` or a shared file — the pins have to be literal
@@ -68,6 +149,8 @@ jobs:
   # hence the storm-ci container rather than bare ubuntu-24.04's older apt cmake.
   clang-p2996-host-layout:
     name: clang-p2996 host-layout resolution
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.run_heavy != 'false' }}
     runs-on: ubuntu-24.04
     container:
       # Pinned to a specific digest so develop is unaffected by storm-ci image
@@ -89,6 +172,8 @@ jobs:
     # false positive in clang-p2996's MSAN + import std; combination, so the
     # preset produces no signal. Re-add the matrix entry once a fixed
     # clang-p2996 build lands (track at #326).
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.run_heavy != 'false' }}
     runs-on: ubuntu-24.04
     container:
       # Pinned to a specific digest so develop is unaffected by storm-ci image
@@ -252,6 +337,8 @@ jobs:
   # it starts gating PR turnaround.
   coverage:
     name: coverage (100% lines, filtered)
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.run_heavy != 'false' }}
     runs-on: ubuntu-24.04
     container:
       # Keep in sync with the `test` job's pin — digest-guard asserts they agree.
