@@ -134,15 +134,20 @@ TYPED_TEST(FkColumnNameTest, WhereFkMemberSqlNamesFkColumn) {
 // derivation silently.
 TYPED_TEST(FkColumnNameTest, WhereFkMemberRemainingOperatorsSqlNameFkColumn) {
     QuerySet<Message, TypeParam> qs;
-    EXPECT_TRUE(qs.where(fields::Message.sender > 1).select().sql().contains("WHERE sender_id > ?"));
-    EXPECT_TRUE(qs.where(fields::Message.sender >= 1).select().sql().contains("WHERE sender_id >= ?"));
-    EXPECT_TRUE(qs.where(fields::Message.sender < 1).select().sql().contains("WHERE sender_id < ?"));
-    EXPECT_TRUE(qs.where(fields::Message.sender <= 1).select().sql().contains("WHERE sender_id <= ?"));
-    EXPECT_TRUE(
-        qs.where(fields::Message.sender.between(1, 2)).select().sql().contains("WHERE sender_id BETWEEN ? AND ?"));
+    auto sql = qs.where(fields::Message.sender > 1).select().sql();
+    EXPECT_TRUE(sql.contains("WHERE sender_id > ?")) << "Emitted SQL: " << sql;
+    sql = qs.where(fields::Message.sender >= 1).select().sql();
+    EXPECT_TRUE(sql.contains("WHERE sender_id >= ?")) << "Emitted SQL: " << sql;
+    sql = qs.where(fields::Message.sender < 1).select().sql();
+    EXPECT_TRUE(sql.contains("WHERE sender_id < ?")) << "Emitted SQL: " << sql;
+    sql = qs.where(fields::Message.sender <= 1).select().sql();
+    EXPECT_TRUE(sql.contains("WHERE sender_id <= ?")) << "Emitted SQL: " << sql;
+    sql = qs.where(fields::Message.sender.between(1, 2)).select().sql();
+    EXPECT_TRUE(sql.contains("WHERE sender_id BETWEEN ? AND ?")) << "Emitted SQL: " << sql;
     // like() is SQL-text only here — LIKE against an integer column is nonsensical to
     // execute, but the writer must still name the right column.
-    EXPECT_TRUE(qs.where(fields::Message.sender.like("1%")).select().sql().contains("WHERE sender_id LIKE ?"));
+    sql = qs.where(fields::Message.sender.like("1%")).select().sql();
+    EXPECT_TRUE(sql.contains("WHERE sender_id LIKE ?")) << "Emitted SQL: " << sql;
 }
 
 // The collate() path (where.cppm CollatedField::make_collated_name) shares the writer bug

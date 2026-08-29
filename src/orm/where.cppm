@@ -431,74 +431,33 @@ export namespace storm::orm::where {
         // inside make_in_expr instead of a clean rejection at this call site. The other
         // comparison operators are unaffected: they route the raw operand through
         // normalize_operand directly, never through FieldType, so `sender == 1` works.
+        // !is_fk_field alone is the whole gate here — it already implies SingleColumnMember
+        // (column_span_of returns 1 immediately for a non-FK member), so that conjunct is
+        // not repeated.
         template <typename... Values>
-            requires(std::constructible_from<FieldType, Values> && ...) &&
-                    storm::meta::SingleColumnMember<MemberInfo> && (!storm::meta::is_fk_field(MemberInfo))
+            requires(std::constructible_from<FieldType, Values> && ...) && (!storm::meta::is_fk_field(MemberInfo))
         auto in(Values&&... values) const {
             return where::make_in_expr<FieldType>(collated_name_, std::forward<Values>(values)...);
         }
 
-        template <typename V>
-        auto operator==(V&& value) const -> Expr
-            requires storm::meta::SingleColumnMember<MemberInfo>
-        {
-            return make_comparison(CompOp::Equal, std::forward<V>(value));
-        }
-
-        template <typename V>
-        auto operator!=(V&& value) const -> Expr
-            requires storm::meta::SingleColumnMember<MemberInfo>
-        {
-            return make_comparison(CompOp::NotEqual, std::forward<V>(value));
-        }
-
-        template <typename V>
-        auto operator>(V&& value) const -> Expr
-            requires storm::meta::SingleColumnMember<MemberInfo>
-        {
-            return make_comparison(CompOp::Greater, std::forward<V>(value));
-        }
-
-        template <typename V>
-        auto operator>=(V&& value) const -> Expr
-            requires storm::meta::SingleColumnMember<MemberInfo>
-        {
-            return make_comparison(CompOp::GreaterEqual, std::forward<V>(value));
-        }
-
-        template <typename V>
-        auto operator<(V&& value) const -> Expr
-            requires storm::meta::SingleColumnMember<MemberInfo>
-        {
-            return make_comparison(CompOp::Less, std::forward<V>(value));
-        }
-
-        template <typename V>
-        auto operator<=(V&& value) const -> Expr
-            requires storm::meta::SingleColumnMember<MemberInfo>
-        {
-            return make_comparison(CompOp::LessEqual, std::forward<V>(value));
-        }
-
+        // Comparison/pattern operators, gated on SingleColumnMember (#575): a composite-PK FK
+        // target has no single column to compare against. One line per method (clang-format
+        // off) — the OwnLine multi-line requires-clause form the formatter otherwise produces
+        // duplicates near-identically across this class's twin below.
         // clang-format off
+        template <typename V> auto operator==(V&& value) const -> Expr requires storm::meta::SingleColumnMember<MemberInfo> { return make_comparison(CompOp::Equal, std::forward<V>(value)); }
+        template <typename V> auto operator!=(V&& value) const -> Expr requires storm::meta::SingleColumnMember<MemberInfo> { return make_comparison(CompOp::NotEqual, std::forward<V>(value)); }
+        template <typename V> auto operator>(V&& value)  const -> Expr requires storm::meta::SingleColumnMember<MemberInfo> { return make_comparison(CompOp::Greater, std::forward<V>(value)); }
+        template <typename V> auto operator>=(V&& value) const -> Expr requires storm::meta::SingleColumnMember<MemberInfo> { return make_comparison(CompOp::GreaterEqual, std::forward<V>(value)); }
+        template <typename V> auto operator<(V&& value)  const -> Expr requires storm::meta::SingleColumnMember<MemberInfo> { return make_comparison(CompOp::Less, std::forward<V>(value)); }
+        template <typename V> auto operator<=(V&& value) const -> Expr requires storm::meta::SingleColumnMember<MemberInfo> { return make_comparison(CompOp::LessEqual, std::forward<V>(value)); }
         [[nodiscard]] auto is_null()     const -> Expr requires (NullableField<FieldType> && storm::meta::SingleColumnMember<MemberInfo>) { return make_null_check_expr(collated_name_, true); }
         [[nodiscard]] auto is_not_null() const -> Expr requires (NullableField<FieldType> && storm::meta::SingleColumnMember<MemberInfo>) { return make_null_check_expr(collated_name_, false); }
         auto operator==(std::nullopt_t /*unused*/)  const -> Expr requires (NullableField<FieldType> && storm::meta::SingleColumnMember<MemberInfo>) { return is_null(); }
         auto operator!=(std::nullopt_t /*unused*/)  const -> Expr requires (NullableField<FieldType> && storm::meta::SingleColumnMember<MemberInfo>) { return is_not_null(); }
+        [[nodiscard]] auto like(std::string_view pattern) const -> Expr requires storm::meta::SingleColumnMember<MemberInfo> { return where::make_like_expr(collated_name_, pattern); }
+        template <typename V> auto between(V&& min_val, V&& max_val) const -> Expr requires storm::meta::SingleColumnMember<MemberInfo> { return where::make_between_expr(collated_name_, std::forward<V>(min_val), std::forward<V>(max_val)); }
         // clang-format on
-
-        [[nodiscard]] auto like(std::string_view pattern) const -> Expr
-            requires storm::meta::SingleColumnMember<MemberInfo>
-        {
-            return where::make_like_expr(collated_name_, pattern);
-        }
-
-        template <typename V>
-        auto between(V&& min_val, V&& max_val) const -> Expr
-            requires storm::meta::SingleColumnMember<MemberInfo>
-        {
-            return where::make_between_expr(collated_name_, std::forward<V>(min_val), std::forward<V>(max_val));
-        }
 
       private:
         std::string collated_name_;
@@ -558,57 +517,20 @@ export namespace storm::orm::where {
         // at compile time rather than mis-emitted, matching the #570 ORDER BY/COUNT(DISTINCT)
         // policy. WHERE (a, b) = (?, ?) row-value syntax exists on both backends but is not
         // wired here: it would only ever be well-defined for ==/!=, not for >, LIKE, BETWEEN, etc.
-        template <typename V>
-        auto operator==(V&& value) const -> Expr
-            requires storm::meta::SingleColumnMember<MemberInfo>
-        {
-            return make_comp(CompOp::Equal, std::forward<V>(value));
-        }
-        template <typename V>
-        auto operator!=(V&& value) const -> Expr
-            requires storm::meta::SingleColumnMember<MemberInfo>
-        {
-            return make_comp(CompOp::NotEqual, std::forward<V>(value));
-        }
-        template <typename V>
-        auto operator>(V&& value) const -> Expr
-            requires storm::meta::SingleColumnMember<MemberInfo>
-        {
-            return make_comp(CompOp::Greater, std::forward<V>(value));
-        }
-        template <typename V>
-        auto operator>=(V&& value) const -> Expr
-            requires storm::meta::SingleColumnMember<MemberInfo>
-        {
-            return make_comp(CompOp::GreaterEqual, std::forward<V>(value));
-        }
-        template <typename V>
-        auto operator<(V&& value) const -> Expr
-            requires storm::meta::SingleColumnMember<MemberInfo>
-        {
-            return make_comp(CompOp::Less, std::forward<V>(value));
-        }
-        template <typename V>
-        auto operator<=(V&& value) const -> Expr
-            requires storm::meta::SingleColumnMember<MemberInfo>
-        {
-            return make_comp(CompOp::LessEqual, std::forward<V>(value));
-        }
-
-        // NULL check methods — constrained to std::optional<T> fields only
+        // One line per method (clang-format off) — see CollatedField's twin block above.
         // clang-format off
+        template <typename V> auto operator==(V&& value) const -> Expr requires storm::meta::SingleColumnMember<MemberInfo> { return make_comp(CompOp::Equal, std::forward<V>(value)); }
+        template <typename V> auto operator!=(V&& value) const -> Expr requires storm::meta::SingleColumnMember<MemberInfo> { return make_comp(CompOp::NotEqual, std::forward<V>(value)); }
+        template <typename V> auto operator>(V&& value)  const -> Expr requires storm::meta::SingleColumnMember<MemberInfo> { return make_comp(CompOp::Greater, std::forward<V>(value)); }
+        template <typename V> auto operator>=(V&& value) const -> Expr requires storm::meta::SingleColumnMember<MemberInfo> { return make_comp(CompOp::GreaterEqual, std::forward<V>(value)); }
+        template <typename V> auto operator<(V&& value)  const -> Expr requires storm::meta::SingleColumnMember<MemberInfo> { return make_comp(CompOp::Less, std::forward<V>(value)); }
+        template <typename V> auto operator<=(V&& value) const -> Expr requires storm::meta::SingleColumnMember<MemberInfo> { return make_comp(CompOp::LessEqual, std::forward<V>(value)); }
         [[nodiscard]] auto is_null()     const -> Expr requires (NullableField<FieldType> && storm::meta::SingleColumnMember<MemberInfo>) { return make_null_check_expr(std::string(field_name_sv), true); }
         [[nodiscard]] auto is_not_null() const -> Expr requires (NullableField<FieldType> && storm::meta::SingleColumnMember<MemberInfo>) { return make_null_check_expr(std::string(field_name_sv), false); }
         auto operator==(std::nullopt_t /*unused*/)  const -> Expr requires (NullableField<FieldType> && storm::meta::SingleColumnMember<MemberInfo>) { return is_null(); }
         auto operator!=(std::nullopt_t /*unused*/)  const -> Expr requires (NullableField<FieldType> && storm::meta::SingleColumnMember<MemberInfo>) { return is_not_null(); }
+        [[nodiscard]] auto like(std::string_view pattern) const -> Expr requires storm::meta::SingleColumnMember<MemberInfo> { return where::make_like_expr(std::string(field_name_sv), pattern); }
         // clang-format on
-
-        // Special methods - return VARIANT-BASED Expr
-        [[nodiscard]] auto like(std::string_view pattern) const -> Expr
-            requires storm::meta::SingleColumnMember<MemberInfo>
-        {
-            return where::make_like_expr(std::string(field_name_sv), pattern);
-        }
 
         template <typename V>
         auto between(V&& min_val, V&& max_val) const -> Expr

@@ -130,8 +130,8 @@ rejected at compile time rather than mis-emitted. `in()`'s operand is
 constructed to the member's declared type, which for a plain column is the
 bindable value itself but for an FK member is the **related model type**
 (e.g. `Person` for `Message::sender`), not its key — there is no key type to
-construct an `int` against. Filter with `==`/`in()` chained through `||`, or
-wait for #610.
+construct an `int` against. Filter with `==` comparisons chained through
+`||` instead, or wait for #610.
 
 **One limitation.** If the FK's target has a *composite* primary key, the
 member has no single column — it spreads over `<member>_<part>` columns
