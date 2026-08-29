@@ -150,6 +150,46 @@ TYPED_TEST(FkColumnNameTest, WhereFkMemberRemainingOperatorsSqlNameFkColumn) {
     EXPECT_TRUE(sql.contains("WHERE sender_id LIKE ?")) << "Emitted SQL: " << sql;
 }
 
+// #610: in() on a single-column FK member routes the operand through the target's
+// primary-key type and emits `sender_id IN (?, ?)`.
+TYPED_TEST(FkColumnNameTest, WhereFkMemberInExecutes) {
+    QuerySet<Message, TypeParam> qs;
+    auto result = qs.where(fields::Message.sender.in(this->person_ids_[0], this->person_ids_[1])).select().execute();
+    ASSERT_TRUE(result.has_value()) << "WHERE IN on an FK member failed: " << result.error().message();
+    // m1, m2 (sender p1) and m3, m4 (sender p2); m5 (p3) is excluded.
+    ASSERT_EQ(result->size(), 4U);
+    for (const auto &m : *result) {
+        EXPECT_TRUE(m.sender.id == this->person_ids_[0] || m.sender.id == this->person_ids_[1]);
+    }
+}
+
+TYPED_TEST(FkColumnNameTest, WhereFkMemberInSqlNamesFkColumn) {
+    QuerySet<Message, TypeParam> qs;
+    const auto sql = qs.where(fields::Message.sender.in(1, 2)).select().sql();
+    EXPECT_TRUE(sql.contains("WHERE sender_id IN (?, ?)")) << "Emitted SQL: " << sql;
+    // Negative half: a regression that emitted BOTH the correct and the bare column would
+    // still pass the positive assertion above (same rationale as the == test's negative half).
+    EXPECT_FALSE(sql.contains("WHERE sender ")) << "Emitted SQL: " << sql;
+}
+
+// #610: make_in_expr must accept an operand WIDER than the FK target's PK type — the natural
+// shape of insert()'s own return type (int64_t) against Person::id (int). Regression test for
+// a narrowing hard error: the requires-clause checks constructible_from (direct-init, permits
+// narrowing) but the old body used list-init (TargetType{value}), which rejects it — a bug the
+// existing tests couldn't see because they round-trip ids through std::array<int, 3>.
+TYPED_TEST(FkColumnNameTest, WhereFkMemberInAcceptsWiderIntOperand) {
+    QuerySet<Person, TypeParam> person_qs;
+    auto inserted = person_qs.insert(Person{.name = "Dee", .age = 60}).execute();
+    ASSERT_TRUE(inserted.has_value()) << "Failed to insert extra Person: " << inserted.error().message();
+    const std::int64_t new_id = *inserted; // insert()'s natural return type, wider than Person::id
+
+    QuerySet<Message, TypeParam> qs;
+    auto result = qs.where(fields::Message.sender.in(new_id)).select().execute();
+    ASSERT_TRUE(result.has_value()) << "WHERE IN with an int64_t operand on an int-PK FK member failed: "
+                                    << result.error().message();
+    EXPECT_TRUE(result->empty()) << "The newly inserted Person has no Messages yet";
+}
+
 // The collate() path (where.cppm CollatedField::make_collated_name) shares the writer bug
 // independently of the plain Field path above — must be rewritten too.
 TYPED_TEST(FkColumnNameTest, WhereFkMemberCollateSqlNamesFkColumn) {
@@ -157,6 +197,15 @@ TYPED_TEST(FkColumnNameTest, WhereFkMemberCollateSqlNamesFkColumn) {
     const auto sql =
         qs.where(fields::Message.sender.collate(storm::orm::utilities::Collate::NoCase) == 1).select().sql();
     EXPECT_TRUE(sql.contains("sender_id COLLATE NOCASE = ?")) << "Emitted SQL: " << sql;
+}
+
+// #610: CollatedField::in() on an FK member — the path that drifted from Field::in in #578 —
+// must independently route through InTargetType too, not just the plain Field path above.
+TYPED_TEST(FkColumnNameTest, WhereFkMemberCollateInSqlNamesFkColumn) {
+    QuerySet<Message, TypeParam> qs;
+    const auto sql =
+        qs.where(fields::Message.sender.collate(storm::orm::utilities::Collate::NoCase).in(1, 2)).select().sql();
+    EXPECT_TRUE(sql.contains("sender_id COLLATE NOCASE IN (?, ?)")) << "Emitted SQL: " << sql;
 }
 
 // COLLATE NOCASE is SQLite-only syntax (PostgreSQL has no built-in NOCASE collation — the
@@ -416,14 +465,22 @@ concept CanWhereIsNotNull = requires { S.is_not_null(); };
 
 static_assert(CanWhereEqual<fields::Message.sender>, "WHERE == on a single-PK fk must still compile");
 static_assert(!CanWhereEqual<fields::Shipment.line>, "WHERE == on a composite-PK fk must be rejected at compile time");
+// A non-bindable operand (a model struct instead of its key) is a clean compile-time
+// rejection, not a hard error inside make_comparison_expr (#610).
+static_assert(!CanWhereEqual<fields::Message.sender, Person>,
+              "WHERE == against a non-bindable operand (a model struct) is rejected at compile time");
 static_assert(!CanWhereNotEqual<fields::Shipment.line>, "!= is rejected the same way");
-// in() is rejected on EVERY FK member, not only composite-PK ones (#575 review, #610): its
-// operand is constructed to FieldType, which for an FK member is the related model type, not
-// a key — there is no key type to build an int against, single-PK or composite alike.
+// in() now routes its operand through the FK TARGET's primary-key type instead of FieldType
+// (#610), so it works on a single-PK FK member; a composite-PK target still has no single key
+// type to construct against and stays rejected.
 static_assert(!CanWhereIn<fields::Shipment.line>, "in() rejects a composite-PK fk");
-static_assert(!CanWhereIn<fields::Message.sender>, "and a single-PK fk too — tracked as #610");
+static_assert(CanWhereIn<fields::Message.sender>, "in() now works on a single-PK fk (#610)");
+static_assert(CanWhereIn<fields::NullableSenderMessage.sender>,
+              "in() also works on a NULLABLE single-PK fk (the optional_inner_type_t unwrap)");
 static_assert(!CanWhereLike<fields::Shipment.line>, "like() is rejected the same way");
 static_assert(!CanWhereBetween<fields::Shipment.line>, "between() is rejected the same way");
+static_assert(!CanWhereBetween<fields::Message.sender, Person>,
+              "between() against a non-bindable operand (a model struct) is rejected at compile time (#610)");
 static_assert(!CanWhereCollate<fields::Shipment.line>, "collate() is rejected the same way");
 static_assert(!CanWhereIsNull<fields::OptionalShipment.line>, "is_null() rejects a nullable composite-PK fk too");
 static_assert(!CanWhereIsNotNull<fields::OptionalShipment.line>, "and is_not_null() likewise");
