@@ -423,6 +423,15 @@ export namespace storm::meta {
         return column_span_of(member) == 1;
     }
 
+    // Concept form of is_single_column_member (#575): WHERE gates every value-comparing
+    // method on Field<M>/CollatedField<M> individually (they cannot be gated on the
+    // enclosing class — field_specs_for instantiates it for every member unconditionally),
+    // which is one requires-clause per method. Naming the predicate here means those
+    // clauses read `SingleColumnMember<M>` instead of repeating the raw consteval call, and
+    // a failed constraint reports the concept instead of an opaque function call.
+    template <std::meta::info Member>
+    concept SingleColumnMember = is_single_column_member(Member);
+
     // Composite-aware sibling of append_column_name/column_name_size (#422, widened
     // #504). A single-column FK target degenerates to EXACTLY append_column_name's
     // output ("<member>_id") — kept as a hardcoded special case (not derived from

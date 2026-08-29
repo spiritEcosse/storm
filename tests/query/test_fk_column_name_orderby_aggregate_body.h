@@ -30,6 +30,21 @@ import storm_orm_statements_aggregate;
 
 using storm::QuerySet;
 
+// A nullable single-column FK, local to this file: proves WHERE's is_null()/is_not_null()
+// (#575) route through the same "<member>_id" rewrite as the comparison operators, on a
+// member no other fixture here already covers with an optional FK.
+struct NullableSenderMessage {
+    [[= storm::primary]] int id{};
+    [[= storm::fk<>]] std::optional<Person> sender;
+    std::string content;
+};
+
+namespace fields {
+struct NullableSenderMessageT;
+consteval { std::meta::define_aggregate(^^NullableSenderMessageT, storm::field_specs_for(^^NullableSenderMessage)); }
+inline constexpr NullableSenderMessageT NullableSenderMessage{};
+} // namespace fields
+
 namespace {
 
 // Message::sender is an FK to Person → column `sender_id`.
@@ -77,6 +92,134 @@ template <typename ConnType> class FkColumnNameTest : public StormTestFixture<Pe
     std::array<int, 3> person_ids_{};
 };
 TYPED_TEST_SUITE(FkColumnNameTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
+
+// ── WHERE on an FK member (#575) ─────────────────────────────────────────────
+
+// The core reproduction: before the fix this emitted `WHERE sender = ?` and
+// failed to prepare ("no such column: sender") on both backends.
+TYPED_TEST(FkColumnNameTest, WhereFkMemberEqualsExecutes) {
+    QuerySet<Message, TypeParam> qs;
+    auto result = qs.where(fields::Message.sender == this->person_ids_[0]).select().execute();
+    ASSERT_TRUE(result.has_value()) << "WHERE == on an FK member failed: " << result.error().message();
+    // m1 and m2 both have sender == person_ids_[0].
+    ASSERT_EQ(result->size(), 2U);
+    for (const auto &m : *result) {
+        EXPECT_EQ(m.sender.id, this->person_ids_[0]);
+    }
+}
+
+TYPED_TEST(FkColumnNameTest, WhereFkMemberNotEqualsExecutes) {
+    QuerySet<Message, TypeParam> qs;
+    auto result = qs.where(fields::Message.sender != this->person_ids_[0]).select().execute();
+    ASSERT_TRUE(result.has_value()) << "WHERE != on an FK member failed: " << result.error().message();
+    // m3, m4, m5 have a different sender.
+    ASSERT_EQ(result->size(), 3U);
+    for (const auto &m : *result) {
+        EXPECT_NE(m.sender.id, this->person_ids_[0]);
+    }
+}
+
+TYPED_TEST(FkColumnNameTest, WhereFkMemberSqlNamesFkColumn) {
+    QuerySet<Message, TypeParam> qs;
+    const auto sql = qs.where(fields::Message.sender == 1).select().sql();
+    EXPECT_TRUE(sql.contains("WHERE sender_id = ?")) << "Emitted SQL: " << sql;
+    // Negative half: a regression that emitted BOTH the correct and the bare column would
+    // still pass the positive assertion above.
+    EXPECT_FALSE(sql.contains("WHERE sender ")) << "Emitted SQL: " << sql;
+}
+
+// The remaining comparison/pattern operators share field_name_sv with == above, so they are
+// correct by construction — but that was exactly the argument that failed for ORDER BY in
+// #570 and for WHERE's == in #575 itself. Pin each explicitly rather than trust the shared
+// derivation silently.
+TYPED_TEST(FkColumnNameTest, WhereFkMemberRemainingOperatorsSqlNameFkColumn) {
+    QuerySet<Message, TypeParam> qs;
+    EXPECT_TRUE(qs.where(fields::Message.sender > 1).select().sql().contains("WHERE sender_id > ?"));
+    EXPECT_TRUE(qs.where(fields::Message.sender >= 1).select().sql().contains("WHERE sender_id >= ?"));
+    EXPECT_TRUE(qs.where(fields::Message.sender < 1).select().sql().contains("WHERE sender_id < ?"));
+    EXPECT_TRUE(qs.where(fields::Message.sender <= 1).select().sql().contains("WHERE sender_id <= ?"));
+    EXPECT_TRUE(
+        qs.where(fields::Message.sender.between(1, 2)).select().sql().contains("WHERE sender_id BETWEEN ? AND ?"));
+    // like() is SQL-text only here — LIKE against an integer column is nonsensical to
+    // execute, but the writer must still name the right column.
+    EXPECT_TRUE(qs.where(fields::Message.sender.like("1%")).select().sql().contains("WHERE sender_id LIKE ?"));
+}
+
+// The collate() path (where.cppm CollatedField::make_collated_name) shares the writer bug
+// independently of the plain Field path above — must be rewritten too.
+TYPED_TEST(FkColumnNameTest, WhereFkMemberCollateSqlNamesFkColumn) {
+    QuerySet<Message, TypeParam> qs;
+    const auto sql =
+        qs.where(fields::Message.sender.collate(storm::orm::utilities::Collate::NoCase) == 1).select().sql();
+    EXPECT_TRUE(sql.contains("sender_id COLLATE NOCASE = ?")) << "Emitted SQL: " << sql;
+}
+
+// COLLATE NOCASE is SQLite-only syntax (PostgreSQL has no built-in NOCASE collation — the
+// same reason CollateTest itself only runs on SqliteTypes); PG's rejection of the emitted
+// SQL is expected, not a regression, so this only executes on SQLite.
+TYPED_TEST(FkColumnNameTest, WhereFkMemberCollateExecutes) {
+    if (storm::test::is_postgresql<TypeParam>()) {
+        GTEST_SKIP() << "COLLATE NOCASE is SQLite-only syntax";
+    }
+    QuerySet<Message, TypeParam> qs;
+    auto result =
+        qs.where(fields::Message.sender.collate(storm::orm::utilities::Collate::NoCase) == this->person_ids_[0])
+            .select()
+            .execute();
+    ASSERT_TRUE(result.has_value()) << "WHERE == via collate() on an FK member failed: " << result.error().message();
+    ASSERT_EQ(result->size(), 2U);
+}
+
+// Combined WHERE + ORDER BY, exercising two of the corrected writers on the same query.
+TYPED_TEST(FkColumnNameTest, WhereFkMemberWithOrderByExecutes) {
+    QuerySet<Message, TypeParam> qs;
+    auto result = qs.where(fields::Message.value > 15).template order_by<fields::Message.sender>().select().execute();
+    ASSERT_TRUE(result.has_value()) << "WHERE + ORDER BY on FK members failed: " << result.error().message();
+    ASSERT_EQ(result->size(), 4U);
+    std::vector<int> senders;
+    senders.reserve(4);
+    for (const auto &m : *result) {
+        senders.push_back(m.sender.id);
+    }
+    EXPECT_TRUE(std::ranges::is_sorted(senders)) << "Rows are not ordered by sender_id";
+}
+
+// ── is_null()/is_not_null() on a nullable FK member ─────────────────────────
+
+template <typename ConnType>
+class NullableSenderMessageTest : public StormTestFixture<Person, ConnType, NullableSenderMessage> {};
+TYPED_TEST_SUITE(NullableSenderMessageTest, STORM_SPLIT_TYPES, STORM_SPLIT_TYPE_NAMES);
+
+TYPED_TEST(NullableSenderMessageTest, WhereFkMemberIsNullExecutes) {
+    QuerySet<Person, TypeParam> person_qs;
+    Person const alice{.name = "Alice", .age = 30};
+    auto alice_result = person_qs.insert(alice).execute();
+    ASSERT_TRUE(alice_result.has_value());
+    Person const alice_fk{.id = static_cast<int>(alice_result.value())};
+
+    QuerySet<NullableSenderMessage, TypeParam> msg_qs;
+    ASSERT_TRUE(
+        msg_qs.insert(NullableSenderMessage{.sender = std::nullopt, .content = "no sender"}).execute().has_value());
+    ASSERT_TRUE(
+        msg_qs.insert(NullableSenderMessage{.sender = alice_fk, .content = "has sender"}).execute().has_value());
+
+    auto null_result = msg_qs.where(fields::NullableSenderMessage.sender.is_null()).select().execute();
+    ASSERT_TRUE(null_result.has_value()) << "WHERE IS NULL on an FK member failed: " << null_result.error().message();
+    ASSERT_EQ(null_result->size(), 1U);
+    EXPECT_EQ(null_result->begin()->content, "no sender");
+
+    auto not_null_result = msg_qs.where(fields::NullableSenderMessage.sender.is_not_null()).select().execute();
+    ASSERT_TRUE(not_null_result.has_value())
+        << "WHERE IS NOT NULL on an FK member failed: " << not_null_result.error().message();
+    ASSERT_EQ(not_null_result->size(), 1U);
+    EXPECT_EQ(not_null_result->begin()->content, "has sender");
+}
+
+TYPED_TEST(NullableSenderMessageTest, WhereFkMemberIsNullSqlNamesFkColumn) {
+    QuerySet<NullableSenderMessage, TypeParam> qs;
+    const auto sql = qs.where(fields::NullableSenderMessage.sender.is_null()).select().sql();
+    EXPECT_TRUE(sql.contains("WHERE sender_id IS NULL")) << "Emitted SQL: " << sql;
+}
 
 // ── ORDER BY on an FK member ────────────────────────────────────────────────
 
@@ -238,6 +381,50 @@ static_assert(!storm::orm::statements::SingleColumnSelector<fields::Shipment.lin
 static_assert(!storm::orm::statements::SingleColumnSelector<fields::OptionalShipment.line>,
               "and the nullable composite form is refused too");
 
+// WHERE's Field<M>/CollatedField<M> proxies (where.cppm, #575) gate the same policy, but
+// via a per-operator requires-clause rather than a class-level one on Field<M> itself:
+// field_specs_for defines a FieldRef<M> (which derives from Field<M>) for EVERY member
+// unconditionally, so Field<M> must still instantiate for a composite-PK FK member — only
+// the individual comparison/like/between/in/collate/is_null methods reject it.
+//
+// Routed through template concepts rather than a bare `requires { ... }` directly inside
+// static_assert: `fields::Shipment.line == 1` at namespace scope is a fully non-dependent
+// expression, and this compiler hard-errors on its failed overload resolution instead of
+// treating it as a SFINAE failure inside the requires-expression (the same reason the
+// "gates are WIRED" concepts below thread the call through a template parameter).
+template <auto S, typename V = int>
+concept CanWhereEqual = requires(V v) { S == v; };
+template <auto S, typename V = int>
+concept CanWhereNotEqual = requires(V v) { S != v; };
+template <auto S, typename V = int>
+concept CanWhereIn = requires(V v) { S.in(v, v); };
+template <auto S, typename Str = std::string_view>
+concept CanWhereLike = requires(Str s) { S.like(s); };
+template <auto S, typename V = int>
+concept CanWhereBetween = requires(V v) { S.between(v, v); };
+template <auto S, typename Col = storm::orm::utilities::Collate>
+concept CanWhereCollate = requires(Col c) { S.collate(c); };
+template <auto S>
+concept CanWhereIsNull = requires { S.is_null(); };
+template <auto S>
+concept CanWhereIsNotNull = requires { S.is_not_null(); };
+
+static_assert(CanWhereEqual<fields::Message.sender>, "WHERE == on a single-PK fk must still compile");
+static_assert(!CanWhereEqual<fields::Shipment.line>, "WHERE == on a composite-PK fk must be rejected at compile time");
+static_assert(!CanWhereNotEqual<fields::Shipment.line>, "!= is rejected the same way");
+// in() is rejected on EVERY FK member, not only composite-PK ones (#575 review, #610): its
+// operand is constructed to FieldType, which for an FK member is the related model type, not
+// a key — there is no key type to build an int against, single-PK or composite alike.
+static_assert(!CanWhereIn<fields::Shipment.line>, "in() rejects a composite-PK fk");
+static_assert(!CanWhereIn<fields::Message.sender>, "and a single-PK fk too — tracked as #610");
+static_assert(!CanWhereLike<fields::Shipment.line>, "like() is rejected the same way");
+static_assert(!CanWhereBetween<fields::Shipment.line>, "between() is rejected the same way");
+static_assert(!CanWhereCollate<fields::Shipment.line>, "collate() is rejected the same way");
+static_assert(!CanWhereIsNull<fields::OptionalShipment.line>, "is_null() rejects a nullable composite-PK fk too");
+static_assert(!CanWhereIsNotNull<fields::OptionalShipment.line>, "and is_not_null() likewise");
+static_assert(CanWhereIsNull<fields::NullableSenderMessage.sender>,
+              "is_null() on a nullable single-PK fk must still compile");
+
 // ── The gates are WIRED, not merely defined ─────────────────────────────────
 //
 // The assertions above test the concepts; they all still hold if someone deletes the
@@ -287,6 +474,16 @@ TYPED_TEST(NonFkSqlParityTest, OrderByPlainMemberSqlUnchanged) {
               std::format("SELECT id, name, age, salary, is_active, years_experience, department, score, nickname,"
                           " avatar FROM Person ORDER BY age {}",
                           desc));
+}
+
+TYPED_TEST(NonFkSqlParityTest, WherePlainMemberSqlUnchanged) {
+    QuerySet<Person, TypeParam> qs;
+    EXPECT_EQ(qs.where(fields::Person.age == 30).select().sql(),
+              "SELECT id, name, age, salary, is_active, years_experience, department, score, nickname, avatar"
+              " FROM Person WHERE age = ?");
+    EXPECT_EQ(qs.where(fields::Person.age.collate(storm::orm::utilities::Collate::NoCase) == 30).select().sql(),
+              "SELECT id, name, age, salary, is_active, years_experience, department, score, nickname, avatar"
+              " FROM Person WHERE age COLLATE NOCASE = ?");
 }
 
 TYPED_TEST(NonFkSqlParityTest, AggregateOnPlainMemberSqlUnchanged) {

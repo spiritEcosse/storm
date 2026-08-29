@@ -112,30 +112,51 @@ Note that an **FK member is a column**, so `fields::Message.sender` is a
 member name — you always write the member name, in every clause:
 
 ```cpp
-qs.order_by<fields::Message.sender>()        // ORDER BY sender_id
-qs.count_distinct<fields::Message.sender>()  // COUNT(DISTINCT sender_id)
+qs.order_by<fields::Message.sender>()          // ORDER BY sender_id
+qs.count_distinct<fields::Message.sender>()    // COUNT(DISTINCT sender_id)
+qs.where(fields::Message.sender == 1)          // WHERE sender_id = ?
 ```
 
-`SELECT`, `INSERT`/`UPDATE`, `JOIN`, DDL, `ORDER BY` and `COUNT(DISTINCT)`
-route the member through the one canonical column-name writer
+`SELECT`, `INSERT`/`UPDATE`, `JOIN`, DDL, `ORDER BY`, `COUNT(DISTINCT)` and
+`WHERE` route the member through the one canonical column-name writer
 (`meta::append_column_name`, [#422]), so the `_id` suffix cannot be derived in
 one clause and forgotten in another. `ORDER BY` and `COUNT(DISTINCT)` did
-forget it until [#570] and failed at runtime with `no such column: sender`.
-`WHERE` is the remaining gap, tracked as [#575].
+forget it until [#570], and `WHERE` (every comparison operator, `like()`,
+`between()`, `is_null()`/`is_not_null()`, and the `collate()` path) did until
+[#575] — all failed at runtime with `no such column: sender`.
+
+**`in()` does not support an FK member yet** (tracked as [#610]) — it is
+rejected at compile time rather than mis-emitted. `in()`'s operand is
+constructed to the member's declared type, which for a plain column is the
+bindable value itself but for an FK member is the **related model type**
+(e.g. `Person` for `Message::sender`), not its key — there is no key type to
+construct an `int` against. Filter with `==`/`in()` chained through `||`, or
+wait for #610.
 
 **One limitation.** If the FK's target has a *composite* primary key, the
 member has no single column — it spreads over `<member>_<part>` columns
-(e.g. `line_order_id`, `line_product_id`). `ORDER BY` and `COUNT(DISTINCT)`
-reject such a member at **compile time**, since neither has a correct
-multi-column form: `ORDER BY`'s `ASC`/`DESC` would bind to the last part only,
-and `COUNT(DISTINCT a, b)` is a syntax error in SQLite while PostgreSQL reads
-it as a row constructor. Order or count by the target's parts explicitly
-instead. `join<>` on such an FK is fully supported ([#504]).
+(e.g. `line_order_id`, `line_product_id`). `ORDER BY`, `COUNT(DISTINCT)` and
+`WHERE` all reject such a member at **compile time**, since none has a
+correct multi-column form: `ORDER BY`'s `ASC`/`DESC` would bind to the last
+part only, `COUNT(DISTINCT a, b)` is a syntax error in SQLite while
+PostgreSQL reads it as a row constructor, and `WHERE`'s row-value syntax
+`(a, b) = (?, ?)` (used by [#501]'s composite-PK UPDATE/DELETE) would only
+ever be well-defined for `==`/`!=`, not for `>`, `LIKE`, `BETWEEN`, etc. — so
+`WHERE` stays rejected uniformly rather than accepting equality alone. Order,
+count, or filter by the target's parts explicitly instead. `join<>` on such
+an FK is fully supported ([#504]).
+
+`count()`, `distinct()` and `values<>()` do **not** yet reject a composite-PK
+FK member the way `ORDER BY`/`COUNT(DISTINCT)`/`WHERE` do — tracked as
+[#611]. Avoid naming such a member in those three until it lands.
 
 [#422]: https://github.com/spiritEcosse/storm/issues/422
+[#501]: https://github.com/spiritEcosse/storm/issues/501
 [#504]: https://github.com/spiritEcosse/storm/issues/504
 [#570]: https://github.com/spiritEcosse/storm/issues/570
 [#575]: https://github.com/spiritEcosse/storm/issues/575
+[#610]: https://github.com/spiritEcosse/storm/issues/610
+[#611]: https://github.com/spiritEcosse/storm/issues/611
 
 ---
 

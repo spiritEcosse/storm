@@ -357,6 +357,17 @@ export namespace storm::orm::where {
         );
     }
 
+    // Build a LikeExpr for `field_name LIKE pattern`. Shared by Field::like and
+    // CollatedField::like so the two bodies cannot drift (same rationale as make_in_expr's
+    // #578 note).
+    [[nodiscard]] inline auto make_like_expr(std::string field_name, std::string_view pattern) -> Expr {
+        return Expr(
+                std::make_shared<ExpressionVariant>(
+                        LikeExpr{.field_name_ = std::move(field_name), .pattern_ = std::string(pattern)}
+                )
+        );
+    }
+
     // Build a value-owning BetweenExpr from its bounds. Both bounds go through normalize_operand
     // (#406): text operands are copied into an owning std::string (closes the deferred-bind dangle
     // #352 fixed for comparisons) and enums fold to int — the same rules as make_comparison_expr.
@@ -395,6 +406,16 @@ export namespace storm::orm::where {
     // CollatedField proxy - wraps field name with COLLATE clause
     // Created via fields::Person.name.collate(Collate::NoCase)
     // All comparison operators produce SQL like: "name COLLATE NOCASE = ?"
+    // NOTE: NOT gated on SingleColumnMember here (tried and reverted — #575 review): Field<M>
+    // must instantiate for EVERY member (field_specs_for emits a FieldRef<M> unconditionally),
+    // and Field::collate()'s non-deduced return type `-> CollatedField<MemberInfo>` requires
+    // this class's constraints to be satisfied at THAT instantiation, not merely at the call
+    // site — confirmed by compiling: a class-level gate here breaks model declaration for any
+    // composite-PK FK member, hard-erroring inside field_specs_for's define_aggregate rather
+    // than at collate()'s own call site. Field::collate() carries the gate instead (its
+    // per-method requires-clause is checked at overload resolution, which IS deferred), and
+    // that is the only construction path for this class in the tree — a CAUTION comment at
+    // Field::field_name_sv documents the analogous invariant this class shares.
     template <std::meta::info MemberInfo>
         requires(storm::meta::ValidFieldInfo<MemberInfo> && !storm::meta::is_relation_field(MemberInfo))
     class CollatedField {
@@ -403,52 +424,79 @@ export namespace storm::orm::where {
 
         explicit CollatedField(utilities::Collate col) : collated_name_(make_collated_name(col)) {}
 
+        // in() is rejected on ANY FK member (single- or composite-PK target), not only
+        // composite (#575 review): make_in_expr's operand type is FieldType, which for an
+        // FK member is the RELATED MODEL TYPE, not its key — normalize_operand can never
+        // bind a model struct, so an unguarded in() on an FK member is a hard error deep
+        // inside make_in_expr instead of a clean rejection at this call site. The other
+        // comparison operators are unaffected: they route the raw operand through
+        // normalize_operand directly, never through FieldType, so `sender == 1` works.
         template <typename... Values>
-            requires(std::constructible_from<FieldType, Values> && ...)
+            requires(std::constructible_from<FieldType, Values> && ...) &&
+                    storm::meta::SingleColumnMember<MemberInfo> && (!storm::meta::is_fk_field(MemberInfo))
         auto in(Values&&... values) const {
             return where::make_in_expr<FieldType>(collated_name_, std::forward<Values>(values)...);
         }
 
-        template <typename V> auto operator==(V&& value) const -> Expr {
+        template <typename V>
+        auto operator==(V&& value) const -> Expr
+            requires storm::meta::SingleColumnMember<MemberInfo>
+        {
             return make_comparison(CompOp::Equal, std::forward<V>(value));
         }
 
-        template <typename V> auto operator!=(V&& value) const -> Expr {
+        template <typename V>
+        auto operator!=(V&& value) const -> Expr
+            requires storm::meta::SingleColumnMember<MemberInfo>
+        {
             return make_comparison(CompOp::NotEqual, std::forward<V>(value));
         }
 
-        template <typename V> auto operator>(V&& value) const -> Expr {
+        template <typename V>
+        auto operator>(V&& value) const -> Expr
+            requires storm::meta::SingleColumnMember<MemberInfo>
+        {
             return make_comparison(CompOp::Greater, std::forward<V>(value));
         }
 
-        template <typename V> auto operator>=(V&& value) const -> Expr {
+        template <typename V>
+        auto operator>=(V&& value) const -> Expr
+            requires storm::meta::SingleColumnMember<MemberInfo>
+        {
             return make_comparison(CompOp::GreaterEqual, std::forward<V>(value));
         }
 
-        template <typename V> auto operator<(V&& value) const -> Expr {
+        template <typename V>
+        auto operator<(V&& value) const -> Expr
+            requires storm::meta::SingleColumnMember<MemberInfo>
+        {
             return make_comparison(CompOp::Less, std::forward<V>(value));
         }
 
-        template <typename V> auto operator<=(V&& value) const -> Expr {
+        template <typename V>
+        auto operator<=(V&& value) const -> Expr
+            requires storm::meta::SingleColumnMember<MemberInfo>
+        {
             return make_comparison(CompOp::LessEqual, std::forward<V>(value));
         }
 
         // clang-format off
-        [[nodiscard]] auto is_null()     const -> Expr requires NullableField<FieldType> { return make_null_check_expr(collated_name_, true); }
-        [[nodiscard]] auto is_not_null() const -> Expr requires NullableField<FieldType> { return make_null_check_expr(collated_name_, false); }
-        auto operator==(std::nullopt_t /*unused*/)  const -> Expr requires NullableField<FieldType> { return is_null(); }
-        auto operator!=(std::nullopt_t /*unused*/)  const -> Expr requires NullableField<FieldType> { return is_not_null(); }
+        [[nodiscard]] auto is_null()     const -> Expr requires (NullableField<FieldType> && storm::meta::SingleColumnMember<MemberInfo>) { return make_null_check_expr(collated_name_, true); }
+        [[nodiscard]] auto is_not_null() const -> Expr requires (NullableField<FieldType> && storm::meta::SingleColumnMember<MemberInfo>) { return make_null_check_expr(collated_name_, false); }
+        auto operator==(std::nullopt_t /*unused*/)  const -> Expr requires (NullableField<FieldType> && storm::meta::SingleColumnMember<MemberInfo>) { return is_null(); }
+        auto operator!=(std::nullopt_t /*unused*/)  const -> Expr requires (NullableField<FieldType> && storm::meta::SingleColumnMember<MemberInfo>) { return is_not_null(); }
         // clang-format on
 
-        [[nodiscard]] auto like(std::string_view pattern) const -> Expr {
-            return Expr(
-                    std::make_shared<ExpressionVariant>(
-                            LikeExpr{.field_name_ = collated_name_, .pattern_ = std::string(pattern)}
-                    )
-            );
+        [[nodiscard]] auto like(std::string_view pattern) const -> Expr
+            requires storm::meta::SingleColumnMember<MemberInfo>
+        {
+            return where::make_like_expr(collated_name_, pattern);
         }
 
-        template <typename V> auto between(V&& min_val, V&& max_val) const -> Expr {
+        template <typename V>
+        auto between(V&& min_val, V&& max_val) const -> Expr
+            requires storm::meta::SingleColumnMember<MemberInfo>
+        {
             return where::make_between_expr(collated_name_, std::forward<V>(min_val), std::forward<V>(max_val));
         }
 
@@ -456,7 +504,7 @@ export namespace storm::orm::where {
         std::string collated_name_;
 
         static auto make_collated_name(utilities::Collate col) -> std::string {
-            return std::format("{}{}", std::meta::identifier_of(MemberInfo), utilities::collate_to_sql(col));
+            return std::format("{}{}", storm::meta::column_name_view<MemberInfo>, utilities::collate_to_sql(col));
         }
 
         template <typename V> auto make_comparison(CompOp op, V&& value) const -> Expr {
@@ -470,11 +518,22 @@ export namespace storm::orm::where {
         requires(storm::meta::ValidFieldInfo<MemberInfo> && !storm::meta::is_relation_field(MemberInfo))
     class Field {
       public:
-        static constexpr auto field_name_sv = std::meta::identifier_of(MemberInfo);
+        // The SQL column name (#575): a plain member's identifier, or an FK member's
+        // "<member>_id" — the same canonical writer ORDER BY/COUNT(DISTINCT) route
+        // through (#570). Byte-identical to std::meta::identifier_of(MemberInfo) for a
+        // non-FK member. CAUTION: for an FK to a COMPOSITE-PK target this still evaluates
+        // (Field<M> must instantiate for every member — field_specs_for emits a FieldRef<M>
+        // unconditionally) but yields a column that does NOT exist ("line_id" instead of
+        // "line_order_id"/"line_product_id"), because column_name_view always assumes a
+        // single "_id" suffix. Every method below gates on SingleColumnMember<MemberInfo>
+        // before reading this; a new method that reads field_name_sv MUST gate the same way.
+        static constexpr auto field_name_sv = storm::meta::column_name_view<MemberInfo>;
         using FieldType                     = typename[:std::meta::type_of(MemberInfo):];
 
         // Return a CollatedField proxy for COLLATE-qualified comparisons
-        [[nodiscard]] auto collate(utilities::Collate col) const -> CollatedField<MemberInfo> {
+        [[nodiscard]] auto collate(utilities::Collate col) const -> CollatedField<MemberInfo>
+            requires storm::meta::SingleColumnMember<MemberInfo>
+        {
             return CollatedField<MemberInfo>(col);
         }
 
@@ -483,50 +542,78 @@ export namespace storm::orm::where {
         // Each value is constructed to FieldType, then routed through normalize_operand so the
         // stored element type matches the variant arm — enums/narrow ints fold to int/int64_t,
         // text to std::string, temporal/UUID keep their own arm (#407, same rules as comparisons).
+        // Rejected on an FK member (#575 review, see CollatedField::in's comment): FieldType
+        // is the related model, not its key, and normalize_operand can never bind a struct.
         template <typename... Values>
-            requires(std::constructible_from<FieldType, Values> && ...)
+            requires(std::constructible_from<FieldType, Values> && ...) &&
+                    storm::meta::SingleColumnMember<MemberInfo> && (!storm::meta::is_fk_field(MemberInfo))
         auto in(Values&&... values) const {
             return where::make_in_expr<FieldType>(std::string(field_name_sv), std::forward<Values>(values)...);
         }
 
-        // Comparison operators — enum values are auto-converted to underlying int
-        template <typename V> auto operator==(V&& value) const -> Expr {
+        // Comparison operators — enum values are auto-converted to underlying int.
+        // Constrained to a single-column member (#575): an FK to a composite-PK target
+        // spreads over "<member>_<part>" columns, so there is no single name to compare
+        // against and no correct multi-column form for these operators either — rejected
+        // at compile time rather than mis-emitted, matching the #570 ORDER BY/COUNT(DISTINCT)
+        // policy. WHERE (a, b) = (?, ?) row-value syntax exists on both backends but is not
+        // wired here: it would only ever be well-defined for ==/!=, not for >, LIKE, BETWEEN, etc.
+        template <typename V>
+        auto operator==(V&& value) const -> Expr
+            requires storm::meta::SingleColumnMember<MemberInfo>
+        {
             return make_comp(CompOp::Equal, std::forward<V>(value));
         }
-        template <typename V> auto operator!=(V&& value) const -> Expr {
+        template <typename V>
+        auto operator!=(V&& value) const -> Expr
+            requires storm::meta::SingleColumnMember<MemberInfo>
+        {
             return make_comp(CompOp::NotEqual, std::forward<V>(value));
         }
-        template <typename V> auto operator>(V&& value) const -> Expr {
+        template <typename V>
+        auto operator>(V&& value) const -> Expr
+            requires storm::meta::SingleColumnMember<MemberInfo>
+        {
             return make_comp(CompOp::Greater, std::forward<V>(value));
         }
-        template <typename V> auto operator>=(V&& value) const -> Expr {
+        template <typename V>
+        auto operator>=(V&& value) const -> Expr
+            requires storm::meta::SingleColumnMember<MemberInfo>
+        {
             return make_comp(CompOp::GreaterEqual, std::forward<V>(value));
         }
-        template <typename V> auto operator<(V&& value) const -> Expr {
+        template <typename V>
+        auto operator<(V&& value) const -> Expr
+            requires storm::meta::SingleColumnMember<MemberInfo>
+        {
             return make_comp(CompOp::Less, std::forward<V>(value));
         }
-        template <typename V> auto operator<=(V&& value) const -> Expr {
+        template <typename V>
+        auto operator<=(V&& value) const -> Expr
+            requires storm::meta::SingleColumnMember<MemberInfo>
+        {
             return make_comp(CompOp::LessEqual, std::forward<V>(value));
         }
 
         // NULL check methods — constrained to std::optional<T> fields only
         // clang-format off
-        [[nodiscard]] auto is_null()     const -> Expr requires NullableField<FieldType> { return make_null_check_expr(std::string(field_name_sv), true); }
-        [[nodiscard]] auto is_not_null() const -> Expr requires NullableField<FieldType> { return make_null_check_expr(std::string(field_name_sv), false); }
-        auto operator==(std::nullopt_t /*unused*/)  const -> Expr requires NullableField<FieldType> { return is_null(); }
-        auto operator!=(std::nullopt_t /*unused*/)  const -> Expr requires NullableField<FieldType> { return is_not_null(); }
+        [[nodiscard]] auto is_null()     const -> Expr requires (NullableField<FieldType> && storm::meta::SingleColumnMember<MemberInfo>) { return make_null_check_expr(std::string(field_name_sv), true); }
+        [[nodiscard]] auto is_not_null() const -> Expr requires (NullableField<FieldType> && storm::meta::SingleColumnMember<MemberInfo>) { return make_null_check_expr(std::string(field_name_sv), false); }
+        auto operator==(std::nullopt_t /*unused*/)  const -> Expr requires (NullableField<FieldType> && storm::meta::SingleColumnMember<MemberInfo>) { return is_null(); }
+        auto operator!=(std::nullopt_t /*unused*/)  const -> Expr requires (NullableField<FieldType> && storm::meta::SingleColumnMember<MemberInfo>) { return is_not_null(); }
         // clang-format on
 
         // Special methods - return VARIANT-BASED Expr
-        [[nodiscard]] auto like(std::string_view pattern) const -> Expr {
-            return Expr(
-                    std::make_shared<ExpressionVariant>(
-                            LikeExpr{.field_name_ = std::string(field_name_sv), .pattern_ = std::string(pattern)}
-                    )
-            );
+        [[nodiscard]] auto like(std::string_view pattern) const -> Expr
+            requires storm::meta::SingleColumnMember<MemberInfo>
+        {
+            return where::make_like_expr(std::string(field_name_sv), pattern);
         }
 
-        template <typename V> auto between(V&& min_val, V&& max_val) const -> Expr {
+        template <typename V>
+        auto between(V&& min_val, V&& max_val) const -> Expr
+            requires storm::meta::SingleColumnMember<MemberInfo>
+        {
             return where::make_between_expr(
                     std::string(field_name_sv), std::forward<V>(min_val), std::forward<V>(max_val)
             );
