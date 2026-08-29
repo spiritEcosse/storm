@@ -190,3 +190,39 @@ Exit code `0` = all agent files valid, `1` = at least one invalid.
   validity, is what distinguishes a loading file from a dropped one.
 - A `.md` file with no opening `---` is treated as shared prose, not an agent, and skipped.
 - An agent file with **no** `description:` at all is reported: it cannot be registered either.
+
+## Change Classification (detect-changes.sh)
+
+Classifies a list of changed file paths into `HAS_SRC_CHANGES` / `HAS_TEST_CHANGES` /
+`HAS_CPP_CHANGES` / `HAS_CMAKE_CHANGES` / `HAS_BENCH_CHANGES` flags — one place shared by
+`commit.sh` (pre-commit smart skips over staged files) and the `changes` job in
+`.github/workflows/ci.yml` (skips the `test` / `coverage` / `clang-p2996-host-layout` jobs
+on a PR that doesn't touch src/tests/cmake), so the two never classify the same file
+differently.
+
+### Usage
+
+```bash
+git diff --cached --name-only | ./scripts/detect-changes.sh
+# HAS_SRC_CHANGES=true
+# HAS_TEST_CHANGES=false
+# HAS_CPP_CHANGES=true
+# HAS_CMAKE_CHANGES=false
+# HAS_BENCH_CHANGES=false
+
+./scripts/tests/test_detect_changes.sh   # self-test
+```
+
+Output is `KEY=true|false` lines meant to be `eval`'d into shell variables:
+```bash
+eval "$(git diff --cached --name-only | ./scripts/detect-changes.sh)"
+```
+
+### Where it runs
+
+- **`commit.sh`** — over staged files, to skip format/tidy/tests/coverage when nothing
+  they could affect changed.
+- **CI** — the `changes` job in `.github/workflows/ci.yml`, which also self-tests the
+  script before using its output. `run_heavy` (the job's output) additionally forces a
+  full run whenever the diff touches CI plumbing itself (`.github/workflows/`, `scripts/`,
+  `.githooks/`, `CMakePresets.json`, `commit.sh`), regardless of the flags above.

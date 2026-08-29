@@ -4,7 +4,8 @@
 #
 # All checks are mandatory. No skip flags available.
 #
-# Smart skips (automatic, based on staged files):
+# Smart skips (automatic, based on staged files; classified by
+# scripts/detect-changes.sh, shared with .github/workflows/ci.yml):
 #   No C++ or cmake files         → skip format, tidy, tests, coverage
 #   cmake-only changes            → skip clang-format, clang-tidy; run tests + coverage + cmake-format
 #   C++ but no src/tests/cmake    → skip tests, coverage
@@ -144,19 +145,9 @@ RUN_COVERAGE=true
 
 STAGED_FILES=$(git diff --cached --name-only 2>/dev/null || true)
 if [[ -n "$STAGED_FILES" ]]; then
-    HAS_SRC_CHANGES=false
-    HAS_TEST_CHANGES=false
-    HAS_CPP_CHANGES=false
-    HAS_CMAKE_CHANGES=false
-    HAS_BENCH_CHANGES=false
-
-    while IFS= read -r file; do
-        [[ "$file" == src/* ]] && HAS_SRC_CHANGES=true
-        [[ "$file" == tests/* ]] && HAS_TEST_CHANGES=true
-        [[ "$file" =~ \.(cpp|cppm|h|hpp)$ ]] && HAS_CPP_CHANGES=true
-        [[ "$file" =~ (CMakeLists\.txt|\.cmake)$ ]] && HAS_CMAKE_CHANGES=true
-        [[ "$file" == benchmarks/* ]] && HAS_BENCH_CHANGES=true
-    done <<< "$STAGED_FILES"
+    # Classification (HAS_SRC_CHANGES etc.) lives in scripts/detect-changes.sh,
+    # shared with .github/workflows/ci.yml so both places skip on the same rules.
+    eval "$(printf '%s\n' "$STAGED_FILES" | "$(dirname "${BASH_SOURCE[0]}")/scripts/detect-changes.sh")"
 
     if [[ "$HAS_CPP_CHANGES" == false && "$HAS_CMAKE_CHANGES" == false ]]; then
         echo -e "${DIM}ℹ  No C++ or cmake files in commit — skipping format, tidy, tests, coverage${RESET}"

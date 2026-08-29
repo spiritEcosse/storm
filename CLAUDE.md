@@ -90,7 +90,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 4. **NEVER work directly on `develop` for issue-linked tasks** - Always create `feature/<N>-<description>` branch first (see [Branching Rules](#branching-rules))
 5. **ALWAYS show files before commit** - Run `git status --short`, get user approval, then commit
 6. **ALWAYS benchmark after code changes** - Use Release builds; revert if ANY slowdown
-7. **NEVER run sanitizer builds locally — CI runs them** - `ninja-asan-ubsan` (memory + UB) and `ninja-tsan` (data races) run on every PR in CI; check results with `gh pr checks <PR#>`. Fix or revert if CI reports new violations. Do NOT build or run sanitizer presets locally.
+7. **NEVER run sanitizer builds locally — CI runs them** - `ninja-asan-ubsan` (memory + UB) and `ninja-tsan` (data races) run in CI on every PR that touches `src/`, `tests/`, or cmake files (skipped otherwise — see `scripts/detect-changes.sh` / the `changes` job in `ci.yml`); check results with `gh pr checks <PR#>`. Fix or revert if CI reports new violations. Do NOT build or run sanitizer presets locally.
 8. **ALWAYS update docs AND agent files after changes** - Code + docs + `.claude/agents/*.md` commit together. If you change a feature, preset, command, or pattern described in any agent file, update that agent file too.
    - **Agent `description:` MUST stay on ONE physical line** — write newlines as literal `\n` escapes (see `reviewer.md`). A description spanning real lines breaks the YAML frontmatter parse and Claude Code drops the agent **silently**: it never appears in the available-agents list and cannot be dispatched, with no warning. This shipped twice (#543 — `storm-sql-reviewer`, `storm-buildsystem-reviewer`, both undispatchable from merge). Enforced by `scripts/check-agent-frontmatter.sh`, run by `commit.sh` on any staged agent file and by the `agent-frontmatter` CI job.
 9. **ALWAYS write thorough unit tests BEFORE implementing** - Every feature or fix needs comprehensive tests first (see [Testing Checklist](#thorough-testing-checklist)). Workflow: (1) write tests → (2) run — new tests MUST fail (proves they test real behavior) → (3) implement → (4) run again — ALL tests must pass
@@ -282,7 +282,9 @@ cmake --build --preset ninja-debug-coverage --target coverage-html
 ```
 
 **Enforced in CI, not just locally (#528)**: the `coverage` job in `.github/workflows/ci.yml`
-runs `ninja-debug-coverage` on every PR and fails below **100% line coverage** — the same gate
+runs `ninja-debug-coverage` on every PR that touches `src/`, `tests/`, or cmake files (skipped
+otherwise, same `changes`-job gate as the sanitizer builds above) and fails below **100% line
+coverage** — the same gate
 `commit.sh` step 5 applies, so the threshold is independently reproduced rather than self-reported
 from one machine. It parses the **line** row specifically (functions ~81%, branches ~92% are not
 gated) and uploads the HTML report as a `coverage-html` artifact on pass and failure alike.
