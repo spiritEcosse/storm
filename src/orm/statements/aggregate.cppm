@@ -50,15 +50,9 @@ export namespace storm::orm::statements {
     concept AllNumericAggregateable =
             (NumericAggregateable<std::remove_cvref_t<typename[:std::meta::type_of(FieldInfos):]>> && ...);
 
-    // A COUNT(DISTINCT) target must name exactly ONE column (#570). False only for an FK
-    // whose target has a composite primary key: that member spreads over "<member>_<part>"
-    // columns, and unlike ORDER BY there is no multi-column form to expand into —
-    // COUNT(DISTINCT a, b) is a SYNTAX ERROR in SQLite, while PostgreSQL parses it as a
-    // row constructor and counts something else entirely. A backend-divergent wrong answer
-    // is the worst of the options, so the member is rejected at the call site instead.
-    // COUNT(*) and plain count() are unaffected — they name no column.
-    template <auto S>
-    concept SingleColumnSelector = storm::meta::is_single_column_member(storm::meta::selector_info<S>());
+    // A COUNT(DISTINCT) target must name exactly ONE column (#570); COUNT(*) and plain
+    // count() are unaffected — they name no column. Gate is storm::meta::SingleColumnSelector
+    // (fields.cppm, #613) — see its definition for the SQLite-vs-PostgreSQL rationale.
 
     // Aggregate function types
     enum class AggregateType : std::uint8_t { SUM, COUNT, AVG, MIN, MAX, COUNT_DISTINCT };
@@ -788,7 +782,7 @@ export namespace storm::orm::statements {
         }
 
         template <auto... S>
-            requires((storm::meta::ValidSelector<S> && ...) && (SingleColumnSelector<S> && ...))
+            requires((storm::meta::ValidSelector<S> && ...) && (storm::meta::SingleColumnSelector<S> && ...))
         [[nodiscard]] auto count_distinct() {
             return grouped_op<AggregateType::COUNT_DISTINCT, storm::meta::selector_info<S>()...>();
         }

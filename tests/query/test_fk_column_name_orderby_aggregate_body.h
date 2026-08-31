@@ -18,9 +18,6 @@
 
 import storm;
 import std;
-// SingleColumnSelector — the COUNT(DISTINCT) gate; not re-exported by `storm`
-// (same reason test_aggregateable_concept.cpp imports this module directly).
-import storm_orm_statements_aggregate;
 
 #include "test_models.h" // NOSONAR cpp:S954
 
@@ -427,12 +424,13 @@ static_assert(!storm::orm::statements::OrderBySelectorsAreSingleColumn<fields::S
 static_assert(storm::orm::statements::OrderBySelectorsAreSingleColumn<fields::Person.age, false>,
               "a DESC modifier is not a field arg and must pass the gate");
 
-// The COUNT(DISTINCT) gate (aggregate.cppm), the sibling of the ORDER BY one above.
-static_assert(storm::orm::statements::SingleColumnSelector<fields::Message.sender>,
+// The COUNT(DISTINCT) gate — storm::meta::SingleColumnSelector (fields.cppm), consolidated
+// (#613) with the ORDER BY gate above, both now built on the same predicate.
+static_assert(storm::meta::SingleColumnSelector<fields::Message.sender>,
               "COUNT(DISTINCT <single-PK fk>) stays available");
-static_assert(!storm::orm::statements::SingleColumnSelector<fields::Shipment.line>,
+static_assert(!storm::meta::SingleColumnSelector<fields::Shipment.line>,
               "COUNT(DISTINCT <composite fk>) is refused at the call site");
-static_assert(!storm::orm::statements::SingleColumnSelector<fields::OptionalShipment.line>,
+static_assert(!storm::meta::SingleColumnSelector<fields::OptionalShipment.line>,
               "and the nullable composite form is refused too");
 
 // WHERE's Field<M>/CollatedField<M> proxies (where.cppm, #575) gate the same policy, but

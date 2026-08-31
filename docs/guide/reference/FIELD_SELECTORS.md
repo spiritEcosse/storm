@@ -147,6 +147,21 @@ ever be well-defined for `==`/`!=`, not for `>`, `LIKE`, `BETWEEN`, etc. — so
 count, or filter by the target's parts explicitly instead. `join<>` on such
 an FK is fully supported ([#504]).
 
+`WHERE`'s rejection uses the same `= delete("...")` pattern as the relation
+case above ([#613]), so a bare comparison names the reason instead of a bare
+"invalid operands to binary expression":
+
+```cpp
+qs.where(fields::Shipment.line == 1)  // ❌ compile error — Shipment.line targets a composite-PK model
+```
+
+```
+error: overload resolution selected deleted operator '==': this member is a
+foreign key to a composite-PK target: it spreads over multiple
+"<member>_<part>" columns, so there is no single column to compare in
+where().
+```
+
 `count()`, `distinct()` and `values<>()` do **not** yet reject a composite-PK
 FK member the way `ORDER BY`/`COUNT(DISTINCT)`/`WHERE` do — tracked as
 [#611]. Avoid naming such a member in those three until it lands.
@@ -158,6 +173,7 @@ FK member the way `ORDER BY`/`COUNT(DISTINCT)`/`WHERE` do — tracked as
 [#575]: https://github.com/spiritEcosse/storm/issues/575
 [#610]: https://github.com/spiritEcosse/storm/issues/610
 [#611]: https://github.com/spiritEcosse/storm/issues/611
+[#613]: https://github.com/spiritEcosse/storm/issues/613
 
 ---
 

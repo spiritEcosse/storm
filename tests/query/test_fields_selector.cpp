@@ -94,6 +94,14 @@ static_assert(!has_like<decltype(fields::FSArticle.tags)>); // a relation does N
 static_assert(!has_in<decltype(fields::FSArticle.tags)>);
 static_assert(!has_is_null<decltype(fields::FSArticle.tags)>);
 
+// NullableField narrowing (#613): a plain, non-optional column must NOT expose
+// is_null()/is_not_null(). Routes through utilities::is_optional_v now, not
+// duck-typing on `::value_type` — std::string has one too, and used to satisfy
+// the old check, silently compiling an IS NULL that could never match. Pins
+// the behavior so a future loosening of NullableField fails here, not silently.
+static_assert(!has_is_null<decltype(fields::FSPerson.name)>); // std::string: NOT nullable
+static_assert(!has_is_null<decltype(fields::FSPerson.age)>);  // int: NOT nullable
+
 // ValidSelector gates the column positions, so it must REJECT a relation proxy.
 static_assert(ValidSelector<fields::FSArticle.title>);
 static_assert(!ValidSelector<fields::FSArticle.tags>);

@@ -68,12 +68,15 @@ export namespace storm::orm::statements {
     // silently apply the direction to the LAST part only: valid SQL, wrong order, no
     // diagnostic — the failure mode this file's INVARIANT comment already warns about.
     // Rejected rather than mis-emitted, matching #500/#511/#537.
-    // Per-arg, so the modifier args (bool / Collate) short-circuit at the CONCEPT level:
-    // selector_info<Arg>() is constrained by AnySelector and naming it for a bool would
-    // not merely be false, it would fail to normalise.
+    // Per-arg, so the modifier args (bool / Collate) short-circuit before the single-column
+    // test runs at all: selector_info<Arg>() is constrained by AnySelector, and a bad Arg
+    // there maps to `false` rather than hard-erroring (verified — see ValidSelector's
+    // comment, fields.cppm) — but skipping it for a non-field Arg is still clearer than
+    // relying on that. The single-column test itself is the shared
+    // storm::meta::SingleColumnSelector (fields.cppm), consolidated with COUNT(DISTINCT)'s
+    // gate (#613); this concept just ORs in the modifier-arg escape on top.
     template <auto Arg>
-    concept OrderByArgIsSingleColumn =
-            !detail::is_field_arg<Arg>() || storm::meta::is_single_column_member(storm::meta::selector_info<Arg>());
+    concept OrderByArgIsSingleColumn = !detail::is_field_arg<Arg>() || storm::meta::SingleColumnSelector<Arg>;
 
     template <auto... Args>
     concept OrderBySelectorsAreSingleColumn = (OrderByArgIsSingleColumn<Args> && ...);
