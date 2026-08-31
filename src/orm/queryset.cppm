@@ -498,7 +498,7 @@ export namespace storm {
         //        queryset.where(active == true).count_distinct<fields::Person.department>().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
         template <auto S>
-            requires storm::meta::ValidSelector<S> && orm::statements::SingleColumnSelector<S>
+            requires storm::meta::ValidSelector<S> && storm::meta::SingleColumnSelector<S>
         [[nodiscard]] auto count_distinct() {
             using StmtType = orm::statements::AggregateStatement<
                     T,

@@ -153,6 +153,22 @@ export namespace storm::meta {
     concept ValidSelector = FieldSelector<std::remove_cvref_t<decltype(S)>> && ValidFieldInfo<selector_info<S>()> &&
                             !is_relation_field(selector_info<S>());
 
+    // Selector form of SingleColumnMember (field_attr.cppm) — unwraps a field-selector NTTP
+    // via selector_info<S>() before testing it. False only for an FK whose target has a
+    // composite primary key: that member spreads over "<member>_<part>" columns, and
+    // neither COUNT(DISTINCT) nor ORDER BY has a correct multi-column form to fall back to
+    // — COUNT(DISTINCT a, b) is a SYNTAX ERROR in SQLite, while PostgreSQL parses it as a
+    // row constructor and counts something else entirely; ORDER BY's ASC/DESC/COLLATE
+    // suffix attaches once, after ONE name, so a comma list would silently apply it to the
+    // LAST part only. Both reject the member at the call site instead (#570). Consolidates
+    // what used to be two separate concepts making the same call (#613): aggregate.cppm's
+    // COUNT(DISTINCT) gate and orderby.cppm's ORDER BY gate (which ORs in its own
+    // modifier-arg escape on top). Not self-guarding — selector_info<S>() still needs S to
+    // satisfy AnySelector, but per ValidSelector's comment above a bad S maps to `false`
+    // here rather than hard-erroring, so an unguarded call site degrades gracefully.
+    template <auto S>
+    concept SingleColumnSelector = SingleColumnMember<selector_info<S>()>;
+
     // The define_aggregate spec list for `owner`: one proxy-typed member per
     // model member, named after it. A persisted column gets a FieldRef (usable
     // everywhere); an m2m/reverse-FK relation gets a RelationRef (join targets
