@@ -135,17 +135,19 @@ hard error inside SQL generation.
 
 **One limitation.** If the FK's target has a *composite* primary key, the
 member has no single column — it spreads over `<member>_<part>` columns
-(e.g. `line_order_id`, `line_product_id`). `ORDER BY`, `COUNT(DISTINCT)` and
-`WHERE` (including `in()`) all reject such a member at **compile time**,
-since none has a correct multi-column form: `ORDER BY`'s `ASC`/`DESC` would
-bind to the last part only, `COUNT(DISTINCT a, b)` is a syntax error in
-SQLite while PostgreSQL reads it as a row constructor, `in()` has no single
-key type to construct each value against, and `WHERE`'s row-value syntax
-`(a, b) = (?, ?)` (used by [#501]'s composite-PK UPDATE/DELETE) would only
-ever be well-defined for `==`/`!=`, not for `>`, `LIKE`, `BETWEEN`, etc. — so
-`WHERE` stays rejected uniformly rather than accepting equality alone. Order,
-count, or filter by the target's parts explicitly instead. `join<>` on such
-an FK is fully supported ([#504]).
+(e.g. `line_order_id`, `line_product_id`). `ORDER BY`, `COUNT(DISTINCT)`,
+`count()`, `distinct()`, `values()`, `group_by()` and `WHERE` (including `in()`) all reject
+such a member at **compile time**, since none has a correct multi-column
+form: `ORDER BY`'s `ASC`/`DESC` would bind to the last part only,
+`COUNT(DISTINCT a, b)` is a syntax error in SQLite while PostgreSQL reads it
+as a row constructor, plain `COUNT`/`DISTINCT`/column-projection would name a
+`<member>_id` column that doesn't exist, `in()` has no single key type to
+construct each value against, and `WHERE`'s row-value syntax `(a, b) = (?,
+?)` (used by [#501]'s composite-PK UPDATE/DELETE) would only ever be
+well-defined for `==`/`!=`, not for `>`, `LIKE`, `BETWEEN`, etc. — so `WHERE`
+stays rejected uniformly rather than accepting equality alone. Order, count,
+or filter by the target's parts explicitly instead. `join<>` on such an FK is
+fully supported ([#504]).
 
 `WHERE`'s rejection uses the same `= delete("...")` pattern as the relation
 case above ([#613]), so a bare comparison names the reason instead of a bare
