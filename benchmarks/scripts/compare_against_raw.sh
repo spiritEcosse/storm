@@ -19,14 +19,15 @@
 #
 # Environment:
 #   BUILD_DIR     default build/release
-#   BENCH_FILTER  default 'Storm/(WHERE|SELECT|INSERT)/.*' (the subset with raw counterparts)
+#   BENCH_FILTER  default 'Storm/(WHERE|SELECT|INSERT|INSERT_EDGE|UPDATE_PK|UPDATE_PK_EDGE|DELETE_PK)/.*'
+#                 (the subset with raw counterparts)
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$repo_root"
 
 BUILD_DIR="${BUILD_DIR:-build/release}"
-BENCH_FILTER="${BENCH_FILTER:-Storm/(WHERE|SELECT|INSERT)/.*}"
+BENCH_FILTER="${BENCH_FILTER:-Storm/(WHERE|SELECT|INSERT|INSERT_EDGE|UPDATE_PK|UPDATE_PK_EDGE|DELETE_PK)/.*}"
 
 bench_dir="$BUILD_DIR/benchmarks"
 dash="$bench_dir/dashboard/storm_bench_dashboard"

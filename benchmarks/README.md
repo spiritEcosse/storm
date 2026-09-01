@@ -83,8 +83,12 @@ STORM_BENCH_SOCKET=1 ./build/release/benchmarks/storm_bench
 The raw baseline covers these pinned benchmarks (exact Google Benchmark names with `/N:` suffix):
 - `Storm/WHERE/where_int_comparison_gt/N:10000`
 - `Storm/WHERE/where_bool_equality/N:10000`
-- `Storm/SELECT/select/N:10000`
-  — these three run on the **full 10-field Person** model. The raw anchor mirrors
+- `Storm/WHERE/where_double_comparison/N:10000`
+- `Storm/WHERE/where_int_less_than/N:10000`
+- `Storm/SELECT/select/N:<n>` for every `n` in `dataset_standard`
+  `{100, 1000, 10000, 100000}` (`RangeMultiplier(10)->Range(100, 100000)`, the
+  same registration shape Storm's own `select` test uses)
+  — these run on the **full 10-field Person** model. The raw anchor mirrors
   Storm's generated Person schema (all 10 columns, `name TEXT NOT NULL UNIQUE`,
   `is_active … DEFAULT 0`, nullable `score`/`nickname`/`avatar`) and **materializes
   each result row into a `plf::hive<PersonRow>`** — two strings, two optionals and
@@ -99,10 +103,43 @@ The raw baseline covers these pinned benchmarks (exact Google Benchmark names wi
   in a transaction only when `n` spans more than one chunk. `RETURNING id` is read
   back only for `insert/N:1`, since the Storm fixture sends `N=1` through the
   single-row `insert(obj)` path but `N>1` through the bulk `insert(span)` VOID path.
+- `Storm/UPDATE_PK/update_pk/N:<n>` — same `BATCH_STANDARD` sweep, over the full
+  Person model. `n==1` binds+executes once with no transaction; `n>1` reuses one
+  prepared `UPDATE … WHERE id=?` statement across the whole batch inside a single
+  `BEGIN`/`COMMIT`, mirroring `UpdateStatement::execute(span)`. The table also
+  carries the 4 extra indexes Storm's schema generator creates for Person
+  (`storm::unique`/`storm::indexed`/`storm_indexes`) beyond the SELECT/WHERE
+  anchors' plain schema — omitting them would have the raw side pay less
+  index-maintenance cost than Storm on every write and understate Storm's
+  efficiency, the same fairness class as the AUTOINCREMENT rule below.
+- `Storm/DELETE_PK/delete_pk/N:<n>` — same sweep and extra indexes. Storm's
+  fixture re-seeds the table on **every iteration** before erasing
+  (`CrudBenchmark::run_once`'s `reinsert_for_delete()`, timed —
+  `bench_register.h`'s `run()` has no `PauseTiming`), so this anchor's timed
+  body is clear+reinsert+reselect+delete, not a bare `DELETE`. Anchoring only
+  the `DELETE` would produce a nonsensical ratio against what "delete_pk"
+  actually measures. `n==1` issues a single `id = ?` delete (no transaction);
+  `2..799` issues one `id IN (...)` statement (no transaction); `800+` chunks
+  the `IN` list at 799 rows/statement inside one `BEGIN`/`COMMIT`
+  (`EraseStatement`, single-PK `MAX_CHUNK_ROWS = 999*4/5 = 799`).
+- `Storm/INSERT_EDGE/insert_edge/N:<n>` and `Storm/UPDATE_PK_EDGE/update_pk_edge/N:<n>`
+  for `n` in `BATCH_INSERT_EDGE {248, 249, 250}` and `BATCH_UPDATE_EDGE {198, 199, 200}`
+  — both sweep the same operation as the plain `insert`/`update_pk` anchors above
+  (`benchmark_tests.yaml`), just at boundary sizes, and reuse those anchor
+  functions verbatim under a second registered name. `insert_edge`'s 249 is a
+  real chunk boundary (`999/4` fields); `update_pk_edge`'s 199 is not — the
+  UPDATE path has no chunk arithmetic at all — it's swept only so that Storm
+  benchmark has a raw counterpart.
+
+(#552 tier (a) — UPDATE_PK/DELETE_PK/their `_EDGE` sweeps, plus completing
+WHERE to all four benchmarks. Everything else — ~46 remaining categories
+including JOIN and AGGREGATE — is deliberately left unanchored; see #552 for
+the coverage analysis and why AGGREGATE/SETOP in particular are poor
+candidates despite their size.)
 
 Matched Storm rows show **efficiency as `NN.N% of raw`** (green ≥95%, red below); unmatched rows show `— (no raw)`. The session summary becomes `session: N/M matched · avg NN.N% of raw · target ≥95%`. The raw baseline is **reused across Storm sessions** — refresh is a manual step: re-run `storm_anchors`, then restart the dashboard with `--baseline raw:last`.
 
-To extend the subset, add a benchmark to `benchmarks/anchors_raw.cpp` mirroring the target Storm benchmark's **exact** name via `->Name(...)->Arg(N)->ArgName("N")` and `state.SetComplexityN(state.range(0))`, so the `(test_name, dataset_size)` key matches the Storm row. The raw `CREATE TABLE` must also mirror Storm's generated schema — notably plain `id INTEGER PRIMARY KEY` (since #379 Storm emits plain `INTEGER PRIMARY KEY` by default; AUTOINCREMENT is opt-in via `storm::primary_autoincrement` and costs ~358 ns/insert of `sqlite_sequence` work — using AUTOINCREMENT in the raw anchor would make the INSERT comparison unfair). For SELECT-family anchors, also mirror the **full model column set** and **materialize results into a `plf::hive`** of a struct matching the model — Storm's `select()` always builds the complete entity, so a raw anchor that selects fewer columns or skips the container materialization is not a fair comparison (#68). See `benchmarks/scripts/compare_against_raw.sh` for the orchestration driver.
+To extend the subset, add a benchmark to `benchmarks/anchors_raw.cpp` (or one of its textually-included `anchors_raw_*.hpp` split files — kept separate only to stay under the project's per-file line budget, not standalone headers) mirroring the target Storm benchmark's **exact** name via `->Name(...)->Arg(N)->ArgName("N")` and `state.SetComplexityN(state.range(0))`, so the `(test_name, dataset_size)` key matches the Storm row. The raw `CREATE TABLE` must also mirror Storm's generated schema — notably plain `id INTEGER PRIMARY KEY` (since #379 Storm emits plain `INTEGER PRIMARY KEY` by default; AUTOINCREMENT is opt-in via `storm::primary_autoincrement` and costs ~358 ns/insert of `sqlite_sequence` work — using AUTOINCREMENT in the raw anchor would make the INSERT comparison unfair). For SELECT-family anchors, also mirror the **full model column set** and **materialize results into a `plf::hive`** of a struct matching the model — Storm's `select()` always builds the complete entity, so a raw anchor that selects fewer columns or skips the container materialization is not a fair comparison (#68). See `benchmarks/scripts/compare_against_raw.sh` for the orchestration driver.
 
 See [docs/internals/performance/BENCHMARK_DASHBOARD.md](../docs/internals/performance/BENCHMARK_DASHBOARD.md) for full setup, schema, baseline selectors, backup/restore, and troubleshooting.
 
@@ -170,6 +207,8 @@ benchmarks/
 ├── query_benchmark.cppm        # SELECT-family fixture (storm_benchmark_query module)
 ├── crud_benchmark.cppm         # INSERT/UPDATE/DELETE fixture (storm_benchmark_crud module)
 ├── anchors_raw.cpp             # `storm_anchors` binary — release-time raw SQLite spot checks
+├── anchors_raw_insert.hpp      # INSERT-family anchors (textually included by anchors_raw.cpp, not standalone)
+├── anchors_raw_crud.hpp        # UPDATE_PK/DELETE_PK anchors (ditto)
 ├── scripts/
 │   ├── yaml_to_json.py             # YAML → JSON converter (runs at build time)
 │   ├── compare_against_baseline.sh # Regression diff (Mann-Whitney U-test) — engine for local-dev
