@@ -113,7 +113,7 @@ all surfaced at once when the build state changed.
 Skip list now covers only files that genuinely can't be parsed standalone:
 
 - `tests/*`, `benchmarks/*`, `fuzz/*`, `shared/*` — import Storm modules
-- `src/orm/query_builder.hpp` — pseudo-module header that needs `import storm;`
+  (`shared/query_builder.hpp` is a pseudo-module header that needs `import storm;`)
 
 ## Author workflow
 

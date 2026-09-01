@@ -6,7 +6,7 @@ export module storm_orm_relation_meta;
 
 import std;
 
-import storm_orm_field_attr; // RefAction (junction ON DELETE policy)
+import storm_orm_ref_action; // RefAction (junction ON DELETE policy) — #562
 
 // Dependency-free leaf module (#408): the relation-annotation TYPES (ManyToMany,
 // ReverseFk) and the "is this member a relation, not a persisted column?" detection

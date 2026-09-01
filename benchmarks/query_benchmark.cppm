@@ -42,7 +42,7 @@ import storm_benchmark_schema;
 // Must follow all imports — storm types must be in scope for the templates.
 // TODO: replace with `import storm_orm_query_builder;` once clang-p2996 no
 // longer crashes on splice-in-exported-template patterns. Issue #256.
-#include "src/orm/query_builder.hpp" // NOLINT(misc-header-include-cycle)
+#include "shared/query_builder.hpp" // NOLINT(misc-header-include-cycle)
 
 export namespace storm::benchmark {
 
