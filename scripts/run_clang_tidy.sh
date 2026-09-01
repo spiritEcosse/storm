@@ -132,7 +132,7 @@ echo ""
 # parse failures in files that should be clean.
 #
 # Files genuinely unparseable:
-#   src/orm/query_builder.hpp — pseudo-module header; must be included after
+#   shared/query_builder.hpp — pseudo-module header; must be included after
 #       `import storm;` so clang-tidy sees it without the BMI and fails.
 #
 #   Test headers that must come after `import storm;` — clang-tidy parses
@@ -200,7 +200,7 @@ echo ""
 is_known_unparseable() {
     local file="$1"
     case "$file" in
-        src/orm/query_builder.hpp) return 0 ;;
+        shared/query_builder.hpp) return 0 ;;
         shared/models.h) return 0 ;;
         tests/test_models.h) return 0 ;;
         tests/test_seed_helpers.h) return 0 ;;
@@ -358,7 +358,7 @@ if [[ "$MODE" == "diff" ]]; then
     # that cannot be parsed standalone (e.g. benchmarks/dashboard/models.hpp uses
     # storm reflection annotations which require 'import storm').
     DIFF_ERR_REAL=$(grep ": error:" "$DIFF_OUT" \
-        | grep -v -E "(module|import|reflect|std::meta|consteval|undeclared identifier 'storm'|use of undeclared|benchmarks/dashboard/models\.hpp|src/orm/query_builder\.hpp)" \
+        | grep -v -E "(module|import|reflect|std::meta|consteval|undeclared identifier 'storm'|use of undeclared|benchmarks/dashboard/models\.hpp|shared/query_builder\.hpp)" \
         | wc -l || true)
 
     echo ""

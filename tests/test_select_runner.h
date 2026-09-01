@@ -19,7 +19,7 @@
 #include <utility>
 #include <vector>
 
-#include "src/orm/query_builder.hpp" // NOLINT(misc-header-include-cycle)
+#include "shared/query_builder.hpp" // NOLINT(misc-header-include-cycle)
 
 namespace storm::test {
 

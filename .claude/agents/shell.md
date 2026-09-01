@@ -94,7 +94,7 @@ These scripts have project-specific conventions — understand them before modif
 - `--all` — full-tree sweep, used by the weekly `clang-tidy-sweep` CI workflow (report-only).
 - Options: `--fix` (auto-apply fixes), `-j N` (parallel jobs, default: all cores)
 - Requires release build (`cmake --preset ninja-release`) for `compile_commands.json`
-- Skips for parse-failure are limited to `tests/*`, `benchmarks/*`, `fuzz/*`, `shared/*`, `src/orm/query_builder.hpp`. `src/*.cppm` parse cleanly since 2026-05-11 — a parse failure there now fails loudly.
+- Skips for parse-failure are limited to `tests/*`, `benchmarks/*`, `fuzz/*`, `shared/*`. `src/*.cppm` parse cleanly since 2026-05-11 — a parse failure there now fails loudly.
 - Exits non-zero on warnings/errors that affect the current mode's scope.
 
 **`sonar` CLI** — Branch-aware SonarCloud quality gate:
