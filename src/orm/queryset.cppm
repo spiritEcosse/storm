@@ -230,7 +230,7 @@ export namespace storm {
         // Returns DistinctStatement by value - connection-level prepare_cached() handles SQL caching
         // No static thread_local needed since actual statement caching is at connection level
         template <auto... S>
-            requires((storm::meta::ValidSelector<S> && ...))
+            requires((storm::meta::ValidSelector<S> && ...) && (storm::meta::SingleColumnSelector<S> && ...))
         [[nodiscard]] constexpr auto distinct() {
             if constexpr (sizeof...(S) == 0) {
                 using StmtType = orm::statements::
@@ -251,7 +251,10 @@ export namespace storm {
         // Unlike distinct(), values() does NOT apply DISTINCT — all rows are returned
         // including duplicates. Works with WHERE, JOIN, ORDER BY, LIMIT/OFFSET.
         template <auto... S>
-            requires(sizeof...(S) > 0 && (storm::meta::ValidSelector<S> && ...))
+            requires(
+                    sizeof...(S) > 0 && (storm::meta::ValidSelector<S> && ...) &&
+                    (storm::meta::SingleColumnSelector<S> && ...)
+            )
         [[nodiscard]] constexpr auto values() {
             using StmtType = orm::statements::ValuesStatement<T, ConnType, storm::meta::selector_info<S>()...>;
             return StmtType{conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_};
@@ -342,7 +345,10 @@ export namespace storm {
         //   qs.group_by<fields::Person.dept, fields::Person.role>().sum<fields::Person.salary>().execute()
         //   qs.where(age > 25).group_by<fields::Person.years_exp>().count().execute()
         template <auto... S>
-            requires(sizeof...(S) > 0 && (storm::meta::ValidSelector<S> && ...))
+            requires(
+                    sizeof...(S) > 0 && (storm::meta::ValidSelector<S> && ...) &&
+                    (storm::meta::SingleColumnSelector<S> && ...)
+            )
         [[nodiscard]] auto group_by() {
             return orm::statements::GroupByBuilder<T, ConnType, storm::meta::selector_info<S>()...>{
                     {conn_, where_expr_, join_stmt_, limit_value_, offset_value_, order_by_wrapper_, nullptr}
@@ -421,7 +427,7 @@ export namespace storm {
         //        queryset.join<FK>().count().execute()
         // Returns statement by value - connection-level prepare_cached() handles SQL caching
         template <auto... S>
-            requires((storm::meta::ValidSelector<S> && ...))
+            requires((storm::meta::ValidSelector<S> && ...) && (storm::meta::SingleColumnSelector<S> && ...))
         [[nodiscard]] auto count() {
             using StmtType = orm::statements::AggregateStatement<
                     T,

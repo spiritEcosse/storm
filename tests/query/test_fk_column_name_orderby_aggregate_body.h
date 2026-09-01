@@ -497,6 +497,18 @@ template <typename Qs, auto S>
 concept CanOrderBy = requires(Qs qs) { qs.template order_by<S>(); };
 template <typename Qs, auto S>
 concept CanCountDistinct = requires(Qs qs) { qs.template count_distinct<S>(); };
+// #611: count()/distinct()/values()/group_by() carry the same gate now too.
+template <typename Qs, auto S>
+concept CanCount = requires(Qs qs) { qs.template count<S>(); };
+template <typename Qs, auto S>
+concept CanDistinct = requires(Qs qs) { qs.template distinct<S>(); };
+template <typename Qs, auto S>
+concept CanValues = requires(Qs qs) { qs.template values<S>(); };
+// G/S below each isolate one of group_by()/count()'s two independent gates.
+template <typename Qs, auto G, auto S>
+concept CanGroupedCount = requires(Qs qs) { qs.template group_by<G>().template count<S>(); };
+template <typename Qs, auto S1, auto S2>
+concept CanChainedCount = requires(Qs qs) { qs.template count<S1>().template count<S2>(); };
 
 using MessageQs = QuerySet<Message, storm::db::sqlite::Connection>;
 using ShipmentQs = QuerySet<Shipment, storm::db::sqlite::Connection>;
@@ -508,6 +520,20 @@ static_assert(CanCountDistinct<MessageQs, fields::Message.sender>,
               "COUNT(DISTINCT) on a single-PK FK must still compile");
 static_assert(!CanCountDistinct<ShipmentQs, fields::Shipment.line>,
               "QuerySet::count_distinct must REJECT a composite-PK FK — fails if the requires-clause is dropped");
+static_assert(CanCount<MessageQs, fields::Message.sender>, "count() on a single-PK FK must still compile");
+static_assert(!CanCount<ShipmentQs, fields::Shipment.line>, "count() must REJECT a composite-PK FK (#611)");
+static_assert(CanDistinct<MessageQs, fields::Message.sender>, "distinct() on a single-PK FK must still compile");
+static_assert(!CanDistinct<ShipmentQs, fields::Shipment.line>, "distinct() must REJECT a composite-PK FK (#611)");
+static_assert(CanValues<MessageQs, fields::Message.sender>, "values() on a single-PK FK must still compile");
+static_assert(!CanValues<ShipmentQs, fields::Shipment.line>, "values() must REJECT a composite-PK FK (#611)");
+static_assert(CanGroupedCount<MessageQs, fields::Message.value, fields::Message.sender>, "single-PK FK ok");
+static_assert(!CanGroupedCount<ShipmentQs, fields::Shipment.line, fields::Shipment.carrier>,
+              "QuerySet::group_by must REJECT a composite-PK FK (#611)");
+static_assert(!CanGroupedCount<ShipmentQs, fields::Shipment.carrier, fields::Shipment.line>,
+              "GroupByBuilder::count must REJECT a composite-PK FK (#611)");
+static_assert(CanChainedCount<MessageQs, fields::Message.sender, fields::Message.sender>, "single-PK FK ok");
+static_assert(!CanChainedCount<ShipmentQs, fields::Shipment.carrier, fields::Shipment.line>,
+              "chained AggregateStatement::count must REJECT a composite-PK FK (#611)");
 
 // ── Non-FK regression: SQL must stay byte-identical ─────────────────────────
 
