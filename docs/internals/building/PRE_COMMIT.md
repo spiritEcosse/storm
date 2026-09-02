@@ -103,12 +103,29 @@ module file, **`run_clang_tidy.sh` will now fail loudly** with:
 The cause is almost always one of:
 
 1. Stale `build/release/` from before a clang-p2996 update — `rm -rf build/release && cmake --preset ninja-release && cmake --build --preset ninja-release`.
-2. A regression in the clang-p2996 binary — file an upstream issue and fall back to `--full` with the affected `.cppm` added back to `is_known_unparseable`'s skip list (in `scripts/run_clang_tidy.sh`).
+2. A regression in the clang-p2996 binary — file an upstream issue and fall back to `--full` with the affected `.cppm` added back to `is_known_unparseable`'s skip list (in `scripts/lib/clang_tidy_skiplist.sh`).
 
 **Silent skipping is gone.** The unconditional `*.cppm` skip in
 `is_known_unparseable` was the root cause of Issue #262 — clang-tidy could
 parse those files for months before anyone noticed, and the accumulated drift
 all surfaced at once when the build state changed.
+
+`is_known_unparseable`, `is_always_skip_file`, and `filter_skiplist_from_diff`
+live in `scripts/lib/clang_tidy_skiplist.sh` (extracted from `run_clang_tidy.sh`
+in #550), sourced by all three modes — the single place both the pre-commit
+`--diff` path and the weekly `--all` sweep consult for which files clang-tidy
+cannot parse. `--diff` mode used to also run a post-hoc regex over the error
+text it collected, meant to strip toolchain/reflection parse noise the way the
+skip list already does for known files; it was retired in #550 because it was
+unanchored (matched anywhere on a diagnostic line) and had, in review during
+#518, matched a genuine error on a real Storm file (`src/orm/fields.cppm`)
+alongside the toolchain noise it targeted. A file that starts producing this
+noise now needs an explicit, reviewed entry in `clang_tidy_skiplist.sh` —
+the same requirement every file already on that list satisfies. `fuzz/*.cpp`
+and `fuzz/fuzz_models.h` were added to the list as part of #550 itself: they
+were never actually on it before, silently saved from blocking commits only
+by the retired regex's generic `module`/`import` alternatives — the sentence
+below was aspirational for `fuzz/*` until this fix made it true.
 
 Skip list now covers only files that genuinely can't be parsed standalone:
 

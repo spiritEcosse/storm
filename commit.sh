@@ -192,6 +192,27 @@ if [[ -n "$STAGED_FILES" ]] \
     echo -e "${DIM}✓ agent frontmatter valid${RESET}"
 fi
 
+# --- clang-tidy skip-list self-test (issue #550) ---
+# scripts/lib/clang_tidy_skiplist.sh is the single source of truth both
+# run_clang_tidy.sh --diff and the weekly --all sweep consult for which files
+# clang-tidy cannot parse standalone. Cheap pure-bash check.
+#
+# Deliberately placed BEFORE the TOTAL_STEPS==0 early exit below, same
+# reasoning as the agent-frontmatter guard above: a commit touching only
+# scripts/lib/clang_tidy_skiplist.sh or scripts/run_clang_tidy.sh has no
+# src/tests/cmake changes, so RUN_TIDY (and every other step) is false and
+# TOTAL_STEPS would otherwise be 0 — exactly the commit that most needs this
+# self-test.
+if [[ -n "$STAGED_FILES" ]] \
+   && grep -qE '^scripts/(lib/clang_tidy_skiplist\.sh|run_clang_tidy\.sh)$' <<< "$STAGED_FILES"; then
+    if ! "$(dirname "${BASH_SOURCE[0]}")/scripts/tests/test_run_clang_tidy_skiplist.sh"; then
+        echo ""
+        echo -e "${RED}${BOLD} COMMIT BLOCKED — clang-tidy skip-list self-test failed${RESET}"
+        exit 1
+    fi
+    echo -e "${DIM}✓ clang-tidy skip-list self-test passed${RESET}"
+fi
+
 # --- Count total steps ---
 TOTAL_STEPS=0
 [[ "$RUN_FORMAT" == true ]] && ((TOTAL_STEPS++))

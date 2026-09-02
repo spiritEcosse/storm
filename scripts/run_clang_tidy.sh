@@ -122,146 +122,12 @@ else
 fi
 echo ""
 
-# Known-skip list: files clang-tidy cannot parse and we accept that.
-#
-# Returns 0 (true) if a file is expected to fail clang-tidy parsing.
-#
-# These are precise file paths, not directory wildcards. The former broad
-# "tests/*|benchmarks/*" wildcard was replaced in Issue #308 because 39 test
-# files and most bench files parse fine — the wildcard was silently masking
-# parse failures in files that should be clean.
-#
-# Files genuinely unparseable:
-#   shared/query_builder.hpp — pseudo-module header; must be included after
-#       `import storm;` so clang-tidy sees it without the BMI and fails.
-#
-#   Test headers that must come after `import storm;` — clang-tidy parses
-#   them standalone and hits missing storm symbols:
-#   tests/test_models.h, tests/test_seed_helpers.h, tests/test_select_runner.h,
-#   tests/test_write_runner.h, tests/test_yaml_register.h,
-#   tests/query/test_aggregate_fixture.h, tests/query/test_m2m_models.h,
-#   tests/query/test_fields_models.h, tests/crud/test_composite_pk_models.h,
-#   tests/test_parser.hpp, tests/test_unified_yaml_body.h,
-#   tests/tools/storm_schema/models.h, shared/models.h
-#
-#   tests/test_unified_yaml_body.h joined with the YAML-harness split (#561).
-#   It needs `import storm;` like its siblings, and additionally reads
-#   STORM_UNIFIED_CASES_FILE, which the INCLUDING TU defines — parsed standalone
-#   that macro is undeclared and the static_assert guarding it errors out. The
-#   code is still linted through the four tests/yaml/test_unified_yaml_*.cpp TUs
-#   that include it, each of which has a real compile-commands entry.
-#
-#   The 12 *_body.h files are the compile-time TU-split bodies (each holds the
-#   shared TYPED_TEST_SUITE/TYPED_TEST content for one _sqlite.cpp/_pg.cpp pair):
-#   tests/crud/test_composite_fk_join_body.h, tests/crud/test_composite_pk_crud_body.h,
-#   tests/crud/test_crud_body.h, tests/query/test_aggregate_having_body.h,
-#   tests/query/test_aggregate_optional_body.h, tests/query/test_composite_m2m_junction_body.h,
-#   tests/query/test_composite_m2m_through_body.h,
-#   tests/query/test_fk_column_name_orderby_aggregate_body.h,
-#   tests/query/test_many_to_many_body.h, tests/query/test_many_to_many_multi_body.h,
-#   tests/query/test_reverse_fk_body.h, tests/schema/test_fk_fields_body.h.
-#   Same shape as tests/test_unified_yaml_body.h above: each guards on two macros
-#   (STORM_SPLIT_TYPES / STORM_SPLIT_TYPE_NAMES) that the including .cpp defines
-#   before the #include, so parsed standalone the #error guard fires. Linted
-#   through the 24 tests/**/*_sqlite.cpp / *_pg.cpp TUs that include them, each
-#   with a real compile-commands entry.
-#
-#   tests/tools/storm_schema/models.h and shared/models.h joined the list with
-#   the fields:: proxies (#518). Both call storm::field_specs_for inside a
-#   `consteval` block, which is a harder
-#   dependency on `import storm;` than the [[= storm::*]] annotations alone —
-#   shared/models.h parsed standalone before that and does not now. Their
-#   #include <meta> also drags libc++'s own <meta> into a non-C++26 parse, which
-#   reports `unknown type name 'concept'` against the TOOLCHAIN header; skipping
-#   at the source stops that too, without a post-hoc output filter that would
-#   also mask a genuinely malformed concept in Storm's own code.
-#
-#   benchmarks/bench_register.h — includes benchmark/benchmark.h which
-#   clang-tidy cannot parse (gbench macro / linkage issue).
-#
-#   Benchmark textual headers — #included inside anonymous namespaces of main
-#   TUs; cannot be parsed standalone (need import storm or benchmark BMI):
-#   benchmarks/models.hpp, benchmarks/m2m_models.hpp, benchmarks/benchmark_tests.hpp,
-#   benchmarks/dashboard/args.hpp, benchmarks/dashboard/backup.hpp,
-#   benchmarks/dashboard/db.hpp, benchmarks/dashboard/events.hpp,
-#   benchmarks/dashboard/tui_render.hpp, benchmarks/dashboard/models.hpp
-#
-#   benchmarks/schema.cppm — parses fine, but ANY ASTMatcher-based check
-#       (every enabled check) SIGSEGVs clang-tidy inside
-#       RecursiveASTVisitor::TraverseTemplateInstantiations on the std-module
-#       VarTemplateDecl `std::__desugars_to_v` (a clang-p2996 ParentMap/AST
-#       traversal bug over `import std;` instantiations). Reproduces with the
-#       pre-#364 7-category config and with a single readability check, so it is
-#       a toolchain crash, not a Storm-code or check-config issue. Tracked with
-#       the other clang-p2996 module crashes under issue #262.
-#
-#   python/bindings.cpp — `import storm;`, same standalone-parse issue as the
-#       test/benchmark headers above.
-is_known_unparseable() {
-    local file="$1"
-    case "$file" in
-        shared/query_builder.hpp) return 0 ;;
-        shared/models.h) return 0 ;;
-        tests/test_models.h) return 0 ;;
-        tests/test_seed_helpers.h) return 0 ;;
-        tests/test_select_runner.h) return 0 ;;
-        tests/test_write_runner.h) return 0 ;;
-        tests/test_yaml_register.h) return 0 ;;
-        tests/query/test_aggregate_fixture.h) return 0 ;;
-        tests/query/test_m2m_models.h) return 0 ;;
-        tests/query/test_fields_models.h) return 0 ;;
-        tests/crud/test_composite_pk_models.h) return 0 ;;
-        tests/test_parser.hpp) return 0 ;;
-        tests/test_unified_yaml_body.h) return 0 ;;
-        tests/crud/test_composite_fk_join_body.h) return 0 ;;
-        tests/crud/test_composite_pk_crud_body.h) return 0 ;;
-        tests/crud/test_crud_body.h) return 0 ;;
-        tests/query/test_aggregate_having_body.h) return 0 ;;
-        tests/query/test_aggregate_optional_body.h) return 0 ;;
-        tests/query/test_composite_m2m_junction_body.h) return 0 ;;
-        tests/query/test_composite_m2m_through_body.h) return 0 ;;
-        tests/query/test_fk_column_name_orderby_aggregate_body.h) return 0 ;;
-        tests/query/test_many_to_many_body.h) return 0 ;;
-        tests/query/test_many_to_many_multi_body.h) return 0 ;;
-        tests/query/test_reverse_fk_body.h) return 0 ;;
-        tests/schema/test_fk_fields_body.h) return 0 ;;
-        tests/tools/storm_schema/models.h) return 0 ;;
-        benchmarks/bench_register.h) return 0 ;;
-        benchmarks/models.hpp) return 0 ;;
-        benchmarks/m2m_models.hpp) return 0 ;;
-        benchmarks/benchmark_tests.hpp) return 0 ;;
-        benchmarks/dashboard/args.hpp) return 0 ;;
-        benchmarks/dashboard/backup.hpp) return 0 ;;
-        benchmarks/dashboard/db.hpp) return 0 ;;
-        benchmarks/dashboard/events.hpp) return 0 ;;
-        benchmarks/dashboard/tui_render.hpp) return 0 ;;
-        benchmarks/dashboard/models.hpp) return 0 ;;
-        benchmarks/schema.cppm) return 0 ;;
-        python/bindings.cpp) return 0 ;;
-        *) return 1 ;;
-    esac
-}
-export -f is_known_unparseable
-
-# Files clang-tidy must NEVER touch — even when it can parse them cleanly.
-# Used to short-circuit run_tidy() (full/all modes) and filter_skiplist_from_diff()
-# (--diff mode) so clang-tidy --fix never mutates the file.
-#
-# src/orm/generator.cppm is the upstream P2168 std::generator reference
-# implementation (Lewis Baker / Corentin Jabot). clang-tidy's
-# readability-identifier-naming rewrites `_T → T` and `__manual_lifetime →
-# _manual_lifetime` on the primary template but misses the reference
-# specialization, producing ill-formed code. Storm does not own this file;
-# treat it as vendored — never lint, never auto-fix.
-is_always_skip_file() {
-    local file="$1"
-    case "$file" in
-        src/orm/generator.cppm) return 0 ;;
-        */src/orm/generator.cppm) return 0 ;;
-        *) return 1 ;;
-    esac
-}
-export -f is_always_skip_file
+# is_known_unparseable(), is_always_skip_file(), and filter_skiplist_from_diff()
+# live in scripts/lib/clang_tidy_skiplist.sh — extracted in #550 so
+# scripts/tests/test_run_clang_tidy_skiplist.sh can unit-test the
+# classification without a live clang-tidy binary. See that file for the
+# per-entry rationale (which files are unparseable and why).
+source "$(dirname "${BASH_SOURCE[0]}")/lib/clang_tidy_skiplist.sh"
 
 # ─── --diff mode short path ─────────────────────────────────────────────────
 # Pipe `git diff -U0 --cached` through clang-tidy-diff.py — it only emits
@@ -278,34 +144,9 @@ if [[ "$MODE" == "diff" ]]; then
     DIFF_FIX=""
     [[ -n "$FIX_FLAG" ]] && DIFF_FIX="-fix"
 
-    # Drop diff sections for known-unparseable files BEFORE clang-tidy-diff.py
-    # sees them. clang-tidy-diff.py has no concept of our skip-list, so it would
-    # otherwise run clang-tidy on textual headers that cannot parse standalone
-    # (they need `import storm;` / a benchmark BMI / are reflection-annotated) and
-    # attribute their header-origin diagnostics to the staged lines. Since the
-    # `import std;` migration these standalone parses fail hard enough to emit
-    # dozens of spurious warnings/errors (e.g. tests/test_parser.hpp,
-    # benchmarks/dashboard/*.hpp), which is pure noise on the diff. Filtering at
-    # the source (vs. post-hoc output grepping) keeps the summary counts honest
-    # and reuses the single is_known_unparseable() source of truth. See issue #326.
-    filter_skiplist_from_diff() {
-        local keep=1 path
-        while IFS= read -r line; do
-            if [[ "$line" == "diff --git "* ]]; then
-                # path is the b-side: "diff --git a/<p> b/<p>"
-                path="${line##* b/}"
-                # Drop both unparseable files AND always-skip vendored files
-                # (e.g. generator.cppm) — the latter must never be linted in any
-                # mode, but clang-tidy-diff.py has no concept of either skip-list.
-                if is_known_unparseable "$path" || is_always_skip_file "$path"; then
-                    keep=0
-                else
-                    keep=1
-                fi
-            fi
-            [[ "$keep" == 1 ]] && printf '%s\n' "$line"
-        done
-    }
+    # filter_skiplist_from_diff (scripts/lib/clang_tidy_skiplist.sh) drops diff
+    # sections for known-unparseable / always-skip files BEFORE clang-tidy-diff.py
+    # sees them — see that file for the rationale.
 
     # -timeout 240 (issue #326): the tests/yaml/test_unified_yaml_*.cpp TUs run an
     # #embed + consteval JSON parse under import std; — the old 60s timed them out
@@ -349,26 +190,38 @@ if [[ "$MODE" == "diff" ]]; then
     fi
 
     # Count actual diagnostics — clang-tidy-diff.py's exit code is unreliable
-    # across versions (it may return 0 even with warnings).
+    # across versions (it may return 0 even with warnings). Both counts are
+    # unfiltered: toolchain/third-party standalone-parse noise never reaches
+    # $DIFF_OUT in the first place, because filter_skiplist_from_diff already
+    # dropped those files' diff sections above before clang-tidy-diff.py ran
+    # (source-level skip, keyed by file identity via is_known_unparseable()).
+    # A post-hoc message-text regex used to filter DIFF_ERR only — asymmetric
+    # with DIFF_WARN (#550 gap 1) and, being unanchored, it once matched a
+    # genuine `unknown type name 'concept'` error against a real Storm file
+    # (src/orm/fields.cppm) as well as the toolchain noise it was meant to
+    # catch (#550 gap 2). Retired in favour of the source-level skip alone: a
+    # file not on that reviewed list is never silently excluded again — if
+    # one starts producing this noise, it needs an entry (and a rationale) in
+    # scripts/lib/clang_tidy_skiplist.sh, the same as every file already there.
+    #
+    # DIFF_ERR is labelled "in staged files", not "on staged lines" like
+    # DIFF_WARN: clang-tidy's -line-filter (which clang-tidy-diff.py sets per
+    # file) only suppresses warnings outside the diffed hunks — a hard parse
+    # failure (clang-diagnostic-error) is reported regardless of which line
+    # triggered it, since the rest of the TU couldn't be checked at all. So a
+    # one-line staged edit to a TU that fails to parse standalone blocks on
+    # that whole-file failure, not on the edited line specifically.
     DIFF_WARN=$(grep -c ": warning:" "$DIFF_OUT" || true)
     DIFF_ERR=$(grep -c ": error:" "$DIFF_OUT" || true)
-    # Strip out errors from C++26 module/reflection parse failures in headers —
-    # they are noise in diff mode, not signal on the staged lines.
-    # Also exclude parse failures in known third-party/annotation-dependent headers
-    # that cannot be parsed standalone (e.g. benchmarks/dashboard/models.hpp uses
-    # storm reflection annotations which require 'import storm').
-    DIFF_ERR_REAL=$(grep ": error:" "$DIFF_OUT" \
-        | grep -v -E "(module|import|reflect|std::meta|consteval|undeclared identifier 'storm'|use of undeclared|benchmarks/dashboard/models\.hpp|shared/query_builder\.hpp)" \
-        | wc -l || true)
 
     echo ""
     echo "$RULE"
     echo "📊 --diff summary:"
     echo "   Warnings on staged lines: $DIFF_WARN"
-    echo "   Errors on staged lines:   $DIFF_ERR (real: $DIFF_ERR_REAL)"
+    echo "   Errors in staged files:   $DIFF_ERR"
     echo "$RULE"
 
-    if [[ "$DIFF_WARN" -gt 0 || "$DIFF_ERR_REAL" -gt 0 ]]; then
+    if [[ "$DIFF_WARN" -gt 0 || "$DIFF_ERR" -gt 0 ]]; then
         if [[ -n "$FIX_FLAG" ]]; then
             # Auto-fix pass complete — re-run check-only to confirm clean.
             echo ""
