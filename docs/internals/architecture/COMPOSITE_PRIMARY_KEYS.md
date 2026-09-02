@@ -390,17 +390,36 @@ which rejects an empty value instead of generating one — see "UUID-PK path was
 `find_fk_primary_key<FKType>()`) so an integer-PK model's bind is byte-identical to before — no
 runtime branch added to the single-row UPDATE/DELETE hot path.
 
-**Known residual gaps (not fixed here — same root cause, different call sites, tracked
-separately as #608 / #609):**
+**Residual gap fixed separately — same root cause, different call site, tracked as #609:** a
+`.where(field == storm::UUID{})` filter comparison still auto-generated. WHERE operands bind through
+`ComparisonExpr`/`InExpression`/`BetweenExpr` → `bind_parameter_value` → `bind_uuid`, one level below
+where the #573 fix landed — genuinely silent (no FK constraint to catch it), whether or not `field`
+happens to be the PK. See
+[docs/guide/features/WHERE_CLAUSES.md](../../guide/features/WHERE_CLAUSES.md) and
+[docs/guide/reference/FIELD_TYPES.md](../../guide/reference/FIELD_TYPES.md) for the shipped guard.
+A narrower residual — the guard keys off the *operand's* type, not the *column's*, so a
+string/YAML-spelled operand against a UUID column still bypasses it — remains open as #622.
 
-- **INSERT of a composite key whose FK part targets a UUID key still auto-generates (#608).**
-  `bind_field_at_index` dispatches `is_fk_field(member)` *before* it would reach the UUID-PK guard,
-  so an FK `primary_part` never sees `bind_uuid_pk` on INSERT — only the by-key WHERE path (this
-  issue) and a bare (non-FK) UUID PK member (#565) are guarded. Not silent — SQLite (`PRAGMA
-  foreign_keys = ON`) and PostgreSQL both reject the fabricated key with a FOREIGN KEY constraint
-  error — but it names the wrong problem instead of #573's own guard message.
-- **A `.where(field == storm::UUID{})` filter comparison still auto-generates (#609).** WHERE
-  operands bind through `ComparisonExpr`/`InExpression`/`BetweenExpr` → `bind_parameter_value` →
-  `bind_uuid`, one level below where this fix landed — genuinely silent (no FK constraint to catch
-  it), whether or not `field` happens to be the PK.
+### #608 — INSERT of a composite key whose FK part targets a UUID key still auto-generated
+
+`bind_field_at_index` dispatches `is_fk_field(member)` *before* it would reach the UUID-PK guard
+`bind_optional_or_uuid_pk_field` gives a bare (non-FK) UUID PK member, so `bind_fk_field_at_index`
+routed the FK target's value straight through `bind_one` → `bind_value_by_type` →
+`utilities::bind_uuid`, which auto-generates a fresh random UUID when the value is empty — the same
+failure mode as #573, one call site over, on the INSERT side rather than the by-key WHERE side. Not
+silent — SQLite (`PRAGMA foreign_keys = ON`) and PostgreSQL both reject the fabricated key with a
+FOREIGN KEY constraint error — but it names the wrong problem instead of #573's own guard message.
+
+Fixed by threading the same `is_pk_member` + `bind_pk_scalar` dispatch #573 gave `bind_one_pk_part`
+into `bind_fk_field_at_index`'s single-column-target branch: when the FK member is itself a
+composite-PK part, its target value routes through `bind_pk_scalar` (which dispatches to
+`bind_uuid_pk` for a `storm::UUID` target) instead of the generic `bind_one`. Scoped to the
+single-column FK-target shape (`fk_primary_key_count<FKType>() == 1`, the shape #608 and its tests
+describe) — the composite-FK-target path (`bind_fk_parts`/`bind_one_fk_part`) is left alone because
+it is unreachable with `is_pk_member(member)` true, not merely untested: `valid_fk_key_target`
+(`base.cppm`, guarding `is_primary_key_part_typed_member`) rejects a `primary_part` FK whose target
+itself has a composite key at the `PrimaryKeyType<T>` constraint, before such a model can even
+instantiate `BaseStatement`. The same constraint rejects an optional FK as a PK part, which is why
+the sibling optional-FK branch a few lines above is untouched too — both guards must move together
+if `valid_fk_key_target` is ever widened (see the warning already at `base.cppm:291`).
 

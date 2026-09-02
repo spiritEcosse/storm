@@ -1378,21 +1378,11 @@ export namespace storm::orm::statements {
             if constexpr (is_pk_member(member) &&
                           std::meta::dealias(std::meta::type_of(member)) == ^^storm::orm::utilities::UUID) {
                 // UUID PK: reject empty, no auto-generation. Non-PK UUID columns auto-generate via bind_uuid.
-                // Dereferenced: bind_uuid_pk takes StmtType& (like bind_uuid and
-                // validate_and_bind_uuid_text), while `stmt` here is ConnType::Statement*.
-                // param_index is advanced HERE rather than delegated: bind_uuid_pk binds
-                // without advancing, and every sibling branch reaches the ++ through
-                // bind_one. Omitting it bound the next field over the key at the same
-                // slot and left the last placeholder unset — a NOT NULL violation naming
+                // bind_pk_scalar_one binds through bind_uuid_pk and advances param_index only
+                // on success — omitting the advance bound the next field over the key at the
+                // same slot and left the last placeholder unset, a NOT NULL violation naming
                 // the WRONG column. Unreachable before this change (the key was skipped).
-                auto result = utilities::bind_uuid_pk<typename ConnType::Statement, typename ConnType::Error>(
-                        *stmt, param_index, obj.[:member:]
-                );
-                if (!result) {
-                    return result;
-                }
-                ++param_index;
-                return {};
+                return bind_pk_scalar_one<ConnType>(stmt, param_index, obj.[:member:]);
             } else {
                 return bind_one<ConnType>(stmt, param_index, obj.[:member:]);
             }
@@ -1468,7 +1458,17 @@ export namespace storm::orm::statements {
             } else {
                 if constexpr (fk_primary_key_count<FKType>() == 1) {
                     constexpr auto fk_pk_member = find_fk_primary_key<FKType>();
-                    return bind_one<ConnType>(stmt, param_index, obj.[:member:].[:fk_pk_member:]);
+                    // #608: an FK field that is itself a composite-PK part (the
+                    // association-table shape) must reject an unset UUID target key
+                    // the same way a bare UUID PK does (bind_optional_or_uuid_pk_field)
+                    // — otherwise this falls into bind_one -> bind_value_by_type ->
+                    // utilities::bind_uuid, which AUTO-GENERATES a fresh random UUID
+                    // and fabricates a foreign key instead of erroring at bind time.
+                    if constexpr (is_pk_member(member)) {
+                        return bind_pk_scalar_one<ConnType>(stmt, param_index, obj.[:member:].[:fk_pk_member:]);
+                    } else {
+                        return bind_one<ConnType>(stmt, param_index, obj.[:member:].[:fk_pk_member:]);
+                    }
                 } else {
                     return bind_fk_parts<ConnType, FKType>(stmt, obj.[:member:], param_index);
                 }
@@ -1664,9 +1664,10 @@ export namespace storm::orm::statements {
         // unset key would silently bind a random UUID into the WHERE clause, match zero
         // rows, and report success. bind_uuid_pk rejects the empty value instead, the same
         // guard INSERT already applies to a bare (non-FK) UUID PK member via
-        // bind_optional_or_uuid_pk_field — INSERT of a composite key whose FK PART targets
-        // a UUID key does NOT yet route through this guard (#608). The dispatch is
-        // `if constexpr` on the value's own type, so a non-UUID value compiles to exactly
+        // bind_optional_or_uuid_pk_field — INSERT of a composite key whose FK PART targets a
+        // UUID key now routes through the matching guard in bind_fk_field_at_index (#608),
+        // via the bind_pk_scalar_one wrapper below that both call sites share. The dispatch
+        // is `if constexpr` on the value's own type, so a non-UUID value compiles to exactly
         // the bind_value_by_type call this replaces.
         template <typename ConnType, typename ValueType>
         [[nodiscard]] __attribute__((always_inline)) static auto
@@ -1679,6 +1680,24 @@ export namespace storm::orm::statements {
             } else {
                 return bind_value_by_type<ConnType>(stmt, index, value);
             }
+        }
+
+        // bind_pk_scalar at `param_index`, advancing it on success — the shared tail of
+        // bind_optional_or_uuid_pk_field (a bare UUID PK) and bind_fk_field_at_index (an FK
+        // PK-part, #608), the two sites that reach a PK-guarded value through a *runtime*
+        // param_index rather than bind_pk_values_impl's compile-time per-part offset. Mirrors
+        // bind_one's shape (bind, then advance only on success) so a missing key still leaves
+        // param_index untouched on the error path, same as every other guarded bind.
+        template <typename ConnType>
+        [[nodiscard]] __attribute__((always_inline)) static constexpr auto
+        bind_pk_scalar_one(typename ConnType::Statement* stmt, int& param_index, const auto& value) noexcept
+                -> std::expected<void, typename ConnType::Error> {
+            auto result = bind_pk_scalar<ConnType>(*stmt, param_index, value);
+            if (!result) {
+                return result;
+            }
+            ++param_index;
+            return {};
         }
 
         // Bind one primary-key part at `index`. An FK part (the canonical
