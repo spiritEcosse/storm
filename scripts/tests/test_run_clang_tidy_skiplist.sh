@@ -10,7 +10,7 @@
 #
 #   2. That regex was unanchored (matched anywhere on a diagnostic line) and
 #      had already once matched a genuine `unknown type name 'concept'` error
-#      reported against a real Storm file (src/orm/fields.cppm) — the same
+#      reported against a real Storm file (REAL_STORM_FILE below) — the same
 #      shape of message it existed to suppress from toolchain headers.
 #
 # #550's fix retires the message-text regex entirely and relies solely on
@@ -31,20 +31,29 @@ set -u
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LIB="$REPO_ROOT/scripts/lib/clang_tidy_skiplist.sh"
 
+# The real, ordinary Storm module file used throughout as "a genuine file
+# that must never be classified as known-unparseable" — the direct #518
+# regression target (see the module comment above).
+REAL_STORM_FILE="src/orm/fields.cppm"
+
 PASS=0
 FAIL=0
 FAILED_TESTS=()
 CURRENT_TAG=""
 
 fail() {
-    echo "  FAIL: $1"
+    local msg="$1"
+    echo "  FAIL: $msg"
     FAIL=$((FAIL+1))
     FAILED_TESTS+=("$CURRENT_TAG")
+    return 0
 }
 
 pass() {
-    echo "  PASS: $1"
+    local msg="$1"
+    echo "  PASS: $msg"
     PASS=$((PASS+1))
+    return 0
 }
 
 if [[ ! -f "$LIB" ]]; then
@@ -66,12 +75,14 @@ diff_section() {
     local path="$1" content="$2"
     printf 'diff --git a/%s b/%s\nindex 1111111..2222222 100644\n--- a/%s\n+++ b/%s\n@@ -1,1 +1,2 @@\n existing line\n+%s\n' \
         "$path" "$path" "$path" "$path" "$content"
+    return 0
 }
 
 # run_filter <section...> — concatenates the given diff sections and pipes
 # them through filter_skiplist_from_diff, printing the result.
 run_filter() {
     printf '%s\n' "$@" | filter_skiplist_from_diff
+    return 0
 }
 
 assert_contains() {
@@ -81,6 +92,7 @@ assert_contains() {
     else
         fail "$what — expected to find '$needle'"
     fi
+    return 0
 }
 
 assert_lacks() {
@@ -90,20 +102,22 @@ assert_lacks() {
     else
         fail "$what — unexpectedly found '$needle'"
     fi
+    return 0
 }
 
 # --- Scenarios ---
 
 # A real, ordinary Storm module file must never be classified as
 # known-unparseable. This is the direct regression guard for the #518
-# incident: src/orm/fields.cppm is exactly the file the old message regex
+# incident: REAL_STORM_FILE is exactly the file the old message regex
 # swallowed alongside toolchain noise.
 scenario_real_storm_file_is_not_known_unparseable() {
-    if is_known_unparseable "src/orm/fields.cppm"; then
-        fail "src/orm/fields.cppm classified as known-unparseable"
+    if is_known_unparseable "$REAL_STORM_FILE"; then
+        fail "$REAL_STORM_FILE classified as known-unparseable"
     else
-        pass "src/orm/fields.cppm is NOT known-unparseable"
+        pass "$REAL_STORM_FILE is NOT known-unparseable"
     fi
+    return 0
 }
 
 # A representative sample of the documented skip list must still classify
@@ -120,6 +134,7 @@ scenario_documented_entries_stay_classified() {
             fail "$f no longer classified as known-unparseable"
         fi
     done
+    return 0
 }
 
 # fuzz/*.cpp and fuzz/fuzz_models.h must be classified as known-unparseable
@@ -141,6 +156,7 @@ scenario_fuzz_files_are_known_unparseable() {
             fail "$f NOT classified as known-unparseable — staged edits to it would block forever"
         fi
     done
+    return 0
 }
 
 # is_always_skip_file matches the vendored file by both its bare and prefixed
@@ -151,11 +167,12 @@ scenario_always_skip_file_matches_generator() {
     else
         fail "generator.cppm not matched in one of its path forms"
     fi
-    if is_always_skip_file "src/orm/fields.cppm"; then
-        fail "src/orm/fields.cppm incorrectly matched as always-skip"
+    if is_always_skip_file "$REAL_STORM_FILE"; then
+        fail "$REAL_STORM_FILE incorrectly matched as always-skip"
     else
-        pass "src/orm/fields.cppm is NOT always-skip"
+        pass "$REAL_STORM_FILE is NOT always-skip"
     fi
+    return 0
 }
 
 # filter_skiplist_from_diff must drop the WHOLE diff section for a
@@ -168,26 +185,28 @@ scenario_filter_drops_known_unparseable_file_section() {
     local output
     output=$(run_filter \
         "$(diff_section "shared/models.h" "some content")" \
-        "$(diff_section "src/orm/fields.cppm" "export module storm.orm.fields;")")
+        "$(diff_section "$REAL_STORM_FILE" "export module storm.orm.fields;")")
 
     assert_lacks "$output" "shared/models.h" "shared/models.h diff section fully dropped"
-    assert_contains "$output" "src/orm/fields.cppm" "sibling section for a real file survives"
+    assert_contains "$output" "$REAL_STORM_FILE" "sibling section for a real file survives"
+    return 0
 }
 
 # The mutation-testing guard proper: the EXACT real error line captured from
 # `clang-tidy -p build/release shared/models.h` on this repo — a genuine
 # `unknown type name 'concept'` toolchain diagnostic — when it appears inside
-# a REAL Storm file's diff section (src/orm/fields.cppm, not on the skip
-# list), must survive filter_skiplist_from_diff untouched. This is the
-# precise scenario the old message-based regex got wrong: it matched this
-# exact text and would have dropped it even here, on a genuine Storm file.
+# a REAL Storm file's diff section (REAL_STORM_FILE, not on the skip list),
+# must survive filter_skiplist_from_diff untouched. This is the precise
+# scenario the old message-based regex got wrong: it matched this exact text
+# and would have dropped it even here, on a genuine Storm file.
 scenario_diff_toolchain_error_line_is_genuine() {
     local real_error output
     real_error="/Users/ihor/projects/storm/storm/../clang-p2996/build/include/c++/v1/meta:440:1: error: unknown type name 'concept' [clang-diagnostic-error]"
-    output=$(run_filter "$(diff_section "src/orm/fields.cppm" "$real_error")")
+    output=$(run_filter "$(diff_section "$REAL_STORM_FILE" "$real_error")")
 
     assert_contains "$output" "unknown type name 'concept'" \
         "real 'concept' error on a non-skiplisted Storm file survives filtering"
+    return 0
 }
 
 # Same guard for a genuine WARNING line — the exact readability warning text
@@ -196,11 +215,12 @@ scenario_diff_toolchain_error_line_is_genuine() {
 # lets a real warning on a non-skiplisted file through untouched.
 scenario_diff_real_warning_line_is_genuine() {
     local real_warning output
-    real_warning="/Users/ihor/projects/storm/storm/src/orm/fields.cppm:70:12: warning: enum 'Color' uses a larger base type ('int', size: 4 bytes) than necessary for its value set, consider using 'std::uint8_t' (1 byte) as the base type to reduce its size [performance-enum-size]"
-    output=$(run_filter "$(diff_section "src/orm/fields.cppm" "$real_warning")")
+    real_warning="/Users/ihor/projects/storm/storm/${REAL_STORM_FILE}:70:12: warning: enum 'Color' uses a larger base type ('int', size: 4 bytes) than necessary for its value set, consider using 'std::uint8_t' (1 byte) as the base type to reduce its size [performance-enum-size]"
+    output=$(run_filter "$(diff_section "$REAL_STORM_FILE" "$real_warning")")
 
     assert_contains "$output" "performance-enum-size" \
         "real warning on a non-skiplisted Storm file survives filtering"
+    return 0
 }
 
 # filter_skiplist_from_diff must also drop an always-skip vendored file
@@ -210,6 +230,7 @@ scenario_filter_drops_always_skip_file_section() {
     output=$(run_filter "$(diff_section "src/orm/generator.cppm" "_T unused;")")
 
     assert_lacks "$output" "generator.cppm" "generator.cppm diff section fully dropped"
+    return 0
 }
 
 # Regression guard for #550 gap 1/2 directly against the shipped script text:
@@ -225,6 +246,7 @@ scenario_script_has_no_message_based_regex() {
         "no DIFF_ERR_REAL (the asymmetric filtered count) in run_clang_tidy.sh"
     assert_lacks "$contents" "undeclared identifier 'storm'" \
         "the retired message-text regex is gone from run_clang_tidy.sh"
+    return 0
 }
 
 # DIFF_WARN and DIFF_ERR must be computed the same way (#550 gap 1) — both a
@@ -242,6 +264,7 @@ scenario_diff_warn_and_err_computed_symmetrically() {
     else
         fail "expected symmetric unfiltered grep -c for both DIFF_WARN and DIFF_ERR"
     fi
+    return 0
 }
 
 SCENARIOS=(

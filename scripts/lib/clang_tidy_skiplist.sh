@@ -207,5 +207,6 @@ filter_skiplist_from_diff() {
         fi
         [[ "$keep" == 1 ]] && printf '%s\n' "$line"
     done
+    return 0
 }
 export -f filter_skiplist_from_diff
