@@ -139,6 +139,25 @@ jobs:
       - name: Self-test the validator
         run: ./scripts/tests/test_check_agent_frontmatter.sh
 
+  # scripts/lib/clang_tidy_skiplist.sh is the single source of truth both
+  # scripts/run_clang_tidy.sh --diff (this pre-commit hook) and the weekly
+  # --all sweep (clang-tidy-sweep.yml) consult for which files clang-tidy
+  # cannot parse. #550: a post-hoc message-text regex used to also filter
+  # --diff's error count, was unanchored, and had once matched a genuine
+  # error on a real Storm file (src/orm/fields.cppm) alongside the toolchain
+  # noise it targeted. Retired in favour of this file-identity-only skip list
+  # — this job is pure bash (no clang-tidy binary / compile_commands.json
+  # needed) so it runs on every PR, not just ones that touch src/tests/cmake.
+  clang-tidy-skiplist:
+    name: clang-tidy skip-list classification (#550)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Self-test the skip-list classification
+        run: ./scripts/tests/test_run_clang_tidy_skiplist.sh
+
   # cmake/clang_p2996_host.cmake resolves clang-p2996's on-disk layout
   # (Linux/amd64 Docker vs. native macOS/arm64) for CMAKE_CXX_STDLIB_MODULES_JSON
   # and cmake/libcxx.cmake's compile/link flags. Nothing else in CI exercises
