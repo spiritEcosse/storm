@@ -22,6 +22,13 @@ import std;
 // INSERT's own error message when it is not: a plain single UUID PK, a
 // composite key with a storm::UUID part, and an FK part whose target has a
 // UUID key.
+//
+// #608 (INSERT-side, FK-part shape only): bind_field_at_index's is_fk_field
+// branch (bind_fk_field_at_index) never routed the FK-target UUID PK value
+// through bind_uuid_pk at all, so a composite key whose FK part targets a
+// UUID key still auto-generated a fresh random UUID on INSERT — the one
+// shape #573 left asymmetric. Tests are in the FK-part section below
+// (InsertWithEmptyOwnerKeyIsRejected / InsertWithSetOwnerKeyInsertsTheRow).
 
 // NOLINTBEGIN(readability-implicit-bool-conversion)
 
@@ -377,6 +384,46 @@ TYPED_TEST(UuidRefEntryTest, EraseWithSetOwnerKeyDeletesTheMatchingRow) {
     ASSERT_TRUE(result.has_value()) << result.error().message();
     EXPECT_EQ((count_rows<UuidRefEntry, TypeParam>()), 1);
     EXPECT_EQ(this->qty_of(kOwnerUuid2, 10), 7) << "the other owner's row must survive";
+}
+
+// #608: INSERT of a composite key whose FK part targets a UUID key must
+// reject an unset owner, not fabricate a random one that only fails later
+// against the FOREIGN KEY constraint (and not at all if the connection
+// doesn't enforce it).
+TYPED_TEST(UuidRefEntryTest, InsertWithEmptyOwnerKeyIsRejected) {
+    storm::QuerySet<UuidRefEntry, TypeParam> qs;
+    auto result = qs.insert(UuidRefEntry{.owner = {.id = storm::UUID{}}, .sku = 99, .qty = 1}).execute();
+    ASSERT_FALSE(result.has_value()) << "an unset owner UUID must not silently fabricate a foreign key";
+    EXPECT_EQ(result.error().message(), kExpectedError) << "must match UPDATE/DELETE's own guard message (#573)";
+    EXPECT_EQ((count_rows<UuidRefEntry, TypeParam>()), 2) << "the rejected INSERT must not have written a row";
+}
+
+// A SET owner key still round-trips correctly, proving the guard doesn't
+// reject a genuinely valid FK-part value.
+TYPED_TEST(UuidRefEntryTest, InsertWithSetOwnerKeyInsertsTheRow) {
+    storm::QuerySet<UuidRefEntry, TypeParam> qs;
+    auto result = qs.insert(UuidRefEntry{.owner = {.id = storm::UUID{kOwnerUuid}}, .sku = 20, .qty = 3}).execute();
+    ASSERT_TRUE(result.has_value()) << result.error().message();
+    EXPECT_EQ(this->qty_of(kOwnerUuid, 20), 3);
+    EXPECT_EQ((count_rows<UuidRefEntry, TypeParam>()), 3);
+}
+
+// Bulk INSERT (insert.cppm's std::span overload) binds every row inside one
+// TransactionGuard and rolls back on the first bind failure (same shape as
+// BatchUpdateWithOneEmptyKeyRollsBackTheEarlierRow above) — an empty owner
+// key anywhere in the batch must undo an earlier, otherwise-valid row in the
+// same call, not just skip the bad one.
+TYPED_TEST(UuidRefEntryTest, BatchInsertWithOneEmptyOwnerKeyRollsBackTheEarlierRow) {
+    storm::QuerySet<UuidRefEntry, TypeParam> qs;
+    const std::vector<UuidRefEntry>          inserts{
+                     {.owner = {.id = storm::UUID{kOwnerUuid}}, .sku = 30, .qty = 9},
+                     {.owner = {.id = storm::UUID{}}, .sku = 40, .qty = 1},
+    };
+    auto result = qs.insert(std::span<const UuidRefEntry>(inserts)).execute();
+    ASSERT_FALSE(result.has_value()) << "any empty owner key in the batch must be rejected";
+    EXPECT_EQ(result.error().message(), kExpectedError);
+    EXPECT_EQ((count_rows<UuidRefEntry, TypeParam>()), 2)
+            << "the earlier successful INSERT in the same batch must be rolled back";
 }
 
 // NOLINTEND(readability-implicit-bool-conversion)
