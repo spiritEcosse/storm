@@ -334,6 +334,35 @@ Explicit specializations remain fine in single-TU contexts (test files,
 build in the pinned CI image), CI compiles `storm_bench` on every PR — a green
 CI now does cover this class of bench-only breakage.
 
+### 12. Non-Templated `requires`-Expression Hard-Errors Instead of Evaluating False
+
+**Problem**: A `requires`-expression whose parameter type is a concrete type (not itself a
+template parameter of the enclosing declaration) can hard-error instead of evaluating to `false`
+when the checked expression is ill-formed, contradicting [expr.prim.req]:
+
+```cpp
+// ❌ Hard-errors on this compiler instead of making the requires-expression `false`
+static_assert(!requires(storm::UUID u) { fields::SomeModel.some_field.between(u, u); });
+```
+
+Found in #609 while pinning a compile-time rejection (`.between()` on a `storm::UUID` column,
+constrained via a `requires`-clause per rule 11 above): even though the checked member call fails
+overload resolution due to a genuine constraint violation — exactly the case a `requires`-expression
+is designed to swallow — clang-p2996 emits the underlying "no matching member function" diagnostic
+as a hard error at the `static_assert` site instead of treating the whole expression as `false`.
+
+**Solution**: Wrap the check in a named `concept` parameterized on the operand type, matching the
+project's existing `CanWhereBetween`-style idiom (`tests/query/test_fk_column_name_orderby_aggregate_body.h`).
+Making the `requires`-expression depend on a template parameter of the concept, rather than a
+concrete parameter type, restores proper SFINAE behavior:
+
+```cpp
+// ✅ Named concept — the requires-expression is now dependent on V, SFINAE-friendly
+template <typename V>
+concept CanBetweenUuidId = requires(V v) { fields::SomeModel.some_field.between(v, v); };
+static_assert(!CanBetweenUuidId<storm::UUID>);
+```
+
 ## Debugging Tips
 
 1. **Clean build**: `rm -rf build/ && cmake --preset ninja-debug`
