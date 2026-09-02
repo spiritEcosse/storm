@@ -392,17 +392,40 @@ export namespace storm::orm::utilities {
         return validate_and_bind_uuid_text<StmtType, ErrorType>(stmt, param_index, value.value);
     }
 
+    // Shared "reject empty" UUID bind body — bind_uuid_pk and bind_uuid_where differ only in
+    // which position rejected the value, so only the message differs.
+    template <typename StmtType, typename ErrorType>
+    [[nodiscard]] auto
+    bind_uuid_reject_empty(StmtType& stmt, int param_index, const UUID& value, const char* empty_message)
+            -> std::expected<void, ErrorType> {
+        if (value.value.empty()) {
+            return std::unexpected(ErrorType{-1, empty_message});
+        }
+        return validate_and_bind_uuid_text<StmtType, ErrorType>(stmt, param_index, value.value);
+    }
+
     // UUID PK bind: reject empty (no auto-generation for primary keys).
     // PK UUIDs must be caller-supplied via UUID::generate() — they are never DB-generated.
     template <typename StmtType, typename ErrorType>
     [[nodiscard]] auto bind_uuid_pk(StmtType& stmt, int param_index, const UUID& value)
             -> std::expected<void, ErrorType> {
-        if (value.value.empty()) {
-            return std::unexpected(
-                    ErrorType{-1, "Primary key UUID must be explicitly set; auto-generation not allowed for PKs"}
-            );
-        }
-        return validate_and_bind_uuid_text<StmtType, ErrorType>(stmt, param_index, value.value);
+        return bind_uuid_reject_empty<StmtType, ErrorType>(
+                stmt, param_index, value, "Primary key UUID must be explicitly set; auto-generation not allowed for PKs"
+        );
+    }
+
+    // UUID WHERE/HAVING-position bind: reject empty, same rationale as bind_uuid_pk but for
+    // a FILTER comparison rather than a key bind — the column being compared may or may not be
+    // a primary key (#609), so the message doesn't claim it is.
+    template <typename StmtType, typename ErrorType>
+    [[nodiscard]] auto bind_uuid_where(StmtType& stmt, int param_index, const UUID& value)
+            -> std::expected<void, ErrorType> {
+        return bind_uuid_reject_empty<StmtType, ErrorType>(
+                stmt,
+                param_index,
+                value,
+                "UUID comparison value must be explicitly set; auto-generation not allowed in a WHERE/HAVING clause"
+        );
     }
 
     // Forward declaration so bind_optional_value can recurse into bind_parameter_value.
@@ -461,6 +484,26 @@ export namespace storm::orm::utilities {
         // No trailing unsupported-type branch: the BindableType<> constraint (#473)
         // guarantees exactly one arm above matches, so an unbindable type is rejected
         // at the call site rather than reaching a runtime std::unexpected here.
+    }
+
+    // WHERE/HAVING-position parameter bind (#609): same dispatch as bind_parameter_value except a
+    // UUID rejects an empty value instead of auto-generating one — auto-generation is only
+    // meaningful in an INSERT/SET position, never in a filter comparison. Mirrors
+    // BaseStatement::bind_pk_scalar's if-constexpr shape (#573, statements/base.cppm).
+    // The else branch also covers std::optional<UUID> (falling through to the auto-generating
+    // bind_optional_value -> bind_uuid): currently unreachable, since ExpressionVariant has no
+    // ComparisonExpr<std::optional<T>>/InExpression<std::optional<T>> arm for any T, so no
+    // filter-position operand can ever be optional. Revisit this branch if that changes.
+    template <typename StmtType, typename ErrorType>
+    [[nodiscard]] auto bind_filter_value(StmtType& stmt, int param_index, const auto& value) noexcept
+            -> std::expected<void, ErrorType>
+        requires BindableType<std::decay_t<decltype(value)>>
+    {
+        if constexpr (std::is_same_v<std::decay_t<decltype(value)>, UUID>) {
+            return bind_uuid_where<StmtType, ErrorType>(stmt, param_index, value);
+        } else {
+            return bind_parameter_value<StmtType, ErrorType>(stmt, param_index, value);
+        }
     }
 
     // ============================================================================

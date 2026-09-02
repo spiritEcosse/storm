@@ -80,7 +80,7 @@ export namespace storm::orm::where {
         template <typename StmtType, typename ErrorType>
         [[nodiscard]] __attribute__((always_inline)) auto bind_impl(StmtType* stmt, int& param_index) const
                 -> std::expected<void, ErrorType> {
-            return utilities::bind_parameter_value<StmtType, ErrorType>(*stmt, param_index++, value_);
+            return utilities::bind_filter_value<StmtType, ErrorType>(*stmt, param_index++, value_);
         }
     };
 
@@ -129,11 +129,11 @@ export namespace storm::orm::where {
         template <typename StmtType, typename ErrorType>
         [[nodiscard]] __attribute__((hot)) auto bind_impl(StmtType* stmt, int& param_index) const
                 -> std::expected<void, ErrorType> {
-            if (auto result = utilities::bind_parameter_value<StmtType, ErrorType>(*stmt, param_index++, min_val_);
+            if (auto result = utilities::bind_filter_value<StmtType, ErrorType>(*stmt, param_index++, min_val_);
                 !result) {
                 return result;
             }
-            return utilities::bind_parameter_value<StmtType, ErrorType>(*stmt, param_index++, max_val_);
+            return utilities::bind_filter_value<StmtType, ErrorType>(*stmt, param_index++, max_val_);
         }
     };
 
@@ -155,7 +155,7 @@ export namespace storm::orm::where {
         [[nodiscard]] __attribute__((hot)) auto bind_impl(StmtType* stmt, int& param_index) const
                 -> std::expected<void, ErrorType> {
             for (const auto& value : values_) {
-                if (auto result = utilities::bind_parameter_value<StmtType, ErrorType>(*stmt, param_index++, value);
+                if (auto result = utilities::bind_filter_value<StmtType, ErrorType>(*stmt, param_index++, value);
                     !result) {
                     return result;
                 }
@@ -326,12 +326,11 @@ export namespace storm::orm::where {
         );
     }
 
-    // Normalize a comparison operand to the type actually stored in ExpressionVariant.
-    // The expression node can outlive the operand's source buffer (where() is deferred, #352),
-    // so text operands (string_view / const char* / char arrays) are copied into an owning
-    // std::string. Enum operands are stored as their underlying int. Narrow / unsigned integer
-    // operands fold to the int / int64_t variant arm (no dedicated arm per source type — #407),
-    // mirroring the enum fold. bool keeps its own arm. Everything else is decayed.
+    // Normalize a comparison operand to the type stored in ExpressionVariant. The node can
+    // outlive the operand source buffer (#352), so string_view/const char*/char[] operands are
+    // copied into an owning std::string. UUID is excluded from that fold (#609) so it keeps
+    // ComparisonExpr<UUID>'s own bind dispatch. Enum -> underlying int; narrow/unsigned int
+    // folds to int/int64_t (#407); bool keeps its own arm; everything else is decayed.
     template <typename V>
         requires utilities::BindableType<std::decay_t<V>>
     auto normalize_operand(V&& value) {
@@ -342,7 +341,8 @@ export namespace storm::orm::where {
             return static_cast<std::int64_t>(value);
         } else if constexpr (!std::is_same_v<D, bool> && utilities::is_int_source_v<D>) {
             return static_cast<int>(value);
-        } else if constexpr (std::is_convertible_v<D, std::string_view> && !std::is_same_v<D, std::string>) {
+        } else if constexpr (std::is_convertible_v<D, std::string_view> && !std::is_same_v<D, std::string> &&
+                             !std::is_same_v<D, utilities::UUID>) {
             return std::string(std::string_view(std::forward<V>(value)));
         } else {
             return D{std::forward<V>(value)};
@@ -447,11 +447,12 @@ export namespace storm::orm::where {
 
     template <std::meta::info MemberInfo> using InTargetType = typename[:in_target_pk_info<MemberInfo>().value():];
 
-    // Shared gate for WHERE's value-comparing operators (==, !=, >, >=, <, <=, between): one
-    // SQL column plus an operand type normalize_operand can bind. Named, like
-    // SingleColumnMember (field_attr.cppm), so a dozen call sites can't drift.
+    // Shared gate for WHERE's value-comparing operators: one column + an operand normalize_operand can bind.
     template <std::meta::info MemberInfo, typename V>
     concept ComparableOperand = storm::meta::SingleColumnMember<MemberInfo> && utilities::BindableType<std::decay_t<V>>;
+    // Narrows ComparableOperand: storm::UUID is equality/IN only, no ordering (#609/#407).
+    template <std::meta::info MemberInfo, typename V>
+    concept OrderableOperand = ComparableOperand<MemberInfo, V> && !std::is_same_v<std::decay_t<V>, utilities::UUID>;
 
     // CollatedField proxy - wraps field name with COLLATE clause
     // Created via fields::Person.name.collate(Collate::NoCase)
@@ -481,24 +482,24 @@ export namespace storm::orm::where {
             return where::make_in_expr<InTargetType<MemberInfo>>(collated_name_, std::forward<Values>(values)...);
         }
 
-        // Comparison/pattern operators, gated on ComparableOperand: a non-bindable operand
-        // (e.g. a model struct) has nothing for normalize_operand to bind. One line per
-        // method (clang-format off) — the OwnLine multi-line requires-clause form the
-        // formatter otherwise produces duplicates near-identically across this class's twin
-        // below.
+        // Comparison/pattern operators, gated on ComparableOperand (ordering ops and between()
+        // narrow to OrderableOperand, which additionally excludes storm::UUID — #609/#407): a
+        // non-bindable operand (e.g. a model struct) has nothing for normalize_operand to bind.
+        // One line per method (clang-format off) — the OwnLine multi-line requires-clause form
+        // the formatter otherwise produces duplicates near-identically across this class's twin below.
         // clang-format off
         template <typename V> auto operator==(V&& value) const -> Expr requires ComparableOperand<MemberInfo, V> { return make_comparison(CompOp::Equal, std::forward<V>(value)); }
         template <typename V> auto operator!=(V&& value) const -> Expr requires ComparableOperand<MemberInfo, V> { return make_comparison(CompOp::NotEqual, std::forward<V>(value)); }
-        template <typename V> auto operator>(V&& value)  const -> Expr requires ComparableOperand<MemberInfo, V> { return make_comparison(CompOp::Greater, std::forward<V>(value)); }
-        template <typename V> auto operator>=(V&& value) const -> Expr requires ComparableOperand<MemberInfo, V> { return make_comparison(CompOp::GreaterEqual, std::forward<V>(value)); }
-        template <typename V> auto operator<(V&& value)  const -> Expr requires ComparableOperand<MemberInfo, V> { return make_comparison(CompOp::Less, std::forward<V>(value)); }
-        template <typename V> auto operator<=(V&& value) const -> Expr requires ComparableOperand<MemberInfo, V> { return make_comparison(CompOp::LessEqual, std::forward<V>(value)); }
+        template <typename V> auto operator>(V&& value)  const -> Expr requires OrderableOperand<MemberInfo, V> { return make_comparison(CompOp::Greater, std::forward<V>(value)); }
+        template <typename V> auto operator>=(V&& value) const -> Expr requires OrderableOperand<MemberInfo, V> { return make_comparison(CompOp::GreaterEqual, std::forward<V>(value)); }
+        template <typename V> auto operator<(V&& value)  const -> Expr requires OrderableOperand<MemberInfo, V> { return make_comparison(CompOp::Less, std::forward<V>(value)); }
+        template <typename V> auto operator<=(V&& value) const -> Expr requires OrderableOperand<MemberInfo, V> { return make_comparison(CompOp::LessEqual, std::forward<V>(value)); }
         [[nodiscard]] auto is_null()     const -> Expr requires NullableField<FieldType> { return make_null_check_expr(collated_name_, true); }
         [[nodiscard]] auto is_not_null() const -> Expr requires NullableField<FieldType> { return make_null_check_expr(collated_name_, false); }
         auto operator==(std::nullopt_t /*unused*/)  const -> Expr requires NullableField<FieldType> { return is_null(); }
         auto operator!=(std::nullopt_t /*unused*/)  const -> Expr requires NullableField<FieldType> { return is_not_null(); }
         [[nodiscard]] auto like(std::string_view pattern) const -> Expr { return where::make_like_expr(collated_name_, pattern); }
-        template <typename V> auto between(V&& min_val, V&& max_val) const -> Expr requires ComparableOperand<MemberInfo, V> { return where::make_between_expr(collated_name_, std::forward<V>(min_val), std::forward<V>(max_val)); }
+        template <typename V> auto between(V&& min_val, V&& max_val) const -> Expr requires OrderableOperand<MemberInfo, V> { return where::make_between_expr(collated_name_, std::forward<V>(min_val), std::forward<V>(max_val)); }
         // clang-format on
 
       private:
@@ -558,19 +559,18 @@ export namespace storm::orm::where {
 
         // Comparison operators — enum values are auto-converted to underlying int. Gated on
         // ComparableOperand (#575/#610): an FK to a composite-PK target spreads over
-        // "<member>_<part>" columns with no single name to compare against, and a
-        // non-bindable operand (e.g. a model struct) has nothing for normalize_operand to
-        // bind — both rejected at compile time rather than mis-emitted or hard-erroring.
-        // WHERE (a, b) = (?, ?) row-value syntax exists on both backends but is not wired
-        // here: it would only ever be well-defined for ==/!=, not for >, LIKE, BETWEEN, etc.
+        // "<member>_<part>" columns with no single name to compare against, and a non-bindable
+        // operand has nothing for normalize_operand to bind. Ordering ops/between() narrow to
+        // OrderableOperand, which also excludes storm::UUID (#609/#407). WHERE (a, b) = (?, ?)
+        // row-value syntax exists on both backends but isn't wired: well-defined only for ==/!=.
         // One line per method (clang-format off) — see CollatedField's twin block above.
         // clang-format off
         template <typename V> auto operator==(V&& value) const -> Expr requires ComparableOperand<MemberInfo, V> { return make_comp(CompOp::Equal, std::forward<V>(value)); }
         template <typename V> auto operator!=(V&& value) const -> Expr requires ComparableOperand<MemberInfo, V> { return make_comp(CompOp::NotEqual, std::forward<V>(value)); }
-        template <typename V> auto operator>(V&& value)  const -> Expr requires ComparableOperand<MemberInfo, V> { return make_comp(CompOp::Greater, std::forward<V>(value)); }
-        template <typename V> auto operator>=(V&& value) const -> Expr requires ComparableOperand<MemberInfo, V> { return make_comp(CompOp::GreaterEqual, std::forward<V>(value)); }
-        template <typename V> auto operator<(V&& value)  const -> Expr requires ComparableOperand<MemberInfo, V> { return make_comp(CompOp::Less, std::forward<V>(value)); }
-        template <typename V> auto operator<=(V&& value) const -> Expr requires ComparableOperand<MemberInfo, V> { return make_comp(CompOp::LessEqual, std::forward<V>(value)); }
+        template <typename V> auto operator>(V&& value)  const -> Expr requires OrderableOperand<MemberInfo, V> { return make_comp(CompOp::Greater, std::forward<V>(value)); }
+        template <typename V> auto operator>=(V&& value) const -> Expr requires OrderableOperand<MemberInfo, V> { return make_comp(CompOp::GreaterEqual, std::forward<V>(value)); }
+        template <typename V> auto operator<(V&& value)  const -> Expr requires OrderableOperand<MemberInfo, V> { return make_comp(CompOp::Less, std::forward<V>(value)); }
+        template <typename V> auto operator<=(V&& value) const -> Expr requires OrderableOperand<MemberInfo, V> { return make_comp(CompOp::LessEqual, std::forward<V>(value)); }
         // Deleted, not absent (#613, RelationRef's pattern): <=> covers !=/>/>=/< via rewrite.
         template <typename V> auto operator==(const V&) const -> bool requires (!storm::meta::SingleColumnMember<MemberInfo>) = delete ("this member is a foreign key to a composite-PK target: it spreads over multiple \"<member>_<part>\" columns, so there is no single column to compare in where().");
         template <typename V> auto operator<=>(const V&) const -> std::partial_ordering requires (!storm::meta::SingleColumnMember<MemberInfo>) = delete ("this member is a foreign key to a composite-PK target: it spreads over multiple \"<member>_<part>\" columns, so there is no single column to compare in where().");
@@ -583,7 +583,7 @@ export namespace storm::orm::where {
 
         template <typename V>
         auto between(V&& min_val, V&& max_val) const -> Expr
-            requires ComparableOperand<MemberInfo, V>
+            requires OrderableOperand<MemberInfo, V>
         {
             return where::make_between_expr(
                     std::string(field_name_sv), std::forward<V>(min_val), std::forward<V>(max_val)

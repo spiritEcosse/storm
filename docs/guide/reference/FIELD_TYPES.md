@@ -510,7 +510,14 @@ qs.insert(user).execute();  // std::expected<void, Error> — nothing to return 
 - **UPDATE / DELETE by UUID PK reject an unset (empty) key** with the same error INSERT raises
   ("Primary key UUID must be explicitly set; auto-generation not allowed for PKs", #573) instead of
   silently matching zero rows. The by-key WHERE clause binds the key through the PK-specific
-  binder, not the auto-generating binder non-PK UUID columns use.
+  binder, not the auto-generating binder INSERT/SET positions use.
+- **Any `.where()`/`.having()` comparison against a `storm::UUID` column — PK or not — rejects an
+  unset (empty) operand** ("UUID comparison value must be explicitly set; auto-generation not
+  allowed in a WHERE/HAVING clause", #609) instead of silently matching nothing; a non-empty
+  operand is also validated as RFC-4122 text. Ordering (`>`, `>=`, `<`, `<=`) and `.between()` on
+  a UUID column are compile-time errors — UUID is equality/`IN` only (#609/#407). The guard keys
+  on the *operand's* type (`storm::UUID`), not the column's — a plain-string comparison against a
+  UUID column (e.g. `== ""`, or a YAML/JSON-driven filter) is not covered by this guard (#622).
 - **Thread safety**: Same as integer PKs — per-thread `QuerySet` instances with thread-local connections.
 
 **Example with foreign keys:**
@@ -572,7 +579,11 @@ User user{.id = storm::UUID::generate(), .name = "Alice"};
 QuerySet<User>().insert(user).execute();  // OK
 ```
 
-This ensures the caller is aware of (and can control) the generated key. For non-PK UUID columns, empty values are auto-generated (same as any non-PK field), so the error is PK-specific.
+This ensures the caller is aware of (and can control) the generated key. On INSERT, a non-PK UUID
+column left unset is still auto-generated (same as any non-PK field) — the PK-specific rejection
+above is only about the primary key itself. A `.where()`/`.having()` filter is different: ANY UUID
+column compared against an unset value rejects it too (#609), because auto-generating a random
+UUID to compare against is never meaningful in a filter position.
 
 **Q: Can I use composite keys with UUID?**
 

@@ -83,7 +83,7 @@ no longer the same width by accident; this table is the contract (#407).
 | enum | ✅ | all 6, `IN` | Folds to underlying `int` |
 | `std::chrono::year_month_day` | ✅ | all 6, `BETWEEN`, `IN` | Compared as `"YYYY-MM-DD"` TEXT (lexicographic == chronological) |
 | `std::chrono::system_clock::time_point` | ✅ | all 6, `BETWEEN`, `IN` | Compared as `"YYYY-MM-DD HH:MM:SS"` TEXT |
-| `storm::UUID` | ✅ | `==`, `!=`, `IN` | Equality only — ordering/`BETWEEN` on a UUID is not meaningful |
+| `storm::UUID` | ✅ | `==`, `!=`, `IN` | Equality only — ordering/`BETWEEN` rejected at compile time (#609/#407); an unset (empty) comparison value is rejected at bind time rather than silently matching nothing, and a non-empty value is validated as RFC-4122 text |
 | `std::optional<T>` | ✅ | `is_null()`, `is_not_null()`, `== nullopt`, `!= nullopt` | Plus any operator `T` itself supports |
 | `std::chrono::duration` | ❌ | — | Persistable/readable, not yet filterable |
 | `std::filesystem::path` | ❌ | — | Persistable/readable, not yet filterable |
