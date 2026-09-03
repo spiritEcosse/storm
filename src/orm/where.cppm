@@ -13,6 +13,7 @@ import std;
 import storm_orm_utilities;     // For ConstexprString
 import storm_orm_field_attr;    // ValidFieldInfo — gate the field-selector NTTP (#478)
 import storm_orm_relation_meta; // is_relation_field — reject m2m/reverse_fk members in Field<M> (#408)
+import storm_orm_where_operand; // normalize_operand/normalize_column_operand/ColumnIsUuid (#622)
 
 export namespace storm::orm::where {
 
@@ -326,33 +327,16 @@ export namespace storm::orm::where {
         );
     }
 
-    // Normalize a comparison operand to the type stored in ExpressionVariant. The node can
-    // outlive the operand source buffer (#352), so string_view/const char*/char[] operands are
-    // copied into an owning std::string. UUID is excluded from that fold (#609) so it keeps
-    // ComparisonExpr<UUID>'s own bind dispatch. Enum -> underlying int; narrow/unsigned int
-    // folds to int/int64_t (#407); bool keeps its own arm; everything else is decayed.
-    template <typename V>
-        requires utilities::BindableType<std::decay_t<V>>
-    auto normalize_operand(V&& value) {
-        using D = std::decay_t<V>;
-        if constexpr (std::is_enum_v<D>) {
-            return static_cast<int>(static_cast<std::underlying_type_t<D>>(value));
-        } else if constexpr (!std::is_same_v<D, bool> && utilities::is_int64_source_v<D>) {
-            return static_cast<std::int64_t>(value);
-        } else if constexpr (!std::is_same_v<D, bool> && utilities::is_int_source_v<D>) {
-            return static_cast<int>(value);
-        } else if constexpr (std::is_convertible_v<D, std::string_view> && !std::is_same_v<D, std::string> &&
-                             !std::is_same_v<D, utilities::UUID>) {
-            return std::string(std::string_view(std::forward<V>(value)));
-        } else {
-            return D{std::forward<V>(value)};
-        }
-    }
+    // normalize_operand/normalize_column_operand now live in storm_orm_where_operand (#622) —
+    // split out to keep this module under its line budget. Same storm::orm::where namespace, so
+    // callers below reach them unqualified.
 
-    // Build a value-owning ComparisonExpr from any operand. See normalize_operand for the type rules.
-    template <typename V>
+    // Build a value-owning ComparisonExpr, normalized against the column's own type (see
+    // normalize_column_operand — #622). ColumnType is the field's declared type, passed
+    // explicitly by Field/CollatedField below, which have it as their own FieldType alias.
+    template <typename ColumnType, typename V>
     [[nodiscard]] auto make_comparison_expr(const std::string& field_name, CompOp op, V&& value) -> Expr {
-        auto stored = normalize_operand(std::forward<V>(value));
+        auto stored = normalize_column_operand<ColumnType>(std::forward<V>(value));
         return Expr(
                 std::make_shared<ExpressionVariant>(ComparisonExpr<decltype(stored)>{
                         .field_name_ = std::move(field_name), .op_ = op, .value_ = std::move(stored)
@@ -414,45 +398,32 @@ export namespace storm::orm::where {
         );
     }
 
-    // Operand type for in() (#610): a plain member's declared type, or — for a single-column
-    // FK member — the FK TARGET's primary-key type (FieldType is the RELATED MODEL struct,
-    // which normalize_operand can never bind). Reimplements find_fk_primary_key's lookup
-    // (base.cppm) locally — importing storm_orm_statements_base back would be a module cycle
-    // — but does NOT recurse when the target's PK is itself an FK (base's bind_one_pk_part
-    // does; no in-tree model has that shape). Returns nullopt for an FK target with no PK at
-    // all (ValidForeignKey, #474, can't gate this for the same cycle reason); HasInTargetType
-    // below turns that into a clean rejection instead of an unguarded splice. `if constexpr`,
-    // not a ternary: the untaken branch would still need nonstatic_data_members_of to
-    // type-check on a non-class FieldType (e.g. int).
-    template <std::meta::info MemberInfo> consteval auto in_target_pk_info() -> std::optional<std::meta::info> {
-        if constexpr (storm::meta::is_fk_field(MemberInfo)) {
-            using RelatedType =
-                    utilities::optional_inner_type_t<std::remove_cvref_t<typename[:std::meta::type_of(MemberInfo):]>>;
-            for (const std::meta::info member :
-                 std::meta::nonstatic_data_members_of(^^RelatedType, std::meta::access_context::unchecked())) {
-                if (storm::meta::is_primary_member(member)) {
-                    return std::meta::type_of(member);
-                }
-            }
-            return std::nullopt;
-        } else {
-            return std::meta::type_of(MemberInfo);
-        }
-    }
+    // in_target_pk_info/HasInTargetType/InTargetType (#610) and ComparisonColumnType/ColumnIsUuid
+    // (#622) now live in storm_orm_where_operand — split out to keep this module under its line
+    // budget. Same storm::orm::where namespace, so callers below reach them unqualified.
 
-    // Gate checked BEFORE InTargetType is named, so a composite (or PK-less) FK target fails
-    // in()'s requires-clause cleanly instead of substituting a splice of nullopt.
-    template <std::meta::info MemberInfo>
-    concept HasInTargetType = in_target_pk_info<MemberInfo>().has_value();
-
-    template <std::meta::info MemberInfo> using InTargetType = typename[:in_target_pk_info<MemberInfo>().value():];
-
-    // Shared gate for WHERE's value-comparing operators: one column + an operand normalize_operand can bind.
+    // Shared gate for WHERE's value-comparing operators: one column + an operand normalize_operand
+    // can bind. std::optional operands are rejected here (#622): BindableType recurses through
+    // is_optional_v, but ExpressionVariant has no ComparisonExpr<std::optional<T>> arm for any T,
+    // so one used to pass this constraint and then hard-error deep inside the variant construction
+    // in make_comparison_expr instead of failing cleanly at the call site. A UUID column also
+    // rejects any operand that can't become a storm::UUID (#622) — e.g. `uuid_col == 5` used to
+    // silently bind an int against a UUID/TEXT column instead of failing at the constraint.
     template <std::meta::info MemberInfo, typename V>
-    concept ComparableOperand = storm::meta::SingleColumnMember<MemberInfo> && utilities::BindableType<std::decay_t<V>>;
-    // Narrows ComparableOperand: storm::UUID is equality/IN only, no ordering (#609/#407).
+    concept ComparableOperand =
+            storm::meta::SingleColumnMember<MemberInfo> && utilities::BindableType<std::decay_t<V>> &&
+            !utilities::is_optional_v<std::decay_t<V>> &&
+            (!ColumnIsUuid<MemberInfo> || std::is_same_v<std::decay_t<V>, utilities::UUID> ||
+             std::is_constructible_v<utilities::UUID, V>);
+    // Narrows ComparableOperand: storm::UUID is equality/IN only, no ordering (#609/#407). A
+    // UUID-typed COLUMN rejects every operand, even one ComparableOperand accepts (#622): before
+    // this, a string-spelled `.between("a", "b")` against a UUID column silently worked as a
+    // plain lexicographic TEXT compare (BetweenExpr<std::string> exists) — inconsistent with the
+    // documented equality/IN-only contract. Deliberate, breaking tightening for consistency, not
+    // a crash fix.
     template <std::meta::info MemberInfo, typename V>
-    concept OrderableOperand = ComparableOperand<MemberInfo, V> && !std::is_same_v<std::decay_t<V>, utilities::UUID>;
+    concept OrderableOperand = ComparableOperand<MemberInfo, V> && !std::is_same_v<std::decay_t<V>, utilities::UUID> &&
+                               !ColumnIsUuid<MemberInfo>;
 
     // CollatedField proxy - wraps field name with COLLATE clause
     // Created via fields::Person.name.collate(Collate::NoCase)
@@ -510,7 +481,9 @@ export namespace storm::orm::where {
         }
 
         template <typename V> auto make_comparison(CompOp op, V&& value) const -> Expr {
-            return where::make_comparison_expr(collated_name_, op, std::forward<V>(value));
+            return where::make_comparison_expr<ComparisonColumnType<MemberInfo>>(
+                    collated_name_, op, std::forward<V>(value)
+            );
         }
     };
 
@@ -593,7 +566,9 @@ export namespace storm::orm::where {
       private:
         // Helper: create comparison expression, converting enum values to int
         template <typename V> auto make_comp(CompOp op, V&& value) const -> Expr {
-            return where::make_comparison_expr(std::string(field_name_sv), op, std::forward<V>(value));
+            return where::make_comparison_expr<ComparisonColumnType<MemberInfo>>(
+                    std::string(field_name_sv), op, std::forward<V>(value)
+            );
         }
     };
 

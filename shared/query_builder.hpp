@@ -38,9 +38,15 @@ namespace storm::orm::query_builder {
     template <auto op_str, typename FieldType>
     concept ValidOperator = []() consteval {
         constexpr std::string_view op = op_str.view();
-        if (op == ">" || op == ">=" || op == "<" || op == "<=" || op == "==" || op == "!=" || op == "LIKE" ||
-            op == "BETWEEN" || op == "IN") {
+        // Ordering/BETWEEN on a UUID column is rejected here too (#622), matching
+        // where.cppm's OrderableOperand — otherwise rejection lands deep inside
+        // resolve_comparison_op's reflection splice instead of at this named gate.
+        constexpr bool is_uuid = std::is_same_v<orm::utilities::optional_inner_type_t<FieldType>, orm::utilities::UUID>;
+        if (op == "==" || op == "!=" || op == "LIKE" || op == "IN") {
             return true;
+        }
+        if (op == ">" || op == ">=" || op == "<" || op == "<=" || op == "BETWEEN") {
+            return !is_uuid;
         }
         if (op == "IS NULL" || op == "IS NOT NULL") {
             return orm::where::NullableField<FieldType>;

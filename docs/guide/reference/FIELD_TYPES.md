@@ -511,13 +511,21 @@ qs.insert(user).execute();  // std::expected<void, Error> — nothing to return 
   ("Primary key UUID must be explicitly set; auto-generation not allowed for PKs", #573) instead of
   silently matching zero rows. The by-key WHERE clause binds the key through the PK-specific
   binder, not the auto-generating binder INSERT/SET positions use.
-- **Any `.where()`/`.having()` comparison against a `storm::UUID` column — PK or not — rejects an
-  unset (empty) operand** ("UUID comparison value must be explicitly set; auto-generation not
-  allowed in a WHERE/HAVING clause", #609) instead of silently matching nothing; a non-empty
-  operand is also validated as RFC-4122 text. Ordering (`>`, `>=`, `<`, `<=`) and `.between()` on
-  a UUID column are compile-time errors — UUID is equality/`IN` only (#609/#407). The guard keys
-  on the *operand's* type (`storm::UUID`), not the column's — a plain-string comparison against a
-  UUID column (e.g. `== ""`, or a YAML/JSON-driven filter) is not covered by this guard (#622).
+- **Any `.where()`/`.having()` comparison against a `storm::UUID` column — PK or not, direct or
+  via a single-column FK to a UUID-PK model — rejects an unset (empty) operand** ("UUID
+  comparison value must be explicitly set; auto-generation not allowed in a WHERE/HAVING clause",
+  #609) instead of silently matching nothing; a non-empty operand is also validated as RFC-4122
+  text. Ordering (`>`, `>=`, `<`, `<=`) and `.between()` on a UUID column are compile-time errors
+  — UUID is equality/`IN` only (#609/#407/**#622, BREAKING**: a string-spelled ordering
+  comparison against a UUID column used to compile as a plain lexicographic TEXT compare; it is
+  now rejected too, for consistency with the equality/IN-only contract). The equality guard keys
+  on the **column's** declared type, not just the operand's (#622): a plain-string `==`/`!=`
+  comparison (`== ""`, or the equality/`!=` case of a YAML/JSON-driven filter —
+  `query_builder.hpp`'s `typed_value_as` has no `storm::UUID` branch, so its `IN`/`BETWEEN` cases
+  don't get this conversion yet) is converted to `storm::UUID{...}` before binding, so it goes
+  through the same empty/malformed rejection as a `storm::UUID{}`-spelled operand. A non-UUID
+  operand (e.g. `uuid_col == 5`) is also now a compile-time rejection rather than a silent
+  wrong-type bind.
 - **Thread safety**: Same as integer PKs — per-thread `QuerySet` instances with thread-local connections.
 
 **Example with foreign keys:**
