@@ -307,6 +307,31 @@ See [docs/internals/testing/CODE_COVERAGE.md](docs/internals/testing/CODE_COVERA
 - Custom Clang with C++26 reflection (`../clang-p2996/`)
 - SQLite3, CMake 3.30+, Ninja
 
+**No `../clang-p2996` locally? (issue #628)** — Claude Code remote/sandboxed sessions start
+with no compiler and can't configure, build, run tests, or run clang-format/clang-tidy without
+one. `scripts/dev-container.sh` wraps `docker/ci/Dockerfile` (`docker/ci/Dockerfile.sandbox`
+in a sandbox whose outbound HTTPS is TLS-intercepted — it trusts that proxy's CA before
+`pacman -Syu`, never used by real CI) into a long-lived build container plus a PostgreSQL
+sidecar, so build commands run via `exec` instead of natively:
+```bash
+scripts/dev-container.sh up                    # first run only: builds/starts the containers
+scripts/dev-container.sh exec cmake --preset ninja-debug
+scripts/dev-container.sh exec cmake --build --preset ninja-debug
+scripts/dev-container.sh exec ./build/debug/tests/storm_tests
+scripts/dev-container.sh status                # show container state
+scripts/dev-container.sh down                  # stop and remove the containers
+```
+`up` is idempotent — safe to call before every command, or once and then use `exec` directly. A
+`SessionStart` hook (`.claude/hooks/session-start-docker.sh`) provisions this automatically in
+the background on a remote session with no native toolchain — **wire it up once** by adding it
+to `.claude/settings.json`'s `hooks.SessionStart` (a security-sensitive file Claude Code will
+not modify autonomously):
+```json
+"SessionStart": [
+  { "hooks": [ { "type": "command", "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/session-start-docker.sh" } ] }
+]
+```
+
 ## Architecture
 
 ```
