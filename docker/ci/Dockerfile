@@ -8,7 +8,31 @@
 #   docker run --rm -v "$(pwd):/storm" -w /storm storm-ci:dev \
 #       cmake --preset ninja-release && cmake --build --preset ninja-release
 #
+# A sandbox whose outbound HTTPS is TLS-intercepted (e.g. Claude Code's
+# remote/sandboxed sessions — see issue #628) can't `pacman -Syu` against that
+# proxy's default-untrusted CA. Supply it as an ADDITIONAL BUILD CONTEXT named
+# `cacerts` (any directory containing *.crt files) and it's trusted before
+# pacman touches the network; real CI never passes this build context, so
+# CACERTS defaults to `scratch` (empty) and nothing changes for it:
+#
+#   docker build --build-context cacerts=/root/.ccr \
+#       -t storm-ci:sandbox -f docker/ci/Dockerfile .
+#
+# scripts/dev-container.sh passes this flag automatically when it detects a
+# sandbox proxy CA, and is the documented way to get a working build/test
+# environment in such a sandbox — see CLAUDE.md's Prerequisites section.
+ARG CACERTS=scratch
+FROM ${CACERTS} AS cacerts
+
 FROM manjarolinux/base:20260315
+
+# Trust any *.crt supplied via the `cacerts` build context above (a no-op
+# when CACERTS defaults to `scratch` — nothing to copy) before touching the
+# network below.
+COPY --from=cacerts / /tmp/extra-ca/
+RUN find /tmp/extra-ca -name '*.crt' -exec cp {} /etc/ca-certificates/trust-source/anchors/ \; \
+    && trust extract-compat \
+    && rm -rf /tmp/extra-ca
 
 # System dependencies. valgrind is included for future CodSpeed Macro /
 # cachegrind work; lcov so the same image works for coverage builds.

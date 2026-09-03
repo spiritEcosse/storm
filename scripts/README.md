@@ -2,6 +2,39 @@
 
 Utility scripts for the Storm ORM project.
 
+## Docker Dev Container (dev-container.sh)
+
+Provides a working `../clang-p2996` build environment via Docker for sessions or
+contributors with no native toolchain — see CLAUDE.md's Prerequisites section
+(issue #628) for the full writeup and `docs/internals/building/GETTING_STARTED.md`
+for the plain one-shot `docker run` alternative.
+
+### Usage
+
+```bash
+scripts/dev-container.sh up                    # builds/starts the containers (idempotent)
+scripts/dev-container.sh exec cmake --preset ninja-debug
+scripts/dev-container.sh exec cmake --build --preset ninja-debug
+scripts/dev-container.sh exec ./build/debug/tests/storm_tests
+scripts/dev-container.sh exec ./commit.sh
+scripts/dev-container.sh status                 # show container state
+scripts/dev-container.sh rebuild                # drop image + containers, rebuild from scratch
+scripts/dev-container.sh down                   # stop and remove the containers
+```
+
+### Notes
+
+- `exec` runs the command natively instead (no Docker) when `../clang-p2996` is
+  already present, so build commands can be prefixed with it unconditionally.
+- Builds `docker/ci/Dockerfile`, adding an extra `cacerts` build context (trusted
+  before `pacman -Syu`) only when a sandbox TLS-intercepting proxy CA is present
+  at `/root/.ccr/ca-bundle.crt` — real CI never supplies that context.
+- The PostgreSQL sidecar shares a unix-socket volume with the build container at
+  `/var/run/postgresql`, matching `CMakePresets.json`'s own `STORM_PG_CONNSTR` —
+  `ctest --preset` and the coverage target need no override.
+- `up` serializes on a flock, so calling it before every `exec`, or from more
+  than one shell concurrently, is safe.
+
 ## Clang-Tidy Script
 
 Run clang-tidy with modernize checks on the Storm codebase, excluding third_party code.

@@ -309,26 +309,39 @@ See [docs/internals/testing/CODE_COVERAGE.md](docs/internals/testing/CODE_COVERA
 
 **No `../clang-p2996` locally? (issue #628)** — Claude Code remote/sandboxed sessions start
 with no compiler and can't configure, build, run tests, or run clang-format/clang-tidy without
-one. `scripts/dev-container.sh` wraps `docker/ci/Dockerfile` (`docker/ci/Dockerfile.sandbox`
-in a sandbox whose outbound HTTPS is TLS-intercepted — it trusts that proxy's CA before
-`pacman -Syu`, never used by real CI) into a long-lived build container plus a PostgreSQL
-sidecar, so build commands run via `exec` instead of natively:
+one. `scripts/dev-container.sh` wraps `docker/ci/Dockerfile` into a long-lived build container
+plus a PostgreSQL sidecar (connected over a shared unix-socket volume, matching
+`CMakePresets.json`'s own `STORM_PG_CONNSTR` exactly — no override needed), so build commands
+run via `exec` instead of natively. In a sandbox whose outbound HTTPS is TLS-intercepted, the
+same Dockerfile is built with an extra `cacerts` build context that trusts the proxy's CA before
+`pacman -Syu`; real CI builds the same file with no such context, so nothing changes for it:
 ```bash
-scripts/dev-container.sh up                    # first run only: builds/starts the containers
+scripts/dev-container.sh up                    # builds/starts the containers (idempotent)
 scripts/dev-container.sh exec cmake --preset ninja-debug
 scripts/dev-container.sh exec cmake --build --preset ninja-debug
 scripts/dev-container.sh exec ./build/debug/tests/storm_tests
-scripts/dev-container.sh status                # show container state
-scripts/dev-container.sh down                  # stop and remove the containers
+scripts/dev-container.sh exec ./commit.sh       # or `exec git commit -m ...` — see below
+scripts/dev-container.sh status                 # show container state
+scripts/dev-container.sh rebuild                # drop image + containers, rebuild from scratch
+scripts/dev-container.sh down                   # stop and remove the containers
 ```
-`up` is idempotent — safe to call before every command, or once and then use `exec` directly. A
-`SessionStart` hook (`.claude/hooks/session-start-docker.sh`) provisions this automatically in
+`exec` falls through to running the command natively when `../clang-p2996` is already present,
+so build commands can be prefixed with it unconditionally in either kind of session. `up` (and
+therefore `exec`, which calls it) serializes on a flock, so calling it before every command — or
+concurrently from more than one shell — is safe. The repo is bind-mounted at the same absolute
+path inside the container as on the host, so `CMakeCache.txt` and git's `core.hooksPath` never
+disagree between a host shell and an `exec` one — which means `git commit`/`./commit.sh` work
+correctly via `exec`, but a container-only session (no native toolchain) must run them that way:
+a plain host-side `git commit` still fires the pre-commit hook, which needs the compiler rule 3
+says not to skip.
+
+A `SessionStart` hook (`.claude/hooks/session-start-docker.sh`) provisions this automatically in
 the background on a remote session with no native toolchain — **wire it up once** by adding it
 to `.claude/settings.json`'s `hooks.SessionStart` (a security-sensitive file Claude Code will
 not modify autonomously):
 ```json
 "SessionStart": [
-  { "hooks": [ { "type": "command", "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/session-start-docker.sh" } ] }
+  { "hooks": [ { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start-docker.sh" } ] }
 ]
 ```
 

@@ -28,6 +28,13 @@ The image's entrypoint creates the `${sourceDir}/../clang-p2996` symlink Storm's
 The same image runs in CI, so a green local build is a strong predictor of
 green CI.
 
+**Need the full test/coverage loop (a live PostgreSQL), or working behind a
+TLS-intercepting proxy?** `scripts/dev-container.sh` wraps the same
+`docker/ci/Dockerfile` into a long-lived container plus a PostgreSQL sidecar
+instead of the one-shot `docker run` above — see CLAUDE.md's Prerequisites
+section (issue #628) for usage. It's what Claude Code sessions use when no
+native toolchain is present.
+
 ## Option 2 — Build clang-p2996 from source
 
 If you can't use Docker (e.g. host doesn't support it, or you're working on the

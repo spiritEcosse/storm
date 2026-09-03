@@ -20,7 +20,12 @@ if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
     exit 0
 fi
 
-if [ -e "$CLAUDE_PROJECT_DIR/../clang-p2996" ]; then
+# CLAUDE_PROJECT_DIR is set by Claude Code for hooks; fall back to this
+# script's own location so manual invocation (e.g. this skill's own
+# validation step) doesn't fail on an unbound variable.
+project_dir="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+
+if [ -e "$project_dir/../clang-p2996" ]; then
     exit 0
 fi
 
@@ -30,8 +35,9 @@ fi
 
 # The image build (Manjaro base + pacman -Syu + package install) can take
 # several minutes on a cold cache — async so session start isn't blocked on
-# it. dev-container.sh is idempotent, so a build/test command run before this
-# finishes just waits on the same containers via its own `exec` call.
+# it. dev-container.sh's `up` serializes on a flock, so a build/test command
+# run before this finishes just waits on the same provisioning via its own
+# `exec` call rather than racing it.
 echo '{"async": true, "asyncTimeout": 600000}'
 
-"$CLAUDE_PROJECT_DIR/scripts/dev-container.sh" up >>/tmp/storm-dev-container-setup.log 2>&1 || true
+"$project_dir/scripts/dev-container.sh" up >>/tmp/storm-dev-container-setup.log 2>&1 || true
