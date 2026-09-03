@@ -341,7 +341,7 @@ to `.claude/settings.json`'s `hooks.SessionStart` (a security-sensitive file Cla
 not modify autonomously):
 ```json
 "SessionStart": [
-  { "hooks": [ { "type": "command", "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/session-start-docker.sh" } ] }
+  { "hooks": [ { "type": "command", "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/session-start-docker.sh" } ] }
 ]
 ```
 
