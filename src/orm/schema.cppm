@@ -154,7 +154,7 @@ export namespace storm::orm::schema {
                     {"INTEGER", "INTEGER"},
                     {"INTEGER", "BIGINT"},
             }};
-            constexpr auto                                           width_idx = static_cast<int>(W);
+            constexpr auto                                           width_idx = std::to_underlying(W);
             constexpr auto                                           pg = static_cast<int>(D == Dialect::PostgreSQL);
             return types[width_idx][pg];
         }
@@ -198,7 +198,7 @@ export namespace storm::orm::schema {
                     {"INTEGER NOT NULL", "INTEGER NOT NULL"},
                     {"INTEGER NOT NULL", "BIGINT NOT NULL"},
             }};
-            constexpr auto                                           width_idx = static_cast<int>(W);
+            constexpr auto                                           width_idx = std::to_underlying(W);
             constexpr auto                                           pg = static_cast<int>(D == Dialect::PostgreSQL);
             return types[width_idx][pg];
         }
