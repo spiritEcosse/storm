@@ -57,17 +57,19 @@ namespace {
     };
 
     // Widths are read from the SERVER, not assumed from the caller's C++ type.
-    // That is load-bearing: Storm's PG schema maps EVERY integer field — int,
-    // short, char, unsigned — to BIGINT, so extract_int() routinely faces an
-    // 8-byte int8. A fixed 4-byte read would return the high half (0 for every
-    // small positive number) and look entirely plausible.
+    // That is load-bearing: PG's width-matched integer mapping (#603) still puts
+    // an `unsigned int` field on BIGINT (a 32-bit unsigned value needs 8 bytes of
+    // signed range), so extract_int() — the extractor for 32-bit-and-smaller C++
+    // types — routinely faces an 8-byte int8. A fixed 4-byte read would return
+    // the high half (0 for every small positive number) and look entirely
+    // plausible.
     TEST_F(PgBinaryDecoderTest, IntegerWidthsDecodeByServerWidth) {
         auto stmt = binary_row("SELECT 42::int8, 42::int4, 42::int2, (-42)::int8, (-42)::int4, (-42)::int2");
         EXPECT_EQ(stmt.extract_int64(0), 42);
         EXPECT_EQ(stmt.extract_int64(1), 42);
         EXPECT_EQ(stmt.extract_int64(2), 42);
-        EXPECT_EQ(stmt.extract_int(0), 42) << "extract_int must cope with a BIGINT column — Storm's PG DDL "
-                                              "gives every C++ integer field BIGINT";
+        EXPECT_EQ(stmt.extract_int(0), 42) << "extract_int must cope with a BIGINT column — e.g. Storm's PG DDL "
+                                              "gives an `unsigned int` field BIGINT";
         EXPECT_EQ(stmt.extract_int(1), 42);
         EXPECT_EQ(stmt.extract_int(2), 42);
         EXPECT_EQ(stmt.extract_int64(3), -42) << "sign must survive the width widening";

@@ -111,7 +111,7 @@ and string types (not just `bool` — that was the original #344 scope):
 | C++ field                  | SQLite                                   | PostgreSQL                                       |
 |----------------------------|------------------------------------------|--------------------------------------------------|
 | `bool x{true};`            | `x INTEGER NOT NULL DEFAULT 1`           | `x BOOLEAN NOT NULL DEFAULT TRUE`                |
-| `int priority{1};`         | `priority INTEGER NOT NULL DEFAULT 1`    | `priority BIGINT NOT NULL DEFAULT 1`             |
+| `int priority{1};`         | `priority INTEGER NOT NULL DEFAULT 1`    | `priority INTEGER NOT NULL DEFAULT 1`            |
 | `double rate{0.0};`        | `rate REAL NOT NULL DEFAULT 0.0`         | `rate DOUBLE PRECISION NOT NULL DEFAULT 0.0`     |
 | `std::string status{"new"};` | `status TEXT NOT NULL DEFAULT 'new'`   | `status TEXT NOT NULL DEFAULT 'new'`             |
 
@@ -122,6 +122,20 @@ This matters for migrations: `ALTER TABLE ... ADD COLUMN <x> NOT NULL` is
 column with default value NULL"). Emitting the `DEFAULT` makes the generated
 `ADD COLUMN ... NOT NULL DEFAULT <v>` valid on populated tables — for every
 covered type, not only `bool`.
+
+### PostgreSQL Integer Column Width (#603)
+
+PG integer columns are now width-matched to the C++ field's declared type (`short` →
+`SMALLINT`, `int` → `INTEGER`, `int64_t` → `BIGINT`, …; see
+[FIELD_TYPES.md](FIELD_TYPES.md#integer-types)) instead of always `BIGINT`. This is a
+**breaking DDL change for any existing PostgreSQL database Storm has already generated a
+schema against** — a column narrowed from `BIGINT` to `INTEGER`/`SMALLINT` needs an actual
+migration (`ALTER COLUMN ... TYPE ...`, checked against existing data first), not just a
+regenerated `CREATE TABLE`. It was implemented without a migration path because no
+production Storm database exists yet. Also note the tradeoff this gives up: **widening a
+field's C++ type later (e.g. `int` → `int64_t`) now needs a matching PG column-type
+migration**, where before every integer field was already `BIGINT` and no DDL change was
+needed for such a widening.
 
 The value is recovered at compile time from a default-constructed instance of the
 model. **Reflection cannot distinguish `int x{};` from `int x = 0;`** — both report

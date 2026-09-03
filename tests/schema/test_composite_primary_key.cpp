@@ -267,7 +267,8 @@ namespace {
 // and NO column-level PRIMARY KEY — reusing the junction-table DDL pattern. The PK
 // part columns are ordinary NOT NULL columns.
 //
-// The two dialects differ only in the int column type (SQLite INTEGER, PG BIGINT) —
+// Both dialects render "INTEGER" here: OrderItem's parts are plain `int`, and PG's
+// width-matched integer mapping (#603) picks INTEGER for a 4-byte signed source —
 // the ordinary per-dialect mapping, unchanged by the composite path. Neither carries
 // the SQLite AUTOINCREMENT nor the PG GENERATED AS IDENTITY decoration: every part of
 // a composite key is caller-supplied, so no part can be DB-generated.
@@ -294,7 +295,7 @@ TEST(CompositePrimaryKeyDDL, SqliteEmitsTableLevelPrimaryKey) {
 
 TEST(CompositePrimaryKeyDDL, PostgresEmitsTableLevelPrimaryKey) {
     EXPECT_EQ(
-            (storm::create_table_sql<OrderItem, storm::orm::schema::Dialect::PostgreSQL>()), order_item_ddl("BIGINT")
+            (storm::create_table_sql<OrderItem, storm::orm::schema::Dialect::PostgreSQL>()), order_item_ddl("INTEGER")
     );
 }
 

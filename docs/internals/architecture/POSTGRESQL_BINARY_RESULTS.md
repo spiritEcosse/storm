@@ -25,7 +25,7 @@ These types are decoded as a direct byte reinterpretation (`memcpy` + `std::byte
 | C++ Type | Annotation | PG Storage | Binary Decode |
 |---|---|---|---|
 | `bool` | (none) | `BOOLEAN` | Single byte, `0x00`/`0x01` |
-| `int`, `short`, `char`, unsigned variants, ... | (none) | `BIGINT` | Network-byte-order int, width read from the server (see below) |
+| `int`, `short`, `char`, unsigned variants, ... | (none) | `SMALLINT`/`INTEGER`/`BIGINT` (#603, width-matched) | Network-byte-order int, width read from the server (see below) |
 | `int64_t`, `long`, `long long` | (none) | `BIGINT` | Same as above |
 | `double` | (none) | `DOUBLE PRECISION` | 8-byte IEEE 754 double |
 | `float` | (none) | `REAL` | 4-byte IEEE 754 single |
@@ -36,7 +36,7 @@ These types are decoded as a direct byte reinterpretation (`memcpy` + `std::byte
 
 All integer-stored and int64-stored C++ types benefit — this includes `signed char`, `unsigned char`, `short`, `unsigned short`, `unsigned int`, `unsigned long` and `std::byte`.
 
-**Every C++ integer field maps to PG `BIGINT`, regardless of its own width** (`schema.cppm`'s `integer_type<D>()` returns `BIGINT` for every integer `StorageClass`, never `INTEGER`/`SMALLINT`). So `extract_int()` — the extractor for 32-bit-and-smaller C++ types — routinely faces an 8-byte `int8` value on the wire. The binary decoder therefore dispatches on the **server-reported byte width** (`PQgetlength`), not a width implied by the caller's C++ type: a fixed 4-byte read there would silently return the high half of the real value (zero for every small positive number, which looks entirely plausible). See `decode_binary_int` below.
+PG's integer mapping is now width-matched per C++ type (#603: `short`/1-byte types → `SMALLINT`, `int`/`unsigned short` → `INTEGER`, `int64_t`/`long`/`long long`/`unsigned int` → `BIGINT`), not a uniform `BIGINT` for every width. `unsigned int` still lands on `BIGINT` (a 32-bit unsigned value needs 8 bytes of signed range), so `extract_int()` — the extractor for 32-bit-and-smaller C++ types — still routinely faces an 8-byte `int8` value on the wire. The binary decoder therefore dispatches on the **server-reported byte width** (`PQgetlength`), not a width implied by the caller's C++ type or the schema's declared column type: a fixed 4-byte read there would silently return the high half of the real value (zero for every small positive number, which looks entirely plausible). See `decode_binary_int` below.
 
 ### Unsafe (Excluded Even If Mechanically Possible)
 

@@ -490,6 +490,30 @@ also gained the `!is_pk_member` gate their four `is_settable_member` siblings al
 makes that gate unreachable (a model that would exercise it no longer instantiates `BaseStatement`),
 so it is defence in depth only, retained against a future loosening.
 
+**PostgreSQL integer column width (#603)**: `schema.cppm` picks the narrowest PG integer type
+(`SMALLINT`/`INTEGER`/`BIGINT`) that safely holds a field's full C++ value range, instead of the
+old uniform `BIGINT` for every integer-stored field — SQLite's dynamic-typing `INTEGER` is
+unchanged (PG-only). A signed N-byte source needs a same-or-wider signed PG width; an unsigned
+N-byte source needs one width class wider (its top half doesn't fit a same-width signed range), so
+`short`/1-byte types → `SMALLINT`, `int`/`unsigned short` → `INTEGER`, `int64_t`/`long`/`long long`/
+`unsigned int` → `BIGINT`. Enums and `std::chrono::duration` fields follow their underlying/`rep`
+type (`integer_width_of<T>`, recursive one level). **A DB-generated single-column integer PK is
+exempt** — `append_single_pk_column_def` hardcodes it to `BIGINT` (PG) regardless of the field's
+declared C++ width (every in-tree model spells its PK as plain `int`), so anything that MIRRORS
+such a PK — a junction side column, a composite-FK part column — must mirror that pinned width too,
+not the width its own declared C++ type would otherwise get, or PG's `FOREIGN KEY` type check rejects
+the `CREATE TABLE` (SQLite accepts the mismatch silently). Gated by `has_pinned_bigint_pk<Model>`
+(`!has_composite_pk_ && !has_uuid_pk_()`, matching `append_single_pk_column_def`'s own condition,
+cross-checked there by a `static_assert`) and `part_pinned_bigint<PartMember>` (the composite/
+junction-part sibling, which resolves through the same single-level FK indirection
+`pk_part_storage_type` uses). The per-field FK column (`append_fk_column_def`) mirrors the same pin
+by construction rather than through these predicates — it already hardcoded `INTEGER`/`BIGINT` from
+its own literal `fk_suffixes` lookup table before #603 and stays untouched, correct because that
+table is reachable only for a pinned target. A composite or UUID PK is never pinned: its own column is already
+width-derived from the same declared type a mirroring column resolves through, so both sides agree
+by construction. **BREAKING** for any existing PostgreSQL database — narrower columns need a
+migration, not just new schemas; accepted because no production Storm database exists yet.
+
 **64-bit unsigned storage (#436)**: a bare `uint64_t` / `unsigned long` / `unsigned long long` field
 is a **compile-time error** (`ModelStorageAnnotated<T>` constraint on `BaseStatement`). Annotate with
 exactly one: `[[= storm::signed_storage]]` keeps today's signed `INTEGER`/`BIGINT` (byte-identical,

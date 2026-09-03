@@ -44,6 +44,48 @@ export namespace storm::orm::schema {
         template <typename T>
         using col_inner_t = std::conditional_t<utilities::is_optional_v<T>, utilities::optional_inner_type_t<T>, T>;
 
+        // PostgreSQL integer column width (#603): a C++ integer-stored field maps to
+        // the narrowest PG integer type that can hold its full value range, instead of
+        // always BIGINT. SQLite ignores this (dynamic typing — one "INTEGER" storage
+        // class for every width already).
+        //   Small   -> SMALLINT (2 bytes,  -32768..32767)
+        //   Regular -> INTEGER  (4 bytes,  -2147483648..2147483647)
+        //   Big     -> BIGINT   (8 bytes,  -9223372036854775808..9223372036854775807)
+        // An unsigned N-byte source needs a signed column wide enough for its full
+        // 0..2^(8N)-1 range, which is one size class up from a signed N-byte source
+        // (a 1-byte unsigned still fits Small, same as signed, since 255 <= 32767) —
+        // up to 8 bytes, where it saturates at Big: an 8-byte unsigned source (a
+        // storm::signed_storage uint64_t, #436) has no wider signed class to promote
+        // to, so it keeps the pre-#603 BIGINT and the caller's existing 0..INT64_MAX
+        // contract. A full 0..2^64-1 range never reaches this dispatcher at all —
+        // storm::full_unsigned routes through a separate NUMERIC(20,0)/TEXT type.
+        enum class IntWidth : std::uint8_t { Small, Regular, Big };
+
+        template <typename T> consteval auto integer_width_of() -> IntWidth {
+            using enum IntWidth;
+            if constexpr (utilities::is_chrono_duration_v<T>) {
+                return integer_width_of<typename T::rep>();
+            } else if constexpr (std::is_enum_v<T>) {
+                return integer_width_of<std::underlying_type_t<T>>();
+            } else if constexpr (std::is_signed_v<T>) {
+                if constexpr (sizeof(T) <= 2) {
+                    return Small;
+                } else if constexpr (sizeof(T) <= 4) {
+                    return Regular;
+                } else {
+                    return Big;
+                }
+            } else {
+                if constexpr (sizeof(T) <= 1) {
+                    return Small;
+                } else if constexpr (sizeof(T) <= 2) {
+                    return Regular;
+                } else {
+                    return Big;
+                }
+            }
+        }
+
         // Source-type predicates per StorageClass. Combining them as a single named
         // constexpr bool keeps the dispatcher below to one branch per storage class.
         template <typename T>
@@ -97,8 +139,24 @@ export namespace storm::orm::schema {
         template <Dialect D> consteval auto bool_type() -> std::string_view {
             return D == Dialect::PostgreSQL ? "BOOLEAN" : "INTEGER";
         }
-        template <Dialect D> consteval auto integer_type() -> std::string_view {
-            return D == Dialect::PostgreSQL ? "BIGINT" : "INTEGER";
+        // Width-aware integer type (#603). SQLite keeps a single "INTEGER" for every
+        // width (dynamic typing already stores any value regardless of declared
+        // affinity); PostgreSQL picks SMALLINT/INTEGER/BIGINT per IntWidth. No default
+        // for W — every caller of THIS function must know its width; the load-bearing
+        // "default to Big for callers that predate #603" lives one level up, on
+        // bare_type_for/not_null_type_for/sql_type_for, which every pre-#603 call site
+        // actually goes through.
+        template <Dialect D, IntWidth W> consteval auto integer_type() -> std::string_view {
+            // [width][pg] → type string; avoids branch-clone (SQLite's "INTEGER" and PG's
+            // Regular-width "INTEGER" are coincidentally identical text, not a real clone).
+            constexpr std::array<std::array<std::string_view, 2>, 3> types     = {{
+                    {"INTEGER", "SMALLINT"},
+                    {"INTEGER", "INTEGER"},
+                    {"INTEGER", "BIGINT"},
+            }};
+            constexpr auto                                           width_idx = std::to_underlying(W);
+            constexpr auto                                           pg = static_cast<int>(D == Dialect::PostgreSQL);
+            return types[width_idx][pg];
         }
         template <Dialect D> consteval auto double_type() -> std::string_view {
             return D == Dialect::PostgreSQL ? "DOUBLE PRECISION" : "REAL";
@@ -132,8 +190,17 @@ export namespace storm::orm::schema {
         template <Dialect D> consteval auto bool_type_nn() -> std::string_view {
             return D == Dialect::PostgreSQL ? "BOOLEAN NOT NULL" : "INTEGER NOT NULL";
         }
-        template <Dialect D> consteval auto integer_type_nn() -> std::string_view {
-            return D == Dialect::PostgreSQL ? "BIGINT NOT NULL" : "INTEGER NOT NULL";
+        template <Dialect D, IntWidth W> consteval auto integer_type_nn() -> std::string_view {
+            // [width][pg] → type string; see integer_type's own comment on why the two
+            // "INTEGER NOT NULL" cells are not a branch-clone.
+            constexpr std::array<std::array<std::string_view, 2>, 3> types     = {{
+                    {"INTEGER NOT NULL", "SMALLINT NOT NULL"},
+                    {"INTEGER NOT NULL", "INTEGER NOT NULL"},
+                    {"INTEGER NOT NULL", "BIGINT NOT NULL"},
+            }};
+            constexpr auto                                           width_idx = std::to_underlying(W);
+            constexpr auto                                           pg = static_cast<int>(D == Dialect::PostgreSQL);
+            return types[width_idx][pg];
         }
         template <Dialect D> consteval auto double_type_nn() -> std::string_view {
             return D == Dialect::PostgreSQL ? "DOUBLE PRECISION NOT NULL" : "REAL NOT NULL";
@@ -149,13 +216,16 @@ export namespace storm::orm::schema {
         }
 
         // Pre-baked type strings keyed by StorageClass × Dialect. sql_type_for picks
-        // one of these (or its NOT NULL counterpart) per call.
-        template <StorageClass C, Dialect D> consteval auto bare_type_for() -> std::string_view {
+        // one of these (or its NOT NULL counterpart) per call. W defaults to Big so
+        // every call site written before #603 keeps emitting BIGINT unless it opts
+        // into a narrower width explicitly.
+        template <StorageClass C, Dialect D, IntWidth W = IntWidth::Big>
+        consteval auto bare_type_for() -> std::string_view {
             using enum StorageClass;
             if constexpr (C == Bool) {
                 return bool_type<D>();
             } else if constexpr (C == Integer) {
-                return integer_type<D>();
+                return integer_type<D, W>();
             } else if constexpr (C == Double) {
                 return double_type<D>();
             } else if constexpr (C == Float) {
@@ -176,12 +246,13 @@ export namespace storm::orm::schema {
             }
         }
 
-        template <StorageClass C, Dialect D> consteval auto not_null_type_for() -> std::string_view {
+        template <StorageClass C, Dialect D, IntWidth W = IntWidth::Big>
+        consteval auto not_null_type_for() -> std::string_view {
             using enum StorageClass;
             if constexpr (C == Bool) {
                 return bool_type_nn<D>();
             } else if constexpr (C == Integer) {
-                return integer_type_nn<D>();
+                return integer_type_nn<D, W>();
             } else if constexpr (C == Double) {
                 return double_type_nn<D>();
             } else if constexpr (C == Float) {
@@ -207,11 +278,12 @@ export namespace storm::orm::schema {
         // Pick the bare or NOT-NULL variant for (StorageClass, Dialect, Nullable).
         // Blob and Fallback always use the bare variant (matches the prior catch-all
         // behaviour for std::vector<...> fields).
-        template <StorageClass C, Dialect D, bool Nullable> consteval auto sql_type_for() -> std::string_view {
+        template <StorageClass C, Dialect D, bool Nullable, IntWidth W = IntWidth::Big>
+        consteval auto sql_type_for() -> std::string_view {
             if constexpr (Nullable) {
-                return bare_type_for<C, D>();
+                return bare_type_for<C, D, W>();
             } else {
-                return not_null_type_for<C, D>();
+                return not_null_type_for<C, D, W>();
             }
         }
 
@@ -480,10 +552,18 @@ export namespace storm::orm::schema {
         // The nullable flag drives the `NOT NULL` suffix; Blob is always nullable-shaped
         // (matches the prior catch-all behaviour for vector<...> fields).
         template <typename FieldType, Dialect D = Dialect::SQLite> consteval auto sql_col_def() -> std::string_view {
-            constexpr StorageClass cls = storage_class_of<col_inner_t<FieldType>>();
+            using Inner                = col_inner_t<FieldType>;
+            constexpr StorageClass cls = storage_class_of<Inner>();
             constexpr bool         nullable =
                     utilities::is_optional_v<FieldType> || cls == StorageClass::Blob || cls == StorageClass::Fallback;
-            return sql_type_for<cls, D, nullable>();
+            // Width-aware only for Integer: the field OWNS its storage here (never
+            // mirrors another model's primary key), so its declared C++ type's width
+            // is exactly the width the column should have (#603).
+            if constexpr (cls == StorageClass::Integer) {
+                return sql_type_for<cls, D, nullable, integer_width_of<Inner>()>();
+            } else {
+                return sql_type_for<cls, D, nullable>();
+            }
         }
 
         // ---- Composite-FK column/constraint DDL (#504) ----
@@ -517,6 +597,56 @@ export namespace storm::orm::schema {
                 return std::meta::type_of(storm::orm::statements::BaseStatement<InnerType>::primary_key_);
             } else {
                 return std::meta::type_of(PartMember);
+            }
+        }
+
+        // True when Model's own primary key is the single-column, DB-generated shape
+        // (not composite, not UUID) — append_single_pk_column_def hardcodes THAT shape's
+        // column to BIGINT on PostgreSQL / INTEGER on SQLite, UNCONDITIONALLY, ignoring
+        // the PK member's own declared C++ type (every model in this tree spells its PK
+        // as plain `int`, yet gets a PG BIGINT column). Any column that MIRRORS such a
+        // PK — a junction side column, a composite-FK part column pointing at it — must
+        // mirror that pinned width, not the width computed from the declared C++ type,
+        // or the mirroring column's type disagrees with the actual PK column and
+        // PostgreSQL rejects the FOREIGN KEY (SQLite accepts the mismatch silently).
+        // A composite or UUID PK is never pinned: its own column is typed by the same
+        // width-aware sql_col_def a mirroring column also resolves through, so both
+        // sides agree by construction — no pin needed.
+        template <typename Model> consteval auto has_pinned_bigint_pk() -> bool {
+            using ModelBase = storm::orm::statements::BaseStatement<Model>;
+            return !ModelBase::has_composite_pk_ && !ModelBase::has_uuid_pk_();
+        }
+
+        // True when PartMember (one part of a composite target's PK) resolves, via
+        // pk_part_storage_type above, to ANOTHER model's primary key — and that other
+        // model's PK is the pinned-BIGINT shape has_pinned_bigint_pk describes. A plain
+        // (non-FK) composite part is never pinned: it stores its own declared type
+        // directly, and its own column (emitted through the regular-column path,
+        // sql_col_def) is already width-aware from that same declared type, so a
+        // mirroring column agrees by construction.
+        template <std::meta::info PartMember> consteval auto part_pinned_bigint() -> bool {
+            if constexpr (storm::orm::statements::meta::is_fk_field(PartMember)) {
+                using FkFieldType = std::remove_cvref_t<typename[:std::meta::type_of(PartMember):]>;
+                using InnerType   = storm::orm::utilities::optional_inner_type_t<FkFieldType>;
+                return has_pinned_bigint_pk<InnerType>();
+            } else {
+                return false;
+            }
+        }
+
+        // Whether junction column Is of SideType is pinned (see has_pinned_bigint_pk /
+        // part_pinned_bigint above): a single-column side pins on the SIDE's own PK
+        // shape (there is only one column, and it is not itself an FK field); a
+        // composite side pins per-part via the FK-or-not rule, since only a part that
+        // is itself an FK can mirror ANOTHER model's pinned PK — a composite side's own
+        // plain part is never pinned. `if constexpr` (not a ternary) so only the
+        // reachable branch is instantiated.
+        template <typename SideType, std::size_t Is> consteval auto junction_side_pinned() -> bool {
+            using SideBase = storm::orm::statements::BaseStatement<SideType>;
+            if constexpr (SideBase::has_composite_pk_) {
+                return part_pinned_bigint<SideBase::primary_key_members_[Is]>();
+            } else {
+                return has_pinned_bigint_pk<SideType>();
             }
         }
 
@@ -558,7 +688,14 @@ export namespace storm::orm::schema {
             col.append("_");
             col.append(std::meta::identifier_of(PartMember));
             col.append(" ");
-            col.append(sql_type_for<cls, D, nullable>());
+            // Width-aware (#603) unless this part mirrors another model's pinned
+            // single-column PK (part_pinned_bigint) — that PK's own column ignores its
+            // declared C++ width entirely, so a mirroring column must too.
+            if constexpr (cls == StorageClass::Integer && !part_pinned_bigint<PartMember>()) {
+                col.append(sql_type_for<cls, D, nullable, integer_width_of<PartType>()>());
+            } else {
+                col.append(sql_type_for<cls, D, nullable>());
+            }
         }
 
         // The target's PK member list, as a template-argument-usable constexpr value
@@ -740,9 +877,15 @@ export namespace storm::orm::schema {
             using SideBase = storm::orm::statements::BaseStatement<SideType>;
             using PartType =
                     std::remove_cvref_t<typename[:pk_part_storage_type<SideBase::primary_key_members_[Is]>():]>;
+            constexpr StorageClass cls    = storage_class_of<PartType>();
+            constexpr bool         pinned = junction_side_pinned<SideType, Is>();
             append_junction_side_column_name<SideType, Is>(sql, side_name);
             sql.append(" ");
-            sql.append(sql_type_for<storage_class_of<PartType>(), D, /*Nullable=*/false>());
+            if constexpr (cls == StorageClass::Integer && !pinned) {
+                sql.append(sql_type_for<cls, D, /*Nullable=*/false, integer_width_of<PartType>()>());
+            } else {
+                sql.append(sql_type_for<cls, D, /*Nullable=*/false>());
+            }
         }
 
         // How many junction columns a side contributes: 1 for a single-column PK,
@@ -1259,6 +1402,18 @@ export namespace storm::orm::schema {
                 col.append(detail::uuid_type<D>()); // see append_fk_column_def on the qualification
                 col.append(" PRIMARY KEY");
             } else if constexpr (D == Dialect::PostgreSQL) {
+                // This BIGINT is hardcoded, not width-derived from the PK member's own
+                // declared C++ type (#603) — three OTHER places assume that and must be
+                // kept in agreement if this literal ever changes: has_pinned_bigint_pk
+                // (this branch is exactly its true case for a non-composite, non-UUID
+                // PK), part_pinned_bigint (the composite/junction-part sibling), and
+                // append_fk_column_def's own hardcoded fk_suffixes table (the per-field
+                // FK column, which mirrors this PK's type by an independent literal).
+                static_assert(
+                        detail::has_pinned_bigint_pk<T>(),
+                        "append_single_pk_column_def's hardcoded PG BIGINT disagrees with "
+                        "has_pinned_bigint_pk for this model's PK shape"
+                );
                 col.append(" BIGINT PRIMARY KEY GENERATED BY DEFAULT AS IDENTITY");
             } else if constexpr (pk_wants_autoincrement()) {
                 col.append(" INTEGER PRIMARY KEY AUTOINCREMENT");

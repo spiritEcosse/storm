@@ -247,13 +247,16 @@ TEST(JunctionDdlTest, CompositeOwnerSideEmitsOneColumnPerPkPart) {
     );
 }
 
-// PG must map each part to its own dialect type: int -> BIGINT, string -> TEXT,
-// int64 -> BIGINT. A single hardcoded "BIGINT NOT NULL" for every column (the
-// pre-fix shape) would type the TEXT part wrong and PG would reject the FK for
-// a type mismatch against LedgerWithTags.account.
+// PG must map each part to its own dialect type: int -> INTEGER, string -> TEXT,
+// int64 -> BIGINT (#603 width-matching). A single hardcoded "BIGINT NOT NULL"
+// for every column (the pre-fix shape) would type the TEXT part wrong and PG
+// would reject the FK for a type mismatch against LedgerWithTags.account.
+// LedgerTag_id stays BIGINT: it mirrors LedgerTag's own single-column
+// DB-generated PK, which is pinned to BIGINT regardless of its declared `int`
+// width (see has_pinned_bigint_pk in schema.cppm) — not width-derived here.
 TEST(JunctionDdlTest, CompositeOwnerSidePostgresTypesEachPartIndividually) {
     const std::string& sql = junction_sql<LedgerWithTags, schema_ns::Dialect::PostgreSQL>();
-    EXPECT_TRUE(sql.contains("LedgerWithTags_region BIGINT NOT NULL")) << sql;
+    EXPECT_TRUE(sql.contains("LedgerWithTags_region INTEGER NOT NULL")) << sql;
     EXPECT_TRUE(sql.contains("LedgerWithTags_account TEXT NOT NULL")) << sql;
     EXPECT_TRUE(sql.contains("LedgerWithTags_period BIGINT NOT NULL")) << sql;
     EXPECT_TRUE(sql.contains("LedgerTag_id BIGINT NOT NULL")) << sql;
@@ -264,39 +267,43 @@ TEST(JunctionDdlTest, CompositeOwnerSidePostgresTypesEachPartIndividually) {
 // unchanged while the RELATED side widens. Proves the widening is per-side, not
 // an all-or-nothing switch driven by the owner alone.
 
-// #566 — same one-token-differs shape as expected_student_course_ddl above, so
-// the PRIMARY KEY / FOREIGN KEY tail (identical on both dialects — only the
-// column TYPE word varies) is written once rather than duplicated per dialect.
+// #566 — same shape as expected_student_course_ddl above, but with two
+// independent type tokens rather than one shared one (#603): TagRegistry_id
+// mirrors TagRegistry's own single-column DB-generated PK (pinned to BIGINT
+// on PG regardless of its declared `int` width — has_pinned_bigint_pk in
+// schema.cppm), while CatalogEntry's plain `int` composite parts are
+// width-derived (INTEGER on PG) — the two columns can diverge on PostgreSQL.
 namespace {
-    auto expected_tag_registry_catalog_entry_ddl(std::string_view int_type) -> std::string {
+    auto expected_tag_registry_catalog_entry_ddl(std::string_view owner_type, std::string_view related_type)
+            -> std::string {
         return std::format(
                 "CREATE TABLE TagRegistry_CatalogEntry (\n"
                 "    TagRegistry_id {0} NOT NULL,\n"
-                "    CatalogEntry_catalog_id {0} NOT NULL,\n"
-                "    CatalogEntry_entry_no {0} NOT NULL,\n"
+                "    CatalogEntry_catalog_id {1} NOT NULL,\n"
+                "    CatalogEntry_entry_no {1} NOT NULL,\n"
                 "    PRIMARY KEY (TagRegistry_id, CatalogEntry_catalog_id, CatalogEntry_entry_no),\n"
                 "    FOREIGN KEY (TagRegistry_id) REFERENCES TagRegistry(id) ON DELETE CASCADE,\n"
                 "    FOREIGN KEY (CatalogEntry_catalog_id, CatalogEntry_entry_no) REFERENCES "
                 "CatalogEntry(catalog_id, entry_no) ON DELETE CASCADE\n"
                 ")",
-                int_type
+                owner_type,
+                related_type
         );
     }
 } // namespace
 
 TEST(JunctionDdlTest, CompositeRelatedSideWidensWhileOwnerStaysSingleColumn) {
     const std::string& sql = junction_sql<TagRegistry, schema_ns::Dialect::SQLite>();
-    EXPECT_EQ(sql, expected_tag_registry_catalog_entry_ddl("INTEGER"));
+    EXPECT_EQ(sql, expected_tag_registry_catalog_entry_ddl("INTEGER", "INTEGER"));
 }
 
-// PG must map each part to BIGINT independently on the related side too — the
-// mirror of CompositeOwnerSidePostgresTypesEachPartIndividually above but
-// exact-string rather than contains(): a PG-only regression in the related-side
-// FK target list (#566) would otherwise pass this file's suite with no PG
-// signal at all.
+// PG must map each part independently on the related side too — the mirror of
+// CompositeOwnerSidePostgresTypesEachPartIndividually above but exact-string
+// rather than contains(): a PG-only regression in the related-side FK target
+// list (#566) would otherwise pass this file's suite with no PG signal at all.
 TEST(JunctionDdlTest, CompositeRelatedSideWidensWhileOwnerStaysSingleColumnPostgres) {
     const std::string& sql = junction_sql<TagRegistry, schema_ns::Dialect::PostgreSQL>();
-    EXPECT_EQ(sql, expected_tag_registry_catalog_entry_ddl("BIGINT"));
+    EXPECT_EQ(sql, expected_tag_registry_catalog_entry_ddl("BIGINT", "INTEGER"));
 }
 
 // ---- Composite on BOTH sides (ShelfAssignment -> StorageBin) ------------------

@@ -67,7 +67,8 @@ export namespace storm::orm::statements {
         // very same C++ type as a signed_storage member — see BaseStatement's
         // member_pg_binary_safe.
         //
-        // Enums and chrono durations are BIGINT on PostgreSQL and would decode
+        // Enums and chrono durations are SMALLINT/INTEGER/BIGINT on PostgreSQL
+        // (width-matched to their underlying/rep type, #603) and would decode
         // correctly, but are left out of Phase 1's tested surface.
         template <typename FT>
         static constexpr bool is_pg_binary_safe_v =
