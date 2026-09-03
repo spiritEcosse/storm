@@ -286,7 +286,8 @@ namespace {
                 "    FOREIGN KEY (CatalogEntry_catalog_id, CatalogEntry_entry_no) REFERENCES "
                 "CatalogEntry(catalog_id, entry_no) ON DELETE CASCADE\n"
                 ")",
-                owner_type, related_type
+                owner_type,
+                related_type
         );
     }
 } // namespace

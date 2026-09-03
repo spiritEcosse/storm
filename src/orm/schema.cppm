@@ -147,16 +147,16 @@ export namespace storm::orm::schema {
         // bare_type_for/not_null_type_for/sql_type_for, which every pre-#603 call site
         // actually goes through.
         template <Dialect D, IntWidth W> consteval auto integer_type() -> std::string_view {
-            using enum IntWidth;
-            if constexpr (D != Dialect::PostgreSQL) {
-                return "INTEGER";
-            } else if constexpr (W == Small) {
-                return "SMALLINT";
-            } else if constexpr (W == Regular) {
-                return "INTEGER";
-            } else {
-                return "BIGINT";
-            }
+            // [width][pg] → type string; avoids branch-clone (SQLite's "INTEGER" and PG's
+            // Regular-width "INTEGER" are coincidentally identical text, not a real clone).
+            constexpr std::array<std::array<std::string_view, 2>, 3> types     = {{
+                    {"INTEGER", "SMALLINT"},
+                    {"INTEGER", "INTEGER"},
+                    {"INTEGER", "BIGINT"},
+            }};
+            constexpr auto                                           width_idx = static_cast<int>(W);
+            constexpr auto                                           pg = static_cast<int>(D == Dialect::PostgreSQL);
+            return types[width_idx][pg];
         }
         template <Dialect D> consteval auto double_type() -> std::string_view {
             return D == Dialect::PostgreSQL ? "DOUBLE PRECISION" : "REAL";
@@ -191,16 +191,16 @@ export namespace storm::orm::schema {
             return D == Dialect::PostgreSQL ? "BOOLEAN NOT NULL" : "INTEGER NOT NULL";
         }
         template <Dialect D, IntWidth W> consteval auto integer_type_nn() -> std::string_view {
-            using enum IntWidth;
-            if constexpr (D != Dialect::PostgreSQL) {
-                return "INTEGER NOT NULL";
-            } else if constexpr (W == Small) {
-                return "SMALLINT NOT NULL";
-            } else if constexpr (W == Regular) {
-                return "INTEGER NOT NULL";
-            } else {
-                return "BIGINT NOT NULL";
-            }
+            // [width][pg] → type string; see integer_type's own comment on why the two
+            // "INTEGER NOT NULL" cells are not a branch-clone.
+            constexpr std::array<std::array<std::string_view, 2>, 3> types     = {{
+                    {"INTEGER NOT NULL", "SMALLINT NOT NULL"},
+                    {"INTEGER NOT NULL", "INTEGER NOT NULL"},
+                    {"INTEGER NOT NULL", "BIGINT NOT NULL"},
+            }};
+            constexpr auto                                           width_idx = static_cast<int>(W);
+            constexpr auto                                           pg = static_cast<int>(D == Dialect::PostgreSQL);
+            return types[width_idx][pg];
         }
         template <Dialect D> consteval auto double_type_nn() -> std::string_view {
             return D == Dialect::PostgreSQL ? "DOUBLE PRECISION NOT NULL" : "REAL NOT NULL";
