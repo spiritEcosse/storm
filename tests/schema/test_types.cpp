@@ -1769,6 +1769,80 @@ TEST(PgDialectTypesSchemaTest, DurationFieldIsBigint) {
             << "Expected 'duration_field BIGINT NOT NULL' in PG SQL: " << sql;
 }
 
+// ── PG integer column width (#603) — every IntWidth branch, on real fields ────
+// Prior to these tests, IntWidth::Small (SMALLINT), the enum branch, and the
+// unsigned-promoted-one-class rule were reachable only by manual tracing — no
+// in-tree model exercised them on PostgreSQL. ExtendedTypes already carries
+// every needed C++ shape (signed char/unsigned char/char/enum/unsigned int/
+// long long), so no new model fixture is needed.
+
+TEST(PgDialectTypesSchemaTest, SignedCharFieldIsSmallint) {
+    const std::string& sql = SchemaStatement<ExtendedTypes>::create_table_sql<Dialect::PostgreSQL>();
+    EXPECT_NE(sql.find("tiny_signed SMALLINT NOT NULL"), std::string::npos)
+            << "signed char (1-byte signed) must map to SMALLINT in PG SQL: " << sql;
+}
+
+TEST(PgDialectTypesSchemaTest, UnsignedCharFieldIsSmallint) {
+    const std::string& sql = SchemaStatement<ExtendedTypes>::create_table_sql<Dialect::PostgreSQL>();
+    EXPECT_NE(sql.find("tiny_unsigned SMALLINT NOT NULL"), std::string::npos)
+            << "unsigned char (1-byte unsigned, 0..255 fits SMALLINT's 0..32767) must map to "
+               "SMALLINT in PG SQL: "
+            << sql;
+}
+
+TEST(PgDialectTypesSchemaTest, CharFieldIsSmallint) {
+    const std::string& sql = SchemaStatement<ExtendedTypes>::create_table_sql<Dialect::PostgreSQL>();
+    EXPECT_NE(sql.find("single_char SMALLINT NOT NULL"), std::string::npos)
+            << "char (1-byte, signed or not) must map to SMALLINT in PG SQL: " << sql;
+}
+
+TEST(PgDialectTypesSchemaTest, EnumFieldFollowsUnderlyingType) {
+    const std::string& sql = SchemaStatement<ExtendedTypes>::create_table_sql<Dialect::PostgreSQL>();
+    // Color's underlying type is `int` (4-byte signed) -> INTEGER, exercising the
+    // std::is_enum_v branch of integer_width_of (recurses to std::underlying_type_t).
+    EXPECT_NE(sql.find("color INTEGER NOT NULL"), std::string::npos)
+            << "enum : int must map to INTEGER (underlying-type recursion) in PG SQL: " << sql;
+}
+
+TEST(PgDialectTypesSchemaTest, OptionalEnumFieldFollowsUnderlyingTypeNullable) {
+    const std::string& sql = SchemaStatement<ExtendedTypes>::create_table_sql<Dialect::PostgreSQL>();
+    const std::size_t  pos = sql.find("opt_color INTEGER");
+    ASSERT_NE(pos, std::string::npos) << "Expected 'opt_color INTEGER' (nullable) in PG SQL: " << sql;
+    const std::string after = sql.substr(pos, 30);
+    EXPECT_EQ(after.find("NOT NULL"), std::string::npos) << "opt_color should be nullable, got: " << after;
+}
+
+TEST(PgDialectTypesSchemaTest, UnsignedIntFieldIsBigint) {
+    const std::string& sql = SchemaStatement<ExtendedTypes>::create_table_sql<Dialect::PostgreSQL>();
+    // unsigned int (4-byte unsigned, 0..4294967295) does not fit INTEGER's
+    // 4-byte signed range -> promoted one class to BIGINT.
+    EXPECT_NE(sql.find("u_int BIGINT NOT NULL"), std::string::npos)
+            << "unsigned int must stay on BIGINT (promoted one class) in PG SQL: " << sql;
+}
+
+TEST(PgDialectTypesSchemaTest, LongLongFieldIsBigint) {
+    const std::string& sql = SchemaStatement<ExtendedTypes>::create_table_sql<Dialect::PostgreSQL>();
+    EXPECT_NE(sql.find("ll_signed BIGINT NOT NULL"), std::string::npos)
+            << "long long (8-byte signed) must map to BIGINT in PG SQL: " << sql;
+}
+
+TEST(PgDialectTypesSchemaTest, Int64FieldIsBigint) {
+    const std::string& sql = SchemaStatement<ExtendedTypes>::create_table_sql<Dialect::PostgreSQL>();
+    EXPECT_NE(sql.find("big_num BIGINT NOT NULL"), std::string::npos)
+            << "int64_t must stay on BIGINT in PG SQL: " << sql;
+}
+
+TEST(PgDialectTypesSchemaTest, NarrowFieldsSqliteUnchanged) {
+    // SQLite has one dynamic INTEGER storage class for every width (#603 is PG-only).
+    const std::string& sql = SchemaStatement<ExtendedTypes>::create_table_sql();
+    EXPECT_NE(sql.find("tiny_signed INTEGER NOT NULL"), std::string::npos) << sql;
+    EXPECT_NE(sql.find("tiny_unsigned INTEGER NOT NULL"), std::string::npos) << sql;
+    EXPECT_NE(sql.find("single_char INTEGER NOT NULL"), std::string::npos) << sql;
+    EXPECT_NE(sql.find("color INTEGER NOT NULL"), std::string::npos) << sql;
+    EXPECT_NE(sql.find("u_int INTEGER NOT NULL"), std::string::npos) << sql;
+    EXPECT_EQ(sql.find("SMALLINT"), std::string::npos) << "SQLite must never emit SMALLINT: " << sql;
+}
+
 TEST(PgDialectTypesSchemaTest, OptionalTimestampIsTimestamp) {
     const std::string& sql = SchemaStatement<ExtendedTypes>::create_table_sql<Dialect::PostgreSQL>();
     EXPECT_NE(sql.find("opt_timestamp TIMESTAMP"), std::string::npos)

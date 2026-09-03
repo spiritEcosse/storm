@@ -94,7 +94,7 @@ TEST(ColumnDefaultSchema, SqliteTextDefaultEscapesQuote) {
 
 TEST(ColumnDefaultSchema, PgIntDefault) {
     const std::string& sql = SchemaStatement<ColumnDefaultModel>::create_table_sql<Dialect::PostgreSQL>();
-    EXPECT_NE(sql.find("priority BIGINT NOT NULL DEFAULT 1"), std::string::npos) << sql;
+    EXPECT_NE(sql.find("priority INTEGER NOT NULL DEFAULT 1"), std::string::npos) << sql;
 }
 
 TEST(ColumnDefaultSchema, PgDoubleDefault) {
@@ -145,7 +145,7 @@ TYPED_TEST(ColumnDefaultAlterTest, AddIntNotNullColumnOnPopulatedTableSucceeds) 
     ASSERT_TRUE(conn->execute("INSERT INTO t (id) VALUES (1)").has_value());
 
     const std::string alter = storm::test::is_postgresql<TypeParam>()
-                                      ? "ALTER TABLE t ADD COLUMN priority BIGINT NOT NULL DEFAULT 1"
+                                      ? "ALTER TABLE t ADD COLUMN priority INTEGER NOT NULL DEFAULT 1"
                                       : "ALTER TABLE t ADD COLUMN priority INTEGER NOT NULL DEFAULT 1";
 
     auto result = conn->execute(alter);

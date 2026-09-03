@@ -10,18 +10,27 @@ Storm ORM supports all standard SQLite types through compile-time type dispatch 
 
 ## Integer Types
 
-| C++ Type | SQLite Type | Binding Method | Extraction Method |
-|----------|-------------|----------------|-------------------|
-| `int` | INTEGER | `bind_int()` | `extract_int()` |
-| `short` | INTEGER | `bind_int()` (cast) | `extract_int()` (cast) |
-| `unsigned short` | INTEGER | `bind_int()` (cast) | `extract_int()` (cast) |
-| `unsigned int` | INTEGER | `bind_int()` (cast) | `extract_int()` (cast) |
-| `int64_t` | INTEGER | `bind_int64()` | `extract_int64()` |
-| `long` | INTEGER | `bind_int64()` | `extract_int64()` |
-| `long long` | INTEGER | `bind_int64()` | `extract_int64()` |
-| `uint64_t` | *annotation-gated* | see below | see below |
-| `unsigned long` | *annotation-gated* | see below | see below |
-| `unsigned long long` | *annotation-gated* | see below | see below |
+SQLite has one dynamic `INTEGER` storage class for every width. PostgreSQL does not, so
+`schema.cppm` picks the narrowest PG column that safely holds the C++ type's full value
+range (#603) — a signed N-byte source needs the same or a wider signed PG type; an
+unsigned N-byte source needs one size class wider (its top half doesn't fit a same-width
+signed range). `short`/`signed char`/`unsigned char`/`char` (1-byte types fit `SMALLINT`
+regardless of signedness) map to `SMALLINT`; `int`/`unsigned short` map to `INTEGER`; `int64_t`/`long`/`long long`/
+`unsigned int` map to `BIGINT`. Enums and `std::chrono::duration` fields follow their
+underlying/`rep` type. SQLite's mapping is unchanged — this is PG-only.
+
+| C++ Type | SQLite Type | PostgreSQL Type | Binding Method | Extraction Method |
+|----------|-------------|------------------|----------------|-------------------|
+| `int` | INTEGER | INTEGER | `bind_int()` | `extract_int()` |
+| `short` | INTEGER | SMALLINT | `bind_int()` (cast) | `extract_int()` (cast) |
+| `unsigned short` | INTEGER | INTEGER | `bind_int()` (cast) | `extract_int()` (cast) |
+| `unsigned int` | INTEGER | BIGINT | `bind_int()` (cast) | `extract_int()` (cast) |
+| `int64_t` | INTEGER | BIGINT | `bind_int64()` | `extract_int64()` |
+| `long` | INTEGER | BIGINT | `bind_int64()` | `extract_int64()` |
+| `long long` | INTEGER | BIGINT | `bind_int64()` | `extract_int64()` |
+| `uint64_t` | *annotation-gated* | *annotation-gated* | see below | see below |
+| `unsigned long` | *annotation-gated* | *annotation-gated* | see below | see below |
+| `unsigned long long` | *annotation-gated* | *annotation-gated* | see below | see below |
 
 > ⚠️ **64-bit unsigned fields require an explicit storage annotation (#436).**
 > Neither SQLite nor PostgreSQL has an unsigned 64-bit integer type, so a bare
@@ -233,8 +242,9 @@ CREATE TABLE OrderItem (
   cannot coexist with a table-level `PRIMARY KEY (...)`, and `AUTOINCREMENT` is only
   grammatical directly after `INTEGER PRIMARY KEY`); PostgreSQL's `GENERATED … AS IDENTITY`
   is single-column too. So the caller always supplies the full key — no part is ever DB-generated.
-- **Both backends**: SQLite and PostgreSQL emit the same table-level clause (differing only
-  in the usual `INTEGER`/`BIGINT` column mapping).
+- **Both backends**: SQLite and PostgreSQL emit the same table-level clause. Each part's own
+  column type follows the usual per-dialect mapping (#603) — an `int` part renders `INTEGER`
+  on both backends now; only wider/narrower part types (e.g. `int64_t`, `short`) diverge.
 - **No separate index per part**: the table-level `PRIMARY KEY` already indexes each part.
 - **`DEFAULT 0` on the parts** is the ordinary auto-DEFAULT for NOT NULL columns (#413),
   harmless here since the key is always caller-supplied.

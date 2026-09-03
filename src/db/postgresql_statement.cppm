@@ -470,10 +470,11 @@ export namespace storm::db::postgresql {
             }
         }
 
-        // Width comes from the SERVER, not from the caller's C++ type: Storm's PG
-        // schema maps EVERY integer field (int, short, char, unsigned) to BIGINT,
-        // so extract_int() routinely faces an 8-byte int8 — a fixed 4-byte read
-        // would return the high half (0 for small positives) and look plausible.
+        // Width comes from the SERVER, not from the caller's C++ type: `unsigned
+        // int` still maps to PG BIGINT (#603 — needs 8 bytes of signed range), so
+        // extract_int() — the 32-bit-and-smaller extractor — routinely faces an
+        // 8-byte int8. A fixed 4-byte read would return the high half (0 for
+        // small positives) and look plausible.
         // A NULL is zero-length and decodes to 0, as strtoll("") does on text.
         [[nodiscard]] auto decode_binary_int(int col_index) const noexcept -> std::int64_t {
             const char* val = PQgetvalue(result_, current_row_, col_index);
