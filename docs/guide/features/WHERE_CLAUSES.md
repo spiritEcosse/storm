@@ -83,7 +83,7 @@ no longer the same width by accident; this table is the contract (#407).
 | enum | ✅ | all 6, `IN` | Folds to underlying `int` |
 | `std::chrono::year_month_day` | ✅ | all 6, `BETWEEN`, `IN` | Compared as `"YYYY-MM-DD"` TEXT (lexicographic == chronological) |
 | `std::chrono::system_clock::time_point` | ✅ | all 6, `BETWEEN`, `IN` | Compared as `"YYYY-MM-DD HH:MM:SS"` TEXT |
-| `storm::UUID` | ✅ | `==`, `!=`, `IN` | Equality only — ordering/`BETWEEN` rejected at compile time (#609/#407); an unset (empty) comparison value is rejected at bind time rather than silently matching nothing, and a non-empty value is validated as RFC-4122 text |
+| `storm::UUID` | ✅ | `==`, `!=`, `IN` | Equality/IN only — ordering/`BETWEEN` rejected at compile time (#609/#407), including a string-spelled operand against a UUID column (#622, **BREAKING**: this used to compile as a plain TEXT compare). Applies to a direct column or a single-column FK to a UUID-PK model alike. An unset (empty) `==`/`!=`/`IN` comparison value is rejected at bind time rather than silently matching nothing, and a non-empty value is validated as RFC-4122 text. For `==`/`!=` (not yet `IN`/`BETWEEN` via the YAML/JSON query builder), a plain string/string_view operand is accepted and converted to `storm::UUID` before that same validation (#622); a non-UUID-constructible operand (e.g. `== 5`) is rejected at compile time |
 | `std::optional<T>` | ✅ | `is_null()`, `is_not_null()`, `== nullopt`, `!= nullopt` | Plus any operator `T` itself supports |
 | `std::chrono::duration` | ❌ | — | Persistable/readable, not yet filterable |
 | `std::filesystem::path` | ❌ | — | Persistable/readable, not yet filterable |
