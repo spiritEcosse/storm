@@ -16,7 +16,7 @@
 
 set -euo pipefail
 
-if [ "${CLAUDE_CODE_REMOTE:-}" != "true" ]; then
+if [[ "${CLAUDE_CODE_REMOTE:-}" != "true" ]]; then
     exit 0
 fi
 
@@ -25,7 +25,7 @@ fi
 # validation step) doesn't fail on an unbound variable.
 project_dir="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 
-if [ -e "$project_dir/../clang-p2996" ]; then
+if [[ -e "$project_dir/../clang-p2996" ]]; then
     exit 0
 fi
 

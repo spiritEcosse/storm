@@ -28,19 +28,17 @@ FROM manjarolinux/base:20260315
 
 # Trust any *.crt supplied via the `cacerts` build context above (a no-op
 # when CACERTS defaults to `scratch` — nothing to copy) before touching the
-# network below.
+# network to install system dependencies. valgrind is included for future
+# CodSpeed Macro / cachegrind work; lcov so the same image works for coverage
+# builds. github-cli + jq + python-numpy/scipy are for the bench.yml
+# regression gate (#241): gh fetches the develop-baseline-latest artifact and
+# posts the PR comment, jq renders the comparison table, numpy/scipy back
+# compare.py's Mann-Whitney U-test in benchmarks/scripts/compare_against_baseline.sh.
 COPY --from=cacerts / /tmp/extra-ca/
 RUN find /tmp/extra-ca -name '*.crt' -exec cp {} /etc/ca-certificates/trust-source/anchors/ \; \
     && trust extract-compat \
-    && rm -rf /tmp/extra-ca
-
-# System dependencies. valgrind is included for future CodSpeed Macro /
-# cachegrind work; lcov so the same image works for coverage builds.
-# github-cli + jq + python-numpy/scipy are for the bench.yml regression gate
-# (#241): gh fetches the develop-baseline-latest artifact and posts the PR
-# comment, jq renders the comparison table, numpy/scipy back compare.py's
-# Mann-Whitney U-test in benchmarks/scripts/compare_against_baseline.sh.
-RUN pacman -Syu --noconfirm \
+    && rm -rf /tmp/extra-ca \
+    && pacman -Syu --noconfirm \
     && pacman -S --noconfirm --needed \
         cmake ninja gcc sqlite postgresql-libs \
         python python-yaml python-numpy python-scipy git valgrind lcov \
