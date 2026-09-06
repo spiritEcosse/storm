@@ -122,9 +122,12 @@ gtest_discover_tests(${PROJECT_NAME} DISCOVERY_MODE PRE_TEST DISCOVERY_TIMEOUT
 # library)
 apply_clang_flags(${PROJECT_NAME})
 # Increase constexpr steps limit — consteval JSON parser for the YAML-driven
-# test corpus. Sized for the full 247 cases: #561 split those across four TUs,
-# but the three tests/crud TUs including test_parser.hpp still embed the whole
-# corpus.
+# test corpus. #561 split the 247 cases across four tests/yaml TUs, each of
+# which #embeds and parses only its own category slice — no TU embeds the whole
+# corpus any more (the three tests/crud TUs that used to include test_parser.hpp
+# without using a symbol from it no longer do). The limit is still sized for the
+# full corpus: the per-slice budgets have not been measured, so lowering it is a
+# separate change.
 target_compile_options(${PROJECT_NAME} PRIVATE -fconstexpr-steps=4194304)
 # Treat warnings as errors on Storm-owned test code (issue #317). Third-party
 # gtest/gmock headers are silenced via SYSTEM includes in cmake/tests.cmake.

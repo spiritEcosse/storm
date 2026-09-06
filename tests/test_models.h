@@ -20,15 +20,6 @@
 #include <gtest/gtest.h>
 #include <span>
 
-// =============================================================================
-
-// SQL CREATE TABLE statements — generated at runtime from C++26 reflection.
-
-// NOLINTBEGIN(cppcoreguidelines-avoid-non-const-global-variables)
-inline const std::string &person_create_sql = storm::create_table_sql<Person>();
-inline const std::string &message_create_sql = storm::create_table_sql<Message>();
-// NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
-
 namespace storm::test {
 
 // Type-safe CREATE TABLE IF NOT EXISTS using SchemaStatement.

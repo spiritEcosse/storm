@@ -7,8 +7,6 @@ import std;
 
 #include "test_models.h" // NOSONAR cpp:S954
 #include "test_seed_helpers.h"
-#include "test_yaml_register.h"
-#include "test_parser.hpp"
 
 template <typename ConnType> class QuerySetCrudLifecycleTest : public StormTestFixture<Person, ConnType> {
   public:
