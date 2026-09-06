@@ -363,6 +363,56 @@ concept CanBetweenUuidId = requires(V v) { fields::SomeModel.some_field.between(
 static_assert(!CanBetweenUuidId<storm::UUID>);
 ```
 
+### 13. PCH + `import std;` — Ambiguous String Types, and clang-tidy Crashes
+
+`tests/CMakeLists.txt` precompiles `<gtest/gtest.h>` for `storm_tests` (measured
+−1.9 to −2.4 s per TU; the gtest header is 2.2 s of an ~5.8 s per-TU floor that
+is 100% frontend — Backend is 0.03 s). Two clang-p2996 defects come with it.
+
+**(a) Ambiguous string types, order-dependent.** Reaching libc++ through the PCH,
+completing an entity that lazily deserializes `<__fwd/string.h>` makes
+`std::__1::string` visible alongside the `std` module's `std::string`. From that
+point on, *every* mention of a string type in the TU is ambiguous:
+
+```cpp
+static_assert(sizeof(std::filesystem::path) > 0);   // the trigger
+static_assert(sizeof(std::string) > 0);             // error: reference to 'string' is ambiguous
+```
+
+Swap the two lines and it compiles. Known triggers: `std::filesystem::path`,
+`storm::UUID`. A textual `#include <string>` does **not** help — textually
+including the *trigger's* own header does, but that cuts against the `import std;`
+convention (Finding 9), so the fix is to opt the TU out:
+
+```cmake
+set_property(SOURCE path/to/tu.cpp PROPERTY SKIP_PRECOMPILE_HEADERS ON)
+```
+
+Currently opted out: `schema/test_bindable_concept.cpp`,
+`schema/test_dialect_concepts.cpp`. This is **not** limited to compile-time-only
+TUs — any TU naming a trigger before a string type can hit it. It is always a
+hard compile error, never silent.
+
+The module interface units in the target's `FILE_SET` are opted out for a
+different reason: the PCH would force gtest's textual libc++ surface in ahead of
+their `module;` declaration and bake that into the BMIs every consumer imports.
+
+**(b) clang-tidy SIGSEGVs on a TU compiled with the PCH flags**, once any check
+is enabled. Same crash signature as the `benchmarks/schema.cppm` entry in
+`scripts/lib/clang_tidy_skiplist.sh`. The crash prints no `: error:` or
+`: warning:` line, so a checker counting only those reads it as a clean pass.
+
+This is currently **unreachable**: the PCH is applied only to `storm_tests`, and
+`tests/.clang-tidy` disables every check (`Checks: '-*'`, issue #590), so
+clang-tidy exits before building an AST. Verified that no `src/` entry carries
+the flags (74 files, 0 with PCH). The guards below exist so that re-enabling
+checks for `tests/**` cannot silently un-lint the tree. `scripts/run_clang_tidy.sh` therefore strips
+`-Xclang -include-pch` / `-include` / `-Winvalid-pch` from a temp copy of
+`compile_commands.json` before replaying commands (semantically identical: the
+PCH holds only `<gtest/gtest.h>`, which the TU includes textually anyway), and
+`--diff` now fails on `PLEASE submit a bug report` instead of reporting success.
+**Removing either guard re-breaks the tidy gate silently.**
+
 ## Debugging Tips
 
 1. **Clean build**: `rm -rf build/ && cmake --preset ninja-debug`

@@ -114,6 +114,76 @@ target_sources(
           ${CMAKE_SOURCE_DIR}/benchmarks/dashboard/wire.cppm
           ${CMAKE_SOURCE_DIR}/benchmarks/dashboard/tui.cppm)
 
+# ── Precompiled header ────────────────────────────────────────────────────────
+# Measured floor per test TU (-ftime-trace on a TU whose only body is
+# EXPECT_TRUE(true)): 2.2 s of <gtest/gtest.h>, 2.1 s of `import storm;`, 1.4 s
+# of test_db_helpers.h + shared/models.h, 0.2 s of `import std;` — and Backend
+# 0.03 s, i.e. the floor is entirely frontend. Precompiling gtest removes its
+# share: measured -1.9 to -2.4 s per TU across four files (min of 3 runs each,
+# ccache disabled), ~-236 s over the ~110 test TUs.
+#
+# UNITY_BUILD would amortise the whole floor rather than one slice, but CMake
+# silently disables it whenever CXX_SCAN_FOR_MODULES is ON (verified: SCAN=OFF
+# -> Unity edges appear, SCAN=ON -> none), and scanning cannot be turned off
+# here because these TUs `import storm;` (verified: a TU with `import std;` and
+# CXX_SCAN_FOR_MODULES OFF fails with "module 'std' not found"). PCH is the one
+# mechanism of the two that works alongside module scanning.
+#
+# NOTE: scripts/run_clang_tidy.sh strips the resulting `-Xclang -include-pch`
+# flags from the compile database before replaying commands. clang-tidy SIGSEGVs
+# on them once any check is enabled, silently and with no diagnostic. That is
+# unreachable today (tests/.clang-tidy sets `Checks: '-*'`, #590, and no src/
+# entry gets the PCH), so the strip is defence in depth: it keeps re-enabling
+# checks for tests/** from silently un-linting the tree. See COMPILER_ISSUES
+# #13.
+target_precompile_headers(${PROJECT_NAME} PRIVATE <gtest/gtest.h>)
+
+# The module interface units in this target's FILE_SET must not receive the PCH.
+# CMake would otherwise force gtest's entire textual libc++ surface in ahead of
+# their `module;` declaration and bake that state into the BMIs every consuming
+# TU imports. They include no gtest, so there is nothing to gain either.
+set_property(
+  SOURCE ${CMAKE_SOURCE_DIR}/benchmarks/schema.cppm
+         ${CMAKE_SOURCE_DIR}/benchmarks/parser.cppm
+         ${CMAKE_SOURCE_DIR}/benchmarks/dashboard/wire.cppm
+         ${CMAKE_SOURCE_DIR}/benchmarks/dashboard/tui.cppm
+  PROPERTY SKIP_PRECOMPILE_HEADERS ON)
+
+# Two TUs opt out. Reaching libc++ through the PCH, completing an entity that
+# lazily pulls in <__fwd/string.h> (std::filesystem::path, storm::UUID, ...)
+# makes std::__1::string visible next to the `std` module's std::string, and
+# EVERY LATER mention of a string type in that TU becomes ambiguous:
+# test_bindable_concept.cpp:40: error: reference to 'string' is ambiguous It is
+# order-dependent — naming the string type first compiles clean — so this is not
+# confined to these two files or to compile-time-only TUs: any TU that names
+# such a trigger before a string type can hit it. A textual <string> does NOT
+# help; textually including the trigger's own header does. Excluding is
+# preferred over sprinkling includes, which would cut against the `import std;`
+# convention (#326). The failure is a hard compile error, never silent.
+set_property(
+  SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/schema/test_bindable_concept.cpp"
+         "${CMAKE_CURRENT_SOURCE_DIR}/schema/test_dialect_concepts.cpp"
+  PROPERTY SKIP_PRECOMPILE_HEADERS ON)
+
+# The bench_dashboard TUs import the module units excluded just above. With the
+# consumer carrying the PCH and the module interface not, libc++'s textual
+# std::basic_string and the module's copy fail to reconcile: string:1172: error:
+# 'std::basic_string<char>::basic_string' from module '' is not present in
+# definition of 'std::basic_string<char>' provided earlier Release-only, because
+# the dashboard modules are not built in every preset. Opt the consumers out
+# too, so both sides of that import agree.
+file(GLOB STORM_PCH_SKIP_DASHBOARD
+     "${CMAKE_CURRENT_SOURCE_DIR}/bench_dashboard/*.cpp")
+set_property(SOURCE ${STORM_PCH_SKIP_DASHBOARD} PROPERTY SKIP_PRECOMPILE_HEADERS
+                                                         ON)
+
+# Third symptom of the same PCH/module split: ordinary code, no static_assert
+# and no module import, just std::string used normally --
+# test_sqlite_tuning.cpp:29: error: cannot initialize object parameter of type
+# 'const std::__1::basic_string<char>' with an expression of type 'std::string'
+set_property(SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/db/test_sqlite_tuning.cpp"
+             PROPERTY SKIP_PRECOMPILE_HEADERS ON)
+
 include(GoogleTest)
 
 target_link_libraries(${PROJECT_NAME} PRIVATE storm gtest gtest_main gmock
