@@ -102,6 +102,57 @@ if [[ ! -f "$CLANG_TIDY_CONFIG" ]]; then
     exit 1
 fi
 
+# ── PCH is stripped before clang-tidy sees the commands ───────────────────────
+# tests/CMakeLists.txt precompiles <gtest/gtest.h> for storm_tests, which puts
+# `-Xclang -include-pch …` into ~103 compile_commands.json entries. clang-tidy
+# SIGSEGVs on such a TU once any check is enabled (clang-p2996 bug, same
+# signature as the benchmarks/schema.cppm entry in
+# scripts/lib/clang_tidy_skiplist.sh), and the crash prints no ": error:" or
+# ": warning:" line — so the --diff counters below would read it as a clean pass.
+#
+# DEFENCE IN DEPTH, not a live fix: the PCH lands only on tests/**, and
+# tests/.clang-tidy disables every check (`Checks: '-*'`, issue #590), so
+# clang-tidy exits before building an AST and never crashes today — verified,
+# and verified that no src/ entry carries the flags (74 files, 0 with PCH).
+# Re-enabling checks for tests/** would resurrect the crash silently; stripping
+# here means that change stays safe.
+#
+# Replaying the TU without the PCH is semantically identical — the PCH holds
+# only <gtest/gtest.h>, which the TU includes textually anyway — so this
+# restores exactly the pre-PCH parse rather than skipping anything.
+TIDY_DB_PATH="$BUILD_DIR"
+if grep -q "include-pch" "$COMPILE_COMMANDS" 2>/dev/null; then
+    TIDY_DB_DIR=$(mktemp -d)
+    trap 'rm -rf "$TIDY_DB_DIR"' EXIT
+    python3 - "$COMPILE_COMMANDS" "$TIDY_DB_DIR/compile_commands.json" <<'PYSTRIP'
+import json, shlex, sys
+
+def strip(argv):
+    out, i = [], 0
+    while i < len(argv):
+        # CMake emits: -Xclang -include-pch -Xclang <path> -Xclang -include -Xclang <hdr>
+        if argv[i] == "-Xclang" and i + 1 < len(argv) and argv[i + 1] in ("-include-pch", "-include"):
+            i += 4
+            continue
+        if argv[i] == "-Winvalid-pch":
+            i += 1
+            continue
+        out.append(argv[i])
+        i += 1
+    return out
+
+db = json.load(open(sys.argv[1]))
+for e in db:
+    if "command" in e:
+        e["command"] = " ".join(shlex.quote(a) for a in strip(shlex.split(e["command"])))
+    elif "arguments" in e:
+        e["arguments"] = strip(e["arguments"])
+json.dump(db, open(sys.argv[2], "w"))
+PYSTRIP
+    TIDY_DB_PATH="$TIDY_DB_DIR"
+    echo "   PCH flags stripped from a temp copy of compile_commands.json"
+fi
+
 echo "🔍 Running clang-tidy using .clang-tidy configuration..."
 echo "   Config file: $CLANG_TIDY_CONFIG"
 echo "   Build directory: $BUILD_DIR"
@@ -168,7 +219,7 @@ if [[ "$MODE" == "diff" ]]; then
         | python3 "$CLANG_TIDY_DIFF" \
             -clang-tidy-binary "$CLANG_TIDY" \
             -p1 \
-            -path "$BUILD_DIR" \
+            -path "$TIDY_DB_PATH" \
             -iregex '.*\.(cpp|cppm|h|hpp)' \
             -j "$JOBS" \
             -timeout 240 \
@@ -213,6 +264,23 @@ if [[ "$MODE" == "diff" ]]; then
     # that whole-file failure, not on the edited line specifically.
     DIFF_WARN=$(grep -c ": warning:" "$DIFF_OUT" || true)
     DIFF_ERR=$(grep -c ": error:" "$DIFF_OUT" || true)
+
+    # A crashed clang-tidy prints neither ": error:" nor ": warning:", so the two
+    # counters above cannot see it and the run would report success having
+    # checked nothing. Files that are KNOWN to crash never get this far —
+    # filter_skiplist_from_diff drops their diff sections before
+    # clang-tidy-diff.py runs — so any crash reaching here is unexpected and the
+    # result is not trustworthy. (#550 gap: --full already treats an unexpected
+    # crash as a failure; --diff did not.)
+    DIFF_CRASH=$(grep -c "PLEASE submit a bug report" "$DIFF_OUT" || true)
+    if [[ "$DIFF_CRASH" -gt 0 ]]; then
+        echo ""
+        echo "$RULE"
+        echo "❌ clang-tidy --diff: crashed on $DIFF_CRASH translation unit(s)"
+        echo "   Diagnostics are incomplete — treating as failure rather than clean."
+        echo "$RULE"
+        exit 1
+    fi
 
     echo ""
     echo "$RULE"
@@ -266,7 +334,7 @@ TEMP_DIR=$(mktemp -d)
 trap "rm -rf $TEMP_DIR" EXIT
 
 # Export variables for subshells
-export CLANG_TIDY BUILD_DIR FIX_FLAG TEMP_DIR
+export CLANG_TIDY BUILD_DIR TIDY_DB_PATH FIX_FLAG TEMP_DIR
 
 
 # Function to run clang-tidy on a single file (called in parallel)
@@ -294,7 +362,7 @@ run_tidy() {
     # consteval-parses its slice of the unified test-case corpus. 60s was too
     # short even before #561 split that corpus four ways.
     timeout 240 "$CLANG_TIDY" \
-        -p "$BUILD_DIR" \
+        -p "$TIDY_DB_PATH" \
         $FIX_FLAG \
         "$file" 2>&1 | grep -v -E "^[0-9]+ warnings? (generated|and)|^Suppressed [0-9]+|^Use -header-filter|^Use -system-headers" > "$outfile" || true
 

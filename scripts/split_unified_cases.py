@@ -18,7 +18,7 @@ runners its own cases need, and a failing suite name points at a coherent area.
 A query_type absent from the tables below is a corpus/dispatch mismatch and is
 a hard error -- silently bucketing it would hide a case that no runner handles.
 
-CATEGORIES below is duplicated by the foreach() in tests/CMakeLists.txt and by
+CATEGORIES below is mirrored by SPLIT_CATEGORIES in tests/CMakeLists.txt and by
 the set of tests/yaml/test_unified_yaml_*.cpp TUs. Changing one means changing
 all three: adding a category here alone writes a JSON nothing embeds, which
 drops those cases from the suite with a green build.

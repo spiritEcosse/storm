@@ -43,6 +43,18 @@ add_executable(
   "${CMAKE_CURRENT_SOURCE_DIR}/dashboard/reporter.cpp")
 target_sources(storm_bench PRIVATE FILE_SET cxx_modules TYPE CXX_MODULES FILES
                                    ${STORM_BENCH_MODULE_UNITS})
+
+# register.cpp pulls the benchmark corpus in through `#embed`
+# (benchmarks/benchmark_tests.hpp), which the dependency scanner cannot see:
+# clang omits embedded files from the depfile, so ninja recorded no edge from
+# the object to the JSON and editing benchmark_tests.yaml regenerated the JSON
+# while leaving register.cpp.o stale — feeding a stale corpus to the regression
+# gate. Same fix, and same rationale for set_property over
+# set_source_files_properties, as the tests/yaml TUs in tests/CMakeLists.txt.
+set_property(
+  SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/register.cpp"
+  APPEND
+  PROPERTY OBJECT_DEPENDS "${JSON_OUTPUT}")
 # import std; migration (issue #326): the bench .cppm module units do `import
 # std;` directly, so this target must consume the std named module too.
 set_target_properties(storm_bench PROPERTIES CXX_MODULE_STD ON)

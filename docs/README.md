@@ -70,6 +70,7 @@ Documentation for Storm ORM contributors — architecture, build/test workflow, 
 ### Performance
 
 - **[Performance](internals/performance/PERFORMANCE.md)** - Performance guidelines, hot-path tips, and benchmarking/testing workflow
+- **[Compile Time](internals/performance/COMPILE_TIME.md)** - Where build time goes, measured; what moves it and what was rejected
 - **[Benchmark Dashboard](internals/performance/BENCHMARK_DASHBOARD.md)** - Real-time TUI for storm_bench: setup, schema, backup/restore, troubleshooting
 - **[JOIN Analysis](internals/performance/JOIN_ANALYSIS.md)** - JOIN performance deep dive
 - **[DISTINCT Analysis](internals/performance/DISTINCT_ANALYSIS.md)** - DISTINCT performance analysis

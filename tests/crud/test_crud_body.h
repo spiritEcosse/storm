@@ -23,10 +23,6 @@ import std;
 
 #include "test_seed_helpers.h"
 
-#include "test_yaml_register.h"
-
-#include "test_parser.hpp"
-
 // Common base fixture for Erase/Update tests — shared setup + helpers.
 template <typename ConnType> class PersonCrudTestBase : public StormTestFixture<Person, ConnType> {
   protected:
