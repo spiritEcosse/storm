@@ -35,8 +35,13 @@ endforeach()
 set(SPLIT_CASES_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/split_unified_cases.py")
 set(UNIFIED_CASES_YAML "${TEST_CASES_DIR}/unified_cases.yaml")
 
+# Single source of truth for the category split; mirrored by CATEGORIES in
+# scripts/split_unified_cases.py and by the tests/yaml/test_unified_yaml_*.cpp
+# TUs.
+set(SPLIT_CATEGORIES select grouped aggregate crud)
+
 set(SPLIT_JSON_FILES "")
-foreach(CATEGORY IN ITEMS select grouped aggregate crud)
+foreach(CATEGORY IN LISTS SPLIT_CATEGORIES)
   list(APPEND SPLIT_JSON_FILES
        "${TEST_CASES_DIR}/unified_cases_${CATEGORY}.json")
 endforeach()
@@ -76,6 +81,24 @@ file(
   "${CMAKE_CURRENT_SOURCE_DIR}/bench_dashboard/*.cpp")
 
 add_executable(${PROJECT_NAME} ${TEST_SOURCES})
+
+# The YAML corpus reaches these TUs through `#embed` (tests/test_parser.hpp),
+# and `#embed` is invisible to the dependency scanner: clang does not list the
+# embedded file in the depfile, so ninja records no edge from the object to the
+# JSON (`ninja -t deps` showed none). Editing unified_cases.yaml therefore
+# regenerated the JSON but left the objects stale — a green build still running
+# the previous corpus. OBJECT_DEPENDS states the edge explicitly.
+#
+# set_property(SOURCE ... APPEND) rather than set_source_files_properties(): the
+# latter silently does nothing when the path matches no target source, so a
+# renamed category would quietly restore the stale-object bug instead of
+# failing.
+foreach(CATEGORY IN LISTS SPLIT_CATEGORIES)
+  set_property(
+    SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/yaml/test_unified_yaml_${CATEGORY}.cpp"
+    APPEND
+    PROPERTY OBJECT_DEPENDS "${TEST_CASES_DIR}/unified_cases_${CATEGORY}.json")
+endforeach()
 
 target_sources(
   ${PROJECT_NAME}
