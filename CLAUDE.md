@@ -283,7 +283,7 @@ cmake --build --preset ninja-debug-coverage --target coverage-html
 
 **Enforced in CI, not just locally (#528)**: the `coverage` job in `.github/workflows/ci.yml`
 runs `ninja-debug-coverage` on the same `changes`-job gate as the sanitizer builds above (rule 7
-— `src/`, `tests/`, cmake, or CI plumbing; skipped only when a PR touches none of them) and fails below **100% line
+— `src/`, `tests/`, cmake, or CI plumbing; its build/coverage **steps** skipped only when a PR touches none of them — the job itself always runs, see rule 7 and #638) and fails below **100% line
 coverage** — the same gate
 `commit.sh` step 5 applies, so the threshold is independently reproduced rather than self-reported
 from one machine. It parses the **line** row specifically (functions ~81%, branches ~92% are not

@@ -13,8 +13,8 @@ jobs:
   # places agree on what counts as "src/tests/cmake changed". `run_heavy`
   # gates the expensive STEPS of the `test` / `coverage` /
   # `clang-p2996-host-layout` jobs below: a PR touching only docs/ or
-  # unrelated top-level files reports those jobs green in seconds instead of
-  # spinning up the full matrix.
+  # unrelated top-level files reports those jobs green without configuring,
+  # building or testing anything.
   #
   # The gate is on the steps, not on the jobs, and that distinction is
   # load-bearing (#638). A job skipped by a job-level `if:` still produces a
@@ -25,8 +25,18 @@ jobs:
   # at all, and the PR sits at "Expected — waiting for status to be reported"
   # with no way to merge it. #607 introduced the skip on the assumption that a
   # skipped required check reads as passed; that holds for a plain job, not for
-  # the matrix. Gating the steps keeps every context name intact and green, and
-  # costs only runner startup on a docs-only diff.
+  # the matrix. Gating the steps keeps every context name intact and green.
+  #
+  # The price, stated honestly because the next person will see it: `container:`
+  # and `services:` are resolved BEFORE the first step's `if:` is evaluated and
+  # cannot be gated, so a docs-only PR still pulls the (multi-GB) storm-ci image
+  # nine times and starts eight postgres services. That is minutes, not seconds
+  # — but no configure/build/test, against 12-22 min of matrix before. It also
+  # gives docs-only PRs an infrastructure failure surface they did not have when
+  # the jobs were skipped outright: a GHCR outage, an unavailable pinned digest,
+  # or a pg_isready health-check flake now reds a required context on a PR that
+  # changed nothing but prose. Accepted as the cost of a mergeable PR; revisit
+  # (a `timeout-minutes:` on the three jobs, say) if it starts biting.
   #
   # Fail-closed by design: this job's output defaults every consumer's `if:`
   # to "run" unless it explicitly says `run_heavy == 'false'` (see those
