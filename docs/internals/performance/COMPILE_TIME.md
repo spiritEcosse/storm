@@ -390,6 +390,38 @@ found for `import storm;`: the cost is *entering* the reflection machinery, not
 the volume pulled through it. `test_db_helpers.h`, which #634's title names
 alongside the models, is +0.09 s and was never the problem.
 
+### Dropping the second backend from `TYPED_TEST`
+
+Every `TYPED_TEST` over `DatabaseTypes` instantiates its body twice, once per
+backend, which looks like an obvious 2x. It is not: measured by compiling real
+TUs as-is, then again with `DatabaseTypes` narrowed to SQLite alone (bodies
+untouched, min of 3, ccache off).
+
+| TU | 2 backends | 1 backend | delta |
+|---|---:|---:|---:|
+| `schema/test_types.cpp` | 20.45 | 16.53 | **−19.2%** |
+| `query/test_distinct.cpp` | 17.11 | 15.00 | −12.3% |
+| `crud/test_conditional_update.cpp` | 13.75 | 11.57 | −15.8% |
+| `query/test_sql_verify.cpp` | 12.10 | 10.52 | −13.1% |
+| `query/test_collate.cpp` (control) | 12.10 | 12.21 | +0.9% |
+| **total** | **75.51** | **65.83** | **−12.8%** |
+
+`test_collate.cpp` is the control: it declares `SqliteTypes`, not
+`DatabaseTypes`, so the edit could not reach it. Its +0.9% is the noise floor,
+which puts the other four comfortably in signal.
+
+So the second backend costs **~13%**, not ~50% — the two instantiations share
+most of their work. Over the 2558 s the hand-written test TUs cost, that is
+~330 s of a ~3000 s build (~11%): the largest single lever measured so far, and
+the only one still available at that size.
+
+**Not adopted, and not recommended.** It buys ~11% by deleting the PostgreSQL
+half of the suite's coverage — the thing cross-backend tests exist for, and
+which CLAUDE.md requires for exactly the failure class (SQLite and PG disagree
+about what is an error) that composite-PK and FK work keeps hitting. Recorded
+here so the trade is known and nobody has to re-measure it: the coverage is
+cheap, at 13% of test compile time.
+
 ### Replacing GoogleTest — poor return
 
 The ceiling is gtest's 2.2 s, but any framework includes standard headers
