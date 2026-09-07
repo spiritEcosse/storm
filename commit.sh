@@ -92,6 +92,175 @@ run_step_live() {
     _step_finish "$name" "$exit_code" "$(( SECONDS - start ))" "$logfile"
 }
 
+# ─── clang-tidy release prerequisites (issue #557) ──────────────────────────
+# clang-tidy replays build/release/compile_commands.json and only PARSES — it
+# never links — so building the full default release target set to enable it
+# spends ~90% of its time on the ~110 release test TUs of storm_tests that
+# clang-tidy never opens. Measured on a cold tree (4 cores): 764s for the full
+# set against 172s for the three things it actually needs:
+#
+#   a) the storm library BMIs, for `import storm;`
+#   b) the BMIs of the module targets CMake SYNTHESIZES for module consumers
+#      (CMakeFiles/*@synth_N.dir/*.bmi). These are discovered through dyndep,
+#      so they are not reachable as static ninja targets until the .dd files
+#      exist — building `storm` alone leaves them absent and clang-tidy then
+#      fails with `module 'std' not found`, which is #489's first failure mode.
+#   c) the mock test binaries, for #489's second failure mode.
+#
+# FAIL SAFE, per #557: every uncertain path falls back to the full build. A
+# wrong skip is expensive to attribute — a missing BMI does not make clang-tidy
+# error out, it degrades it to a PARTIAL PARSE that emits false warnings (4
+# instead of 1 on src/orm/utilities.cppm, verified), and the hook runs
+# clang-tidy with --fix.
+# Answers "does clang-tidy have everything it needs to parse the staged files?"
+# Prints exactly `complete` when it does. EVERY other outcome — `incomplete`, a
+# crash, a missing python3, a staged file with no compile_commands entry — is
+# read as incomplete by the caller, so an unanticipated failure rebuilds rather
+# than silently skips. That direction is the whole point (#557 DoD): a missing
+# BMI does not make clang-tidy fail, it degrades it to a partial parse that
+# emits FALSE warnings, and the hook runs clang-tidy with --fix.
+tidy_prereqs_verdict() {
+    local build_dir="$1"
+    shift
+    [[ $# -eq 0 ]] && { echo "incomplete"; return; }
+    python3 - "$build_dir" "$@" 2>/dev/null <<'PYPREREQ' || echo "incomplete"
+import json, pathlib, re, shlex, sys
+
+def main():
+    build_dir = pathlib.Path(sys.argv[1])
+    staged = {pathlib.Path(f).resolve() for f in sys.argv[2:]}
+    entries = json.loads((build_dir / "compile_commands.json").read_text())
+
+    def argv_of(entry):
+        if "arguments" in entry:
+            return entry["arguments"]
+        return shlex.split(entry.get("command", ""))
+
+    # Only the TUs clang-tidy will actually replay matter. Every other target's
+    # modmap legitimately references BMIs this targeted build does not produce,
+    # so checking the whole tree would always answer "incomplete".
+    seen = set()
+    for entry in entries:
+        path = pathlib.Path(entry["file"]).resolve()
+        if path not in staged:
+            continue
+        seen.add(path)
+        root = pathlib.Path(entry.get("directory", build_dir))
+        for arg in argv_of(entry):
+            if not arg.startswith("@") or not arg.endswith(".modmap"):
+                continue
+            modmap = root / arg[1:]
+            if not modmap.exists():
+                return False
+            for ref in re.findall(r'-fmodule-file="?(?:[^=\s"]+=)?([^"\s]+)',
+                                  modmap.read_text()):
+                if not (root / ref).exists() and not pathlib.Path(ref).exists():
+                    return False
+
+    # A staged input with no entry at all was never verified. clang-tidy infers
+    # a command for it from a neighbouring entry (this is how headers are
+    # linted — the database holds no header entries), so "no entry" means
+    # "unknown", not "fine".
+    return staged == seen
+
+print("complete" if main() else "incomplete")
+PYPREREQ
+}
+
+build_tidy_prereqs() {
+    local build_dir="build/release"
+
+    # mapfile is bash >= 4.0 and ninja is the preset's generator. Without
+    # either, every enumeration below would come back empty and we would skip
+    # the BMIs silently — the one direction this function must never fail in.
+    if ! command -v ninja > /dev/null 2>&1 || ! type -t mapfile > /dev/null 2>&1; then
+        echo "ninja or mapfile unavailable — building the full release target set."
+        cmake --build --preset ninja-release
+        return
+    fi
+
+    # storm: the library BMIs. The two mock binaries: #489's failure mode 2, and
+    # their modmaps, which tests/mock_*/ TUs need — those files get staged often.
+    # Named explicitly, so renaming either (tests/mock_sqlite/CMakeLists.txt,
+    # tests/mock_libpq/CMakeLists.txt) fails this step CLOSED and blocks the
+    # commit, rather than silently under-building.
+    cmake --build --preset ninja-release \
+        --target storm storm_mock_tests storm_pq_mock_tests || return 1
+
+    # The BMIs of the module targets CMake synthesizes for module CONSUMERS
+    # (CMakeFiles/*@synth_N.dir/*.bmi). `--target storm` does not build them —
+    # they belong to the consumer, not the library — and without them clang-tidy
+    # reports `module 'std' not found` and degrades to a partial parse (#489
+    # mode 1). ninja knows these edges at configure time (build.ninja binds
+    # `dyndep = …/CXX.dd` statically and builds the .dd as an order-only input),
+    # so they are enumerable on a cold tree.
+    local -a synth_bmis
+    mapfile -t synth_bmis < <(ninja -C "$build_dir" -t targets all 2>/dev/null \
+        | sed 's/:.*//' \
+        | grep -xE 'CMakeFiles/[^ ]*@synth_[0-9]+\.dir/[0-9a-f]+\.bmi' | sort -u)
+    if [[ ${#synth_bmis[@]} -eq 0 ]]; then
+        # This project has ~111 of them; zero means the naming changed, ninja
+        # failed, or build.ninja is unusable. Never a legitimate state.
+        echo "No synthesized module BMI targets found — building the full release target set."
+        cmake --build --preset ninja-release
+        return
+    fi
+    ninja -C "$build_dir" "${synth_bmis[@]}" || return 1
+
+    # Generate every target's dyndep file. That materializes the per-TU modmaps
+    # clang-tidy needs to replay a command, for the cost of the module scan
+    # alone rather than of compiling those TUs — storm_tests' 109 modmaps take
+    # 6 s this way against ~600 s to build the TUs. Without it, staging any
+    # tests/** file leaves its modmap absent, the check below cannot prove the
+    # tree is sufficient, and the fallback rebuilds everything — which is most
+    # commits, since CLAUDE.md rule 9 pairs tests with every change.
+    local -a dd_targets
+    mapfile -t dd_targets < <(ninja -C "$build_dir" -t targets all 2>/dev/null \
+        | sed 's/:.*//' | grep -E '\.dd$' | sort -u)
+    if [[ ${#dd_targets[@]} -gt 0 ]]; then
+        ninja -C "$build_dir" "${dd_targets[@]}" || return 1
+    fi
+
+    # Verify rather than assume: every BMI referenced by the modmaps of the
+    # files clang-tidy will parse must exist. This is what makes the enumeration
+    # above safe to get wrong. Scoping to staged files is load-bearing — checking
+    # every modmap in the tree always answers "incomplete", because the
+    # storm_tests and benchmark targets legitimately reference BMIs this
+    # targeted build does not produce.
+    #
+    # The extension list matches run_clang_tidy.sh's own selector (cpp|cppm|h|
+    # hpp) in both modes this hook uses; headers are linted through a
+    # neighbouring TU's command, so they must be checked too.
+    local -a tidy_inputs
+    mapfile -t tidy_inputs < <(grep -E '\.(cpp|cppm|h|hpp)$' <<< "$STAGED_FILES" || true)
+
+    # Files run_clang_tidy.sh refuses to parse are not evidence of anything —
+    # dropping them keeps a staged benchmarks/schema.cppm from forcing a full
+    # build for a file clang-tidy never opens. Same source of truth both scripts
+    # consult (#550); if it is unavailable, keep every input, which can only
+    # over-trigger the fallback.
+    local -a probe_inputs=()
+    local skiplist f
+    skiplist="$(dirname "${BASH_SOURCE[0]}")/scripts/lib/clang_tidy_skiplist.sh"
+    if [[ -r "$skiplist" ]]; then
+        # shellcheck source=scripts/lib/clang_tidy_skiplist.sh
+        source "$skiplist"
+    fi
+    for f in "${tidy_inputs[@]}"; do
+        if declare -F is_known_unparseable > /dev/null \
+           && { is_known_unparseable "$f" || is_always_skip_file "$f"; }; then
+            continue
+        fi
+        probe_inputs+=("$f")
+    done
+
+    if [[ $(tidy_prereqs_verdict "$build_dir" "${probe_inputs[@]}") != "complete" ]]; then
+        echo "Staged files need module BMIs this targeted build does not produce —"
+        echo "falling back to the full release build."
+        cmake --build --preset ninja-release || return 1
+    fi
+}
+
 print_summary() {
     local total_elapsed=$(( SECONDS - TOTAL_START ))
     echo ""
@@ -229,9 +398,13 @@ TOTAL_STEPS=0
 #   2. `storm_mock_tests_NOT_BUILT` on a later `ctest`/tidy run against release —
 #      the mock test binaries were never compiled. Building `--target storm` alone
 #      (the pre-#489 behavior) produced the BMIs but not the mock binaries.
-# So this prebuild configures release if needed, then builds the FULL default
-# release target set (BMIs + mock test binaries), self-healing a fresh/stale
-# worktree for both the git-hook path and a manual `./commit.sh` run (#489).
+# So this prebuild configures release if needed, then builds what clang-tidy
+# needs (BMIs + mock test binaries), self-healing a fresh/stale worktree for
+# both the git-hook path and a manual `./commit.sh` run (#489). It builds those
+# targets specifically rather than the full default set, which spent ~90% of a
+# cold build on release test TUs clang-tidy never opens (#557) — see
+# build_tidy_prereqs above for the target list, the measurements, and the
+# fallbacks that keep both failure modes below covered.
 RELEASE_BUILD_NINJA="build/release/build.ninja"
 RUN_TIDY_BMI=false
 if [[ "$RUN_TIDY" == true ]]; then
@@ -271,17 +444,19 @@ fi
 # Set STORM_TIDY_FULL=1 to force whole-file staged scan (the pre-#262 behavior).
 if [[ "$RUN_TIDY" == true ]]; then
     # Self-heal a fresh/stale build/release before clang-tidy (#489): configure
-    # if compile_commands.json is absent, then build the FULL default release
-    # target set so both the module BMIs (for `import std;`/`import storm;`) and
-    # the mock test binaries exist. This is a no-op when release is already up to
-    # date (the ninja build short-circuits), so the warm path stays fast. See the
+    # if compile_commands.json is absent, then build what clang-tidy needs — the
+    # module BMIs (for `import std;`/`import storm;`) and the mock test binaries.
+    # build_tidy_prereqs builds those targets specifically rather than the full
+    # default set (#557), and falls back to the full build whenever it cannot
+    # prove that is enough. This is a no-op when release is already up to date
+    # (the ninja build short-circuits), so the warm path stays fast. See the
     # RUN_TIDY_BMI comment above for the two failures this prevents.
     if [[ "$RUN_TIDY_BMI" == true ]]; then
         if [[ ! -f "build/release/compile_commands.json" ]]; then
             cmake --preset ninja-release > /dev/null 2>&1
         fi
-        run_step "release build (BMIs + mock binaries, for clang-tidy)" "$LOG_TIDY_BMI" \
-            cmake --build --preset ninja-release
+        run_step "release prereqs (BMIs + mock binaries, for clang-tidy)" "$LOG_TIDY_BMI" \
+            build_tidy_prereqs
     fi
 
     if [[ -n "$STORM_TIDY_FULL" ]]; then

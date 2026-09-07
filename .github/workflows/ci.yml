@@ -527,7 +527,7 @@ jobs:
           # Parse the LINE row specifically. lcov --summary prints
           # "lines.......: 100.0% (8613 of 8613 lines)" alongside functions/branches
           # rows; anchoring on the wrong one would gate against ~81% or ~92% and
-          # look like a broken job. Same expression commit.sh:399 uses.
+          # look like a broken job. Same expression commit.sh's run_coverage_check() uses.
           line_cov=$(grep 'lines\.\.\.\.\.\.\.' "$summary" \
                      | tail -1 | grep -oP '[0-9.]+(?=%)')
 
