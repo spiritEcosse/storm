@@ -1,5 +1,10 @@
 name: CI
 
+# Do NOT add `paths:` / `paths-ignore:` here. `CI gate` (bottom of this file) is
+# a required status context, and a run filtered out entirely never reports it —
+# leaving the PR unmergeable, which is strictly worse than the container pulls
+# such a filter would be trying to save. Cheapness for docs-only PRs is the
+# `changes` job's business, below.
 on:
   push:
     branches: [develop]
@@ -603,20 +608,53 @@ jobs:
   # skip invisible to branch protection, because this job always runs and
   # reports under one fixed name.
   #
-  # It deliberately depends on every other job, including the cheap always-on
-  # ones, so the required list can be exactly ["CI gate", "SonarCloud Code
-  # Analysis"] and nothing else.
+  # THE CONTEXT STRING IS EXACTLY `CI gate` — the job name alone. The PR checks
+  # list renders it as `CI / CI gate` (workflow name / job name); copying THAT
+  # into branch protection yields a context nothing ever reports, whose symptom
+  # is indistinguishable from #638. Bind it to the GitHub Actions app
+  # (`checks[] = {"context": "CI gate", "app_id": 15368}`) rather than the bare
+  # context form, so no other integration can satisfy a name this generic.
   #
-  # HOW TO GET DOCS-ONLY PRs BACK TO ZERO COST: once develop's required checks
-  # name this job rather than the individual ones, add
-  #   && needs.changes.outputs.run_heavy != 'false'
-  # back to the job-level `if:` of `test`, `coverage` and
-  # `clang-p2996-host-layout`. They then skip outright — no container pull, no
-  # postgres service — this job reports their `skipped` results as a pass, and
-  # the merge stays unblocked. The step-level `env.RUN_HEAVY` guards can stay
-  # as they are; they are simply unreachable once the job is skipped. Do NOT
-  # make that edit before the required-checks list is changed, or #638
-  # reproduces exactly.
+  # MIGRATION — the order is not reversible in either direction:
+  #
+  #   1. Merge the PR that introduces this job. It touches .github/workflows/,
+  #      so run_heavy=true and every per-matrix context still reports; it is
+  #      mergeable under today's required list.
+  #   2. Confirm `CI gate` has reported at least once on develop (the post-merge
+  #      push run), so GitHub offers the context in the settings UI at all.
+  #   3. Edit branch protection: ADD `CI gate`, and REMOVE every per-job and
+  #      per-matrix CI context (the seven matrix legs, `coverage (100% lines,
+  #      filtered)`, `clang-p2996 host-layout resolution`, `storm-ci digest
+  #      consistency`, `agent frontmatter (single-line descriptions)`,
+  #      `clang-tidy skip-list classification (#550)`, `detect changed files`).
+  #      Keep `SonarCloud Code Analysis`. Removing is not optional: adding
+  #      `CI gate` alongside the old names leaves docs-only PRs stuck on them.
+  #   4. Only then, the flip below.
+  #   5. Verify on a docs-only PR: heavy jobs `skipped`, `CI gate` green,
+  #      merge unblocked.
+  #
+  # Step 3 must NOT precede step 1: `CI gate` does not exist on develop until
+  # this job is merged, so requiring it first strands EVERY open PR — including
+  # the one that would create it — on a context no run will ever report.
+  # Step 4 must NOT precede step 3: that is #638, reproduced exactly.
+  #
+  # THE FLIP (step 4), which returns docs-only PRs to zero cost — no container
+  # pull, no postgres service, nothing started at all:
+  #
+  #   a. Add `&& needs.changes.outputs.run_heavy != 'false'` back to the
+  #      job-level `if:` of `test`, `coverage` and `clang-p2996-host-layout`.
+  #      Fail-closed survives: a broken `changes` job leaves the output empty
+  #      and '' != 'false' still runs everything.
+  #   b. Delete the now-unreachable `No src/tests/cmake changes — heavy steps
+  #      skipped` step at the top of those three jobs. After (a) its condition
+  #      is the exact negation of the job-level one, so it is dead code that
+  #      reads as if step-gating were still doing work.
+  #   c. Update CLAUDE.md rule 7: its "the jobs still RUN and report green,
+  #      with their build/test steps skipped" clause describes the pre-flip
+  #      mechanism and becomes false.
+  #
+  # The step-level `env.RUN_HEAVY` guards themselves can stay — they are only
+  # reachable when the job-level condition already let the job run.
   ci-gate:
     name: CI gate
     # always(), not !cancelled(): a cancelled dependency must read as a
@@ -630,18 +668,55 @@ jobs:
       - clang-p2996-host-layout
       - test
       - coverage
+    # Bare runner on purpose: no container, no services, so this costs seconds
+    # even when everything it gates was skipped. `jq` below comes from the
+    # HOSTED ubuntu-24.04 image — that guarantee does not survive adding a
+    # `container:` here, so do not add one.
     runs-on: ubuntu-24.04
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The assertion below is negative — "no dependency has a bad result" —
+      # which on its own would pass vacuously if `needs:` were emptied, and
+      # would silently ignore a job added to `jobs:` but never wired into
+      # `needs:`. Once this is the ONLY required CI context, such a job could
+      # go red on a PR without blocking the merge: CI green while blind to
+      # something it never looked at. So assert the two lists agree first,
+      # the same way `digest-guard` asserts the image pins agree rather than
+      # trusting that they do.
+      - name: Assert this job gates every job in the workflow
+        run: |
+          set -euo pipefail
+          declared=$(awk '
+            /^jobs:/            { in_jobs = 1; next }
+            in_jobs && /^[^ #]/ { in_jobs = 0 }
+            in_jobs && /^  [A-Za-z0-9_.-]+:[[:space:]]*$/ {
+              sub(/:[[:space:]]*$/, ""); sub(/^  /, ""); print
+            }
+          ' .github/workflows/ci.yml | grep -vx 'ci-gate' | sort)
+          gated=$(echo '${{ toJSON(needs) }}' | jq -r 'keys[]' | sort)
+          if [ "$declared" != "$gated" ]; then
+            echo "::error::ci-gate's needs: list has drifted from the workflow's jobs."
+            echo "Jobs declared in ci.yml (excluding ci-gate):"
+            echo "$declared" | sed 's/^/  /'
+            echo "Jobs actually gated by ci-gate:"
+            echo "$gated" | sed 's/^/  /'
+            echo "Add the missing job(s) to ci-gate's needs: list."
+            exit 1
+          fi
+          echo "CI gate covers all $(echo "$declared" | wc -l) jobs."
+
       - name: Assert every job succeeded or was skipped
         env:
           NEEDS: ${{ toJSON(needs) }}
         run: |
           set -euo pipefail
           echo "$NEEDS" | jq -r 'to_entries[] | "  \(.key): \(.value.result)"'
-          # `skipped` is a pass: that is the whole point of this job. Anything
-          # else — failure, cancelled, or a result this expression does not
-          # recognise — fails, so a new job added to `needs` without a matching
-          # thought here errs red rather than silently green.
+          # `skipped` is a pass: that is the whole point of this job. Any other
+          # result — failure, cancelled, or one this expression does not
+          # recognise — fails. Coverage of the needs: list itself is the
+          # previous step's job, not this one's.
           bad=$(echo "$NEEDS" | jq -r '
             to_entries[]
             | select(.value.result != "success" and .value.result != "skipped")
@@ -649,6 +724,9 @@ jobs:
           if [ -n "$bad" ]; then
             echo "::error::CI gate failed — these jobs did not pass:"
             echo "$bad" | sed 's/^/  /'
+            # Keys are job IDs, so a failing matrix leg reads as `test`. The
+            # legs report individually; this job cannot name which one.
+            echo "::error::See this run's job list for the specific failure — matrix legs report individually."
             exit 1
           fi
           echo "CI gate passed."
