@@ -35,8 +35,14 @@ jobs:
   # gives docs-only PRs an infrastructure failure surface they did not have when
   # the jobs were skipped outright: a GHCR outage, an unavailable pinned digest,
   # or a pg_isready health-check flake now reds a required context on a PR that
-  # changed nothing but prose. Accepted as the cost of a mergeable PR; revisit
-  # (a `timeout-minutes:` on the three jobs, say) if it starts biting.
+  # changed nothing but prose. Accepted as the cost of a mergeable PR.
+  #
+  # That cost is removable: the `ci-gate` job at the bottom of this file is a
+  # single always-running required context, and once develop's branch
+  # protection requires IT instead of the individual job names, these three
+  # jobs can go back to skipping outright — zero containers, zero services.
+  # See that job's comment for the exact edit; it is three lines, and it must
+  # not be made before the required-checks list is changed.
   #
   # Fail-closed by design: this job's output defaults every consumer's `if:`
   # to "run" unless it explicitly says `run_heavy == 'false'` (see those
@@ -586,3 +592,63 @@ jobs:
           path: build/debug/coverage/html-filtered/
           retention-days: 14
           if-no-files-found: warn
+
+  # Single required status check for develop's branch protection.
+  #
+  # Exists so the per-job contexts do not have to be named in the required
+  # list at all. That matters because a job skipped by a job-level `if:`
+  # cannot report the contexts a MATRIX expands into (#638 — see the note on
+  # the `changes` job): requiring `ninja-debug / PG 17` and friends makes any
+  # PR that skips the matrix unmergeable. Requiring THIS job instead makes the
+  # skip invisible to branch protection, because this job always runs and
+  # reports under one fixed name.
+  #
+  # It deliberately depends on every other job, including the cheap always-on
+  # ones, so the required list can be exactly ["CI gate", "SonarCloud Code
+  # Analysis"] and nothing else.
+  #
+  # HOW TO GET DOCS-ONLY PRs BACK TO ZERO COST: once develop's required checks
+  # name this job rather than the individual ones, add
+  #   && needs.changes.outputs.run_heavy != 'false'
+  # back to the job-level `if:` of `test`, `coverage` and
+  # `clang-p2996-host-layout`. They then skip outright — no container pull, no
+  # postgres service — this job reports their `skipped` results as a pass, and
+  # the merge stays unblocked. The step-level `env.RUN_HEAVY` guards can stay
+  # as they are; they are simply unreachable once the job is skipped. Do NOT
+  # make that edit before the required-checks list is changed, or #638
+  # reproduces exactly.
+  ci-gate:
+    name: CI gate
+    # always(), not !cancelled(): a cancelled dependency must read as a
+    # failure here, never as a pass, and never leave this context unreported.
+    if: always()
+    needs:
+      - changes
+      - digest-guard
+      - agent-frontmatter
+      - clang-tidy-skiplist
+      - clang-p2996-host-layout
+      - test
+      - coverage
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Assert every job succeeded or was skipped
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "$NEEDS" | jq -r 'to_entries[] | "  \(.key): \(.value.result)"'
+          # `skipped` is a pass: that is the whole point of this job. Anything
+          # else — failure, cancelled, or a result this expression does not
+          # recognise — fails, so a new job added to `needs` without a matching
+          # thought here errs red rather than silently green.
+          bad=$(echo "$NEEDS" | jq -r '
+            to_entries[]
+            | select(.value.result != "success" and .value.result != "skipped")
+            | "\(.key) (\(.value.result))"')
+          if [ -n "$bad" ]; then
+            echo "::error::CI gate failed — these jobs did not pass:"
+            echo "$bad" | sed 's/^/  /'
+            exit 1
+          fi
+          echo "CI gate passed."
