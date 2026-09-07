@@ -11,12 +11,22 @@ jobs:
   # event; push: against the pre-push SHA) via scripts/detect-changes.sh —
   # the same script commit.sh uses for its staged-file smart skips, so both
   # places agree on what counts as "src/tests/cmake changed". `run_heavy`
-  # gates the expensive `test` / `coverage` / `clang-p2996-host-layout` jobs
-  # below: a PR touching only docs/ or unrelated top-level files skips
-  # straight to green on those instead of spinning up the full matrix. A
-  # required status check whose job is skipped via job-level `if:` is
-  # reported by GitHub as passed, so this does not block merges on develop's
-  # branch protection.
+  # gates the expensive STEPS of the `test` / `coverage` /
+  # `clang-p2996-host-layout` jobs below: a PR touching only docs/ or
+  # unrelated top-level files reports those jobs green in seconds instead of
+  # spinning up the full matrix.
+  #
+  # The gate is on the steps, not on the jobs, and that distinction is
+  # load-bearing (#638). A job skipped by a job-level `if:` still produces a
+  # check run — but a MATRIX job produces exactly ONE, named with the matrix
+  # expression unexpanded (`${{ matrix.preset }} / PG ${{ matrix.postgres }}`).
+  # The per-matrix contexts develop's branch protection requires
+  # (`ninja-debug / PG 17`, `ninja-tsan / PG 17`, ...) are then never reported
+  # at all, and the PR sits at "Expected — waiting for status to be reported"
+  # with no way to merge it. #607 introduced the skip on the assumption that a
+  # skipped required check reads as passed; that holds for a plain job, not for
+  # the matrix. Gating the steps keeps every context name intact and green, and
+  # costs only runner startup on a docs-only diff.
   #
   # Fail-closed by design: this job's output defaults every consumer's `if:`
   # to "run" unless it explicitly says `run_heavy == 'false'` (see those
@@ -169,17 +179,28 @@ jobs:
   clang-p2996-host-layout:
     name: clang-p2996 host-layout resolution
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.run_heavy != 'false' }}
+    # Always RUNS (fail-closed on a broken `changes` job, whose empty output
+    # reads as "not false"); the steps below are what `run_heavy` gates. See
+    # the note on the `changes` job for why this is not a job-level `if:`.
+    if: ${{ !cancelled() }}
+    env:
+      RUN_HEAVY: ${{ needs.changes.outputs.run_heavy }}
     runs-on: ubuntu-24.04
     container:
       # Pinned to a specific digest so develop is unaffected by storm-ci image
       # rebuilds. Bump this when publishing a new image (see docker-ci-image.yml).
       image: ghcr.io/spiritecosse/storm-ci@sha256:0da07cc20e580c8a7310dca6974bc1d09406c3d367faa099fe26e03b9a449bee
     steps:
+      - name: No src/tests/cmake changes — heavy steps skipped
+        if: env.RUN_HEAVY == 'false'
+        run: echo "Diff touches none of src/, tests/ or cmake — build/test steps skipped."
+
       - name: Checkout
+        if: env.RUN_HEAVY != 'false'
         uses: actions/checkout@v4
 
       - name: Test host-layout resolution + import-std symlink behavior
+        if: env.RUN_HEAVY != 'false'
         run: ./scripts/tests/test_libcxx_modules_symlink.sh
 
   test:
@@ -192,7 +213,12 @@ jobs:
     # preset produces no signal. Re-add the matrix entry once a fixed
     # clang-p2996 build lands (track at #326).
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.run_heavy != 'false' }}
+    # Always RUNS (fail-closed on a broken `changes` job, whose empty output
+    # reads as "not false"); the steps below are what `run_heavy` gates. See
+    # the note on the `changes` job for why this is not a job-level `if:`.
+    if: ${{ !cancelled() }}
+    env:
+      RUN_HEAVY: ${{ needs.changes.outputs.run_heavy }}
     runs-on: ubuntu-24.04
     container:
       # Pinned to a specific digest so develop is unaffected by storm-ci image
@@ -249,13 +275,20 @@ jobs:
             postgres: 17
 
     steps:
+      - name: No src/tests/cmake changes — heavy steps skipped
+        if: env.RUN_HEAVY == 'false'
+        run: echo "Diff touches none of src/, tests/ or cmake — build/test steps skipped."
+
       - name: Checkout
+        if: env.RUN_HEAVY != 'false'
         uses: actions/checkout@v4
 
       - name: Link clang-p2996 next to source dir
+        if: env.RUN_HEAVY != 'false'
         run: ln -sfn /opt/clang-p2996 "$(dirname "$GITHUB_WORKSPACE")/clang-p2996"
 
       - name: Create libc++ modules symlink for import std;
+        if: env.RUN_HEAVY != 'false'
         # import std; (issue #326): CMake's CXX_MODULE_STD support looks for
         # std.cppm / std.compat.cppm at build/share/libc++/v1/ (declared in
         # libc++.modules.json) but clang-p2996 places them under
@@ -283,6 +316,7 @@ jobs:
           fi
 
       - name: Cache CPM packages
+        if: env.RUN_HEAVY != 'false'
         uses: actions/cache@v4
         with:
           path: .cache/CPM
@@ -292,18 +326,23 @@ jobs:
             cpm-
 
       - name: Configure
+        if: env.RUN_HEAVY != 'false'
         run: cmake --preset ${{ matrix.preset }}
 
       - name: Build
+        if: env.RUN_HEAVY != 'false'
         run: ./scripts/build-with-retry.sh ${{ matrix.preset }}
 
       - name: Test
+        if: env.RUN_HEAVY != 'false'
         env:
           STORM_PG_CONNSTR: "host=postgres port=5432 dbname=storm_db user=storm_db password=storm_db"
         run: ctest --test-dir build/${{ matrix.build_dir }} --output-on-failure --no-tests=error
 
       - name: Atlas integration test
-        if: matrix.preset == 'ninja-debug' && matrix.postgres == 17
+        if: >-
+          env.RUN_HEAVY != 'false'
+          && matrix.preset == 'ninja-debug' && matrix.postgres == 17
         run: |
           curl -sSf https://atlasgo.sh | sh
           ./scripts/test-atlas-migration.sh
@@ -357,7 +396,12 @@ jobs:
   coverage:
     name: coverage (100% lines, filtered)
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.run_heavy != 'false' }}
+    # Always RUNS (fail-closed on a broken `changes` job, whose empty output
+    # reads as "not false"); the steps below are what `run_heavy` gates. See
+    # the note on the `changes` job for why this is not a job-level `if:`.
+    if: ${{ !cancelled() }}
+    env:
+      RUN_HEAVY: ${{ needs.changes.outputs.run_heavy }}
     runs-on: ubuntu-24.04
     container:
       # Keep in sync with the `test` job's pin — digest-guard asserts they agree.
@@ -386,13 +430,20 @@ jobs:
           --health-retries 5
 
     steps:
+      - name: No src/tests/cmake changes — heavy steps skipped
+        if: env.RUN_HEAVY == 'false'
+        run: echo "Diff touches none of src/, tests/ or cmake — build/test steps skipped."
+
       - name: Checkout
+        if: env.RUN_HEAVY != 'false'
         uses: actions/checkout@v4
 
       - name: Link clang-p2996 next to source dir
+        if: env.RUN_HEAVY != 'false'
         run: ln -sfn /opt/clang-p2996 "$(dirname "$GITHUB_WORKSPACE")/clang-p2996"
 
       - name: Create libc++ modules symlink for import std;
+        if: env.RUN_HEAVY != 'false'
         # Same rationale as in the `test` job above (issue #326).
         run: |
           clang_root="$(dirname "$GITHUB_WORKSPACE")/clang-p2996"
@@ -408,6 +459,7 @@ jobs:
           fi
 
       - name: Cache CPM packages
+        if: env.RUN_HEAVY != 'false'
         uses: actions/cache@v4
         with:
           path: .cache/CPM
@@ -417,15 +469,18 @@ jobs:
             cpm-
 
       - name: Configure
+        if: env.RUN_HEAVY != 'false'
         run: cmake --preset ninja-debug
 
       - name: Build
+        if: env.RUN_HEAVY != 'false'
         # Build the test binaries through the retry wrapper first, so a
         # clang-scan-deps segfault (the known C++26 module flake) is retried here
         # rather than failing the coverage step and reading as a coverage drop.
         run: ./scripts/build-with-retry.sh ninja-debug
 
       - name: Run coverage and enforce 100% line threshold
+        if: env.RUN_HEAVY != 'false'
         env:
           # Points coverage-run-batched.sh at the service container above,
           # overriding its local-socket default. Same value the `test` job uses.
@@ -499,7 +554,7 @@ jobs:
         # targets, so building it would re-run the entire instrumented test suite
         # a second time. The tracefile it consumes was already produced by the
         # step above, so this just renders it.
-        if: always()
+        if: always() && env.RUN_HEAVY != 'false'
         run: |
           lcov_file=build/debug/coverage/coverage-filtered.lcov
           if [ ! -f "$lcov_file" ]; then
@@ -514,7 +569,7 @@ jobs:
             "$lcov_file"
 
       - name: Upload HTML coverage report
-        if: always()
+        if: always() && env.RUN_HEAVY != 'false'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-html
