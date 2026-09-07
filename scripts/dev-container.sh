@@ -149,7 +149,21 @@ cmd_up() {
     fi
     (
         flock -w 900 9 || { echo "dev-container: timed out waiting on another 'up'" >&2; exit 1; }
-        ensure_dockerd
+        # 9>&- is load-bearing. ensure_dockerd starts a DAEMON, which without
+        # this inherits FD 9 — and with it the flock — for its whole lifetime,
+        # as do containerd and both containerd-shims it goes on to fork. The
+        # first `up` of a session then succeeds and every later `up`/`exec`
+        # blocks the full `flock -w 900`, with dockerd itself visible as the
+        # lock holder in /proc/*/fd: 15 minutes of apparent hang, on the path
+        # this script exists to make usable. Closing it here rather than on the
+        # `nohup` line keeps the guarantee structural — a second long-lived
+        # spawn added to ensure_dockerd cannot silently reintroduce the leak.
+        # Bash restores FD 9 on return and the subshell keeps the lock, so the
+        # mutual exclusion across build_image/start_*_container is unaffected.
+        # Recover a genuinely stuck lock by restarting dockerd, NOT by deleting
+        # $LOCK_FILE — the holders keep the old inode and the mutex silently
+        # stops working.
+        ensure_dockerd 9>&-
         build_image
         start_build_container
         start_pg_container
