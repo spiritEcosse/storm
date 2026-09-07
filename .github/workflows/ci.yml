@@ -1,5 +1,10 @@
 name: CI
 
+# Do NOT add `paths:` / `paths-ignore:` here. `CI gate` (bottom of this file) is
+# a required status context, and a run filtered out entirely never reports it —
+# leaving the PR unmergeable, which is strictly worse than the container pulls
+# such a filter would be trying to save. Cheapness for docs-only PRs is the
+# `changes` job's business, below.
 on:
   push:
     branches: [develop]
@@ -11,12 +16,38 @@ jobs:
   # event; push: against the pre-push SHA) via scripts/detect-changes.sh —
   # the same script commit.sh uses for its staged-file smart skips, so both
   # places agree on what counts as "src/tests/cmake changed". `run_heavy`
-  # gates the expensive `test` / `coverage` / `clang-p2996-host-layout` jobs
-  # below: a PR touching only docs/ or unrelated top-level files skips
-  # straight to green on those instead of spinning up the full matrix. A
-  # required status check whose job is skipped via job-level `if:` is
-  # reported by GitHub as passed, so this does not block merges on develop's
-  # branch protection.
+  # gates the expensive STEPS of the `test` / `coverage` /
+  # `clang-p2996-host-layout` jobs below: a PR touching only docs/ or
+  # unrelated top-level files reports those jobs green without configuring,
+  # building or testing anything.
+  #
+  # The gate is on the steps, not on the jobs, and that distinction is
+  # load-bearing (#638). A job skipped by a job-level `if:` still produces a
+  # check run — but a MATRIX job produces exactly ONE, named with the matrix
+  # expression unexpanded (`${{ matrix.preset }} / PG ${{ matrix.postgres }}`).
+  # The per-matrix contexts develop's branch protection requires
+  # (`ninja-debug / PG 17`, `ninja-tsan / PG 17`, ...) are then never reported
+  # at all, and the PR sits at "Expected — waiting for status to be reported"
+  # with no way to merge it. #607 introduced the skip on the assumption that a
+  # skipped required check reads as passed; that holds for a plain job, not for
+  # the matrix. Gating the steps keeps every context name intact and green.
+  #
+  # The price, stated honestly because the next person will see it: `container:`
+  # and `services:` are resolved BEFORE the first step's `if:` is evaluated and
+  # cannot be gated, so a docs-only PR still pulls the (multi-GB) storm-ci image
+  # nine times and starts eight postgres services. That is minutes, not seconds
+  # — but no configure/build/test, against 12-22 min of matrix before. It also
+  # gives docs-only PRs an infrastructure failure surface they did not have when
+  # the jobs were skipped outright: a GHCR outage, an unavailable pinned digest,
+  # or a pg_isready health-check flake now reds a required context on a PR that
+  # changed nothing but prose. Accepted as the cost of a mergeable PR.
+  #
+  # That cost is removable: the `ci-gate` job at the bottom of this file is a
+  # single always-running required context, and once develop's branch
+  # protection requires IT instead of the individual job names, these three
+  # jobs can go back to skipping outright — zero containers, zero services.
+  # See that job's comment for the exact edit; it is three lines, and it must
+  # not be made before the required-checks list is changed.
   #
   # Fail-closed by design: this job's output defaults every consumer's `if:`
   # to "run" unless it explicitly says `run_heavy == 'false'` (see those
@@ -169,17 +200,28 @@ jobs:
   clang-p2996-host-layout:
     name: clang-p2996 host-layout resolution
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.run_heavy != 'false' }}
+    # Always RUNS (fail-closed on a broken `changes` job, whose empty output
+    # reads as "not false"); the steps below are what `run_heavy` gates. See
+    # the note on the `changes` job for why this is not a job-level `if:`.
+    if: ${{ !cancelled() }}
+    env:
+      RUN_HEAVY: ${{ needs.changes.outputs.run_heavy }}
     runs-on: ubuntu-24.04
     container:
       # Pinned to a specific digest so develop is unaffected by storm-ci image
       # rebuilds. Bump this when publishing a new image (see docker-ci-image.yml).
       image: ghcr.io/spiritecosse/storm-ci@sha256:0da07cc20e580c8a7310dca6974bc1d09406c3d367faa099fe26e03b9a449bee
     steps:
+      - name: No src/tests/cmake changes — heavy steps skipped
+        if: env.RUN_HEAVY == 'false'
+        run: echo "Diff touches none of src/, tests/ or cmake — build/test steps skipped."
+
       - name: Checkout
+        if: env.RUN_HEAVY != 'false'
         uses: actions/checkout@v4
 
       - name: Test host-layout resolution + import-std symlink behavior
+        if: env.RUN_HEAVY != 'false'
         run: ./scripts/tests/test_libcxx_modules_symlink.sh
 
   test:
@@ -192,7 +234,12 @@ jobs:
     # preset produces no signal. Re-add the matrix entry once a fixed
     # clang-p2996 build lands (track at #326).
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.run_heavy != 'false' }}
+    # Always RUNS (fail-closed on a broken `changes` job, whose empty output
+    # reads as "not false"); the steps below are what `run_heavy` gates. See
+    # the note on the `changes` job for why this is not a job-level `if:`.
+    if: ${{ !cancelled() }}
+    env:
+      RUN_HEAVY: ${{ needs.changes.outputs.run_heavy }}
     runs-on: ubuntu-24.04
     container:
       # Pinned to a specific digest so develop is unaffected by storm-ci image
@@ -249,13 +296,20 @@ jobs:
             postgres: 17
 
     steps:
+      - name: No src/tests/cmake changes — heavy steps skipped
+        if: env.RUN_HEAVY == 'false'
+        run: echo "Diff touches none of src/, tests/ or cmake — build/test steps skipped."
+
       - name: Checkout
+        if: env.RUN_HEAVY != 'false'
         uses: actions/checkout@v4
 
       - name: Link clang-p2996 next to source dir
+        if: env.RUN_HEAVY != 'false'
         run: ln -sfn /opt/clang-p2996 "$(dirname "$GITHUB_WORKSPACE")/clang-p2996"
 
       - name: Create libc++ modules symlink for import std;
+        if: env.RUN_HEAVY != 'false'
         # import std; (issue #326): CMake's CXX_MODULE_STD support looks for
         # std.cppm / std.compat.cppm at build/share/libc++/v1/ (declared in
         # libc++.modules.json) but clang-p2996 places them under
@@ -283,6 +337,7 @@ jobs:
           fi
 
       - name: Cache CPM packages
+        if: env.RUN_HEAVY != 'false'
         uses: actions/cache@v4
         with:
           path: .cache/CPM
@@ -292,18 +347,23 @@ jobs:
             cpm-
 
       - name: Configure
+        if: env.RUN_HEAVY != 'false'
         run: cmake --preset ${{ matrix.preset }}
 
       - name: Build
+        if: env.RUN_HEAVY != 'false'
         run: ./scripts/build-with-retry.sh ${{ matrix.preset }}
 
       - name: Test
+        if: env.RUN_HEAVY != 'false'
         env:
           STORM_PG_CONNSTR: "host=postgres port=5432 dbname=storm_db user=storm_db password=storm_db"
         run: ctest --test-dir build/${{ matrix.build_dir }} --output-on-failure --no-tests=error
 
       - name: Atlas integration test
-        if: matrix.preset == 'ninja-debug' && matrix.postgres == 17
+        if: >-
+          env.RUN_HEAVY != 'false'
+          && matrix.preset == 'ninja-debug' && matrix.postgres == 17
         run: |
           curl -sSf https://atlasgo.sh | sh
           ./scripts/test-atlas-migration.sh
@@ -357,7 +417,12 @@ jobs:
   coverage:
     name: coverage (100% lines, filtered)
     needs: changes
-    if: ${{ !cancelled() && needs.changes.outputs.run_heavy != 'false' }}
+    # Always RUNS (fail-closed on a broken `changes` job, whose empty output
+    # reads as "not false"); the steps below are what `run_heavy` gates. See
+    # the note on the `changes` job for why this is not a job-level `if:`.
+    if: ${{ !cancelled() }}
+    env:
+      RUN_HEAVY: ${{ needs.changes.outputs.run_heavy }}
     runs-on: ubuntu-24.04
     container:
       # Keep in sync with the `test` job's pin — digest-guard asserts they agree.
@@ -386,13 +451,20 @@ jobs:
           --health-retries 5
 
     steps:
+      - name: No src/tests/cmake changes — heavy steps skipped
+        if: env.RUN_HEAVY == 'false'
+        run: echo "Diff touches none of src/, tests/ or cmake — build/test steps skipped."
+
       - name: Checkout
+        if: env.RUN_HEAVY != 'false'
         uses: actions/checkout@v4
 
       - name: Link clang-p2996 next to source dir
+        if: env.RUN_HEAVY != 'false'
         run: ln -sfn /opt/clang-p2996 "$(dirname "$GITHUB_WORKSPACE")/clang-p2996"
 
       - name: Create libc++ modules symlink for import std;
+        if: env.RUN_HEAVY != 'false'
         # Same rationale as in the `test` job above (issue #326).
         run: |
           clang_root="$(dirname "$GITHUB_WORKSPACE")/clang-p2996"
@@ -408,6 +480,7 @@ jobs:
           fi
 
       - name: Cache CPM packages
+        if: env.RUN_HEAVY != 'false'
         uses: actions/cache@v4
         with:
           path: .cache/CPM
@@ -417,15 +490,18 @@ jobs:
             cpm-
 
       - name: Configure
+        if: env.RUN_HEAVY != 'false'
         run: cmake --preset ninja-debug
 
       - name: Build
+        if: env.RUN_HEAVY != 'false'
         # Build the test binaries through the retry wrapper first, so a
         # clang-scan-deps segfault (the known C++26 module flake) is retried here
         # rather than failing the coverage step and reading as a coverage drop.
         run: ./scripts/build-with-retry.sh ninja-debug
 
       - name: Run coverage and enforce 100% line threshold
+        if: env.RUN_HEAVY != 'false'
         env:
           # Points coverage-run-batched.sh at the service container above,
           # overriding its local-socket default. Same value the `test` job uses.
@@ -499,7 +575,7 @@ jobs:
         # targets, so building it would re-run the entire instrumented test suite
         # a second time. The tracefile it consumes was already produced by the
         # step above, so this just renders it.
-        if: always()
+        if: always() && env.RUN_HEAVY != 'false'
         run: |
           lcov_file=build/debug/coverage/coverage-filtered.lcov
           if [ ! -f "$lcov_file" ]; then
@@ -514,10 +590,143 @@ jobs:
             "$lcov_file"
 
       - name: Upload HTML coverage report
-        if: always()
+        if: always() && env.RUN_HEAVY != 'false'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-html
           path: build/debug/coverage/html-filtered/
           retention-days: 14
           if-no-files-found: warn
+
+  # Single required status check for develop's branch protection.
+  #
+  # Exists so the per-job contexts do not have to be named in the required
+  # list at all. That matters because a job skipped by a job-level `if:`
+  # cannot report the contexts a MATRIX expands into (#638 — see the note on
+  # the `changes` job): requiring `ninja-debug / PG 17` and friends makes any
+  # PR that skips the matrix unmergeable. Requiring THIS job instead makes the
+  # skip invisible to branch protection, because this job always runs and
+  # reports under one fixed name.
+  #
+  # THE CONTEXT STRING IS EXACTLY `CI gate` — the job name alone. The PR checks
+  # list renders it as `CI / CI gate` (workflow name / job name); copying THAT
+  # into branch protection yields a context nothing ever reports, whose symptom
+  # is indistinguishable from #638. Bind it to the GitHub Actions app
+  # (`checks[] = {"context": "CI gate", "app_id": 15368}`) rather than the bare
+  # context form, so no other integration can satisfy a name this generic.
+  #
+  # MIGRATION — the order is not reversible in either direction:
+  #
+  #   1. Merge the PR that introduces this job. It touches .github/workflows/,
+  #      so run_heavy=true and every per-matrix context still reports; it is
+  #      mergeable under today's required list.
+  #   2. Confirm `CI gate` has reported at least once on develop (the post-merge
+  #      push run), so GitHub offers the context in the settings UI at all.
+  #   3. Edit branch protection: ADD `CI gate`, and REMOVE every per-job and
+  #      per-matrix CI context (the seven matrix legs, `coverage (100% lines,
+  #      filtered)`, `clang-p2996 host-layout resolution`, `storm-ci digest
+  #      consistency`, `agent frontmatter (single-line descriptions)`,
+  #      `clang-tidy skip-list classification (#550)`, `detect changed files`).
+  #      Keep `SonarCloud Code Analysis`. Removing is not optional: adding
+  #      `CI gate` alongside the old names leaves docs-only PRs stuck on them.
+  #   4. Only then, the flip below.
+  #   5. Verify on a docs-only PR: heavy jobs `skipped`, `CI gate` green,
+  #      merge unblocked.
+  #
+  # Step 3 must NOT precede step 1: `CI gate` does not exist on develop until
+  # this job is merged, so requiring it first strands EVERY open PR — including
+  # the one that would create it — on a context no run will ever report.
+  # Step 4 must NOT precede step 3: that is #638, reproduced exactly.
+  #
+  # THE FLIP (step 4), which returns docs-only PRs to zero cost — no container
+  # pull, no postgres service, nothing started at all:
+  #
+  #   a. Add `&& needs.changes.outputs.run_heavy != 'false'` back to the
+  #      job-level `if:` of `test`, `coverage` and `clang-p2996-host-layout`.
+  #      Fail-closed survives: a broken `changes` job leaves the output empty
+  #      and '' != 'false' still runs everything.
+  #   b. Delete the now-unreachable `No src/tests/cmake changes — heavy steps
+  #      skipped` step at the top of those three jobs. After (a) its condition
+  #      is the exact negation of the job-level one, so it is dead code that
+  #      reads as if step-gating were still doing work.
+  #   c. Update CLAUDE.md rule 7: its "the jobs still RUN and report green,
+  #      with their build/test steps skipped" clause describes the pre-flip
+  #      mechanism and becomes false.
+  #
+  # The step-level `env.RUN_HEAVY` guards themselves can stay — they are only
+  # reachable when the job-level condition already let the job run.
+  ci-gate:
+    name: CI gate
+    # always(), not !cancelled(): a cancelled dependency must read as a
+    # failure here, never as a pass, and never leave this context unreported.
+    if: always()
+    needs:
+      - changes
+      - digest-guard
+      - agent-frontmatter
+      - clang-tidy-skiplist
+      - clang-p2996-host-layout
+      - test
+      - coverage
+    # Bare runner on purpose: no container, no services, so this costs seconds
+    # even when everything it gates was skipped. `jq` below comes from the
+    # HOSTED ubuntu-24.04 image — that guarantee does not survive adding a
+    # `container:` here, so do not add one.
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The assertion below is negative — "no dependency has a bad result" —
+      # which on its own would pass vacuously if `needs:` were emptied, and
+      # would silently ignore a job added to `jobs:` but never wired into
+      # `needs:`. Once this is the ONLY required CI context, such a job could
+      # go red on a PR without blocking the merge: CI green while blind to
+      # something it never looked at. So assert the two lists agree first,
+      # the same way `digest-guard` asserts the image pins agree rather than
+      # trusting that they do.
+      - name: Assert this job gates every job in the workflow
+        run: |
+          set -euo pipefail
+          declared=$(awk '
+            /^jobs:/            { in_jobs = 1; next }
+            in_jobs && /^[^ #]/ { in_jobs = 0 }
+            in_jobs && /^  [A-Za-z0-9_.-]+:[[:space:]]*$/ {
+              sub(/:[[:space:]]*$/, ""); sub(/^  /, ""); print
+            }
+          ' .github/workflows/ci.yml | grep -vx 'ci-gate' | sort)
+          gated=$(echo '${{ toJSON(needs) }}' | jq -r 'keys[]' | sort)
+          if [ "$declared" != "$gated" ]; then
+            echo "::error::ci-gate's needs: list has drifted from the workflow's jobs."
+            echo "Jobs declared in ci.yml (excluding ci-gate):"
+            echo "$declared" | sed 's/^/  /'
+            echo "Jobs actually gated by ci-gate:"
+            echo "$gated" | sed 's/^/  /'
+            echo "Add the missing job(s) to ci-gate's needs: list."
+            exit 1
+          fi
+          echo "CI gate covers all $(echo "$declared" | wc -l) jobs."
+
+      - name: Assert every job succeeded or was skipped
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |
+          set -euo pipefail
+          echo "$NEEDS" | jq -r 'to_entries[] | "  \(.key): \(.value.result)"'
+          # `skipped` is a pass: that is the whole point of this job. Any other
+          # result — failure, cancelled, or one this expression does not
+          # recognise — fails. Coverage of the needs: list itself is the
+          # previous step's job, not this one's.
+          bad=$(echo "$NEEDS" | jq -r '
+            to_entries[]
+            | select(.value.result != "success" and .value.result != "skipped")
+            | "\(.key) (\(.value.result))"')
+          if [ -n "$bad" ]; then
+            echo "::error::CI gate failed — these jobs did not pass:"
+            echo "$bad" | sed 's/^/  /'
+            # Keys are job IDs, so a failing matrix leg reads as `test`. The
+            # legs report individually; this job cannot name which one.
+            echo "::error::See this run's job list for the specific failure — matrix legs report individually."
+            exit 1
+          fi
+          echo "CI gate passed."

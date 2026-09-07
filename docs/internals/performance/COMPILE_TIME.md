@@ -168,24 +168,75 @@ the corpus format. Hand-porting the same cases pays the same instantiation.
 
 Each of these looked promising and was killed by measurement.
 
-### ccache — unsafe with C++20 modules
+### ccache — safe, but the BMIs are not byte-reproducible
 
-Test TUs cache beautifully in isolation (9083 ms → 43 ms, 100% cacheable, direct
-hit; `.cppm` compiles are 100% uncacheable and fall through at no cost). But
-**ccache does not hash the BMIs a TU imports** — clang omits them from the
-depfile. Editing `src/orm/queryset.cppm` and recompiling a test TU through
-ccache returns a HIT with a byte-identical object built against the *previous*
-module interface:
+Measured twice, with opposite conclusions. The second measurement (ccache
+**4.14**, issue #630) supersedes the first, which is kept below only to say why
+it was wrong. The ccache version the first round used was not recorded, but the
+difference is methodological, not a version difference — see there.
+
+Test TUs cache beautifully: 8.8 s → **0.13 s**, 100% cacheable, direct hit.
+`.cppm` compiles are 100% uncacheable (`unsupported_source_language:
+c++-module`) and fall through at no cost, so the 85% of build time that lives
+in the ~110 test TUs is the part in play. Two preconditions:
+
+- `CCACHE_SLOPPINESS=pch_defines,time_macros` is **mandatory** — without it the
+  gtest PCH makes every test TU uncacheable (`Result:
+  could_not_use_precompiled_header`), reported as a flat 0% cacheable with no
+  other explanation.
+- The launcher must not reach `.cppm` compiles expecting hits; it costs nothing
+  but never returns any.
+
+**ccache 4.14 is module-aware and safe here.** Its log shows `Hashing module
+file …bmi` for every BMI in CMake's `.modmap`, so a rebuilt module interface
+changes the cache key. The `#embed` corpus is covered too, by a different
+route: direct mode misses on those 4 TUs (`direct_cache_miss`) and ccache falls
+back to running the preprocessor, whose output carries the embedded bytes
+(`preprocessed_cache_hit`). Mutating `unified_cases_select.json` correctly
+produced a miss.
+
+**What kills it is that BMIs are not byte-reproducible.** Two back-to-back
+`--precompile` runs of the same untouched `src/storm.cppm` differ in content
+*and in size* (14,933,024 vs 14,933,008 bytes; the first difference is a
+~20-byte signature region at offset 11860). `-Xclang -fno-pch-timestamp` does
+not help. Because ccache hashes the BMI bytes, **every BMI rebuild permanently
+invalidates every downstream test-TU entry**. On 5 test TUs:
+
+| scenario | hits | wall |
+|---|---:|---:|
+| objects deleted, BMIs untouched | 5/5 | 125 ms |
+| `touch` 2 module sources (content identical), BMIs rebuilt | 0/5 | 30.7 s |
+| same churn again | 0/5 | 29.9 s |
+| objects deleted, BMIs untouched again | 5/5 | 152 ms |
+
+So hits occur exactly while the BMIs on disk are unchanged, which excludes
+every workflow that motivates a compiler cache: `rm -rf build`, a fresh
+worktree (which the branching rules mandate per branch, and which also moves
+the source paths), a CI run in a fresh container, and any branch switch
+touching `src/`. What remains is a branch flip or `git stash pop` touching
+**only** `tests/` — real, but narrow. Not wired in.
+
+The upstream dependency worth watching is **clang BMI reproducibility**, not
+ccache's module support. Any compiler cache that hashes BMIs inherits this;
+one that does not hash them is unsafe. `sccache` was not measured.
+
+#### The superseded first round
+
+The earlier round concluded "ccache does not hash the BMIs a TU imports" from
+this observation — editing `src/orm/queryset.cppm` and recompiling a test TU
+through ccache returns a HIT with a byte-identical object:
 
 ```
 before editing the module : md5=7a7510190425  hits=1
 after  editing the module : md5=7a7510190425  hits=2
 ```
 
-A `src/**/*.cppm` edit could therefore produce a green `commit.sh` run over test
-objects compiled against stale module interfaces. Separately, ccache does not
-track `#embed` either (a mutated corpus JSON still returned a HIT);
-`CCACHE_EXTRAFILES` fixes that half, but nothing fixes the BMI half today.
+That reproduces on 4.14, and is **not** a stale hit. It only appears when the
+TU's command line is replayed directly, without letting ninja rebuild the BMI
+first — and against an unchanged BMI on disk, that object is exactly what a
+cacheless clang would produce. Driven through ninja, the BMI is rebuilt before
+its dependents and ccache misses (row 2 of the table above). The `#embed` half
+of that finding is likewise obsolete, per the preprocessed-mode fallback above.
 
 ### UNITY_BUILD — mutually exclusive with module scanning
 
