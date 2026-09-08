@@ -6,7 +6,6 @@
 import storm;
 import std;
 
-#include "test_models.h"           // NOSONAR cpp:S954 — Person/Message/ExtendedTypes, classification anchors
 #include "test_pg_binary_models.h" // NOSONAR cpp:S954 — models + compile-time classification gates
 
 // ============================================================================

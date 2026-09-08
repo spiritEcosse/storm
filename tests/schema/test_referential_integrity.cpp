@@ -7,7 +7,13 @@
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954
+#include "../../shared/models/cascade_child.h" // NOSONAR cpp:S954
+#include "../../shared/models/message.h"
+#include "../../shared/models/person.h"
+#include "../../shared/models/restrict_child.h"
+#include "../../shared/models/set_null_child.h"
+#include "../../shared/models/task.h"
+#include "test_fixture.h"
 
 using storm::QuerySet;
 using storm::orm::schema::Dialect;

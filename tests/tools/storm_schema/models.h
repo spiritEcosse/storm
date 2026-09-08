@@ -1,5 +1,5 @@
 #pragma once
-// Test model definitions for storm-schema — mirrors tests/test_models.h
+// Test model definitions for storm-schema — mirrors shared/models/
 // but without gtest dependency (avoids C++26 module conflicts).
 // Models are in namespace `schema` for auto-discovery via reflection.
 // import std; migration (issue #326): no std #includes here — std types come

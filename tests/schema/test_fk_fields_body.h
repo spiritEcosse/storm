@@ -16,10 +16,15 @@
 
 // NOLINTBEGIN(misc-const-correctness)
 
+#include <meta>
+
 import storm;
 import std;
 
-#include "test_models.h"
+#include "../../shared/models/message.h"
+#include "../../shared/models/person.h"
+#include "../../shared/models/task.h"
+#include "test_fixture.h"
 
 #include "test_seed_helpers.h"
 

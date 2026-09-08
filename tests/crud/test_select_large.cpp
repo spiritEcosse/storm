@@ -4,7 +4,8 @@
 import storm;
 import std;
 
-#include "test_models.h"
+#include "../../shared/models/simple_record.h"
+#include "test_fixture.h"
 
 using storm::QuerySet;
 

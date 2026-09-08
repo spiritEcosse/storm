@@ -6,7 +6,8 @@
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954 — StormTestFixture, ensure_tables
+#include "../../shared/models/person.h" // NOSONAR cpp:S954 — StormTestFixture, ensure_tables
+#include "test_fixture.h"
 
 // ── #609: WHERE-clause filter comparisons against a UUID column still auto-generate on empty ──
 //

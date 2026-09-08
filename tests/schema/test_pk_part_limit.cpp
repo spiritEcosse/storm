@@ -6,7 +6,8 @@
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954
+#include "../../shared/models/person.h" // NOSONAR cpp:S954
+#include "../../shared/models/task.h"
 
 // Tests for ModelPrimaryKeyPartLimit<T> (#537): a composite primary key with more
 // parts than the m2m/reverse-FK stitch key can hold is a compile-time error.

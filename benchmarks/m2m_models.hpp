@@ -10,7 +10,7 @@
  * and defining them in a module purview segfaults the reflection serializer.
  *
  * Include AFTER benchmarks/models.hpp (which runs `import storm;` and pulls in
- * <string>/<vector> via shared/models.h) and BEFORE the consumer's own imports.
+ * <string>/<vector> via shared/models/person.h) and BEFORE the consumer's own imports.
  */
 
 namespace storm::benchmark::m2m {

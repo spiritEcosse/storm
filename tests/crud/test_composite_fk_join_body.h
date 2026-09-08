@@ -17,9 +17,11 @@
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954 — Person, StormTestFixture, ensure_tables
+#include "../../shared/models/message.h" // NOSONAR cpp:S954 — Message/Person
+#include "../../shared/models/person.h"
+#include "test_fixture.h"
 
-// Must follow test_models.h: OrderLineWithShipments/Shipment name storm:: annotations.
+// Must follow the shared model headers: OrderLineWithShipments/Shipment name storm:: annotations.
 #include "test_composite_pk_models.h" // NOSONAR cpp:S954
 
 // ── #504: composite FK bind + extract (INSERT/SELECT plain FK column) ───────
@@ -213,7 +215,7 @@ TYPED_TEST(MixedFkOrderTest, ExtractsNullOptionalSingleColumnFkAfterPrecedingCom
 }
 
 // ── Single-column FK regression ──────────────────────────────────────────────
-// Message::sender (test_models.h) is the long-standing single-column FK fixture.
+// Message::sender (shared/models/message.h) is the long-standing single-column FK fixture.
 // Its bind/extract behaviour must be byte-for-byte unchanged by the composite
 // widening (the if constexpr branches key on fk_primary_key_count<FKType>()).
 

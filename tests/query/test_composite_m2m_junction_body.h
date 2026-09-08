@@ -17,9 +17,10 @@
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954 — StormTestFixture
+#include "../../shared/models/person.h" // NOSONAR cpp:S954 — Person, via test_composite_pk_models.h's FK members
+#include "test_fixture.h"
 
-// Must follow test_models.h: the composite-PK models name storm:: annotations.
+// Must follow the shared model headers: the composite-PK models name storm:: annotations.
 #include "crud/test_composite_pk_models.h" // NOSONAR cpp:S954
 
 // ── #504 Task 9: junction DDL is genuinely ACCEPTED by both live backends ────

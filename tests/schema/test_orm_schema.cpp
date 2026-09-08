@@ -12,7 +12,11 @@ import std;
 namespace orm = storm::orm;
 using storm::QuerySet;
 
-#include "test_models.h" // NOSONAR cpp:S954
+#include "../../shared/models/message.h" // NOSONAR cpp:S954
+#include "../../shared/models/person.h"
+#include "../../shared/models/simple_record.h"
+#include "../../shared/models/task.h"
+#include "test_fixture.h"
 
 // ============================================================================
 // SQL Generation Unit Tests (no DB connection needed)

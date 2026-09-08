@@ -5,7 +5,9 @@
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954
+#include "../../shared/models/message.h" // NOSONAR cpp:S954
+#include "../../shared/models/person.h"
+#include "test_fixture.h"
 
 using storm::QuerySet;
 

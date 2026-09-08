@@ -7,9 +7,11 @@
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954 — Person, Message, StormTestFixture, DatabaseTypes
+#include "../../shared/models/message.h" // NOSONAR cpp:S954 — Message/Person
+#include "../../shared/models/task.h"
+#include "test_fixture.h"
 
-// Must follow test_models.h: OrderLineWithShipments/Shipment name storm:: annotations.
+// Must follow the shared model headers: OrderLineWithShipments/Shipment name storm:: annotations.
 #include "crud/test_composite_pk_models.h" // NOSONAR cpp:S954
 #include "test_m2m_models.h"               // NOSONAR cpp:S954 — Student/Course (single-PK m2m regression baseline)
 

@@ -6,7 +6,8 @@
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954 — Person, the single-PK regression anchor
+#include "../../shared/models/person.h" // NOSONAR cpp:S954 — Person, the single-PK regression anchor
+#include "test_fixture.h"
 
 // ── #572: a UUID primary key is never DB-generated, so nothing is RETURNed ────
 //

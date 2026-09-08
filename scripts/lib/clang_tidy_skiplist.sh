@@ -55,6 +55,15 @@
 #   through the 24 tests/**/*_sqlite.cpp / *_pg.cpp TUs that include them, each
 #   with a real compile-commands entry.
 #
+#   shared/models/*.h and tests/test_{fixture,record_helpers,join_data,
+#   person_seed_fixture}.h joined with the #634 split, for the reason their
+#   umbrellas were already here: each carries [[= storm::*]] annotations, a
+#   `consteval` storm::field_specs_for call, or storm::QuerySet, so a standalone
+#   parse fails the same way shared/models.h and tests/test_models.h do. They are
+#   linted through the ~97 TUs that include them. shared/models/color.h is the one
+#   exception — a bare enum with no storm dependency — so it stays off the list and
+#   is linted directly.
+#
 #   tests/tools/storm_schema/models.h and shared/models.h joined the list with
 #   the fields:: proxies (#518). Both call storm::field_specs_for inside a
 #   `consteval` block, which is a harder
@@ -110,6 +119,23 @@ is_known_unparseable() {
         fuzz/fuzz_models.h) return 0 ;;
         shared/query_builder.hpp) return 0 ;;
         shared/models.h) return 0 ;;
+        shared/models/person.h) return 0 ;;
+        shared/models/simple_record.h) return 0 ;;
+        shared/models/message.h) return 0 ;;
+        shared/models/extended_types.h) return 0 ;;
+        shared/models/timestamped_record.h) return 0 ;;
+        shared/models/uuid_pk_model.h) return 0 ;;
+        shared/models/uuid_pk_ref.h) return 0 ;;
+        shared/models/task.h) return 0 ;;
+        shared/models/cascade_child.h) return 0 ;;
+        shared/models/set_null_child.h) return 0 ;;
+        shared/models/restrict_child.h) return 0 ;;
+        shared/models/people_25.h) return 0 ;;
+        shared/models/messages_8.h) return 0 ;;
+        tests/test_fixture.h) return 0 ;;
+        tests/test_record_helpers.h) return 0 ;;
+        tests/test_join_data.h) return 0 ;;
+        tests/test_person_seed_fixture.h) return 0 ;;
         tests/test_models.h) return 0 ;;
         tests/test_seed_helpers.h) return 0 ;;
         tests/test_select_runner.h) return 0 ;;

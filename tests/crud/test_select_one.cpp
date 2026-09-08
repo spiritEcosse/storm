@@ -6,7 +6,8 @@ import std;
 
 using storm::QuerySet;
 
-#include "test_models.h" // NOSONAR cpp:S954
+#include "../../shared/models/person.h" // NOSONAR cpp:S954
+#include "test_fixture.h"
 #include "test_seed_helpers.h"
 
 // Test fixture for first/get operations — templated on database backend

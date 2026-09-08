@@ -117,10 +117,11 @@ target_sources(
 # ── Precompiled header ────────────────────────────────────────────────────────
 # Measured floor per test TU (-ftime-trace on a TU whose only body is
 # EXPECT_TRUE(true)): 2.2 s of <gtest/gtest.h>, 2.1 s of `import storm;`, 1.4 s
-# of test_db_helpers.h + shared/models.h, 0.2 s of `import std;` — and Backend
-# 0.03 s, i.e. the floor is entirely frontend. Precompiling gtest removes its
-# share: measured -1.9 to -2.4 s per TU across four files (min of 3 runs each,
-# ccache disabled), ~-236 s over the ~110 test TUs.
+# of test_db_helpers.h + shared/models.h (the pre-#634 umbrella), 0.2 s of
+# `import std;` — and Backend 0.03 s, i.e. the floor is entirely frontend.
+# Precompiling gtest removes its share: measured -1.9 to -2.4 s per TU across
+# four files (min of 3 runs each, ccache disabled), ~-236 s over the ~110 test
+# TUs.
 #
 # UNITY_BUILD would amortise the whole floor rather than one slice, but CMake
 # silently disables it whenever CXX_SCAN_FOR_MODULES is ON (verified: SCAN=OFF

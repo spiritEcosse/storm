@@ -9,7 +9,7 @@
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954
+#include "../../shared/models/person.h" // NOSONAR cpp:S954
 
 // ============================================================================
 // Mock connection for testing pool error/edge-case paths

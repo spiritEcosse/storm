@@ -5,7 +5,7 @@
  * @file test_pg_binary_models.h
  * @brief Model fixtures + compile-time classification gates for #600 Phase 1.
  *
- * IMPORTANT: like test_models.h, this header names storm:: types and must only
+ * IMPORTANT: like the shared model headers, this one names storm:: types and must only
  * be included AFTER `import storm;` (NOSONAR cpp:S954 at the include site).
  *
  * Split across two test TUs: test_pg_binary_format.cpp (the low-level decoders,
@@ -17,6 +17,13 @@
  * model would give each TU a different type behind one external-linkage name.
  */
 #include <meta>
+
+#include "../../shared/models/extended_types.h"
+#include "../../shared/models/message.h"
+#include "../../shared/models/person.h"
+#include "../../shared/models/simple_record.h"
+#include "../../shared/models/timestamped_record.h"
+#include "../../shared/models/uuid_pk_model.h"
 
 // ── The models under test ───────────────────────────────────────────────────
 //

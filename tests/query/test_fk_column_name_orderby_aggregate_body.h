@@ -16,12 +16,16 @@
 
 // NOLINTBEGIN(misc-const-correctness)
 
+#include <meta>
+
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954
+#include "../../shared/models/message.h" // NOSONAR cpp:S954
+#include "../../shared/models/person.h"
+#include "test_fixture.h"
 
-// Must follow test_models.h: Shipment / LedgerEntryRef name storm:: annotations.
+// Must follow the shared model headers: Shipment / LedgerEntryRef name storm:: annotations.
 // Supplies the composite-PK FK targets the compile-time gate below is asserted on.
 #include "crud/test_composite_pk_models.h" // NOSONAR cpp:S954
 

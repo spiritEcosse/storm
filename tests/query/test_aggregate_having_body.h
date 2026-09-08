@@ -21,7 +21,9 @@ import std;
 
 using storm::QuerySet;
 
-#include "test_models.h" // NOSONAR cpp:S954
+#include "../../shared/models/message.h" // NOSONAR cpp:S954
+#include "../../shared/models/person.h"
+#include "test_person_seed_fixture.h"
 
 #include "test_seed_helpers.h"
 

@@ -7,8 +7,6 @@ import storm;
 import std;
 import storm_db_sqlite;
 
-#include "test_models.h" // NOSONAR cpp:S954
-
 using storm::db::sqlite::Connection;
 
 // ============================================================================

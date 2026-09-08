@@ -6,7 +6,8 @@ import storm;
 import storm_orm_statements_aggregate;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954
+#include "../../shared/models/color.h" // NOSONAR cpp:S954
+#include "../../shared/models/person.h"
 
 // Compile-time-only verification of the NumericAggregateable concept (#475).
 // Every static_assert below is checked at TU compile time; the runtime TEST body
@@ -42,7 +43,7 @@ static_assert(!NumericAggregateable<bool>);
 static_assert(!NumericAggregateable<std::string>);
 static_assert(!NumericAggregateable<std::string_view>);
 static_assert(!NumericAggregateable<std::vector<std::uint8_t>>);
-static_assert(!NumericAggregateable<Color>); // enum, from test_models.h
+static_assert(!NumericAggregateable<Color>); // enum, from shared/models/color.h
 static_assert(!NumericAggregateable<void*>);
 static_assert(!NumericAggregateable<std::optional<std::string>>); // optional of non-numeric
 static_assert(!NumericAggregateable<std::optional<bool>>);        // optional of bool

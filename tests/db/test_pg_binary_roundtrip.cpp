@@ -6,7 +6,7 @@
 import storm;
 import std;
 
-#include "test_models.h"           // NOSONAR cpp:S954 — StormTestFixture, Person/Message/ExtendedTypes
+#include "test_fixture.h"          // NOSONAR cpp:S954 — StormTestFixture
 #include "test_pg_binary_models.h" // NOSONAR cpp:S954 — models + compile-time classification gates
 
 // ============================================================================

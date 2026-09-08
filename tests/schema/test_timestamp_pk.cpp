@@ -8,7 +8,10 @@ import storm_orm_statements_update_grammar; // UpdateGrammar / UpsertGrammar —
 import storm_orm_statements_upsert_grammar;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954
+#include "../../shared/models/person.h" // NOSONAR cpp:S954
+#include "../../shared/models/task.h"
+#include "../../shared/models/timestamped_record.h"
+#include "test_fixture.h"
 
 // Tests for ModelTimestampPkValid<T> (#511): auto_create / auto_update on a
 // primary-key member is a compile-time error.

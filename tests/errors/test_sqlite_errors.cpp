@@ -843,7 +843,7 @@ TEST_F(ColumnExtractionTest, ExtractNullText) {
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR
+#include "../../shared/models/person.h" // NOSONAR
 
 // Local struct — UNIQUE constraint tests only
 struct UniqueTestPerson {
