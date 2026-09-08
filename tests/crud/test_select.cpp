@@ -6,7 +6,8 @@ import std;
 
 using storm::QuerySet;
 
-#include "test_models.h" // NOSONAR cpp:S954
+#include "../../shared/models/person.h" // NOSONAR cpp:S954
+#include "test_fixture.h"
 
 // Test fixture for SELECT operations — templated on database backend
 template <typename ConnType> class SelectTest : public StormTestFixture<Person, ConnType> {};

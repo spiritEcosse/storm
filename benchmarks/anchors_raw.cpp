@@ -94,7 +94,7 @@
 namespace {
 
     // SELECT-family anchor schema. The SELECT/WHERE benchmarks run on the FULL
-    // 10-field Person model (shared/models.h) — Storm's select().execute()
+    // 10-field Person model (shared/models/person.h) — Storm's select().execute()
     // materializes a plf::hive<Person> where every row carries two strings, two
     // optionals and a BLOB vector. The raw anchor must model the same columns,
     // or it would read a far lighter row than Storm and the comparison would be
@@ -214,7 +214,7 @@ namespace {
     }
 
     // Row materialized per SELECT result, mirroring the full Person struct
-    // (shared/models.h) that Storm's select().execute() builds. Storm collects
+    // (shared/models/person.h) that Storm's select().execute() builds. Storm collects
     // these into a plf::hive<Person>; the raw anchor must materialize the same
     // 10 fields into a plf::hive so both sides pay the identical per-row
     // construct (strings, optionals, blob vector) + hive-insert cost (fairness

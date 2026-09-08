@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <meta>
 
 #include "test_db_helpers.h"
 #include "plf_hive/plf_hive.h"
@@ -8,7 +9,7 @@
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954
+#include "test_fixture.h" // NOSONAR cpp:S954
 
 // ============================================================================
 // m2m auto-junction column TYPE must derive from the referenced model's PK

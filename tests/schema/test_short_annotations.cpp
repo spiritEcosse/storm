@@ -8,8 +8,6 @@
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954
-
 // ── #442: the short top-level annotation spelling ────────────────────────────
 // The user-facing annotation names are re-exported into the top-level `storm`
 // namespace so model declarations can drop the `meta::` level. This file proves:

@@ -6,7 +6,7 @@
 import storm;
 import std;
 
-#include "test_models.h"
+#include "test_fixture.h"
 
 // Tests for the max_length<N> field annotation (#493): a DB-enforced text-length
 // bound. SQLite emits TEXT ... CHECK(length(col) <= N); PostgreSQL emits VARCHAR(N).

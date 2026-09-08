@@ -8,7 +8,10 @@
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954
+#include "../../shared/models/cascade_child.h" // NOSONAR cpp:S954
+#include "../../shared/models/extended_types.h"
+#include "../../shared/models/person.h"
+#include "../../shared/models/set_null_child.h"
 
 // ── #509: is_optional_member is the single optional-detection predicate ──────
 // The structural "is this member a std::optional<T>?" check was hand-rolled at

@@ -17,9 +17,10 @@
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954 — Person, the FK target of StockEntry
+#include "../../shared/models/person.h" // NOSONAR cpp:S954 — Person, the FK target of StockEntry
+#include "test_fixture.h"
 
-// Must follow test_models.h: StockEntry's FK part names Person.
+// Must follow person.h: StockEntry's FK part names Person.
 #include "test_composite_pk_models.h" // NOSONAR cpp:S954
 
 // ── #501: composite PK — UPDATE and DELETE executed on live backends ─────────

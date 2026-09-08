@@ -9,7 +9,10 @@ import std;
 
 using storm::QuerySet;
 
-#include "test_models.h" // NOSONAR cpp:S954
+#include "../../shared/models/message.h" // NOSONAR cpp:S954
+#include "../../shared/models/person.h"
+#include "test_fixture.h"
+#include "test_join_data.h"
 
 // Test fixture for VALUES operations — templated on database backend
 template <typename ConnType> class ValuesTest : public StormTestFixture<Person, ConnType, Message> {};

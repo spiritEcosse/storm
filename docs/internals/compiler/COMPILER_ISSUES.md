@@ -296,7 +296,7 @@ plain TU that imports those modules, can make member lookup ambiguous:
 
 ```
 src/orm/indexes.cppm:27:27: error: reference to 'type' is ambiguous
-shared/models.h:41:11: note: candidate found by name lookup is 'storm::Indexes<Person>::type'
+shared/models/person.h:41:11: note: candidate found by name lookup is 'storm::Indexes<Person>::type'
   (identical note repeated once per TU that carries the header)
 ```
 
@@ -306,7 +306,7 @@ carry reflection NTTPs (`Index<^^Person::department, ...>` — same family as
 cross-BMI reflection-equality issues, see §10). The failure is **latent**: it
 only fires once the import graph gives the consumer TU more than one BMI path
 to the primary template. Found in #464: `storm_bench`'s `register.cpp` (textual
-`shared/models.h` + imports of 3 bench modules whose GMFs also include it)
+`shared/models/person.h` + imports of 3 bench modules whose GMFs also include it)
 compiled fine until #458 added a second import path to `storm_orm_indexes`
 (`storm → insert → upsert_grammar → indexes`), then broke deterministically.
 

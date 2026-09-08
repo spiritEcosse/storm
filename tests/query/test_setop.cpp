@@ -9,7 +9,10 @@ import std;
 
 using storm::QuerySet;
 
-#include "test_models.h" // NOSONAR cpp:S954
+#include "../../shared/models/message.h" // NOSONAR cpp:S954
+#include "../../shared/models/people_25.h"
+#include "../../shared/models/person.h"
+#include "test_fixture.h"
 
 template <typename ConnType> class SetOpTest : public StormTestFixture<Person, ConnType, Message> {
   protected:

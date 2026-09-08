@@ -6,7 +6,8 @@
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954
+#include "../../shared/models/extended_types.h" // NOSONAR cpp:S954
+#include "test_fixture.h"
 
 using std::chrono::day;
 using std::chrono::hours;

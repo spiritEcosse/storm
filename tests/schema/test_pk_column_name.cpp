@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <meta>
 
 #include "test_db_helpers.h"
 #include "plf_hive/plf_hive.h"
@@ -8,7 +9,9 @@
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954
+#include "../../shared/models/message.h" // NOSONAR cpp:S954
+#include "../../shared/models/person.h"
+#include "test_fixture.h"
 
 // ============================================================================
 // PK column name must come from the member's identifier, not a hardcoded "id"

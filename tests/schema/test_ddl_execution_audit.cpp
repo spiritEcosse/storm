@@ -7,6 +7,10 @@
 import storm;
 import std;
 
+// The DDL audit sweeps every shared model, so it takes the umbrella rather than
+// naming eleven of the twelve (issue #634). It is also the only in-tree consumer
+// of test_models.h, which is what keeps both umbrellas compile-checked — an
+// umbrella nothing includes is never parsed and rots silently.
 #include "test_models.h"                   // NOSONAR cpp:S954
 #include "query/test_fields_models.h"      // NOSONAR cpp:S954
 #include "crud/test_composite_pk_models.h" // NOSONAR cpp:S954

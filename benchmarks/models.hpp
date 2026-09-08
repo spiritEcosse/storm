@@ -3,7 +3,7 @@
 /**
  * Benchmark Models
  *
- * Person comes from shared/models.h (single source of truth).
+ * Person comes from shared/models/person.h (single source of truth).
  * User and FKMessage are benchmark-specific (JOIN benchmarks with 2 FKs).
  *
  * This file must be included after `import storm;` to provide complete types.
@@ -11,8 +11,10 @@
 
 import storm;
 
-// Shared model structs — used by both tests and benchmarks
-#include "../shared/models.h"
+// Shared model structs — used by both tests and benchmarks. Include the
+// per-model header rather than the shared/models.h umbrella (issue #634):
+// Person is the only one of the twelve the benchmarks use.
+#include "../shared/models/person.h"
 
 namespace storm::benchmark {
 

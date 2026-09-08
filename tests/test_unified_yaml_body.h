@@ -22,11 +22,18 @@
  * resolve either way, silently running one slice's cases against another's
  * expectations. The tag makes each TU's fixture a distinct type.
  *
- * Include AFTER `import storm;`, test_models.h, the seed/runner headers and
+ * Include AFTER `import storm;`, the runner headers and
  * test_parser.hpp, all of which it uses.
  */
 
 #include <gtest/gtest.h>
+
+#include "../shared/models/message.h"
+#include "../shared/models/people_25.h"
+#include "../shared/models/person.h"
+#include "../shared/models/simple_record.h"
+#include "test_fixture.h"
+#include "test_seed_helpers.h"
 
 // A category TU must select its slice BEFORE including test_parser.hpp. Forgetting
 // to is silent otherwise: test_parser.hpp's #ifndef default kicks in and the TU

@@ -8,7 +8,8 @@
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954
+#include "../../shared/models/message.h" // NOSONAR cpp:S954
+#include "../../shared/models/person.h"
 
 // ── #472: the Entity concept is a compile-time structural gate ───────────────
 // Entity<T> is true iff T is a reflectable class type. It is PURELY structural:

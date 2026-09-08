@@ -6,7 +6,9 @@ import std;
 
 using storm::QuerySet;
 
-#include "test_models.h" // NOSONAR cpp:S954
+#include "../../shared/models/people_25.h" // NOSONAR cpp:S954
+#include "../../shared/models/person.h"
+#include "test_fixture.h"
 #include "test_seed_helpers.h"
 
 // Test fixture for LIMIT/OFFSET operations — templated on database backend

@@ -6,7 +6,8 @@
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954
+#include "../../shared/models/person.h" // NOSONAR cpp:S954
+#include "test_fixture.h"
 
 // ── #500: composite primary key — annotation, concept widening, CREATE TABLE DDL ──
 // Step 1 of #90. Introduces the storm::primary_part annotation and widens the

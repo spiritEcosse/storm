@@ -10,7 +10,7 @@
  * - QueryRunnerBase<Model, ConnType> — shared base with seed + WHERE/JOIN apply
  * - SelectRunner, AggregateRunner, ChainAggRunner, DistinctRunner, GroupByRunner
  *
- * Include AFTER `import storm;` and test_models.h.
+ * Include AFTER `import storm;` — it pulls the model headers it needs itself.
  */
 
 #include <algorithm>
@@ -20,6 +20,9 @@
 #include <vector>
 
 #include "shared/query_builder.hpp" // NOLINT(misc-header-include-cycle)
+
+#include "../shared/models/message.h"
+#include "test_record_helpers.h"
 
 namespace storm::test {
 

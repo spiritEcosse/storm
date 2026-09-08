@@ -6,8 +6,6 @@
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954
-
 // ── #492: ModelAnnotationsValid<T> conflict rejection ────────────────────────
 // The free-standing flag annotation objects (storm::primary, storm::unique, …)
 // replaced enum class FieldAttr. An enum member was mutually exclusive for free;

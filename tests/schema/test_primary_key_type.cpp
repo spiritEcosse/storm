@@ -6,7 +6,7 @@
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954
+#include "test_fixture.h" // NOSONAR cpp:S954
 
 // Tests for the PrimaryKeyType<T> concept (#505, widened for composite parts in #517):
 // a compile-time gate on the type of a model's primary-key member(s). DECIDED

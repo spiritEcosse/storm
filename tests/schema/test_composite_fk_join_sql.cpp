@@ -7,9 +7,10 @@
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954 — Message, Person
+#include "../../shared/models/message.h" // NOSONAR cpp:S954 — Message/Person
+#include "../../shared/models/person.h"
 
-// Must follow test_models.h: OrderLine/Ledger are composite-PK fixtures reused
+// Must follow the shared model headers: OrderLine/Ledger are composite-PK fixtures reused
 // across the #501/#502 tests; nothing here needs Person as an FK part.
 #include "crud/test_composite_pk_models.h" // NOSONAR cpp:S954
 #include "query/test_m2m_models.h"         // NOSONAR cpp:S954 — Student/Course (single-PK junction baseline)

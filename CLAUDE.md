@@ -215,7 +215,7 @@ These rules are enforced by SonarCloud analysis. Follow them when writing new co
 - `S3776`: consteval JSON parsers and `if constexpr` dispatch have inherent complexity
 - `S1820`: Flat structs for consteval parsing intentionally exceed 20 fields
 - `S6024`: GTest fixture static helpers are idiomatic — no need to extract as free functions
-- `S954`: `#include "test_models.h"` MUST come after `import storm;` — can't move to top
+- `S954`: the model headers (`#include "../shared/models/person.h"`, `"test_fixture.h"`, …) MUST come after `import storm;` — can't move to top
 
 ### Commit & Push Workflow
 

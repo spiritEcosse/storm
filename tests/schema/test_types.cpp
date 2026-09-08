@@ -8,7 +8,12 @@
 import storm;
 import std;
 
-#include "test_models.h"
+#include "../../shared/models/color.h"
+#include "../../shared/models/extended_types.h"
+#include "../../shared/models/person.h"
+#include "../../shared/models/set_null_child.h"
+#include "../../shared/models/simple_record.h"
+#include "test_fixture.h"
 
 using std::chrono::day;
 using std::chrono::hours;

@@ -6,7 +6,8 @@
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954 — StormTestFixture, ensure_tables
+#include "../../shared/models/person.h" // NOSONAR cpp:S954 — Person
+#include "test_fixture.h"
 
 // ── #573: UPDATE/DELETE by an unset UUID primary key silently no-ops ─────────
 //

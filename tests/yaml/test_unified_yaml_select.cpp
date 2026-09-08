@@ -10,8 +10,7 @@
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954
-#include "test_seed_helpers.h"
+#include "test_seed_helpers.h" // NOSONAR cpp:S954
 #include "test_select_runner.h"
 #include "test_write_runner.h"
 #include "test_yaml_register.h"

@@ -9,7 +9,7 @@ import std;
 
 using storm::QuerySet;
 
-#include "test_models.h"     // NOSONAR cpp:S954
+#include "test_fixture.h"    // NOSONAR cpp:S954
 #include "test_m2m_models.h" // NOSONAR cpp:S954
 
 // ============================================================================

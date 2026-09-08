@@ -4,7 +4,9 @@
 import storm;
 import std;
 
-#include "test_models.h"
+#include "../../shared/models/simple_record.h"
+#include "../../shared/models/timestamped_record.h"
+#include "test_fixture.h"
 
 // readability-implicit-bool-conversion: false positive from GTest's EXPECT_TRUE(cond) << "msg"
 // macro expansion (the streamed message literal is misattributed); same pattern is used

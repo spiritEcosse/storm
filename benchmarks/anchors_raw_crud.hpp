@@ -58,7 +58,7 @@ auto seed_person_crud(sqlite3* db, int rows) -> void {
 // constraint (kCreatePerson, shared with the SELECT/WHERE anchors above):
 // `[[= storm::unique]] name`, `[[= storm::indexed]] department`, and the
 // `storm_indexes` typedef's `Index<department, age>` / `UniqueIndex<name,
-// department>` (shared/models.h; emitted by SchemaStatement::
+// department>` (shared/models/person.h; emitted by SchemaStatement::
 // create_table_if_not_exists -> create_indexes_if_not_exist, schema.cppm).
 // The SELECT/WHERE anchors don't need these — none of their predicates
 // (age/salary/is_active) leads any of these indexes, so both sides full-scan

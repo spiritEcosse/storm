@@ -7,7 +7,10 @@
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954
+#include "../../shared/models/color.h" // NOSONAR cpp:S954
+#include "../../shared/models/extended_types.h"
+#include "../../shared/models/person.h"
+#include "test_fixture.h"
 using storm::QuerySet;
 using storm::orm::utilities::Collate;
 

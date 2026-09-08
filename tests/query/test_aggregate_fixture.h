@@ -1,7 +1,13 @@
 #pragma once
 
 // AggregateTest fixture shared across test_aggregate*.cpp split files.
-// Include AFTER `import storm;`, test_models.h, test_seed_helpers.h.
+// Include AFTER `import storm;` — it pulls the models and helpers it needs itself.
+
+#include "../../shared/models/message.h"
+#include "../../shared/models/people_25.h"
+#include "../../shared/models/person.h"
+#include "../test_fixture.h"
+#include "../test_seed_helpers.h"
 
 template <typename ConnType> class AggregateTest : public StormTestFixture<Person, ConnType, Message> {
   public:

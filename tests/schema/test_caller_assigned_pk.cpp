@@ -5,8 +5,6 @@
 import storm;
 import std;
 
-#include "test_models.h" // NOSONAR cpp:S954
-
 // ============================================================================
 // #586: caller-assigned integer primary key — DDL is byte-identical to plain
 // `storm::primary` on both backends, because the distinction is on the DML

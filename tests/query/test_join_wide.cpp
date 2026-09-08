@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <meta>
 #include "test_db_helpers.h"
 
 // NOLINTBEGIN(misc-const-correctness)
@@ -8,7 +9,8 @@ import std;
 
 using storm::QuerySet;
 
-#include "test_models.h" // NOSONAR cpp:S954
+#include "../../shared/models/person.h" // NOSONAR cpp:S954
+#include "test_fixture.h"
 
 // ============================================================================
 // Regression #358 — table aliases are t<Is+2>, so a model with 9 FK fields

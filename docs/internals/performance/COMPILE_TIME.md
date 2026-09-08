@@ -43,7 +43,7 @@ warm):
 | `#include <gtest/gtest.h>` | 2.2 | **+2.2** |
 | + `import std;` | 2.4 | +0.2 |
 | + `import storm;` | 4.3 | **+2.1** |
-| + `test_db_helpers.h` + `shared/models.h` | 5.8 | **+1.4** |
+| + `test_db_helpers.h` + `shared/models.h` (the pre-#634 umbrella) | 5.8 | **+1.4** |
 
 `-ftime-trace` on a TU containing one `EXPECT_TRUE(true)`: Frontend 6.28 s,
 **Backend 0.03 s**. Parsing (`Source`) is 3.09 s of it; the rest is 448 function
@@ -331,7 +331,65 @@ names. Not adopted. `errors/test_error_construction.cpp` and
 `yaml/test_init_dataset_size.cpp` already import submodules directly, so the
 option remains open per-file if a TU ever needs it.
 
-### Splitting `shared/models.h` per model (#634)
+### Dropping the second backend from `TYPED_TEST`
+
+Every `TYPED_TEST` over `DatabaseTypes` instantiates its body twice, once per
+backend, which looks like an obvious 2x. It is not: measured by compiling real
+TUs as-is, then again with `DatabaseTypes` narrowed to SQLite alone (bodies
+untouched, min of 3, ccache off).
+
+| TU | 2 backends | 1 backend | delta |
+|---|---:|---:|---:|
+| `schema/test_types.cpp` | 20.45 | 16.53 | **−19.2%** |
+| `query/test_distinct.cpp` | 17.11 | 15.00 | −12.3% |
+| `crud/test_conditional_update.cpp` | 13.75 | 11.57 | −15.8% |
+| `query/test_sql_verify.cpp` | 12.10 | 10.52 | −13.1% |
+| `query/test_collate.cpp` (control) | 12.10 | 12.21 | +0.9% |
+| **total** | **75.51** | **65.83** | **−12.8%** |
+
+`test_collate.cpp` is the control: it declares `SqliteTypes`, not
+`DatabaseTypes`, so the edit could not reach it. Its +0.9% is the noise floor,
+which puts the other four comfortably in signal.
+
+So the second backend costs **~13%**, not ~50% — the two instantiations share
+most of their work. Over the 2558 s the hand-written test TUs cost, that is
+~330 s of a ~3000 s build (~11%): the largest single lever measured so far, and
+the only one still available at that size.
+
+**Not adopted, and not recommended.** It buys ~11% by deleting the PostgreSQL
+half of the suite's coverage — the thing cross-backend tests exist for, and
+which CLAUDE.md requires for exactly the failure class (SQLite and PG disagree
+about what is an error) that composite-PK and FK work keeps hitting. Recorded
+here so the trade is known and nobody has to re-measure it: the coverage is
+cheap, at 13% of test compile time.
+
+### Replacing GoogleTest — poor return
+
+The ceiling is gtest's 2.2 s, but any framework includes standard headers
+textually, so the +2.1 s storm/libc++ reconciliation stays regardless. That
+ceiling is available from a PCH instead, without rewriting 3093 tests.
+
+---
+
+## What was fixed
+
+| change | effect |
+|---|---|
+| removed dead `create_table_sql` globals from `tests/test_models.h` (referenced by nothing, but forced full consteval schema generation in all 89 including TUs) | −0.7 s/TU ≈ **−62 s** |
+| `#embed` corpora declared as real build inputs (`OBJECT_DEPENDS`) | correctness |
+| precompiled `<gtest/gtest.h>` for `storm_tests` | −2.15 s/TU ≈ **−220 s** (understated — see below) |
+| `run_clang_tidy.sh --diff` no longer reports a crashed clang-tidy as a clean pass | correctness |
+| split `shared/models.h` + `tests/test_models.h` so a TU pulls only the models and helpers it uses (#634) | −0.67 s/TU ≈ **−64 s** |
+
+≈ **−344 s of ~3000 s (−11%)**.
+
+The gtest PCH row understates what it bought. It was measured as the removal of
+gtest's own share of the floor, but it also took most of `import storm;` with it
+— +1.38 s per TU down to +0.24-0.79 s, roughly another 100 s — because the
+reconciliation it removes is between storm's BMI and gtest's *textual* libc++
+declarations. See [After the PCH](#after-the-pch-issue-633).
+
+### Splitting `shared/models.h` per model (#634) — rejected on probes, adopted on measurement
 
 Issue #634's proposal: every test TU parses 12 models and generates 49
 field-selector proxies to use one, so give each model its own header. Measured
@@ -382,70 +440,64 @@ same machinery the intercept pays for. Same probes, body one `where().order_by()
 **~0.3-0.6 s on a ~6.9 s TU**, and note that full `test_models.h` measured
 *below* full `shared/models.h` despite being a strict superset — the noise floor
 at this magnitude is ~0.3 s, the same size as the effect. Extrapolated over the
-89 including TUs the split is worth roughly **30 s of a ~3000 s build (~1%)**, in
-exchange for touching 89 files, against #634's estimate of ~150 s.
+89 including TUs that projects roughly **30 s of a ~3000 s build (~1%)**, against
+#634's estimate of ~150 s.
 
-Not adopted. The mechanism is the same one [After the PCH](#after-the-pch-issue-633)
-found for `import storm;`: the cost is *entering* the reflection machinery, not
-the volume pulled through it. `test_db_helpers.h`, which #634's title names
-alongside the models, is +0.09 s and was never the problem.
+The mechanism is the same one [After the PCH](#after-the-pch-issue-633) found for
+`import storm;`: the cost is *entering* the reflection machinery, not the volume
+pulled through it. `test_db_helpers.h`, which #634's title names alongside the
+models, is +0.09 s and was never the problem.
 
-### Dropping the second backend from `TYPED_TEST`
+#### What the probes missed, and why the split shipped anyway
 
-Every `TYPED_TEST` over `DatabaseTypes` instantiates its body twice, once per
-backend, which looks like an obvious 2x. It is not: measured by compiling real
-TUs as-is, then again with `DatabaseTypes` narrowed to SQLite alone (bodies
-untouched, min of 3, ccache off).
+Those probes vary only the *model* content, so they answer "how much do the
+other eleven models cost" and not "how much does the umbrella cost". Two things
+the split removes are outside what they varied:
 
-| TU | 2 backends | 1 backend | delta |
-|---|---:|---:|---:|
-| `schema/test_types.cpp` | 20.45 | 16.53 | **−19.2%** |
-| `query/test_distinct.cpp` | 17.11 | 15.00 | −12.3% |
-| `crud/test_conditional_update.cpp` | 13.75 | 11.57 | −15.8% |
-| `query/test_sql_verify.cpp` | 12.10 | 10.52 | −13.1% |
-| `query/test_collate.cpp` (control) | 12.10 | 12.21 | +0.9% |
-| **total** | **75.51** | **65.83** | **−12.8%** |
+Counts used below, since the earlier text says 89: **82 files** named
+`test_models.h` at HEAD (81 TUs plus the umbrella's own usage example), and
+**97 compilation units** reached `shared/models.h` through their include
+closure — the extra 15 arrive via shared body headers. 97 is the denominator
+for the extrapolation.
 
-`test_collate.cpp` is the control: it declares `SqliteTypes`, not
-`DatabaseTypes`, so the edit could not reach it. Its +0.9% is the noise floor,
-which puts the other four comfortably in signal.
+- **The helper block.** `make_record`/`make_updated_record`/`is_original_record`
+  and `populate_join_test_data` are used by 2 and 2 TUs respectively, but every
+  TU parsed them. The probe table above prices helpers+fixture together at
+  +0.50 s and never separates them; the fixture is what almost every TU actually
+  wanted.
+- **TUs that need no shared model at all.** 14 of the 97 declare their own
+  models and used the umbrella purely for `StormTestFixture`.
 
-So the second backend costs **~13%**, not ~50% — the two instantiations share
-most of their work. Over the 2558 s the hand-written test TUs cost, that is
-~330 s of a ~3000 s build (~11%): the largest single lever measured so far, and
-the only one still available at that size.
+Measured A/B on the real tree rather than on probes — same host, same BMIs, the
+split stashed and unstashed between runs, min of 3 after a warm-up, ccache off:
 
-**Not adopted, and not recommended.** It buys ~11% by deleting the PostgreSQL
-half of the suite's coverage — the thing cross-backend tests exist for, and
-which CLAUDE.md requires for exactly the failure class (SQLite and PG disagree
-about what is an error) that composite-PK and FK work keeps hitting. Recorded
-here so the trade is known and nobody has to re-measure it: the coverage is
-cheap, at 13% of test compile time.
+| TU | shared models it needs | before | after | Δ |
+|---|---|---:|---:|---:|
+| `db/test_pool.cpp` | Person | 7.02 | 5.64 | **−1.38** |
+| `schema/test_ddl_execution_audit.cpp` | all 11 | 38.77 | 37.47 | **−1.30** |
+| `crud/test_select.cpp` | Person | 11.45 | 10.31 | −1.14 |
+| `schema/test_max_length.cpp` | none | 8.07 | 7.11 | −0.96 |
+| `schema/test_types.cpp` | 7 | 23.90 | 23.14 | −0.76 |
+| `schema/test_short_annotations.cpp` | none | 6.22 | 5.66 | −0.56 |
+| `query/test_many_to_many_sqlite.cpp` | none | 10.99 | 10.64 | −0.35 |
+| `query/test_where_temporal.cpp` | ExtendedTypes | 13.52 | 13.26 | −0.26 |
+| `query/test_where.cpp` | 3 + seed array | 14.61 | 14.68 | +0.07 |
 
-### Replacing GoogleTest — poor return
+The decisive row is `test_ddl_execution_audit.cpp`. It needs *every* model, so
+the per-model split cannot help it, and it still gained 1.30 s — that is the
+helper block alone. **The intercept finding stands; it was just not the whole
+cost.** Adopted on that basis, not on the per-model slope.
 
-The ceiling is gtest's 2.2 s, but any framework includes standard headers
-textually, so the +2.1 s storm/libc++ reconciliation stays regardless. That
-ceiling is available from a PCH instead, without rewriting 3093 tests.
+That row was measured with the audit TU on per-model includes. It **ships on the
+umbrella instead**, deliberately: it is the only TU that wants every model, and
+making it the umbrellas' one consumer is what keeps `test_models.h` and
+`shared/models.h` compiled at all — a header nothing includes is never parsed and
+rots silently. So its 1.30 s is given back on purpose, and the shipped saving is
+the other eight rows:
 
----
-
-## What was fixed
-
-| change | effect |
-|---|---|
-| removed dead `create_table_sql` globals from `tests/test_models.h` (referenced by nothing, but forced full consteval schema generation in all 89 including TUs) | −0.7 s/TU ≈ **−62 s** |
-| `#embed` corpora declared as real build inputs (`OBJECT_DEPENDS`) | correctness |
-| precompiled `<gtest/gtest.h>` for `storm_tests` | −2.15 s/TU ≈ **−220 s** (understated — see below) |
-| `run_clang_tidy.sh --diff` no longer reports a crashed clang-tidy as a clean pass | correctness |
-
-≈ **−280 s of ~3000 s (−9%)**.
-
-The gtest PCH row understates what it bought. It was measured as the removal of
-gtest's own share of the floor, but it also took most of `import storm;` with it
-— +1.38 s per TU down to +0.24-0.79 s, roughly another 100 s — because the
-reconciliation it removes is between storm's BMI and gtest's *textual* libc++
-declarations. See [After the PCH](#after-the-pch-issue-633).
+mean **−0.67 s/TU**, median −0.66, 7 of 8 negative — ≈ **−64 s** over the 96
+remaining TUs. Still about 2x what the probes projected, and the same magnitude
+as the `create_table_sql` removal already in [What was fixed](#what-was-fixed).
 
 ### Two correctness bugs found along the way
 
@@ -480,7 +532,7 @@ incremental behaviour (verified: the next build was `no work to do`, 0 s).
 | lever | ceiling | note |
 |---|---:|---|
 | ~~`import storm;` per TU~~ | ~~230 s~~ | **Closed by measurement (#633).** The gtest PCH already took it from +1.38 s to +0.5-0.8 s per TU. What remains is gtest's own instantiations slowing down because storm's declarations are in the lookup set — not storm being loaded — so it is not reachable from storm's side. Both directions #633 proposed were measured and rejected above; together they are worth ~15 s. |
-| ~~`test_db_helpers.h` + `shared/models.h`~~ | ~~150 s~~ | **Closed by measurement (#634).** The per-TU cost of the model headers is real and post-PCH is larger than #634 estimated (+2.1-2.7 s empty-body), but it is an *intercept* — the first model and its first `fields::` proxy are +1.64 s of it, the other eleven models +0.50 s. Every TU needs at least one model, so a per-model split cannot reach the intercept, and with a real query body the whole difference between 1 model and 12 is ~0.3-0.6 s against a ~0.3 s noise floor. Worth ~30 s of ~3000 s for 89 touched files. See [above](#splitting-sharedmodelsh-per-model-634). |
+| ~~`test_db_helpers.h` + `shared/models.h`~~ | ~~150 s~~ | **Done (#634), for ~half the reason the issue gave.** The model cost is an *intercept* — the first model and its first `fields::` proxy are +1.64 s, the other eleven models +0.50 s — so the per-model split reaches only the slope. What made it worth doing is the part the probes bundled in with the models: the helper block every TU parsed for 2 TUs' benefit, and the 14 TUs that need no shared model at all. Measured **−0.67 s/TU ≈ −64 s** as shipped, not the ~150 s estimated nor the ~30 s the probes projected. `test_db_helpers.h` itself is +0.09 s and was never the problem. See [above](#splitting-sharedmodelsh-per-model-634--rejected-on-probes-adopted-on-measurement). |
 | the reflection intercept itself | unmeasured | What the row above leaves on the table: ~1.6 s per TU to enter the machinery (first annotated struct +0.65 s, first `define_aggregate`/`FieldRef` proxy +0.99 s). Library-side, so it would benefit users and not only tests — but it is the cost of the reflection a querying TU needs anyway, so whether *any* of it is removable is unknown. Measure before opening it as work. |
 
 ---

@@ -4,9 +4,10 @@
  * @file test_write_runner.h
  * @brief InsertRunner, UpdateRunner, EraseRunner for UnifiedTestCase.
  *
- * Include AFTER `import storm;`, test_models.h, test_seed_helpers.h.
+ * Include AFTER `import storm;` — it pulls the helpers and models it needs itself.
  */
 
+#include "test_record_helpers.h"
 #include "test_seed_helpers.h"
 #include "test_select_runner.h"
 

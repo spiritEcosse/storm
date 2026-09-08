@@ -8,7 +8,8 @@
 import storm;
 import std;
 
-#include "test_models.h"
+#include "../../shared/models/person.h"
+#include "test_fixture.h"
 
 using storm::QuerySet;
 
