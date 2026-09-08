@@ -43,24 +43,32 @@ compared for *shape* — but **not** subtracted for a saving: it is a different
 machine, and the doc's own rule applies (read the deltas within a section, not
 absolute seconds across sections).
 
-Method exactly as in [Method](#method): `rm -rf build/debug`, configure + build
-`ninja-debug` to completion, then parse `.ninja_log` deduplicating on
-`(start, end, cmdhash)`. Object compiles only — the 217 module-scan edges
-(`.ddi`/`.dd`/`.modmap`, 48 s together) are excluded, as they are above.
+Method exactly as in [Method](#method), and reproducible with
+`scripts/ninjalog_stats.py`: `rm -rf build/debug`, configure + build
+`ninja-debug` to completion, then
+
+```
+scripts/ninjalog_stats.py build/debug/.ninja_log
+```
+
+which deduplicates on `(start, end, cmdhash)` and counts object compiles only —
+the 217 module-scan edges (`.ddi`/`.dd`/`.modmap`, 48 s together) are excluded,
+as they are above, and reported separately so the exclusion stays visible.
 
 | bucket | files | sec | % | avg |
 |---|---:|---:|---:|---:|
 | hand-written test TUs | 110 | 1518 | **73.8%** | 13.8s |
-| storm library modules | 71 | 342 | 16.6% | 4.8s |
+| storm library modules | 70 | 336 | 16.3% | 4.8s |
 | YAML corpus TUs | 5 | 104 | 5.1% | 20.9s |
-| mock test binaries | 8 | 62 | 3.0% | 7.8s |
-| other (gtest PCH, tools, deps) | 5 | 32 | 1.5% | 6.3s |
+| other (gtest/gmock, std module, tools, deps) | 8 | 52 | 2.5% | 6.5s |
+| mock test binaries | 6 | 47 | 2.3% | 7.9s |
 
 Total **2059 s** of object-compile CPU over 199 edges, **397 s wall** (≈5.2x
-effective parallelism on 4 cores). The test-TU count matches the baseline's 110
-exactly, which is what makes the rows comparable; the `storm library modules`
-row does not — 71 here counts the 37 synthesized-module BMI edges the baseline's
-35 (`.cppm` files only) leaves out.
+effective parallelism on 4 cores). Test TUs come out at 110 and mock binaries at
+6, both matching the baseline exactly, which is what makes the rows comparable;
+the `storm library modules` row deliberately does not — 70 here counts the
+synthesized-module BMI edges that the baseline's 35 (`.cppm` files only) leaves
+out.
 
 **Host for this measurement** — recorded because the baseline's is not, and the
 absolute seconds mean nothing without it:
@@ -603,6 +611,9 @@ incremental behaviour (verified: the next build was `no work to do`, 0 s).
 - **Warm up before measuring.** The first compile in a session is inflated by
   cold page cache for the module BMIs — this produced a fake 47% win once.
 - **Whole-build breakdown**: parse `.ninja_log`, deduplicating on
-  `(start, end, cmdhash)`.
+  `(start, end, cmdhash)` — one module compile emits both a `.pcm` and a `.o`
+  and logs a line per output, so the raw log double-counts every module edge.
+  `scripts/ninjalog_stats.py` implements this; measure a build from scratch, as
+  the log accumulates across runs.
 - **Inside one TU**: `-ftime-trace`, then aggregate `InstantiateFunction` /
   `InstantiateClass` / `Source` events by `args.detail`.
