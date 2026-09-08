@@ -331,6 +331,97 @@ names. Not adopted. `errors/test_error_construction.cpp` and
 `yaml/test_init_dataset_size.cpp` already import submodules directly, so the
 option remains open per-file if a TU ever needs it.
 
+### Splitting `shared/models.h` per model (#634)
+
+Issue #634's proposal: every test TU parses 12 models and generates 49
+field-selector proxies to use one, so give each model its own header. Measured
+after the gtest PCH landed, on the same host as
+[After the PCH](#after-the-pch-issue-633). Baseline **B** is
+`gtest(PCH) + import storm; + import std; + test_db_helpers.h`; probes add a
+generated header carrying the first N model structs and their `fields::` blocks.
+
+The header block is genuinely expensive — more so than #634 measured, because the
+PCH shrank everything around it:
+
+| probe (empty body) | sec | Δ over B |
+|---|---:|---:|
+| A — without `test_db_helpers.h` | 0.40 | — |
+| **B** — baseline | 0.49 | +0.09 |
+| B + 1 model, no `fields::` proxy | 1.10 | +0.65 |
+| B + 11 models, no proxies | 1.48 | +1.03 |
+| **B + 1 model + its proxy** | **2.09** | **+1.64** |
+| B + 3 models + 3 proxies | 2.11 | +1.66 |
+| B + 5 models + 5 proxies | 2.42 | +1.97 |
+| B + 7 models + 6 proxies | 2.54 | +2.09 |
+| **B + 11 models + 6 proxies** | **2.59** | **+2.14** |
+| B + full `shared/models.h` (12 + seed arrays) | 2.69 | +2.20 |
+| B + full `test_models.h` (+ helpers, fixture) | 3.19 | +2.70 |
+
+**The cost is an intercept, not a slope.** The first model and its first proxy
+cost +1.64 s; the other ten models and five proxies together cost +0.50 s, about
+0.05 s each. Split finer: the first annotated struct is +0.65 s, the first
+`define_aggregate` + `FieldRef`/`Field` proxy is +0.99 s, each subsequent struct
+~0.04 s, each subsequent proxy ~0.02 s. The seed arrays (`PEOPLE_25`,
+`MESSAGES_8`) are +0.06 s — not worth moving.
+
+Since every test TU needs at least one model, a per-model split cannot touch the
+intercept. It can only recover the slope, and only for TUs that need one model.
+
+**With a real body it recovers even less.** The probes above have trivial bodies;
+a real TU calls `QuerySet<Person>` and `fields::Person`, which instantiates the
+same machinery the intercept pays for. Same probes, body one `where().order_by()
+.limit().select()` plus a `count().execute()`:
+
+| probe (real body) | sec |
+|---|---:|
+| 1 model | 6.55 |
+| 11 models | 6.88 |
+| full `shared/models.h` | 7.15 |
+| full `test_models.h` | 6.87 |
+
+**~0.3-0.6 s on a ~6.9 s TU**, and note that full `test_models.h` measured
+*below* full `shared/models.h` despite being a strict superset — the noise floor
+at this magnitude is ~0.3 s, the same size as the effect. Extrapolated over the
+89 including TUs the split is worth roughly **30 s of a ~3000 s build (~1%)**, in
+exchange for touching 89 files, against #634's estimate of ~150 s.
+
+Not adopted. The mechanism is the same one [After the PCH](#after-the-pch-issue-633)
+found for `import storm;`: the cost is *entering* the reflection machinery, not
+the volume pulled through it. `test_db_helpers.h`, which #634's title names
+alongside the models, is +0.09 s and was never the problem.
+
+### Dropping the second backend from `TYPED_TEST`
+
+Every `TYPED_TEST` over `DatabaseTypes` instantiates its body twice, once per
+backend, which looks like an obvious 2x. It is not: measured by compiling real
+TUs as-is, then again with `DatabaseTypes` narrowed to SQLite alone (bodies
+untouched, min of 3, ccache off).
+
+| TU | 2 backends | 1 backend | delta |
+|---|---:|---:|---:|
+| `schema/test_types.cpp` | 20.45 | 16.53 | **−19.2%** |
+| `query/test_distinct.cpp` | 17.11 | 15.00 | −12.3% |
+| `crud/test_conditional_update.cpp` | 13.75 | 11.57 | −15.8% |
+| `query/test_sql_verify.cpp` | 12.10 | 10.52 | −13.1% |
+| `query/test_collate.cpp` (control) | 12.10 | 12.21 | +0.9% |
+| **total** | **75.51** | **65.83** | **−12.8%** |
+
+`test_collate.cpp` is the control: it declares `SqliteTypes`, not
+`DatabaseTypes`, so the edit could not reach it. Its +0.9% is the noise floor,
+which puts the other four comfortably in signal.
+
+So the second backend costs **~13%**, not ~50% — the two instantiations share
+most of their work. Over the 2558 s the hand-written test TUs cost, that is
+~330 s of a ~3000 s build (~11%): the largest single lever measured so far, and
+the only one still available at that size.
+
+**Not adopted, and not recommended.** It buys ~11% by deleting the PostgreSQL
+half of the suite's coverage — the thing cross-backend tests exist for, and
+which CLAUDE.md requires for exactly the failure class (SQLite and PG disagree
+about what is an error) that composite-PK and FK work keeps hitting. Recorded
+here so the trade is known and nobody has to re-measure it: the coverage is
+cheap, at 13% of test compile time.
+
 ### Replacing GoogleTest — poor return
 
 The ceiling is gtest's 2.2 s, but any framework includes standard headers
@@ -389,7 +480,8 @@ incremental behaviour (verified: the next build was `no work to do`, 0 s).
 | lever | ceiling | note |
 |---|---:|---|
 | ~~`import storm;` per TU~~ | ~~230 s~~ | **Closed by measurement (#633).** The gtest PCH already took it from +1.38 s to +0.5-0.8 s per TU. What remains is gtest's own instantiations slowing down because storm's declarations are in the lookup set — not storm being loaded — so it is not reachable from storm's side. Both directions #633 proposed were measured and rejected above; together they are worth ~15 s. |
-| `test_db_helpers.h` + `shared/models.h` | ~150 s | every TU parses 12 models and generates 49 field-selector proxies to use one. Mechanical to split, but touches 89 files. **Not** reachable by adding these headers to the PCH — that was measured and fails (see above). |
+| ~~`test_db_helpers.h` + `shared/models.h`~~ | ~~150 s~~ | **Closed by measurement (#634).** The per-TU cost of the model headers is real and post-PCH is larger than #634 estimated (+2.1-2.7 s empty-body), but it is an *intercept* — the first model and its first `fields::` proxy are +1.64 s of it, the other eleven models +0.50 s. Every TU needs at least one model, so a per-model split cannot reach the intercept, and with a real query body the whole difference between 1 model and 12 is ~0.3-0.6 s against a ~0.3 s noise floor. Worth ~30 s of ~3000 s for 89 touched files. See [above](#splitting-sharedmodelsh-per-model-634). |
+| the reflection intercept itself | unmeasured | What the row above leaves on the table: ~1.6 s per TU to enter the machinery (first annotated struct +0.65 s, first `define_aggregate`/`FieldRef` proxy +0.99 s). Library-side, so it would benefit users and not only tests — but it is the cost of the reflection a querying TU needs anyway, so whether *any* of it is removable is unknown. Measure before opening it as work. |
 
 ---
 
