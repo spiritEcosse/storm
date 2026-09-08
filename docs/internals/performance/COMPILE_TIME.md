@@ -487,6 +487,26 @@ incremental behaviour (verified: the next build was `no work to do`, 0 s).
 
 ## Method
 
+Two scripts implement the measurements below, so a later investigation re-runs
+them rather than rebuilding the harness (and rediscovering the mistakes in the
+bullets that follow):
+
+| script | answers |
+|---|---|
+| `scripts/compile_time_probe.py` | what a TU pays before its first assertion — generates probes carrying N models from `shared/models.h`, replays a real TU's command against each, reports deltas |
+| `scripts/typed_test_cost.py` | what the second backend costs — compiles real TUs as-is, then with `DatabaseTypes` narrowed to SQLite, bodies untouched |
+
+```bash
+scripts/dev-container.sh exec python3 scripts/compile_time_probe.py
+scripts/dev-container.sh exec python3 scripts/compile_time_probe.py --body real
+scripts/dev-container.sh exec python3 scripts/typed_test_cost.py
+```
+
+Both refuse to run if `compile_commands.json` shows a compiler launcher, since
+timing through a cache measures nothing. `typed_test_cost.py` edits
+`tests/test_db_helpers.h` in place and restores it in a `finally` block — run it
+on a clean tree, and check `git diff` if it is interrupted.
+
 - **Per-TU timing**: replay a TU's exact command from `compile_commands.json`
   with `-o` stripped, serially, min of 3 runs. Timing through `ninja` instead adds
   the scan step and roughly ±2 s of noise; the replay harness holds ±0.1-0.3 s.
