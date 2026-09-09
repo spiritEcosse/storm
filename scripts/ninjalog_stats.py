@@ -69,27 +69,21 @@ def bucket(output: str) -> str:
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
 
-def resolve_log_path(raw: str) -> str:
-    """Resolve the CLI argument to a real build log inside this repository.
-
-    The path comes from argv and is validated before anything opens it:
-    realpath collapses symlinks and `..`, the result must stay under
-    REPO_ROOT, and it must be an existing regular file. Confining it to the
-    repository is the point — this measures *this* tree's builds, so a path
-    that escapes it is a mistake worth failing on rather than a use case. To
-    measure another worktree, run that worktree's own copy of this script.
-    """
-    resolved = os.path.realpath(raw)
-    if os.path.commonpath([resolved, REPO_ROOT]) != REPO_ROOT:
+def main(raw_path: str) -> int:
+    # The path arrives on argv, so it is validated HERE, in the same function
+    # as the open() it guards. Sonar's taint analysis (S8707) does not follow a
+    # sanitizer across a helper's return value, and more importantly neither
+    # does a reader skimming for what protects this call. realpath collapses
+    # symlinks and `..`; the result must stay inside the repository this copy
+    # of the script belongs to, and be a regular file.
+    path = os.path.realpath(raw_path)
+    if os.path.commonpath([path, REPO_ROOT]) != REPO_ROOT:
         raise SystemExit(
-            f"{raw}: outside the repository ({REPO_ROOT}); run the copy of this "
-            f"script that lives in the tree you want to measure")
-    if not os.path.isfile(resolved):
-        raise SystemExit(f"{raw}: not a readable file (expected a .ninja_log)")
-    return resolved
+            f"{raw_path}: outside the repository ({REPO_ROOT}); run the copy of "
+            f"this script that lives in the tree you want to measure")
+    if not os.path.isfile(path):
+        raise SystemExit(f"{raw_path}: not a readable file (expected a .ninja_log)")
 
-
-def main(path: str) -> int:
     objects: list[tuple[float, str]] = []
     scans: list[float] = []
     seen: set[tuple[int, int, str]] = set()
@@ -146,4 +140,4 @@ if __name__ == "__main__":
     if len(sys.argv) != 2:
         print(f"usage: {sys.argv[0]} <path to .ninja_log>", file=sys.stderr)
         raise SystemExit(2)
-    raise SystemExit(main(resolve_log_path(sys.argv[1])))
+    raise SystemExit(main(sys.argv[1]))
