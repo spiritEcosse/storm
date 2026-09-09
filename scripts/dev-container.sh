@@ -105,11 +105,16 @@ build_image() {
         return
     fi
     echo "dev-container: building $tag (first run only, this can take a few minutes)..." >&2
+    # --pull is load-bearing (#643): the Dockerfile's base and its
+    # `COPY --from=...storm-clang:latest` both resolve against the local image
+    # cache otherwise, so `rebuild` would keep reusing a stale toolchain layer
+    # after storm-clang is republished — and a missing file in it looks like a
+    # successful build, not an error.
     if [[ -r "$CA_BUNDLE" ]]; then
-        retry 3 docker build --build-context cacerts="$(dirname "$CA_BUNDLE")" \
+        retry 3 docker build --pull --build-context cacerts="$(dirname "$CA_BUNDLE")" \
             -t "$tag" -f "$DOCKERFILE" "$REPO_ROOT"
     else
-        retry 3 docker build -t "$tag" -f "$DOCKERFILE" "$REPO_ROOT"
+        retry 3 docker build --pull -t "$tag" -f "$DOCKERFILE" "$REPO_ROOT"
     fi
 }
 
