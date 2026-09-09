@@ -43,7 +43,12 @@ pass() {
     return 0
 }
 
-TMPDIR_TEST="$(mktemp -d)"
+# Fixtures live INSIDE the repository, not in /tmp: the script under test
+# refuses a log outside the tree (see scenario_path_confined_to_repo), so a
+# /tmp fixture would be rejected before any of the parsing is exercised.
+# build/ is already gitignored, so nothing here can be committed by accident.
+mkdir -p "$REPO_ROOT/build"
+TMPDIR_TEST="$(mktemp -d "$REPO_ROOT/build/ninjalog-test.XXXXXX")"
 trap 'rm -rf "$TMPDIR_TEST"' EXIT
 
 # Writes a ninja log from tab-separated "start end output cmdhash" rows on
@@ -194,6 +199,28 @@ ROWS
     return 0
 }
 
+# --- Scenario: the log path is confined to the repository ------------------
+# The path comes from argv. Escaping the tree is a mistake (wrong copy of the
+# script for the worktree being measured), not a use case, so it must fail
+# with a readable message rather than opening whatever it was handed.
+scenario_path_confined_to_repo() {
+    local out rc
+    out="$(python3 "$STATS" /etc/hostname 2>&1)"; rc=$?
+    if [[ $rc -ne 0 && "$out" == *"outside the repository"* ]]; then
+        pass "an absolute path outside the tree is refused"
+    else
+        fail "absolute escape not refused (rc=$rc): $out"
+    fi
+
+    out="$(python3 "$STATS" "$REPO_ROOT/build/../../etc/hostname" 2>&1)"; rc=$?
+    if [[ $rc -ne 0 && "$out" == *"outside the repository"* ]]; then
+        pass "a traversal through .. is refused"
+    else
+        fail "traversal not refused (rc=$rc): $out"
+    fi
+    return 0
+}
+
 SCENARIOS=(
     module_edge_deduplicated
     scan_edges_excluded
@@ -201,6 +228,7 @@ SCENARIOS=(
     empty_log_is_an_error
     survives_a_closed_pipe
     foreign_targets_stay_out_of_storm_rows
+    path_confined_to_repo
 )
 
 if [[ ! -x "$STATS" ]]; then

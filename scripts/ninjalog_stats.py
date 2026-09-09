@@ -64,15 +64,26 @@ def bucket(output: str) -> str:
     return "other (gtest/gmock, std module, tools, deps)"
 
 
-def resolve_log_path(raw: str) -> str:
-    """Resolve the CLI argument to a real, existing regular file.
+# The repository this copy of the script belongs to. Logs are required to live
+# under it — see resolve_log_path.
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
-    The path comes from argv, so it is validated before anything opens it:
-    symlinks and `..` are collapsed by realpath, and a directory, device or
-    missing file is rejected here with a readable message rather than
-    surfacing as a traceback from open().
+
+def resolve_log_path(raw: str) -> str:
+    """Resolve the CLI argument to a real build log inside this repository.
+
+    The path comes from argv and is validated before anything opens it:
+    realpath collapses symlinks and `..`, the result must stay under
+    REPO_ROOT, and it must be an existing regular file. Confining it to the
+    repository is the point — this measures *this* tree's builds, so a path
+    that escapes it is a mistake worth failing on rather than a use case. To
+    measure another worktree, run that worktree's own copy of this script.
     """
     resolved = os.path.realpath(raw)
+    if os.path.commonpath([resolved, REPO_ROOT]) != REPO_ROOT:
+        raise SystemExit(
+            f"{raw}: outside the repository ({REPO_ROOT}); run the copy of this "
+            f"script that lives in the tree you want to measure")
     if not os.path.isfile(resolved):
         raise SystemExit(f"{raw}: not a readable file (expected a .ninja_log)")
     return resolved
