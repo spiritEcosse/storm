@@ -76,15 +76,8 @@ def resolve_tus(db, requested):
     return resolved
 
 
-def command_for(db, source_file, obj):
-    """Build the compile command for an exact database entry."""
-    entry = next((e for e in db if e["file"] == source_file), None)
-    if entry is None:
-        return None, None
-    argv = shlex.split(entry["command"])
-    if pathlib.Path(argv[0]).name in ("ccache", "sccache"):
-        sys.exit(f"compiler launcher active ({argv[0]}) — "
-                 "run: cmake -U CMAKE_CXX_COMPILER_LAUNCHER .")
+def strip_output_flags(argv):
+    """Drop -o/-c and the source operand from a compile command's argv."""
     kept, skip = [], False
     for arg in argv:
         if skip:
@@ -96,24 +89,35 @@ def command_for(db, source_file, obj):
         if arg.endswith((".cpp", ".cppm")):
             continue
         kept.append(arg)
-    return kept + ["-c", entry["file"], "-o", obj], entry["directory"]
+    return kept
 
 
-def measure(cmd, cwd, runs: int, source_file: str, allowed):
-    """Compile once per run, return (best seconds, error text). Min of N.
+def measure(db, source_file: str, obj: str, runs: int):
+    """Compile `source_file` `runs` times, return (best seconds, error text).
 
-    The membership test guards the subprocess call from the same frame it runs
-    in. resolve_tus() already guarantees it — nothing that failed it gets this
-    far — but a guarantee established three frames up is invisible both to the
-    taint analysis behind S6350 and to a reader checking what constrains the
-    command being executed.
+    The allow-list test and the command construction it guards live in this one
+    frame, and the value tested is the value used: `source_file` is checked
+    against the compile database's own file set, and only then is the command
+    for that exact entry assembled and run. Splitting the two — checking here,
+    building elsewhere — is what S6350 keeps objecting to, and it is a fair
+    objection: from any other frame you cannot tell what constrains the argv
+    being executed.
     """
+    allowed = {e["file"] for e in db}
     if source_file not in allowed:
         return None, f"{source_file}: not in the compile database"
+
+    entry = next(e for e in db if e["file"] == source_file)
+    argv = shlex.split(entry["command"])
+    if pathlib.Path(argv[0]).name in ("ccache", "sccache"):
+        sys.exit(f"compiler launcher active ({argv[0]}) — "
+                 "run: cmake -U CMAKE_CXX_COMPILER_LAUNCHER .")
+    cmd = strip_output_flags(argv) + ["-c", source_file, "-o", obj]
+
     best = None
     for _ in range(runs):
         start = time.perf_counter()
-        proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+        proc = subprocess.run(cmd, cwd=entry["directory"], capture_output=True, text=True)
         elapsed = time.perf_counter() - start
         if proc.returncode != 0:
             return None, proc.stderr[-1500:]
@@ -122,7 +126,6 @@ def measure(cmd, cwd, runs: int, source_file: str, allowed):
 
 
 def measure_all(db, tus, obj, runs: int, original: str, helpers: pathlib.Path):
-    allowed = {e["file"] for e in db}
     """Time every TU under both backend configurations.
 
     Edits tests/test_db_helpers.h between the two passes; the caller restores it
@@ -134,11 +137,7 @@ def measure_all(db, tus, obj, runs: int, original: str, helpers: pathlib.Path):
         print(f"\n=== {label} ===", flush=True)
         for source_file in tus:
             name = os.path.relpath(source_file, REPO_ROOT)
-            cmd, cwd = command_for(db, source_file, obj)
-            if cmd is None:
-                print(f"{name:42} NO ENTRY")
-                continue
-            best, failed = measure(cmd, cwd, runs, source_file, allowed)
+            best, failed = measure(db, source_file, obj, runs)
             if failed:
                 print(f"{name:42} FAILED\n{failed}", flush=True)
                 continue
