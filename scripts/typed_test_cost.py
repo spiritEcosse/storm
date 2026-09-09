@@ -19,6 +19,7 @@ import pathlib
 import shlex
 import subprocess
 import sys
+import tempfile
 import time
 
 # The repository this copy of the script belongs to. Paths derived from CLI
@@ -73,10 +74,62 @@ def command_for(db, tu, obj):
         if arg in ("-o", "-c"):
             skip = arg == "-o"
             continue
-        if arg.endswith(".cpp") or arg.endswith(".cppm"):
+        if arg.endswith((".cpp", ".cppm")):
             continue
         kept.append(arg)
     return kept + ["-c", entry["file"], "-o", obj], entry["directory"]
+
+
+def measure(cmd, cwd, runs: int):
+    """Compile once per run, return (best seconds, error text). Min of N."""
+    best = None
+    for _ in range(runs):
+        start = time.perf_counter()
+        proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
+        elapsed = time.perf_counter() - start
+        if proc.returncode != 0:
+            return None, proc.stderr[-1500:]
+        best = elapsed if best is None else min(best, elapsed)
+    return best, None
+
+
+def measure_all(db, tus, obj, runs: int, original: str, helpers: pathlib.Path):
+    """Time every TU under both backend configurations.
+
+    Edits tests/test_db_helpers.h between the two passes; the caller restores it
+    in a finally block, so an interrupted run cannot leave the edit behind.
+    """
+    results = {}
+    for label, text in (("2 backends", original), ("1 backend", original.replace(TWO, ONE))):
+        helpers.write_text(text)
+        print(f"\n=== {label} ===", flush=True)
+        for tu in tus:
+            cmd, cwd = command_for(db, tu, obj)
+            if cmd is None:
+                print(f"{tu:42} NO ENTRY")
+                continue
+            best, failed = measure(cmd, cwd, runs)
+            if failed:
+                print(f"{tu:42} FAILED\n{failed}", flush=True)
+                continue
+            results.setdefault(tu, {})[label] = best
+            print(f"{tu:42} {best:6.2f}s", flush=True)
+    return results
+
+
+def report(results) -> None:
+    """Print the per-TU comparison and the total."""
+    print(f"\n{'TU':42} {'2bk':>7} {'1bk':>7} {'delta':>8} {'%':>7}")
+    total_two = total_one = 0.0
+    for tu, row in results.items():
+        two, one = row.get("2 backends"), row.get("1 backend")
+        if two and one:
+            total_two += two
+            total_one += one
+            print(f"{tu:42} {two:7.2f} {one:7.2f} {one - two:+8.2f} {100 * (one - two) / two:+6.1f}%")
+    if total_two:
+        print(f"{'TOTAL':42} {total_two:7.2f} {total_one:7.2f} "
+              f"{total_one - total_two:+8.2f} {100 * (total_one - total_two) / total_two:+6.1f}%")
 
 
 def main() -> int:
@@ -85,7 +138,6 @@ def main() -> int:
     ap.add_argument("--build-dir", default="build/debug",
                     help="configured build tree, relative to the repository root")
     ap.add_argument("--runs", type=int, default=3)
-    ap.add_argument("--obj", default="/tmp/typed_test_cost.o")
     ap.add_argument("tus", nargs="*", default=None,
                     help=f"TUs to measure (default: {len(DEFAULT_TUS)} incl. the control)")
     args = ap.parse_args()
@@ -102,46 +154,18 @@ def main() -> int:
     if TWO not in original:
         sys.exit("DatabaseTypes definition not found — check tests/test_db_helpers.h")
 
-    results = {}
+    # The object file goes to a private temporary directory rather than a fixed
+    # path in /tmp: a world-writable location is both a hazard (S5443) and a
+    # collision waiting to happen between two concurrent runs.
     try:
-        for label, text in (("2 backends", original), ("1 backend", original.replace(TWO, ONE))):
-            helpers.write_text(text)
-            print(f"\n=== {label} ===", flush=True)
-            for tu in tus:
-                cmd, cwd = command_for(db, tu, args.obj)
-                if cmd is None:
-                    print(f"{tu:42} NO ENTRY")
-                    continue
-                best = None
-                failed = None
-                for _ in range(args.runs):
-                    start = time.perf_counter()
-                    proc = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True)
-                    elapsed = time.perf_counter() - start
-                    if proc.returncode != 0:
-                        failed = proc.stderr[-1500:]
-                        break
-                    best = elapsed if best is None else min(best, elapsed)
-                if failed:
-                    print(f"{tu:42} FAILED\n{failed}", flush=True)
-                    continue
-                results.setdefault(tu, {})[label] = best
-                print(f"{tu:42} {best:6.2f}s", flush=True)
+        with tempfile.TemporaryDirectory() as tmp:
+            results = measure_all(db, tus, str(pathlib.Path(tmp) / "probe.o"),
+                                  args.runs, original, helpers)
     finally:
         helpers.write_text(original)
         print("\nrestored tests/test_db_helpers.h", flush=True)
 
-    print(f"\n{'TU':42} {'2bk':>7} {'1bk':>7} {'delta':>8} {'%':>7}")
-    total_two = total_one = 0.0
-    for tu, row in results.items():
-        two, one = row.get("2 backends"), row.get("1 backend")
-        if two and one:
-            total_two += two
-            total_one += one
-            print(f"{tu:42} {two:7.2f} {one:7.2f} {one - two:+8.2f} {100 * (one - two) / two:+6.1f}%")
-    if total_two:
-        print(f"{'TOTAL':42} {total_two:7.2f} {total_one:7.2f} "
-              f"{total_one - total_two:+8.2f} {100 * (total_one - total_two) / total_two:+6.1f}%")
+    report(results)
     return 0
 
 

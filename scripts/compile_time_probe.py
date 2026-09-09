@@ -168,7 +168,7 @@ def base_command(build_dir: pathlib.Path, reference: str):
         if arg in ("-o", "-c"):
             skip = arg == "-o"
             continue
-        if arg.endswith(".cpp") or arg.endswith(".cppm"):
+        if arg.endswith((".cpp", ".cppm")):
             continue
         kept.append(arg)
     return kept, entry["directory"]
@@ -185,6 +185,32 @@ def time_compile(cmd, cwd, source, obj, runs):
             return None, proc.stderr[-2000:]
         best = elapsed if best is None else min(best, elapsed)
     return best, None
+
+
+def build_variants(tmpdir: pathlib.Path, headers, body: str, counts: str):
+    """Generate the probe sources to time, in the order they are reported.
+
+    One entry per row of the output table: a model-free baseline, then each
+    requested count in both variants (structs alone, and structs with their
+    fields:: proxies), then the umbrella for comparison.
+    """
+    def probe(name: str, include: str) -> pathlib.Path:
+        src = tmpdir / f"probe_{name}.cpp"
+        src.write_text(PREAMBLE + include + body)
+        return src
+
+    variants = [("baseline (no models)", probe("base", ""))]
+    for count in [int(c) for c in counts.split(",") if c.strip()]:
+        if count > len(headers):
+            continue
+        for selectors in (False, True):
+            header = write_probe_header(tmpdir, headers, count, selectors)
+            suffix = "s" if selectors else ""
+            label = f"{count} model{'s' if count > 1 else ''}" + (
+                " + fields:: proxies" if selectors else " (structs only)")
+            variants.append((label, probe(f"{count}{suffix}", f'#include "{header}"\n')))
+    variants.append(("full test_models.h", probe("full", '#include "test_models.h"\n')))
+    return variants
 
 
 def main() -> int:
@@ -214,24 +240,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         tmpdir = pathlib.Path(tmp)
         obj = tmpdir / "probe.o"
-
-        def probe(name: str, include: str) -> pathlib.Path:
-            src = tmpdir / f"probe_{name}.cpp"
-            src.write_text(PREAMBLE + include + body)
-            return src
-
-        variants = [("baseline (no models)", probe("base", ""))]
-        for count in [int(c) for c in args.counts.split(",") if c.strip()]:
-            if count > len(headers):
-                continue
-            for selectors in (False, True):
-                header = write_probe_header(tmpdir, headers, count, selectors)
-                label = f"{count} model{'s' if count > 1 else ''}" + (
-                    " + fields:: proxies" if selectors else " (structs only)")
-                variants.append((label, probe(f"{count}{'s' if selectors else ''}",
-                                              f'#include "{header}"\n')))
-        variants.append(("full test_models.h",
-                         probe("full", '#include "test_models.h"\n')))
+        variants = build_variants(tmpdir, headers, body, args.counts)
 
         print(f"reference: {args.reference}   body: {args.body}   min of {args.runs}")
         print("warming up...", flush=True)
