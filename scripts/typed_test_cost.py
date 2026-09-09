@@ -99,8 +99,17 @@ def command_for(db, source_file, obj):
     return kept + ["-c", entry["file"], "-o", obj], entry["directory"]
 
 
-def measure(cmd, cwd, runs: int):
-    """Compile once per run, return (best seconds, error text). Min of N."""
+def measure(cmd, cwd, runs: int, source_file: str, allowed):
+    """Compile once per run, return (best seconds, error text). Min of N.
+
+    The membership test guards the subprocess call from the same frame it runs
+    in. resolve_tus() already guarantees it — nothing that failed it gets this
+    far — but a guarantee established three frames up is invisible both to the
+    taint analysis behind S6350 and to a reader checking what constrains the
+    command being executed.
+    """
+    if source_file not in allowed:
+        return None, f"{source_file}: not in the compile database"
     best = None
     for _ in range(runs):
         start = time.perf_counter()
@@ -113,6 +122,7 @@ def measure(cmd, cwd, runs: int):
 
 
 def measure_all(db, tus, obj, runs: int, original: str, helpers: pathlib.Path):
+    allowed = {e["file"] for e in db}
     """Time every TU under both backend configurations.
 
     Edits tests/test_db_helpers.h between the two passes; the caller restores it
@@ -128,7 +138,7 @@ def measure_all(db, tus, obj, runs: int, original: str, helpers: pathlib.Path):
             if cmd is None:
                 print(f"{name:42} NO ENTRY")
                 continue
-            best, failed = measure(cmd, cwd, runs)
+            best, failed = measure(cmd, cwd, runs, source_file, allowed)
             if failed:
                 print(f"{name:42} FAILED\n{failed}", flush=True)
                 continue
