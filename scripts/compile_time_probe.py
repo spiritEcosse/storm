@@ -14,6 +14,7 @@ dependency order and counted as models, not as files — see model_headers().
 """
 import argparse
 import json
+import os
 import pathlib
 import re
 import shlex
@@ -21,6 +22,25 @@ import subprocess
 import sys
 import tempfile
 import time
+
+# The repository this copy of the script belongs to. Paths derived from CLI
+# arguments are confined to it — see safe_path.
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+
+
+def safe_path(path) -> str:
+    """Resolve a CLI-derived path, confined to this repository.
+
+    Called inside the filesystem access it guards rather than assigned first:
+    that is the shape the taint analysis behind S8707 recognises as sanitizing
+    the sink, and it keeps the guard visible at the point of use.
+    """
+    resolved = os.path.realpath(path)
+    if resolved != REPO_ROOT and not resolved.startswith(REPO_ROOT + os.sep):
+        raise SystemExit(f"{path}: outside the repository ({REPO_ROOT}); "
+                         f"run the copy of this script that lives in that tree")
+    return resolved
+
 
 BODIES = {
     # Matches the table in COMPILE_TIME.md. An empty body understates costs that
@@ -128,7 +148,8 @@ def write_probe_header(tmpdir: pathlib.Path, headers, count: int, selectors: boo
 
 
 def base_command(build_dir: pathlib.Path, reference: str):
-    db = json.loads((build_dir / "compile_commands.json").read_text())
+    db = json.loads(pathlib.Path(
+        safe_path(build_dir / "compile_commands.json")).read_text())
     try:
         entry = next(e for e in db if e["file"].endswith(reference))
     except StopIteration:
@@ -169,11 +190,8 @@ def time_compile(cmd, cwd, source, obj, runs):
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--storm-root", type=pathlib.Path,
-                    default=pathlib.Path(__file__).resolve().parent.parent,
-                    help="storm checkout (default: the repo this script lives in)")
     ap.add_argument("--build-dir", default="build/debug",
-                    help="configured build tree, relative to --storm-root")
+                    help="configured build tree, relative to the repository root")
     ap.add_argument("--reference", default="tests/query/test_aggregate.cpp",
                     help="TU whose compile command is replayed")
     ap.add_argument("--runs", type=int, default=3, help="min of N runs (default 3)")
@@ -183,9 +201,9 @@ def main() -> int:
                     help="model counts to measure (default 1,3,5,7,11)")
     args = ap.parse_args()
 
-    root = args.storm_root.resolve()
+    root = pathlib.Path(REPO_ROOT)
     build_dir = root / args.build_dir
-    if not (build_dir / "compile_commands.json").exists():
+    if not os.path.isfile(safe_path(build_dir / "compile_commands.json")):
         sys.exit(f"{build_dir}/compile_commands.json not found — configure the build first")
 
     headers = model_headers(root / "shared" / "models")

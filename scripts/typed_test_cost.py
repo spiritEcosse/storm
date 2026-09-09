@@ -14,11 +14,31 @@ Run it on a clean tree, and check `git diff` afterwards if interrupted.
 """
 import argparse
 import json
+import os
 import pathlib
 import shlex
 import subprocess
 import sys
 import time
+
+# The repository this copy of the script belongs to. Paths derived from CLI
+# arguments are confined to it — see safe_path.
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+
+
+def safe_path(path) -> str:
+    """Resolve a CLI-derived path, confined to this repository.
+
+    Called inside the filesystem access it guards rather than assigned first:
+    that is the shape the taint analysis behind S8707 recognises as sanitizing
+    the sink, and it keeps the guard visible at the point of use.
+    """
+    resolved = os.path.realpath(path)
+    if resolved != REPO_ROOT and not resolved.startswith(REPO_ROOT + os.sep):
+        raise SystemExit(f"{path}: outside the repository ({REPO_ROOT}); "
+                         f"run the copy of this script that lives in that tree")
+    return resolved
+
 
 TWO = ("using DatabaseTypes = ::testing::Types<storm::db::sqlite::Connection, "
        "storm::db::postgresql::Connection>;")
@@ -62,22 +82,20 @@ def command_for(db, tu, obj):
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--storm-root", type=pathlib.Path,
-                    default=pathlib.Path(__file__).resolve().parent.parent,
-                    help="storm checkout (default: the repo this script lives in)")
-    ap.add_argument("--build-dir", default="build/debug")
+    ap.add_argument("--build-dir", default="build/debug",
+                    help="configured build tree, relative to the repository root")
     ap.add_argument("--runs", type=int, default=3)
     ap.add_argument("--obj", default="/tmp/typed_test_cost.o")
     ap.add_argument("tus", nargs="*", default=None,
                     help=f"TUs to measure (default: {len(DEFAULT_TUS)} incl. the control)")
     args = ap.parse_args()
 
-    root = args.storm_root.resolve()
+    root = pathlib.Path(REPO_ROOT)
     helpers = root / "tests" / "test_db_helpers.h"
     db_path = root / args.build_dir / "compile_commands.json"
-    if not db_path.exists():
+    if not os.path.isfile(safe_path(db_path)):
         sys.exit(f"{db_path} not found — configure the build first")
-    db = json.loads(db_path.read_text())
+    db = json.loads(pathlib.Path(safe_path(db_path)).read_text())
     tus = args.tus or DEFAULT_TUS
 
     original = helpers.read_text()
