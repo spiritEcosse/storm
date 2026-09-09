@@ -259,3 +259,31 @@ eval "$(git diff --cached --name-only | ./scripts/detect-changes.sh)"
   script before using its output. `run_heavy` (the job's output) additionally forces a
   full run whenever the diff touches CI plumbing itself (`.github/workflows/`, `scripts/`,
   `.githooks/`, `CMakePresets.json`, `commit.sh`), regardless of the flags above.
+
+## Script Self-Tests (scripts/tests/)
+
+Most of the scripts above have a `scripts/tests/test_<name>.sh` unit test (plus
+`test_libcxx_modules_symlink.sh`, which covers `cmake/libcxx.cmake` rather than a script).
+They are plain bash and run individually or as a suite:
+
+```bash
+for t in scripts/tests/test_*.sh; do "$t" || echo "FAILED: $t"; done
+```
+
+### Prerequisites
+
+All but two need nothing beyond bash and coreutils:
+
+| Test | Needs |
+|---|---|
+| `test_libcxx_modules_symlink.sh` | **cmake >= 3.30** — its harness declares the project's own `cmake_minimum_required`, so an older cmake aborts every configure before `cmake/libcxx.cmake` is read |
+| `test_ninjalog_stats.sh` | `python3` (the script under test is Python) |
+| everything else | pure bash |
+
+`test_libcxx_modules_symlink.sh` states its cmake floor and the version it is about to use
+in its first line of output, then **skips** with one explanatory line when the floor is not
+met (issue #645) rather than reporting five opaque `cmake configure failed` scenarios — the
+shape Ubuntu 24.04's cmake 3.28 produced. Under `CI` it fails instead of skipping: there the
+toolchain comes from the pinned `storm-ci` image (cmake 4.4.3), so a missed floor means a
+broken image, not an older machine, and a skip would report green for a test that never ran.
+Run it on a newer cmake with `scripts/dev-container.sh exec scripts/tests/test_libcxx_modules_symlink.sh`.
