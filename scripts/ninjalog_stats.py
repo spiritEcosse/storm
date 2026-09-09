@@ -28,6 +28,7 @@ For a total comparable with the document's, measure a build from scratch
 incrementally reports only the edges those runs happened to rebuild.
 """
 
+import os
 import signal
 import sys
 from collections import defaultdict
@@ -58,9 +59,23 @@ def bucket(output: str) -> str:
         return "yaml corpus TUs" if "/yaml/" in output else "hand-written test TUs"
     if output.startswith(("tests/mock_sqlite/", "tests/mock_libpq/")):
         return "mock test binaries"
-    if output.startswith("CMakeFiles/storm.dir/") or output.startswith("CMakeFiles/storm@synth"):
+    if output.startswith(("CMakeFiles/storm.dir/", "CMakeFiles/storm@synth")):
         return "storm library modules"
     return "other (gtest/gmock, std module, tools, deps)"
+
+
+def resolve_log_path(raw: str) -> str:
+    """Resolve the CLI argument to a real, existing regular file.
+
+    The path comes from argv, so it is validated before anything opens it:
+    symlinks and `..` are collapsed by realpath, and a directory, device or
+    missing file is rejected here with a readable message rather than
+    surfacing as a traceback from open().
+    """
+    resolved = os.path.realpath(raw)
+    if not os.path.isfile(resolved):
+        raise SystemExit(f"{raw}: not a readable file (expected a .ninja_log)")
+    return resolved
 
 
 def main(path: str) -> int:
@@ -120,4 +135,4 @@ if __name__ == "__main__":
     if len(sys.argv) != 2:
         print(f"usage: {sys.argv[0]} <path to .ninja_log>", file=sys.stderr)
         raise SystemExit(2)
-    raise SystemExit(main(sys.argv[1]))
+    raise SystemExit(main(resolve_log_path(sys.argv[1])))

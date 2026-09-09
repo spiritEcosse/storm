@@ -16,13 +16,32 @@ set -u
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 STATS="$REPO_ROOT/scripts/ninjalog_stats.py"
 
+# Bucket labels the script prints, named once — each is asserted on several
+# times below and SonarCloud (S1192) rejects the repeated literal.
+BUCKET_STORM="storm library modules"
+BUCKET_TESTS="hand-written test TUs"
+BUCKET_YAML="yaml corpus TUs"
+BUCKET_MOCK="mock test binaries"
+
 PASS=0
 FAIL=0
 FAILED_TESTS=()
 CURRENT_TAG=""
 
-fail() { echo "  FAIL: $1"; FAIL=$((FAIL+1)); FAILED_TESTS+=("$CURRENT_TAG"); return 0; }
-pass() { echo "  PASS: $1"; PASS=$((PASS+1)); return 0; }
+fail() {
+    local msg="$1"
+    echo "  FAIL: $msg"
+    FAIL=$((FAIL+1))
+    FAILED_TESTS+=("$CURRENT_TAG")
+    return 0
+}
+
+pass() {
+    local msg="$1"
+    echo "  PASS: $msg"
+    PASS=$((PASS+1))
+    return 0
+}
 
 TMPDIR_TEST="$(mktemp -d)"
 trap 'rm -rf "$TMPDIR_TEST"' EXIT
@@ -36,6 +55,7 @@ make_log() {
         [[ -z "$start" ]] && continue
         printf '%s\t%s\t%s\t%s\t%s\n' "$start" "$end" "1788894584000000000" "$output" "$cmdhash" >> "$path"
     done
+    return 0
 }
 
 # Asserts a field of the script's output line for `bucket` equals `expected`.
@@ -62,8 +82,9 @@ scenario_module_edge_deduplicated() {
 0	10000	CMakeFiles/storm.dir/src/orm/queryset.cppm.o	aaaa1111
 0	10000	CMakeFiles/storm.dir/src/orm/queryset.pcm	aaaa1111
 ROWS
-    assert_field "module .o/.pcm pair counts as one file" "$log" "storm library modules" 2 "1"
-    assert_field "module .o/.pcm pair counts its time once" "$log" "storm library modules" 3 "10"
+    assert_field "module .o/.pcm pair counts as one file" "$log" "$BUCKET_STORM" 2 "1"
+    assert_field "module .o/.pcm pair counts its time once" "$log" "$BUCKET_STORM" 3 "10"
+    return 0
 }
 
 # --- Scenario: scan edges are excluded from the compile total ---------------
@@ -98,13 +119,14 @@ scenario_buckets_match_doc_rows() {
 0	4000	CMakeFiles/storm.dir/src/orm/queryset.cppm.o	4444dddd
 ROWS
     assert_field "a yaml/ TU lands in the corpus bucket, not the test bucket" \
-        "$log" "yaml corpus TUs" 2 "1"
+        "$log" "$BUCKET_YAML" 2 "1"
     assert_field "a non-yaml storm_tests TU lands in the hand-written bucket" \
-        "$log" "hand-written test TUs" 2 "1"
+        "$log" "$BUCKET_TESTS" 2 "1"
     assert_field "a mock binary TU lands in the mock bucket" \
-        "$log" "mock test binaries" 2 "1"
+        "$log" "$BUCKET_MOCK" 2 "1"
     assert_field "a storm module lands in the library bucket" \
-        "$log" "storm library modules" 2 "1"
+        "$log" "$BUCKET_STORM" 2 "1"
+    return 0
 }
 
 # --- Scenario: near-misses that a loose substring match would swallow -------
@@ -120,12 +142,12 @@ scenario_foreign_targets_stay_out_of_storm_rows() {
 0	1000	CMakeFiles/@cmake_cxx_std.dir/std.cppm.o	ffff8888
 ROWS
     local out; out="$(python3 "$STATS" "$log")"
-    if grep -q "mock test binaries" <<< "$out"; then
+    if grep -q "$BUCKET_MOCK" <<< "$out"; then
         fail "GoogleMock's own build was counted as a Storm mock binary"
     else
         pass "gmock library build stays out of the mock-binaries row"
     fi
-    if grep -q "storm library modules" <<< "$out"; then
+    if grep -q "$BUCKET_STORM" <<< "$out"; then
         fail "the std module's synthesized BMI was counted as a Storm module"
     else
         pass "std module (incl. its @synth BMI) stays out of the storm row"
