@@ -31,6 +31,65 @@ instantiation costs more than the instrumentation does.
 
 By test directory: `query/` 42.6%, `schema/` 24.3%, `crud/` 19.3%, `yaml/` 6.2%.
 
+That table is the **baseline**, before any of [What was fixed](#what-was-fixed) —
+its 23.3 s average per test TU is the pre-PCH figure, when each TU still paid the
+5.8 s floor below.
+
+### Re-measured after #634 (2026-09-08)
+
+Everything above is arithmetic from that baseline minus per-change deltas. This
+is an actual whole-build measurement of the current tree, so the two can be
+compared for *shape* — but **not** subtracted for a saving: it is a different
+machine, and the doc's own rule applies (read the deltas within a section, not
+absolute seconds across sections).
+
+Method exactly as in [Method](#method), and reproducible with
+`scripts/ninjalog_stats.py`: `rm -rf build/debug`, configure + build
+`ninja-debug` to completion, then
+
+```
+scripts/ninjalog_stats.py build/debug/.ninja_log
+```
+
+which deduplicates on `(start, end, cmdhash)` and counts object compiles only —
+the 217 module-scan edges (`.ddi`/`.dd`/`.modmap`, 48 s together) are excluded,
+as they are above, and reported separately so the exclusion stays visible.
+
+| bucket | files | sec | % | avg |
+|---|---:|---:|---:|---:|
+| hand-written test TUs | 110 | 1518 | **73.8%** | 13.8s |
+| storm library modules | 70 | 336 | 16.3% | 4.8s |
+| YAML corpus TUs | 5 | 104 | 5.1% | 20.9s |
+| other (gtest/gmock, std module, tools, deps) | 8 | 52 | 2.5% | 6.5s |
+| mock test binaries | 6 | 47 | 2.3% | 7.9s |
+
+Total **2059 s** of object-compile CPU over 199 edges, **397 s wall** (≈5.2x
+effective parallelism on 4 cores). Test TUs come out at 110 and mock binaries at
+6, both matching the baseline exactly, which is what makes the rows comparable;
+the `storm library modules` row deliberately does not — 70 here counts the
+synthesized-module BMI edges that the baseline's 35 (`.cppm` files only) leaves
+out.
+
+**Host for this measurement** — recorded because the baseline's is not, and the
+absolute seconds mean nothing without it:
+
+| | |
+|---|---|
+| CPU | Intel Xeon @ 2.80 GHz, **4 vCPU** |
+| RAM | 16 GB |
+| kernel / host OS | Linux 6.18.44-fc-v24, Ubuntu 24.04.4 LTS (sandboxed microVM) |
+| disk | virtio `/dev/vda`, ext4 |
+| container | `docker/ci/Dockerfile` (Manjaro base) via `scripts/dev-container.sh` |
+| compiler | clang-p2996 21.0.0git, commit `9ffb96e3` |
+| cmake / ninja | 4.4.3 / 1.13.2 (default `-j`, i.e. 6 jobs on 4 cores) |
+| preset | `ninja-debug` (coverage instrumentation on) |
+| tree | commit `27c0f0f` (#634 landed) |
+
+Do **not** read `3003 -> 2059` as a 31% win. The changes in
+[What was fixed](#what-was-fixed) sum to roughly -350 to -450 s; the rest of the
+gap is hardware. Attributing it properly needs the baseline re-run on this same
+host, which has not been done.
+
 ## The per-TU floor
 
 This is the **pre-PCH** floor — the measurement that motivated precompiling
@@ -381,7 +440,10 @@ ceiling is available from a PCH instead, without rewriting 3093 tests.
 | `run_clang_tidy.sh --diff` no longer reports a crashed clang-tidy as a clean pass | correctness |
 | split `shared/models.h` + `tests/test_models.h` so a TU pulls only the models and helpers it uses (#634) | −0.67 s/TU ≈ **−64 s** |
 
-≈ **−344 s of ~3000 s (−11%)**.
+≈ **−344 s of ~3000 s (−11%)** — a sum of per-change deltas, not a measured
+total. For an actual whole-build number on the current tree (with the host it
+was taken on, which this baseline lacks), see
+[Re-measured after #634](#re-measured-after-634-2026-09-08).
 
 The gtest PCH row understates what it bought. It was measured as the removal of
 gtest's own share of the floor, but it also took most of `import storm;` with it
@@ -569,6 +631,9 @@ on a clean tree, and check `git diff` if it is interrupted.
 - **Warm up before measuring.** The first compile in a session is inflated by
   cold page cache for the module BMIs — this produced a fake 47% win once.
 - **Whole-build breakdown**: parse `.ninja_log`, deduplicating on
-  `(start, end, cmdhash)`.
+  `(start, end, cmdhash)` — one module compile emits both a `.pcm` and a `.o`
+  and logs a line per output, so the raw log double-counts every module edge.
+  `scripts/ninjalog_stats.py` implements this; measure a build from scratch, as
+  the log accumulates across runs.
 - **Inside one TU**: `-ftime-trace`, then aggregate `InstantiateFunction` /
   `InstantiateClass` / `Source` events by `args.detail`.
