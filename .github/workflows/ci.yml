@@ -112,8 +112,11 @@ jobs:
           fi
 
           # Anything CI itself reads or runs forces a full run, regardless of
-          # the src/tests/cmake classification above.
-          if grep -qE '^(\.github/workflows/|scripts/|\.githooks/|CMakePresets\.json$|commit\.sh$)' <<< "$files"; then
+          # the src/tests/cmake classification above. docker/ is in the list
+          # because the jobs below run INSIDE that image (#643); nothing builds
+          # it on a PR, so a docker-only change would otherwise get no CI at all
+          # until the next manual publish.
+          if grep -qE '^(\.github/workflows/|scripts/|\.githooks/|docker/|CMakePresets\.json$|commit\.sh$)' <<< "$files"; then
             run_heavy=true
           fi
 

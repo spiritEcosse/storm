@@ -425,7 +425,12 @@ echo -e "${BOLD}Running $TOTAL_STEPS pre-commit checks...${RESET}"
 # --- Ensure debug build is configured ---
 if [[ ("$RUN_FORMAT" == true || "$RUN_CMAKE_FORMAT" == true) && ! -f "build/debug/build.ninja" ]]; then
     echo -e "${DIM}Configuring debug build for format targets...${RESET}"
-    cmake --preset ninja-debug > /dev/null 2>&1
+    # stdout only. stderr carries cmake's message(WARNING)s — among them
+    # cmake/format.cmake's "cmake-format not found", which names the cause of
+    # the `unknown target 'cmake-format'` this very block is about to hit
+    # (#643). This fresh-configure branch is the container/fresh-worktree path,
+    # so swallowing stderr here hid that warning from precisely its audience.
+    cmake --preset ninja-debug > /dev/null
 fi
 
 # --- Step 1: clang-format ---
@@ -467,7 +472,13 @@ if [[ "$RUN_TIDY" == true ]]; then
 fi
 
 # --- Re-stage files modified by format/tidy ---
-if [[ "$RUN_FORMAT" == true || "$RUN_TIDY" == true ]]; then
+# RUN_CMAKE_FORMAT belongs here too (#643): cmake-format rewrites files in
+# place exactly like clang-format, and the cmake-only path above sets
+# RUN_FORMAT=RUN_TIDY=false while leaving RUN_CMAKE_FORMAT=true. Omitting it
+# meant a cmake-only commit recorded the UNFORMATTED file and left the rewrite
+# unstaged in the working tree — with a green hook summary. Unreachable from a
+# container until now only because the step could not run there at all.
+if [[ "$RUN_FORMAT" == true || "$RUN_CMAKE_FORMAT" == true || "$RUN_TIDY" == true ]]; then
     git add -u
 fi
 

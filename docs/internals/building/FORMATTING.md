@@ -11,6 +11,28 @@ Storm enforces consistent formatting for both C++ and CMake files via automated 
 
 The tools are wired into CMake via [StableCoder/cmake-scripts](https://github.com/StableCoder/cmake-scripts) (`formatting.cmake`), which is fetched automatically by CPM on first configure.
 
+### Tool availability
+
+`formatting.cmake` locates each tool with `find_program` at configure time and
+creates **no target at all** when one is missing. A missing `cmake-format`
+therefore surfaces only later, as `ninja: error: unknown target 'cmake-format'`
+when the pre-commit hook reaches step 2 — a message that names the ninja
+symptom, not the cause. `cmake/format.cmake` adds a configure-time
+`message(WARNING ...)` for that case so the real problem is stated once, at the
+point it can be fixed (#643).
+
+| Tool | Where it comes from |
+|---|---|
+| `clang-format` | the clang-p2996 toolchain — `cmake/format.cmake` pins `CLANG_FORMAT_EXE` to `../clang-p2996/build/bin/clang-format` rather than searching `PATH` |
+| `cmake-format` | `PATH`. The `docker/ci` image installs it from PyPI (`cmakelang`, version-pinned) into a venv at `/opt/cmakelang`, symlinked to `/usr/local/bin/cmake-format`. There is no Arch/Manjaro or AUR package, and a venv keeps it from colliding with the image's pacman-managed Python packages. |
+
+On a host toolchain (no container), install `cmake-format` yourself or the
+hook's cmake-format step cannot run. Match the version `docker/ci/Dockerfile`
+pins rather than taking the latest: cmake-format rewrites files in place, so a
+different version reformats the whole tree on your first commit. That
+Dockerfile is the single source of truth for the version — this page
+deliberately does not repeat the number.
+
 ## CMake Target Architecture
 
 `cmake/format.cmake` calls two functions from `formatting.cmake`:

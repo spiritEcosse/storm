@@ -6,6 +6,19 @@
 #   docker build --load -t ghcr.io/spiritecosse/storm-clang:latest \
 #       -f storm/docker/clang/Dockerfile ../clang-p2996
 #
+# NO WORKFLOW BUILDS THIS FILE. docker-ci-image.yml builds docker/ci/Dockerfile
+# only, and that consumes this image as `COPY --from=...storm-clang:latest`.
+# So a change here reaches anybody only after all three of these, in order:
+#
+#   1. rebuild + `docker push` storm-clang:latest from the clang-p2996 checkout
+#   2. dispatch .github/workflows/docker-ci-image.yml (republishes storm-ci)
+#   3. bump the storm-ci@sha256 digest pins — ci.yml, clang-tidy-sweep.yml and
+#      bench-ratio-spike.yml; ci.yml's `digest-guard` job asserts they AGREE
+#      with each other, but cannot tell you they are stale
+#
+# Skipping step 1 is the silent failure: storm-ci rebuilds fine against the old
+# base and the missing file simply stays missing.
+#
 FROM scratch
 
 # Compiler binaries
@@ -13,6 +26,18 @@ COPY build/bin/clang-21        /opt/clang-p2996/build/bin/clang-21
 COPY build/bin/clang-scan-deps /opt/clang-p2996/build/bin/clang-scan-deps
 COPY build/bin/clang-format    /opt/clang-p2996/build/bin/clang-format
 COPY build/bin/clang-tidy      /opt/clang-p2996/build/bin/clang-tidy
+
+# clang-tidy-diff.py drives scripts/run_clang_tidy.sh --diff, and therefore the
+# whole local pre-commit clang-tidy gate (#643). It is not a
+# build artifact — it is checked into the clang-p2996 source tree, and THIS
+# image's build context is that tree's root, so copying it here ships it
+# version-matched to the clang-tidy binary above by construction. Fetching it
+# from llvm/llvm-project at build time instead would silently skew (a release
+# branch script against a clang-21 binary).
+# docker/ci/entrypoint.sh symlinks /opt/clang-p2996 to ${sourceDir}/../clang-p2996,
+# so this lands on exactly the path run_clang_tidy.sh expects.
+COPY clang-tools-extra/clang-tidy/tool/clang-tidy-diff.py \
+     /opt/clang-p2996/clang-tools-extra/clang-tidy/tool/clang-tidy-diff.py
 
 # Coverage tools
 COPY build/bin/llvm-profdata   /opt/clang-p2996/build/bin/llvm-profdata

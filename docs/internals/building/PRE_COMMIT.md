@@ -65,6 +65,13 @@ The pre-commit default since Issue #262. It pipes `git diff -U0 --cached` into
 `clang-tidy-diff.py` from the clang-p2996 toolchain. The diagnostic engine only
 emits warnings on lines the staged commit actually touches.
 
+`clang-tidy-diff.py` is a script checked into the clang-p2996 **source** tree
+(`clang-tools-extra/clang-tidy/tool/`), not a build artifact next to the
+`clang-tidy` binary, so `docker/clang/Dockerfile` has to copy it explicitly —
+which it now does, version-matched to the binary it ships (#643). Only `--diff`
+needs it; `--full` and `--all` (the scheduled sweep) drive `clang-tidy`
+directly and are unaffected by its absence.
+
 **Mechanically:** clang-tidy always parses the whole translation unit — C++
 type resolution needs the full file. `--diff` mode does not change that. It
 sets `-line-filter` on the clang-tidy invocation, so clang-tidy still walks

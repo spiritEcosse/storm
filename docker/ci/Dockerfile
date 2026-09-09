@@ -53,6 +53,35 @@ COPY --from=ghcr.io/spiritecosse/storm-clang:latest \
 RUN ln -s clang-21 /opt/clang-p2996/build/bin/clang \
     && ln -s clang-21 /opt/clang-p2996/build/bin/clang++
 
+# cmake-format — the tool behind commit.sh's cmake-format step (#643). pip is
+# the only source: neither `cmake-format` nor `cmakelang` exists in the Arch
+# repos or the AUR, so pacman cannot supply it. It goes in its own venv rather
+# than system-wide via `pip --break-system-packages`, so it cannot collide with
+# the pacman-managed python packages above (python-numpy/scipy); the symlink is
+# what puts it on PATH, which is all StableCoder's
+# find_program(CMAKE_FORMAT_EXE "cmake-format") needs to create the target.
+#
+# THIS PIN IS THE SINGLE SOURCE OF TRUTH for the cmake-format version. It is
+# pinned because cmake-format rewrites files in place during the pre-commit
+# hook, so a floating version would silently reformat the tree; the docs point
+# here rather than repeating the number. Placed AFTER the multi-GB toolchain
+# COPY above so editing this line does not invalidate that layer.
+#
+# --cert: pacman gets the sandbox proxy CA via the trust store above, but pip
+# uses vendored certifi and would not, so hand it the same bundle explicitly.
+# Harmless when there is no proxy — it is the ordinary system CA bundle.
+#
+# The smoke test formats a real (tiny) file rather than running --version, which
+# only prints a constant: cmakelang is a 2021 release on a rolling-Python base,
+# so a compat break must fail the image build, not someone's pre-commit run.
+RUN python -m venv /opt/cmakelang \
+    && /opt/cmakelang/bin/pip install --no-cache-dir \
+        --cert /etc/ssl/certs/ca-certificates.crt cmakelang==0.6.13 \
+    && ln -s /opt/cmakelang/bin/cmake-format /usr/local/bin/cmake-format \
+    && printf 'if(A)\nmessage("x")\nendif()\n' > /tmp/smoke.cmake \
+    && cmake-format /tmp/smoke.cmake > /dev/null \
+    && rm /tmp/smoke.cmake
+
 ENV LIBCXX_ROOT=/opt/clang-p2996 \
     PATH=/opt/clang-p2996/build/bin:$PATH
 
