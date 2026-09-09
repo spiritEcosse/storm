@@ -57,10 +57,29 @@ DEFAULT_TUS = [
 ]
 
 
-def command_for(db, tu, obj):
-    try:
-        entry = next(e for e in db if e["file"].endswith(tu))
-    except StopIteration:
+def resolve_tus(db, requested):
+    """Map the requested TU suffixes onto exact paths from the compile database.
+
+    An allow-list, and the reason one is needed: everything downstream is fed to
+    a compiler process, so nothing from argv may reach it. What the caller types
+    only SELECTS here — the value that travels on is an element of the database's
+    own set of files, never a transformation of the argument.
+    """
+    known = sorted({e["file"] for e in db})
+    resolved = []
+    for wanted in requested:
+        match = next((f for f in known if f.endswith(wanted)), None)
+        if match is None:
+            print(f"{wanted:42} NO ENTRY")
+            continue
+        resolved.append(match)
+    return resolved
+
+
+def command_for(db, source_file, obj):
+    """Build the compile command for an exact database entry."""
+    entry = next((e for e in db if e["file"] == source_file), None)
+    if entry is None:
         return None, None
     argv = shlex.split(entry["command"])
     if pathlib.Path(argv[0]).name in ("ccache", "sccache"):
@@ -103,17 +122,18 @@ def measure_all(db, tus, obj, runs: int, original: str, helpers: pathlib.Path):
     for label, text in (("2 backends", original), ("1 backend", original.replace(TWO, ONE))):
         helpers.write_text(text)
         print(f"\n=== {label} ===", flush=True)
-        for tu in tus:
-            cmd, cwd = command_for(db, tu, obj)
+        for source_file in tus:
+            name = os.path.relpath(source_file, REPO_ROOT)
+            cmd, cwd = command_for(db, source_file, obj)
             if cmd is None:
-                print(f"{tu:42} NO ENTRY")
+                print(f"{name:42} NO ENTRY")
                 continue
             best, failed = measure(cmd, cwd, runs)
             if failed:
-                print(f"{tu:42} FAILED\n{failed}", flush=True)
+                print(f"{name:42} FAILED\n{failed}", flush=True)
                 continue
-            results.setdefault(tu, {})[label] = best
-            print(f"{tu:42} {best:6.2f}s", flush=True)
+            results.setdefault(name, {})[label] = best
+            print(f"{name:42} {best:6.2f}s", flush=True)
     return results
 
 
@@ -148,7 +168,9 @@ def main() -> int:
     if not os.path.isfile(safe_path(db_path)):
         sys.exit(f"{db_path} not found — configure the build first")
     db = json.loads(pathlib.Path(safe_path(db_path)).read_text())
-    tus = args.tus or DEFAULT_TUS
+    tus = resolve_tus(db, args.tus or DEFAULT_TUS)
+    if not tus:
+        sys.exit("none of the requested TUs are in the compile database")
 
     original = helpers.read_text()
     if TWO not in original:
