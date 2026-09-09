@@ -1,7 +1,40 @@
 # Getting Started
 
 Storm builds against a custom Clang with C++26 reflection (`clang-p2996`). Two
-ways to get a working build environment:
+ways to get a working build environment — but first, one command that is not
+about the toolchain at all.
+
+## First, after cloning — wire the pre-commit hook
+
+```bash
+git config core.hooksPath .githooks
+```
+
+`core.hooksPath` is local git config: it lives in `.git/config`, is never
+cloned, and no CI job can see it (CI does not commit). Until you set it,
+`.githooks/pre-commit` — and therefore `commit.sh`, which runs clang-format,
+clang-tidy, the test suite and the 100% coverage gate that CLAUDE.md rule #3
+says never to skip — does not run on your commits, with nothing in the output
+to say so (issue #651).
+
+Two other places set it for you, and neither is a substitute for running it
+yourself:
+
+- a successful `cmake --preset …` (`CMakeLists.txt` sets it as a side effect),
+  which is no help before your first configure, or in a clone that has no
+  toolchain to configure with;
+- `.claude/hooks/session-start-docker.sh`, for Claude Code sessions only.
+
+It is idempotent, so re-running it costs nothing. To confirm:
+
+```bash
+git config --get core.hooksPath   # → .githooks
+```
+
+Note that the hook needs the toolchain to do its work: in a clone without one,
+a commit touching C++ or cmake now **fails** rather than silently skipping the
+checks. That is the intended direction — run the commit through the dev
+container instead (`scripts/dev-container.sh exec git commit …`, see below).
 
 ## Option 1 (recommended) — Build via Docker
 

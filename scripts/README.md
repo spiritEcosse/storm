@@ -262,9 +262,12 @@ eval "$(git diff --cached --name-only | ./scripts/detect-changes.sh)"
 
 ## Script Self-Tests (scripts/tests/)
 
-Six scripts have a `test_<name>.sh` self-test under `scripts/tests/` — including two whose
-subjects are not documented above (`coverage-run-batched.sh`, `ninjalog_stats.py`), and
-`test_libcxx_modules_symlink.sh`, which covers `cmake/libcxx.cmake` rather than a script.
+Seven scripts have a `test_<name>.sh` self-test under `scripts/tests/` — including two whose
+subjects are not documented above (`coverage-run-batched.sh`, `ninjalog_stats.py`),
+`test_libcxx_modules_symlink.sh`, which covers `cmake/libcxx.cmake` rather than a script, and
+`test_session_start_hook.sh`, which covers `.claude/hooks/session-start-docker.sh` — the
+SessionStart hook that wires `core.hooksPath` (and so decides whether `commit.sh` runs at all,
+#651) before taking any of its Docker-provisioning early exits.
 They are plain bash and run individually or as a suite:
 
 ```bash
