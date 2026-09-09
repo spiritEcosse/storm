@@ -545,7 +545,7 @@ bullets that follow):
 
 | script | answers |
 |---|---|
-| `scripts/compile_time_probe.py` | what a TU pays before its first assertion — generates probes carrying N models from `shared/models.h`, replays a real TU's command against each, reports deltas |
+| `scripts/compile_time_probe.py` | what a TU pays before its first assertion — generates probes carrying N models from `shared/models/`, replays a real TU's command against each, reports deltas |
 | `scripts/typed_test_cost.py` | what the second backend costs — compiles real TUs as-is, then with `DatabaseTypes` narrowed to SQLite, bodies untouched |
 
 ```bash

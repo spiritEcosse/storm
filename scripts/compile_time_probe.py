@@ -5,8 +5,9 @@ Method (docs/internals/performance/COMPILE_TIME.md): replay a real TU's exact
 command from compile_commands.json with the source swapped for a generated
 probe, serially, min of N runs, ccache disabled, warm-up first.
 
-Probes are generated from the tree's own shared/models.h, so they follow the
-models rather than pinning a stale copy of them.
+Probes are generated from the tree's own shared/models/ headers, so they follow
+the models rather than pinning a stale copy of them. Models are included in
+dependency order and counted as models, not as files — see model_headers().
 
     scripts/dev-container.sh exec python3 scripts/compile_time_probe.py
     scripts/dev-container.sh exec python3 scripts/compile_time_probe.py --body real
@@ -48,44 +49,82 @@ BODIES = {
 PREAMBLE = "#include <gtest/gtest.h>\n#include \"test_db_helpers.h\"\nimport storm;\nimport std;\n"
 
 
-def split_models(models_h: str):
-    """Return (prologue, [(name, end_line_index)]) for shared/models.h."""
-    lines = models_h.splitlines(keepends=True)
-    first = next(i for i, l in enumerate(lines) if l.startswith("struct "))
-    try:
-        stop = next(i for i, l in enumerate(lines) if l.startswith("namespace fields"))
-    except StopIteration:
-        stop = len(lines)
-    names, ends, i = [], [], first
-    while i < stop:
-        m = re.match(r"struct (\w+) \{", lines[i])
-        if m:
-            j = next(k for k in range(i, stop) if lines[k].startswith("};"))
-            names.append(m.group(1))
-            ends.append(j)
-            i = j + 1
-        else:
-            i += 1
-    return lines, names, ends
+def model_headers(models_dir: pathlib.Path):
+    """Return shared/models/*.h in dependency order (dependencies first).
+
+    Before #634 this parsed one shared/models.h and truncated it at a struct
+    boundary; the models now live one per header, so the split is physical and
+    the order is derived from what each header includes rather than from where
+    it happened to sit in a single file. Ties break alphabetically, so the
+    sequence is deterministic.
+
+    Ordering matters because the probe measures CUMULATIVE prefixes: taking the
+    first N headers must yield a self-consistent set, which topological order
+    guarantees (message.h is never counted before the person.h it includes).
+    """
+    headers = {h.stem: h for h in sorted(models_dir.glob("*.h"))}
+    if not headers:
+        sys.exit(f"{models_dir}: no model headers found — has the layout changed again?")
+
+    deps = {
+        stem: {inc for inc in re.findall(r'#include "(\w+)\.h"', path.read_text())
+               if inc in headers}
+        for stem, path in headers.items()
+    }
+
+    ordered, remaining = [], dict(deps)
+    while remaining:
+        ready = sorted(k for k, d in remaining.items() if d <= set(ordered))
+        if not ready:  # a cycle would loop forever; models.h forbids one
+            sys.exit(f"cyclic includes among {sorted(remaining)}")
+        ordered.extend(ready)
+        for stem in ready:
+            del remaining[stem]
+
+    # Count MODELS, not headers. color.h defines an enum and carries no fields::
+    # proxy, so counting it as "1 model" would make the first step — the one the
+    # intercept finding rests on — measure nothing. It still reaches the probe
+    # as a dependency of extended_types.h, just not as a unit of the count.
+    return [headers[stem] for stem in ordered
+            if re.search(r"^struct \w+ \{", headers[stem].read_text(), re.M)]
 
 
-def selector_block(name: str) -> str:
-    return (
-        f"struct {name}T;\n"
-        f"consteval {{ std::meta::define_aggregate(^^{name}T,"
-        f" storm::field_specs_for(^^{name})); }}\n"
-        f"inline constexpr {name}T {name}{{}};\n"
-    )
+FIELDS_BLOCK = re.compile(r"\nnamespace fields \{.*?\} // namespace fields\n", re.S)
 
 
-def write_models_header(dest: pathlib.Path, lines, names, ends, count, selectors,
-                        has_selector) -> None:
-    """Prefix-truncate the real header at a struct boundary, keeping enums."""
-    out = "".join(lines[: ends[count - 1] + 1])
-    if selectors:
-        blocks = "".join(selector_block(n) for n in names[:count] if n in has_selector)
-        out += "\nnamespace fields {\n" + blocks + "} // namespace fields\n"
-    dest.write_text(out)
+def write_probe_header(tmpdir: pathlib.Path, headers, count: int, selectors: bool) -> pathlib.Path:
+    """Materialise a header including the first `count` model headers.
+
+    The model headers are copied into tmpdir so their own relative includes
+    still resolve. With selectors=False each copy has its `namespace fields`
+    block stripped — that block ships inside the model header now, so isolating
+    the cost of the struct from the cost of its proxy needs the copy edited
+    rather than the block synthesized as it was pre-#634.
+    """
+    stage = tmpdir / f"models_{count}{'s' if selectors else ''}"
+    stage.mkdir(exist_ok=True)
+
+    # Stage the transitive closure, not just the counted headers: a counted
+    # header's own #includes (person.h, color.h, ...) must resolve inside the
+    # staging directory, whether or not those are themselves counted.
+    pending, staged = list(headers[:count]), set()
+    while pending:
+        header = pending.pop()
+        if header.name in staged:
+            continue
+        staged.add(header.name)
+        text = header.read_text()
+        if not selectors:
+            text = FIELDS_BLOCK.sub("\n", text)
+        (stage / header.name).write_text(text)
+        for inc in re.findall(r'#include "(\w+\.h)"', text):
+            sibling = header.parent / inc
+            if sibling.exists():
+                pending.append(sibling)
+
+    dest = tmpdir / f"probe_models_{count}{'s' if selectors else ''}.h"
+    dest.write_text("".join(f'#include "{stage / h.name}"\n' for h in headers[:count]))
+    return dest
 
 
 def base_command(build_dir: pathlib.Path, reference: str):
@@ -149,10 +188,7 @@ def main() -> int:
     if not (build_dir / "compile_commands.json").exists():
         sys.exit(f"{build_dir}/compile_commands.json not found — configure the build first")
 
-    models_h = (root / "shared" / "models.h").read_text()
-    lines, names, ends = split_models(models_h)
-    has_selector = {m.group(1) for m in re.finditer(r"inline constexpr (\w+)T \w+\{\};", models_h)}
-    has_selector = {n[:-1] if n.endswith("T") else n for n in has_selector}
+    headers = model_headers(root / "shared" / "models")
 
     cmd, cwd = base_command(build_dir, args.reference)
     body = BODIES[args.body]
@@ -168,11 +204,10 @@ def main() -> int:
 
         variants = [("baseline (no models)", probe("base", ""))]
         for count in [int(c) for c in args.counts.split(",") if c.strip()]:
-            if count > len(names):
+            if count > len(headers):
                 continue
             for selectors in (False, True):
-                header = tmpdir / f"models_{count}{'s' if selectors else ''}.h"
-                write_models_header(header, lines, names, ends, count, selectors, has_selector)
+                header = write_probe_header(tmpdir, headers, count, selectors)
                 label = f"{count} model{'s' if count > 1 else ''}" + (
                     " + fields:: proxies" if selectors else " (structs only)")
                 variants.append((label, probe(f"{count}{'s' if selectors else ''}",
