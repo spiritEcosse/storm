@@ -348,8 +348,11 @@ nowhere, so it never ran):
 That same hook also runs `git config core.hooksPath .githooks` **unconditionally** — first, before
 each of its three provisioning early-exits — because that wiring is what makes `commit.sh` run at
 all, and it is missing in exactly the sessions those exits return from (#651; see rule 3).
-`scripts/tests/test_session_start_hook.sh` (CI job `session-start hook wires core.hooksPath`)
-covers each exit path, so a reordering cannot silently unwire it again.
+`scripts/tests/test_session_start_hook.sh` covers each exit path — plus the `settings.json`
+declaration the hook is inert without — so a reordering or a deleted entry cannot silently unwire
+it again. It runs in CI (job `session-start hook wires core.hooksPath (#651)`) and, like the #543
+and #550 guards, in `commit.sh` ABOVE its `TOTAL_STEPS==0` early exit, since a commit touching
+only the hook, `settings.json` or the test itself skips every other step.
 
 ## Architecture
 

@@ -649,7 +649,8 @@ jobs:
   #      per-matrix CI context (the seven matrix legs, `coverage (100% lines,
   #      filtered)`, `clang-p2996 host-layout resolution`, `storm-ci digest
   #      consistency`, `agent frontmatter (single-line descriptions)`,
-  #      `clang-tidy skip-list classification (#550)`, `detect changed files`).
+  #      `clang-tidy skip-list classification (#550)`, `session-start hook wires
+  #      core.hooksPath (#651)`, `detect changed files`).
   #      Keep `SonarCloud Code Analysis`. Removing is not optional: adding
   #      `CI gate` alongside the old names leaves docs-only PRs stuck on them.
   #   4. Only then, the flip below.

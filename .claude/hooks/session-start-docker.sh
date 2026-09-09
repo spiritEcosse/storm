@@ -1,16 +1,17 @@
 #!/bin/bash
 # SessionStart hook. Two independent jobs, and the ORDER between them matters:
 #
-# 1. Wire git's pre-commit hook (issue #651) — UNCONDITIONAL, before every
-#    early exit below. `core.hooksPath` is local config that a clone never
-#    carries, and the only other place that sets it is CMakeLists.txt, as a
-#    side effect of a successful cmake configure — exactly what a session with
-#    no ../clang-p2996 cannot do. Such a session therefore committed with
-#    commit.sh (format, clang-tidy, tests, the 100% coverage gate, and the two
-#    self-tests it runs even for an otherwise no-op commit — #543, #550) never
-#    firing, and with nothing in the output to say so. Moving any exit below
-#    above this reintroduces that silent gap, which is why each exit path has
-#    its own scenario in scripts/tests/test_session_start_hook.sh.
+# 1. Wire git's pre-commit hook (issue #651) — UNCONDITIONAL, before the
+#    provisioning half can decide it has nothing to do. `core.hooksPath` is
+#    local config that a clone never carries, and the only other place that
+#    sets it is CMakeLists.txt, as a side effect of a successful cmake
+#    configure — exactly what a session with no ../clang-p2996 cannot do. Such
+#    a session therefore committed with commit.sh (format, clang-tidy, tests,
+#    the 100% coverage gate, and the two self-tests it runs even for an
+#    otherwise no-op commit — #543, #550) never firing, and with nothing in the
+#    output to say so. Doing this after any of the three provisioning bail-outs
+#    reintroduces that silent gap, which is why each bail-out has its own
+#    scenario in scripts/tests/test_session_start_hook.sh.
 #
 # 2. Provision scripts/dev-container.sh's Docker build environment (issue
 #    #628): Claude Code's remote/sandboxed sessions start with no local
@@ -36,26 +37,52 @@ project_dir="${CLAUDE_PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." &
 
 # --- 1. Pre-commit hook wiring (#651) ---
 #
-# Quiet on success: stdout is Claude Code's protocol channel (the async JSON
-# below) and session context, not a log. A FAILURE is loud, because a missing
-# gate is otherwise indistinguishable from a passing one — but it does not fail
-# session start, since nothing else here depends on it.
-if ! git -C "$project_dir" config core.hooksPath .githooks 2>/dev/null; then
-    echo "session-start: could not set core.hooksPath in $project_dir —" \
-         "commits will NOT run commit.sh (see .githooks/pre-commit)" >&2
+# Empty unless the wiring failed; reported below on whichever channel is free.
+wiring_warning=""
+
+# `git -C <dir> config` walks UP to an enclosing repository, so a project_dir
+# that is not itself a repo root would silently re-point an ANCESTOR repo's
+# hooks. Resolve the top level first and refuse to write unless it is this
+# directory. Both sides are compared physically (`pwd -P` vs git's already
+# physical --show-toplevel) so a symlinked path is not mistaken for a mismatch.
+project_real="$(cd "$project_dir" 2>/dev/null && pwd -P || true)"
+git_toplevel="$(git -C "$project_dir" rev-parse --show-toplevel 2>/dev/null || true)"
+
+if [[ -n "$project_real" && "$git_toplevel" == "$project_real" ]]; then
+    if ! git -C "$project_dir" config core.hooksPath .githooks 2>/dev/null; then
+        wiring_warning="session-start: could not set core.hooksPath in $project_dir — commits will NOT run commit.sh (see .githooks/pre-commit)"
+    fi
+else
+    wiring_warning="session-start: $project_dir is not a git repository root (git says '${git_toplevel:-none}') — core.hooksPath left alone, so commits will NOT run commit.sh"
 fi
 
 # --- 2. Docker dev-container provisioning (#628) ---
-
+#
+# Decided before anything is reported, because the decision picks the channel:
+# on the provisioning path stdout is Claude Code's protocol channel (the async
+# JSON below) and must stay exactly that, so a warning there can only go to
+# stderr. On the other three paths stdout is free, and for a SessionStart hook
+# that is the channel that becomes session context — i.e. the one place a
+# warning actually reaches whoever can act on it. A missing gate must never be
+# as quiet as a passing one (#651), but it must not fail session start either:
+# nothing below depends on the wiring.
+provision=true
 if [[ "${CLAUDE_CODE_REMOTE:-}" != "true" ]]; then
-    exit 0
+    provision=false           # not a remote session — toolchain is local
+elif [[ -e "$project_dir/../clang-p2996" ]]; then
+    provision=false           # toolchain already present — nothing to build
+elif ! command -v docker >/dev/null 2>&1; then
+    provision=false           # no docker — nothing this hook can do
 fi
 
-if [[ -e "$project_dir/../clang-p2996" ]]; then
-    exit 0
+if [[ -n "$wiring_warning" ]]; then
+    echo "$wiring_warning" >&2
+    if [[ "$provision" == false ]]; then
+        echo "$wiring_warning"
+    fi
 fi
 
-if ! command -v docker >/dev/null 2>&1; then
+if [[ "$provision" == false ]]; then
     exit 0
 fi
 

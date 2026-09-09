@@ -382,6 +382,28 @@ if [[ -n "$STAGED_FILES" ]] \
     echo -e "${DIM}✓ clang-tidy skip-list self-test passed${RESET}"
 fi
 
+# --- SessionStart hook wiring self-test (issue #651) ---
+# .claude/hooks/session-start-docker.sh sets core.hooksPath, which is the only
+# reason THIS script runs at all in a clone that never configures a build (the
+# other writer, CMakeLists.txt, needs a working ../clang-p2996). Its wiring must
+# stay above the hook's three Docker bail-outs, or it goes missing in exactly
+# the sessions those bail-outs return from. Cheap pure-bash check.
+#
+# Deliberately placed BEFORE the TOTAL_STEPS==0 early exit below, same
+# reasoning as the two guards above: a commit touching only the hook,
+# .claude/settings.json (which declares it) or this self-test has no
+# src/tests/cmake changes, so TOTAL_STEPS would otherwise be 0 — exactly the
+# commit that can unwire the gate.
+if [[ -n "$STAGED_FILES" ]] \
+   && grep -qE '^(\.claude/(hooks/session-start-docker\.sh|settings\.json)|scripts/tests/test_session_start_hook\.sh)$' <<< "$STAGED_FILES"; then
+    if ! "$(dirname "${BASH_SOURCE[0]}")/scripts/tests/test_session_start_hook.sh"; then
+        echo ""
+        echo -e "${RED}${BOLD} COMMIT BLOCKED — SessionStart hook wiring self-test failed${RESET}"
+        exit 1
+    fi
+    echo -e "${DIM}✓ SessionStart hook wiring self-test passed${RESET}"
+fi
+
 # --- Count total steps ---
 TOTAL_STEPS=0
 [[ "$RUN_FORMAT" == true ]] && ((TOTAL_STEPS++))
