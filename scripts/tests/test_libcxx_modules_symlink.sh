@@ -9,21 +9,36 @@
 # below handles all per-test boilerplate (tmpdir, fake root, cmake invoke,
 # cleanup) so scenarios only encode their setup tweaks and assertions.
 #
-# Prerequisite: a cmake at or above HARNESS_CMAKE_MIN below. It is checked and
-# reported up front (issue #645) rather than assumed: the generated harness
-# declares the project's own cmake_minimum_required, so an older cmake aborts
-# every configure on that line — before cmake/libcxx.cmake is ever included —
-# and five of the six scenarios fail for a reason none of them is about.
+# Prerequisites: cmake at or above the project's own cmake_minimum_required
+# (read from CMakeLists.txt below), and ninja. Both are checked and reported
+# up front (issue #645) rather than assumed: the generated harness declares
+# that same floor and configures with -G Ninja, so either one missing aborts
+# every configure before cmake/libcxx.cmake is ever included, and the
+# scenarios then fail for a reason none of them is about.
 
 set -u
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LIBCXX_CMAKE="$REPO_ROOT/cmake/libcxx.cmake"
 
-# The floor the generated harness declares (run_harness), matching the
-# project's own CMakeLists.txt. Named once so the up-front probe below and the
-# harness it guards cannot drift apart.
-readonly HARNESS_CMAKE_MIN="3.30"
+# The floor the generated harness declares (run_harness). READ from the
+# project's own CMakeLists.txt rather than restated here, so the harness keeps
+# mirroring the floor it exists to mirror after a bump, and so the probe below
+# guards the same number the harness asks for.
+HARNESS_CMAKE_MIN="$(sed -n \
+    's/^[[:space:]]*cmake_minimum_required(VERSION \([0-9][0-9.]*\)).*/\1/p' \
+    "$REPO_ROOT/CMakeLists.txt" | head -1)"
+if [[ -z "$HARNESS_CMAKE_MIN" ]]; then
+    echo "FAIL: no cmake_minimum_required(VERSION ...) in $REPO_ROOT/CMakeLists.txt" >&2
+    exit 1
+fi
+readonly HARNESS_CMAKE_MIN
+
+# Emitted by cmake/libcxx.cmake before any of the logic under test, so its
+# presence in a scenario's log proves the include was actually REACHED — the
+# distinction between "asserted on" and "trivially true because cmake never
+# got there" (see scenario_refuses_when_share_is_real_dir).
+readonly LIBCXX_REACHED_MARKER="Using custom libcxx from:"
 
 # How much of a failed configure's log to inline into the failure message.
 readonly CMAKE_LOG_TAIL_LINES=20
@@ -83,34 +98,52 @@ cmake_version_key() {
     return 0
 }
 
-# Echoes the running cmake's version, or nothing if there is no usable cmake.
+# Echoes the running cmake's version, or nothing when there is no cmake on
+# PATH or its --version output does not parse. The caller tells those two
+# apart (they call for different fixes) rather than reporting both as absent.
 detected_cmake_version() {
     local line
-    line="$(cmake --version 2>/dev/null | head -1)" || return 0
+    line="$(cmake --version 2>/dev/null | head -1)"
     if [[ "$line" =~ ([0-9]+\.[0-9]+(\.[0-9]+)?) ]]; then
         echo "${BASH_REMATCH[1]}"
     fi
     return 0
 }
 
-# Reports which cmake is about to run (one line of version would have collapsed
-# #645 to a five-second diagnosis) and stops with a single explanatory line
-# when it is below the harness floor, instead of letting every scenario fail
-# opaquely inside cmake_minimum_required.
-check_cmake_floor() {
-    local version reason
+# Reports the tools that are about to run — one line of version would have
+# collapsed #645 to a five-second diagnosis — and stops with a single
+# explanatory line when either is unusable, instead of letting every scenario
+# fail opaquely inside cmake_minimum_required or inside generator selection.
+check_prerequisites() {
+    local cmake_path version reason=""
+    cmake_path="$(command -v cmake || true)"
     version="$(detected_cmake_version)"
 
-    if [[ -n "$version" ]]; then
-        echo "cmake: $version ($(command -v cmake)); harness requires >= $HARNESS_CMAKE_MIN"
-        if (( $(cmake_version_key "$version") >= $(cmake_version_key "$HARNESS_CMAKE_MIN") )); then
-            echo
-            return 0
-        fi
-        reason="cmake $version is older than the $HARNESS_CMAKE_MIN this harness requires"
-    else
+    if [[ -z "$cmake_path" ]]; then
         echo "cmake: not found on PATH; harness requires >= $HARNESS_CMAKE_MIN"
-        reason="no usable cmake on PATH"
+        reason="no cmake on PATH"
+    elif [[ -z "$version" ]]; then
+        echo "cmake: unparseable version from $cmake_path: \"$(cmake --version 2>&1 | head -1)\""
+        reason="the cmake at $cmake_path reports no version this script can read"
+    else
+        echo "cmake: $version ($cmake_path); harness requires >= $HARNESS_CMAKE_MIN"
+        if (( $(cmake_version_key "$version") < $(cmake_version_key "$HARNESS_CMAKE_MIN") )); then
+            reason="cmake $version is older than the $HARNESS_CMAKE_MIN this harness requires"
+        fi
+    fi
+
+    # run_harness pins -G Ninja, so a missing ninja fails every configure in
+    # exactly the opaque way an old cmake does — #645's shape reached through
+    # the other prerequisite. Probe it here rather than discovering it six
+    # scenarios later.
+    if ! command -v ninja > /dev/null; then
+        echo "ninja: not found on PATH; the harness configures with -G Ninja"
+        reason="${reason:+$reason; }no ninja on PATH"
+    fi
+
+    if [[ -z "$reason" ]]; then
+        echo
+        return 0
     fi
 
     # In CI the toolchain is supplied by the pinned storm-ci image, so a
@@ -118,15 +151,17 @@ check_cmake_floor() {
     # older machine — skipping there would report green for a job whose test
     # never ran.
     if [[ -n "${CI:-}" ]]; then
-        echo "FAIL: $reason; every scenario would abort in cmake_minimum_required," >&2
-        echo "      before cmake/libcxx.cmake is read. The storm-ci image ships a newer cmake." >&2
+        echo "FAIL: $reason; every configure would fail before anything here is exercised." >&2
+        echo "      CI takes its toolchain from the pinned storm-ci image, so this is a broken image." >&2
         exit 1
     fi
 
-    echo "SKIP: $reason; every scenario would abort in cmake_minimum_required,"
-    echo "      before cmake/libcxx.cmake is read, so nothing here would be exercised."
-    echo "      Run it on a newer cmake, e.g.:"
-    echo "      scripts/dev-container.sh exec scripts/tests/test_libcxx_modules_symlink.sh"
+    echo "SKIP: $reason; every configure would fail before anything here is exercised."
+    echo "      Upgrade the tool, or run this in the dev container:"
+    echo "        scripts/dev-container.sh exec scripts/tests/test_libcxx_modules_symlink.sh"
+    echo "      (that exec runs NATIVELY, with these same tools, whenever ../clang-p2996 is"
+    echo "       checked out beside the repo — on such a host, upgrade rather than expect a"
+    echo "       container.)"
     echo
     echo "Results: 0 passed, 0 failed (all scenarios skipped)"
     exit 0
@@ -273,7 +308,15 @@ pre_refuses_when_share_is_real_dir() {
 }
 
 scenario_refuses_when_share_is_real_dir() {
-    # cmake may or may not FATAL_ERROR here, but it MUST NOT clobber the dir.
+    # This is the one scenario with no HARNESS_RC check, by design: cmake may
+    # or may not FATAL_ERROR here, and what MUST hold either way is filesystem
+    # state. But that makes both assertions below trivially true for a
+    # configure that never reached cmake/libcxx.cmake — which is exactly why
+    # #645's run still reported "1 passed": this scenario went green without
+    # exercising anything. Require proof the include was reached first.
+    if ! grep -q "$LIBCXX_REACHED_MARKER" "$TMP/harness/cmake.log" 2> /dev/null; then
+        fail_with_cmake_log "cmake never reached cmake/libcxx.cmake"; return
+    fi
     if [[ -L "$LINK_PATH" ]]; then
         fail "real directory was replaced with a symlink"; return
     fi
@@ -374,7 +417,7 @@ scenario_rejects_unsupported_host() {
 
 # ---- run ------------------------------------------------------------------
 
-check_cmake_floor
+check_prerequisites
 
 for tag in \
     creates_symlink_when_missing \

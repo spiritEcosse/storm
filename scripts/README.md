@@ -262,8 +262,9 @@ eval "$(git diff --cached --name-only | ./scripts/detect-changes.sh)"
 
 ## Script Self-Tests (scripts/tests/)
 
-Most of the scripts above have a `scripts/tests/test_<name>.sh` unit test (plus
-`test_libcxx_modules_symlink.sh`, which covers `cmake/libcxx.cmake` rather than a script).
+Six scripts have a `test_<name>.sh` self-test under `scripts/tests/` — including two whose
+subjects are not documented above (`coverage-run-batched.sh`, `ninjalog_stats.py`), and
+`test_libcxx_modules_symlink.sh`, which covers `cmake/libcxx.cmake` rather than a script.
 They are plain bash and run individually or as a suite:
 
 ```bash
@@ -276,14 +277,18 @@ All but two need nothing beyond bash and coreutils:
 
 | Test | Needs |
 |---|---|
-| `test_libcxx_modules_symlink.sh` | **cmake >= 3.30** — its harness declares the project's own `cmake_minimum_required`, so an older cmake aborts every configure before `cmake/libcxx.cmake` is read |
+| `test_libcxx_modules_symlink.sh` | **cmake at the project's own `cmake_minimum_required`** (read from `CMakeLists.txt`, today 3.30) **and ninja** — its harness declares that same floor and configures with `-G Ninja`, so either one missing aborts every configure before `cmake/libcxx.cmake` is read |
 | `test_ninjalog_stats.sh` | `python3` (the script under test is Python) |
 | everything else | pure bash |
 
-`test_libcxx_modules_symlink.sh` states its cmake floor and the version it is about to use
-in its first line of output, then **skips** with one explanatory line when the floor is not
-met (issue #645) rather than reporting five opaque `cmake configure failed` scenarios — the
-shape Ubuntu 24.04's cmake 3.28 produced. Under `CI` it fails instead of skipping: there the
-toolchain comes from the pinned `storm-ci` image (cmake 4.4.3), so a missed floor means a
-broken image, not an older machine, and a skip would report green for a test that never ran.
-Run it on a newer cmake with `scripts/dev-container.sh exec scripts/tests/test_libcxx_modules_symlink.sh`.
+`test_libcxx_modules_symlink.sh` reports the tools it is about to use on its first line of
+output, then **skips** with one explanatory line when either is unusable (issue #645) rather
+than reporting five opaque `cmake configure failed` scenarios — the shape Ubuntu 24.04's
+cmake 3.28 produced. Under `CI` it fails instead of skipping: there the toolchain comes from
+the digest-pinned `storm-ci` image, so a missing prerequisite means a broken image, not an
+older machine, and a skip would report green for a test that never ran.
+
+To run it elsewhere, upgrade the tool or use `scripts/dev-container.sh exec
+scripts/tests/test_libcxx_modules_symlink.sh` — noting that `exec` runs **natively**, with
+the same tools, whenever `../clang-p2996` is checked out beside the repo, so on such a host
+the container is not a way around an old cmake.
