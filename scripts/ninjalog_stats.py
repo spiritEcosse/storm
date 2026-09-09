@@ -69,27 +69,35 @@ def bucket(output: str) -> str:
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
 
-def main(raw_path: str) -> int:
-    # The path arrives on argv, so it is validated HERE, in the same function
-    # as the open() it guards. Sonar's taint analysis (S8707) does not follow a
-    # sanitizer across a helper's return value, and more importantly neither
-    # does a reader skimming for what protects this call. realpath collapses
-    # symlinks and `..`; the result must stay inside the repository this copy
-    # of the script belongs to, and be a regular file.
-    path = os.path.realpath(raw_path)
-    if os.path.commonpath([path, REPO_ROOT]) != REPO_ROOT:
-        raise SystemExit(
-            f"{raw_path}: outside the repository ({REPO_ROOT}); run the copy of "
-            f"this script that lives in the tree you want to measure")
-    if not os.path.isfile(path):
-        raise SystemExit(f"{raw_path}: not a readable file (expected a .ninja_log)")
+def safe_log_path(path: str) -> str:
+    """Resolve an argv-supplied log path, confined to this repository.
 
+    realpath collapses symlinks and `..`; the result must then sit inside the
+    repository this copy of the script belongs to, and be a regular file.
+    Confinement is the point rather than a formality — the tool measures *this*
+    tree's builds, so a path that escapes it is a mistake (usually the wrong
+    worktree's copy of the script) worth failing on.
+
+    Called inside the open() it guards, not assigned first: that is the shape
+    the taint analysis behind S8707 recognises as sanitizing the sink.
+    """
+    resolved = os.path.realpath(path)
+    if resolved != REPO_ROOT and not resolved.startswith(REPO_ROOT + os.sep):
+        raise SystemExit(
+            f"{path}: outside the repository ({REPO_ROOT}); run the copy of "
+            f"this script that lives in the tree you want to measure")
+    if not os.path.isfile(resolved):
+        raise SystemExit(f"{path}: not a readable file (expected a .ninja_log)")
+    return resolved
+
+
+def main(raw_path: str) -> int:
     objects: list[tuple[float, str]] = []
     scans: list[float] = []
     seen: set[tuple[int, int, str]] = set()
     last_end_ms = 0
 
-    with open(path, encoding="utf-8") as log:
+    with open(safe_log_path(raw_path), encoding="utf-8") as log:
         for line in log:
             if line.startswith("#"):
                 continue
