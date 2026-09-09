@@ -39,7 +39,7 @@ jobs:
     container:
       # Keep in sync with ci.yml's `test` job pin — same image, same toolchain,
       # so this measures the runner, not a toolchain difference.
-      image: ghcr.io/spiritecosse/storm-ci@sha256:0da07cc20e580c8a7310dca6974bc1d09406c3d367faa099fe26e03b9a449bee
+      image: ghcr.io/spiritecosse/storm-ci@sha256:ae4f62771d7611c663ccb8e0061af9acc8a8a3fe604eabde4285d11a77d37a61
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -97,7 +97,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     container:
-      image: ghcr.io/spiritecosse/storm-ci@sha256:0da07cc20e580c8a7310dca6974bc1d09406c3d367faa099fe26e03b9a449bee
+      image: ghcr.io/spiritecosse/storm-ci@sha256:ae4f62771d7611c663ccb8e0061af9acc8a8a3fe604eabde4285d11a77d37a61
     strategy:
       fail-fast: false
       matrix:

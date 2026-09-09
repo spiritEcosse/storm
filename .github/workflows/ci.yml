@@ -213,7 +213,7 @@ jobs:
     container:
       # Pinned to a specific digest so develop is unaffected by storm-ci image
       # rebuilds. Bump this when publishing a new image (see docker-ci-image.yml).
-      image: ghcr.io/spiritecosse/storm-ci@sha256:0da07cc20e580c8a7310dca6974bc1d09406c3d367faa099fe26e03b9a449bee
+      image: ghcr.io/spiritecosse/storm-ci@sha256:ae4f62771d7611c663ccb8e0061af9acc8a8a3fe604eabde4285d11a77d37a61
     steps:
       - name: No src/tests/cmake changes — heavy steps skipped
         if: env.RUN_HEAVY == 'false'
@@ -247,7 +247,7 @@ jobs:
     container:
       # Pinned to a specific digest so develop is unaffected by storm-ci image
       # rebuilds. Bump this when publishing a new image (see docker-ci-image.yml).
-      image: ghcr.io/spiritecosse/storm-ci@sha256:0da07cc20e580c8a7310dca6974bc1d09406c3d367faa099fe26e03b9a449bee
+      image: ghcr.io/spiritecosse/storm-ci@sha256:ae4f62771d7611c663ccb8e0061af9acc8a8a3fe604eabde4285d11a77d37a61
 
     services:
       postgres:
@@ -431,7 +431,7 @@ jobs:
       # Keep in sync with the `test` job's pin — digest-guard asserts they agree.
       # lcov/genhtml ship in the image already (docker/ci/Dockerfile), so this
       # job needs no image change.
-      image: ghcr.io/spiritecosse/storm-ci@sha256:0da07cc20e580c8a7310dca6974bc1d09406c3d367faa099fe26e03b9a449bee
+      image: ghcr.io/spiritecosse/storm-ci@sha256:ae4f62771d7611c663ccb8e0061af9acc8a8a3fe604eabde4285d11a77d37a61
 
     # A real PostgreSQL is REQUIRED for the 100% gate, not an optimization. The
     # PG Connection's constexpr transaction-nesting methods
