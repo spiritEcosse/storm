@@ -56,9 +56,36 @@ jobs:
           (IFS=,; echo "tags=${tags[*]}") >> "$GITHUB_OUTPUT"
 
       - name: Build and push
+        id: build
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           file: docker/ci/Dockerfile
           push: true
           tags: ${{ steps.tags.outputs.tags }}
+
+      # Publishing is only half the job: the digest then has to be pinned in
+      # ci.yml, clang-tidy-sweep.yml and bench-ratio-spike.yml, and until #643
+      # this run surfaced it nowhere — you had to pull the image or dig through
+      # the GHCR package page to find out what you had just published. Print it
+      # into the job summary so the whole publish flow is doable from a browser.
+      # digest-guard asserts those three pins AGREE with each other; it cannot
+      # tell you they are stale, so nothing catches a skipped update.
+      - name: Report digest to pin
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          {
+            echo "## storm-ci published"
+            echo
+            echo '```'
+            echo "ghcr.io/spiritecosse/storm-ci@${DIGEST}"
+            echo '```'
+            echo
+            echo "Pin this in **all three** workflows, then let \`digest-guard\` confirm they agree:"
+            echo
+            echo "- \`.github/workflows/ci.yml\` (3 occurrences)"
+            echo "- \`.github/workflows/clang-tidy-sweep.yml\` (1)"
+            echo "- \`.github/workflows/bench-ratio-spike.yml\` (2)"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "digest: ${DIGEST}"
