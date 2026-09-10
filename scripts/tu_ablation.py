@@ -307,39 +307,37 @@ def tests_path(source_file) -> str:
     return resolved
 
 
-def write_tu(db, source_file, text) -> None:
-    """Write `text` over a TU that the compile database lists under <repo>/tests/.
+def write_tu(db, index, text) -> None:
+    """Write `text` over the TU at `index` in the compile database.
 
-    The path written is never CONSTRUCTED from the argument: `source_file` is
-    only compared, and the string that reaches write_text comes from the compile
-    database\'s own entry. That is the shape S2083 asks for — the untrusted value
-    selects a destination out of a known set instead of building one — and it is
-    also what makes the guard meaningful, since a caller cannot smuggle in a path
-    the build never produced. realpath keeps a symlink inside tests/ from
-    pointing out of it.
+    Nothing derived from the command line reaches the path: the caller passes an
+    integer, and the string handed to write_text is read straight out of
+    compile_commands.json. That is what S2083 asks for — the untrusted value
+    selects a destination from a known set instead of building one — and it is a
+    real constraint, not a relabelling: a caller cannot name a path the build
+    never produced. realpath keeps a symlink inside tests/ from pointing out.
     """
-    entry = next((e for e in db if e["file"] == source_file), None)
-    if entry is None:
-        raise SystemExit(f"{source_file}: not in the compile database")
-    resolved = os.path.realpath(entry["file"])
+    resolved = os.path.realpath(db[index]["file"])
     if not resolved.startswith(os.path.join(REPO_ROOT, "tests") + os.sep):
-        raise SystemExit(f"{entry['file']}: refusing to rewrite anything outside tests/")
+        raise SystemExit(f"{db[index]['file']}: refusing to rewrite anything outside tests/")
     pathlib.Path(resolved).write_text(text, encoding="utf-8")
 
 
 def resolve_tu(db, wanted):
     """The one TU in the compile database whose path ends with `wanted`.
 
-    Sorted and ambiguity-checked because the match names the file this script
-    OVERWRITES: picking a different one on a different run, or the first of
-    several, is not a risk worth taking for a convenience suffix.
+    Returns its INDEX, not its path: everything downstream then addresses the TU
+    through the database rather than through a string built from argv. Sorted and
+    ambiguity-checked because the match names the file this script OVERWRITES —
+    picking a different one on a different run, or the first of several, is not a
+    risk worth taking for a convenience suffix.
     """
-    matches = sorted(e["file"] for e in db if e["file"].endswith(wanted))
+    matches = sorted((e["file"], i) for i, e in enumerate(db) if e["file"].endswith(wanted))
     if not matches:
         sys.exit(f"{wanted}: not in the compile database")
     if len(matches) > 1:
-        sys.exit(f"{wanted} is ambiguous: {matches}")
-    return safe_path(matches[0])
+        sys.exit(f"{wanted} is ambiguous: {[m[0] for m in matches]}")
+    return matches[0][1]
 
 
 def report(rows, names):
@@ -368,9 +366,10 @@ def main():
     args = ap.parse_args()
 
     db = load_compile_db(args.build_dir)
-    match = resolve_tu(db, args.tu)
+    index = resolve_tu(db, args.tu)
+    match = db[index]["file"]
     tests_path(match)  # diagnostic: name the real reason before reading or parsing
-    original = pathlib.Path(match).read_text(encoding="utf-8")
+    original = pathlib.Path(safe_path(match)).read_text(encoding="utf-8")
     total = len(blocks(original))
     if total == 0:
         sys.exit(f"{match}: no test blocks found — if its bodies live in an included "
@@ -383,7 +382,7 @@ def main():
         with tempfile.TemporaryDirectory() as tmp:
             obj = str(pathlib.Path(tmp) / "probe.o")
             for name in names:
-                write_tu(db, match, build_variant(original, name, total))
+                write_tu(db, index, build_variant(original, name, total))
                 best, err = measure(db, match, obj, args.runs, ABLATION_FLAGS)
                 if err:
                     print(f"{name:16} FAILED\n{err}\n", flush=True)
@@ -391,7 +390,7 @@ def main():
                 rows.append((name, best))
                 print(f"{name:16} {best:7.2f}s", flush=True)
     finally:
-        write_tu(db, match, original)
+        write_tu(db, index, original)
         print("\nrestored source", flush=True)
 
     report(rows, names)
