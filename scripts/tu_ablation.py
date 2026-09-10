@@ -307,15 +307,24 @@ def tests_path(source_file) -> str:
     return resolved
 
 
-def write_tu(source_file, text) -> None:
-    """Write `text` over a TU, confined to <repo>/tests/.
+def write_tu(db, source_file, text) -> None:
+    """Write `text` over a TU that the compile database lists under <repo>/tests/.
 
-    The guard is called inside the write it protects rather than assigned first:
-    that is the shape the taint analysis behind S2083 recognises as sanitizing
-    the sink, and it keeps the constraint visible at the point of use — the same
-    reasoning scripts/lib/compile_replay.py's safe_path records.
+    The path written is never CONSTRUCTED from the argument: `source_file` is
+    only compared, and the string that reaches write_text comes from the compile
+    database\'s own entry. That is the shape S2083 asks for — the untrusted value
+    selects a destination out of a known set instead of building one — and it is
+    also what makes the guard meaningful, since a caller cannot smuggle in a path
+    the build never produced. realpath keeps a symlink inside tests/ from
+    pointing out of it.
     """
-    pathlib.Path(tests_path(source_file)).write_text(text, encoding="utf-8")
+    entry = next((e for e in db if e["file"] == source_file), None)
+    if entry is None:
+        raise SystemExit(f"{source_file}: not in the compile database")
+    resolved = os.path.realpath(entry["file"])
+    if not resolved.startswith(os.path.join(REPO_ROOT, "tests") + os.sep):
+        raise SystemExit(f"{entry['file']}: refusing to rewrite anything outside tests/")
+    pathlib.Path(resolved).write_text(text, encoding="utf-8")
 
 
 def resolve_tu(db, wanted):
@@ -374,7 +383,7 @@ def main():
         with tempfile.TemporaryDirectory() as tmp:
             obj = str(pathlib.Path(tmp) / "probe.o")
             for name in names:
-                write_tu(match, build_variant(original, name, total))
+                write_tu(db, match, build_variant(original, name, total))
                 best, err = measure(db, match, obj, args.runs, ABLATION_FLAGS)
                 if err:
                     print(f"{name:16} FAILED\n{err}\n", flush=True)
@@ -382,7 +391,7 @@ def main():
                 rows.append((name, best))
                 print(f"{name:16} {best:7.2f}s", flush=True)
     finally:
-        write_tu(match, original)
+        write_tu(db, match, original)
         print("\nrestored source", flush=True)
 
     report(rows, names)
