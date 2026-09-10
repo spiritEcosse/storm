@@ -86,7 +86,7 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 
 1. **NEVER delete `.git`** - Do not run `rm -rf .git`
 2. **NEVER push without approval** - Ask before `git push` (exception: user says "commit and push")
-3. **NEVER skip the pre-commit hook** - Do not use `--no-verify`; `commit.sh` enforces format, tidy, test, coverage, sonar automatically
+3. **NEVER skip the pre-commit hook** - Do not use `--no-verify`; `commit.sh` enforces format, tidy, test, coverage, sonar automatically. **First, check the hook is even wired**: `git config --get core.hooksPath` must print `.githooks`. It is local config a clone never carries, no CI job can observe it, and an unwired clone commits with every check silently skipped — indistinguishable from a clone where they all passed (#651). Set it with `git config core.hooksPath .githooks`; a Claude Code session gets it from the `SessionStart` hook, and a `cmake --preset` also sets it (which is no help in a session that has no toolchain to configure with)
 4. **NEVER work directly on `develop` for issue-linked tasks** - Always create `feature/<N>-<description>` branch first (see [Branching Rules](#branching-rules))
 5. **ALWAYS show files before commit** - Run `git status --short`, get user approval, then commit
 6. **ALWAYS benchmark after code changes** - Use Release builds; revert if ANY slowdown
@@ -337,14 +337,22 @@ a plain host-side `git commit` still fires the pre-commit hook, which needs the 
 says not to skip.
 
 A `SessionStart` hook (`.claude/hooks/session-start-docker.sh`) provisions this automatically in
-the background on a remote session with no native toolchain — **wire it up once** by adding it
-to `.claude/settings.json`'s `hooks.SessionStart` (a security-sensitive file Claude Code will
-not modify autonomously):
+the background on a remote session with no native toolchain. It is **wired** in
+`.claude/settings.json`'s `hooks.SessionStart` (#651 — before that it existed but was declared
+nowhere, so it never ran):
 ```json
 "SessionStart": [
   { "hooks": [ { "type": "command", "command": "bash $CLAUDE_PROJECT_DIR/.claude/hooks/session-start-docker.sh" } ] }
 ]
 ```
+That same hook also runs `git config core.hooksPath .githooks` **unconditionally** — first, before
+each of its three provisioning early-exits — because that wiring is what makes `commit.sh` run at
+all, and it is missing in exactly the sessions those exits return from (#651; see rule 3).
+`scripts/tests/test_session_start_hook.sh` covers each exit path — plus the `settings.json`
+declaration the hook is inert without — so a reordering or a deleted entry cannot silently unwire
+it again. It runs in CI (job `session-start hook wires core.hooksPath (#651)`) and, like the #543
+and #550 guards, in `commit.sh` ABOVE its `TOTAL_STEPS==0` early exit, since a commit touching
+only the hook, `settings.json` or the test itself skips every other step.
 
 ## Architecture
 

@@ -192,6 +192,26 @@ jobs:
       - name: Self-test the skip-list classification
         run: ./scripts/tests/test_run_clang_tidy_skiplist.sh
 
+  # .claude/hooks/session-start-docker.sh is what makes commit.sh run at all in
+  # a clone that never configures a build: it sets core.hooksPath, which used to
+  # be a side effect of CMakeLists.txt's cmake configure and so was absent in
+  # exactly the sessions that cannot configure (no ../clang-p2996, #628). Those
+  # sessions committed with format, clang-tidy, tests and the coverage gate
+  # silently skipped (#651). CI cannot observe core.hooksPath — it is local
+  # config that never leaves the machine, and CI does not commit — so what is
+  # checkable here is the hook's own logic: that the wiring happens before every
+  # early exit its Docker half takes. Pure bash (no docker, no toolchain), so it
+  # runs on every PR.
+  githooks-wiring:
+    name: session-start hook wires core.hooksPath (#651)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Self-test the SessionStart hook
+        run: ./scripts/tests/test_session_start_hook.sh
+
   # cmake/clang_p2996_host.cmake resolves clang-p2996's on-disk layout
   # (Linux/amd64 Docker vs. native macOS/arm64) for CMAKE_CXX_STDLIB_MODULES_JSON
   # and cmake/libcxx.cmake's compile/link flags. Nothing else in CI exercises
@@ -629,7 +649,8 @@ jobs:
   #      per-matrix CI context (the seven matrix legs, `coverage (100% lines,
   #      filtered)`, `clang-p2996 host-layout resolution`, `storm-ci digest
   #      consistency`, `agent frontmatter (single-line descriptions)`,
-  #      `clang-tidy skip-list classification (#550)`, `detect changed files`).
+  #      `clang-tidy skip-list classification (#550)`, `session-start hook wires
+  #      core.hooksPath (#651)`, `detect changed files`).
   #      Keep `SonarCloud Code Analysis`. Removing is not optional: adding
   #      `CI gate` alongside the old names leaves docs-only PRs stuck on them.
   #   4. Only then, the flip below.
@@ -668,6 +689,7 @@ jobs:
       - digest-guard
       - agent-frontmatter
       - clang-tidy-skiplist
+      - githooks-wiring
       - clang-p2996-host-layout
       - test
       - coverage

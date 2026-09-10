@@ -262,9 +262,12 @@ eval "$(git diff --cached --name-only | ./scripts/detect-changes.sh)"
 
 ## Script Self-Tests (scripts/tests/)
 
-Six scripts have a `test_<name>.sh` self-test under `scripts/tests/` — including two whose
-subjects are not documented above (`coverage-run-batched.sh`, `ninjalog_stats.py`), and
-`test_libcxx_modules_symlink.sh`, which covers `cmake/libcxx.cmake` rather than a script.
+Seven scripts have a `test_<name>.sh` self-test under `scripts/tests/` — including two whose
+subjects are not documented above (`coverage-run-batched.sh`, `ninjalog_stats.py`),
+`test_libcxx_modules_symlink.sh`, which covers `cmake/libcxx.cmake` rather than a script, and
+`test_session_start_hook.sh`, which covers `.claude/hooks/session-start-docker.sh` — the
+SessionStart hook that wires `core.hooksPath` (and so decides whether `commit.sh` runs at all,
+#651) before taking any of its Docker-provisioning early exits.
 They are plain bash and run individually or as a suite:
 
 ```bash
@@ -273,12 +276,13 @@ for t in scripts/tests/test_*.sh; do "$t" || echo "FAILED: $t"; done
 
 ### Prerequisites
 
-All but two need nothing beyond bash and coreutils:
+All but three need nothing beyond bash and coreutils:
 
 | Test | Needs |
 |---|---|
 | `test_libcxx_modules_symlink.sh` | **cmake at the project's own `cmake_minimum_required`** (read from `CMakeLists.txt`, today 3.30) **and ninja** — its harness declares that same floor and configures with `-G Ninja`, so either one missing aborts every configure before `cmake/libcxx.cmake` is read |
 | `test_ninjalog_stats.sh` | `python3` (the script under test is Python) |
+| `test_session_start_hook.sh` | **`git`** — its subject is git behavior, so it `git init`s a throwaway repo and makes a real commit through the wired hook (`python3` optional: without it the `settings.json` JSON-validity assertion is reported as unchecked, the grep assertions still run) |
 | everything else | pure bash |
 
 `test_libcxx_modules_symlink.sh` reports the tools it is about to use on its first line of
