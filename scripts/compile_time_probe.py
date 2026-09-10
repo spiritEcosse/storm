@@ -13,34 +13,14 @@ dependency order and counted as models, not as files — see model_headers().
     scripts/dev-container.sh exec python3 scripts/compile_time_probe.py --body real
 """
 import argparse
-import json
 import os
 import pathlib
 import re
-import shlex
-import subprocess
 import sys
 import tempfile
-import time
 
-# The repository this copy of the script belongs to. Paths derived from CLI
-# arguments are confined to it — see safe_path.
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-
-
-def safe_path(path) -> str:
-    """Resolve a CLI-derived path, confined to this repository.
-
-    Called inside the filesystem access it guards rather than assigned first:
-    that is the shape the taint analysis behind S8707 recognises as sanitizing
-    the sink, and it keeps the guard visible at the point of use.
-    """
-    resolved = os.path.realpath(path)
-    if resolved != REPO_ROOT and not resolved.startswith(REPO_ROOT + os.sep):
-        raise SystemExit(f"{path}: outside the repository ({REPO_ROOT}); "
-                         f"run the copy of this script that lives in that tree")
-    return resolved
-
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "lib"))
+from compile_replay import REPO_ROOT, command_for, load_compile_db, time_compile  # noqa: E402
 
 BODIES = {
     # Matches the table in COMPILE_TIME.md. An empty body understates costs that
@@ -147,44 +127,14 @@ def write_probe_header(tmpdir: pathlib.Path, headers, count: int, selectors: boo
     return dest
 
 
-def base_command(build_dir: pathlib.Path, reference: str):
-    db = json.loads(pathlib.Path(
-        safe_path(build_dir / "compile_commands.json")).read_text())
+def base_command(build_dir, reference: str):
+    """The compile command of a real TU, ready for a probe source to be appended."""
+    db = load_compile_db(build_dir)
     try:
         entry = next(e for e in db if e["file"].endswith(reference))
     except StopIteration:
         sys.exit(f"no compile_commands.json entry ends with {reference!r}")
-    argv = shlex.split(entry["command"])
-    if pathlib.Path(argv[0]).name in ("ccache", "sccache"):
-        sys.exit(
-            f"compiler launcher active ({argv[0]}). Timing through a cache is "
-            "meaningless — run: cmake -U CMAKE_CXX_COMPILER_LAUNCHER ."
-        )
-    kept, skip = [], False
-    for arg in argv:
-        if skip:
-            skip = False
-            continue
-        if arg in ("-o", "-c"):
-            skip = arg == "-o"
-            continue
-        if arg.endswith((".cpp", ".cppm")):
-            continue
-        kept.append(arg)
-    return kept, entry["directory"]
-
-
-def time_compile(cmd, cwd, source, obj, runs):
-    full = cmd + ["-c", str(source), "-o", str(obj)]
-    best = None
-    for _ in range(runs):
-        start = time.perf_counter()
-        proc = subprocess.run(full, cwd=cwd, capture_output=True, text=True)
-        elapsed = time.perf_counter() - start
-        if proc.returncode != 0:
-            return None, proc.stderr[-2000:]
-        best = elapsed if best is None else min(best, elapsed)
-    return best, None
+    return command_for(entry)
 
 
 def build_variants(tmpdir: pathlib.Path, headers, body: str, counts: str):
@@ -228,13 +178,11 @@ def main() -> int:
     args = ap.parse_args()
 
     root = pathlib.Path(REPO_ROOT)
-    build_dir = root / args.build_dir
-    if not os.path.isfile(safe_path(build_dir / "compile_commands.json")):
-        sys.exit(f"{build_dir}/compile_commands.json not found — configure the build first")
+
 
     headers = model_headers(root / "shared" / "models")
 
-    cmd, cwd = base_command(build_dir, args.reference)
+    cmd, cwd = base_command(args.build_dir, args.reference)
     body = BODIES[args.body]
 
     with tempfile.TemporaryDirectory() as tmp:

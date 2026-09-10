@@ -13,33 +13,13 @@ Run it on a clean tree, and check `git diff` afterwards if interrupted.
     scripts/dev-container.sh exec python3 scripts/typed_test_cost.py
 """
 import argparse
-import json
 import os
 import pathlib
-import shlex
-import subprocess
 import sys
 import tempfile
-import time
 
-# The repository this copy of the script belongs to. Paths derived from CLI
-# arguments are confined to it — see safe_path.
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-
-
-def safe_path(path) -> str:
-    """Resolve a CLI-derived path, confined to this repository.
-
-    Called inside the filesystem access it guards rather than assigned first:
-    that is the shape the taint analysis behind S8707 recognises as sanitizing
-    the sink, and it keeps the guard visible at the point of use.
-    """
-    resolved = os.path.realpath(path)
-    if resolved != REPO_ROOT and not resolved.startswith(REPO_ROOT + os.sep):
-        raise SystemExit(f"{path}: outside the repository ({REPO_ROOT}); "
-                         f"run the copy of this script that lives in that tree")
-    return resolved
-
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "lib"))
+from compile_replay import REPO_ROOT, load_compile_db, measure  # noqa: E402
 
 TWO = ("using DatabaseTypes = ::testing::Types<storm::db::sqlite::Connection, "
        "storm::db::postgresql::Connection>;")
@@ -74,55 +54,6 @@ def resolve_tus(db, requested):
             continue
         resolved.append(match)
     return resolved
-
-
-def strip_output_flags(argv):
-    """Drop -o/-c and the source operand from a compile command's argv."""
-    kept, skip = [], False
-    for arg in argv:
-        if skip:
-            skip = False
-            continue
-        if arg in ("-o", "-c"):
-            skip = arg == "-o"
-            continue
-        if arg.endswith((".cpp", ".cppm")):
-            continue
-        kept.append(arg)
-    return kept
-
-
-def measure(db, source_file: str, obj: str, runs: int):
-    """Compile `source_file` `runs` times, return (best seconds, error text).
-
-    The allow-list test and the command construction it guards live in this one
-    frame, and the value tested is the value used: `source_file` is checked
-    against the compile database's own file set, and only then is the command
-    for that exact entry assembled and run. Splitting the two — checking here,
-    building elsewhere — is what S6350 keeps objecting to, and it is a fair
-    objection: from any other frame you cannot tell what constrains the argv
-    being executed.
-    """
-    allowed = {e["file"] for e in db}
-    if source_file not in allowed:
-        return None, f"{source_file}: not in the compile database"
-
-    entry = next(e for e in db if e["file"] == source_file)
-    argv = shlex.split(entry["command"])
-    if pathlib.Path(argv[0]).name in ("ccache", "sccache"):
-        sys.exit(f"compiler launcher active ({argv[0]}) — "
-                 "run: cmake -U CMAKE_CXX_COMPILER_LAUNCHER .")
-    cmd = strip_output_flags(argv) + ["-c", source_file, "-o", obj]
-
-    best = None
-    for _ in range(runs):
-        start = time.perf_counter()
-        proc = subprocess.run(cmd, cwd=entry["directory"], capture_output=True, text=True)
-        elapsed = time.perf_counter() - start
-        if proc.returncode != 0:
-            return None, proc.stderr[-1500:]
-        best = elapsed if best is None else min(best, elapsed)
-    return best, None
 
 
 def measure_all(db, tus, obj, runs: int, original: str, helpers: pathlib.Path):
@@ -171,12 +102,8 @@ def main() -> int:
                     help=f"TUs to measure (default: {len(DEFAULT_TUS)} incl. the control)")
     args = ap.parse_args()
 
-    root = pathlib.Path(REPO_ROOT)
-    helpers = root / "tests" / "test_db_helpers.h"
-    db_path = root / args.build_dir / "compile_commands.json"
-    if not os.path.isfile(safe_path(db_path)):
-        sys.exit(f"{db_path} not found — configure the build first")
-    db = json.loads(pathlib.Path(safe_path(db_path)).read_text())
+    helpers = pathlib.Path(REPO_ROOT) / "tests" / "test_db_helpers.h"
+    db = load_compile_db(args.build_dir)
     tus = resolve_tus(db, args.tus or DEFAULT_TUS)
     if not tus:
         sys.exit("none of the requested TUs are in the compile database")
