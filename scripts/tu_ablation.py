@@ -71,6 +71,61 @@ SINK = ("template <typename... StormProbeTs>\n"
         "static auto storm_probe_sink(StormProbeTs&&...) -> void {}\n")
 
 
+def _blank(out, text, start, end) -> int:
+    """Blank text[start:end) in `out`, keeping newlines so offsets and lines hold."""
+    for k in range(start, end):
+        out[k] = " " if text[k] != "\n" else "\n"
+    return end
+
+
+def _is_identifier_tail(text, i) -> bool:
+    """True if text[i] continues an identifier — so R"/' there is not a literal."""
+    return bool(i) and (text[i - 1].isalnum() or text[i - 1] == "_")
+
+
+def _mask_line_comment(out, text, i, n) -> int:
+    """// to end of line, following a backslash continuation onto the next one."""
+    while i < n and text[i] != "\n":
+        out[i] = " "
+        if text[i] == "\\" and text[i + 1:i + 2] == "\n":
+            i += 1  # the newline is already a newline in out; just step over it
+        i += 1
+    return i
+
+
+def _mask_block_comment(out, text, i) -> int:
+    end = text.find("*/", i + 2)
+    if end < 0:
+        raise ValueError(f"unterminated /* comment at offset {i}")
+    return _blank(out, text, i, end + 2)
+
+
+def _mask_raw_string(out, text, i) -> int:
+    open_paren = text.find("(", i)
+    if open_paren < 0:
+        raise ValueError(f"unterminated raw string at offset {i}")
+    end = text.find(")" + text[i + 2:open_paren] + '"', open_paren)
+    if end < 0:
+        raise ValueError(f"unterminated raw string at offset {i}")
+    return _blank(out, text, i, end + open_paren - i)
+
+
+def _mask_quoted(out, text, i, n, quote) -> int:
+    """A "..." or '...' literal, honouring backslash escapes."""
+    out[i] = " "
+    i += 1
+    while i < n and text[i] != quote:
+        if text[i] == "\\":
+            out[i] = " "
+            i += 1
+        out[i] = " " if text[i] != "\n" else "\n"
+        i += 1
+    if i >= n:
+        raise ValueError(f"unterminated {quote} literal")
+    out[i] = " "
+    return i + 1
+
+
 def mask_literals(text):
     """Blank out comments and literals so brace scanning cannot be misled.
 
@@ -85,45 +140,15 @@ def mask_literals(text):
     out = list(text)
     i, n = 0, len(text)
     while i < n:
-        c, nxt = text[i], text[i + 1] if i + 1 < n else ""
-        if c == "/" and nxt == "/":
-            while i < n and text[i] != "\n":
-                out[i] = " "
-                # a backslash-continued // comment runs onto the next line
-                if text[i] == "\\" and text[i + 1:i + 2] == "\n":
-                    i += 1
-                i += 1
-        elif c == "/" and nxt == "*":
-            end = text.find("*/", i + 2)
-            if end < 0:
-                raise ValueError(f"unterminated /* comment at offset {i}")
-            for k in range(i, end + 2):
-                out[k] = " " if text[k] != "\n" else "\n"
-            i = end + 2
-        elif c == "R" and nxt == '"' and not (i and (text[i - 1].isalnum() or text[i - 1] == "_")):
-            close = text.find("(", i)
-            if close < 0:
-                raise ValueError(f"unterminated raw string at offset {i}")
-            end = text.find(")" + text[i + 2:close] + '"', close)
-            if end < 0:
-                raise ValueError(f"unterminated raw string at offset {i}")
-            end += close - i + 1
-            for k in range(i, end):
-                out[k] = " " if text[k] != "\n" else "\n"
-            i = end
-        elif c == '"' or (c == "'" and not (i and (text[i - 1].isalnum() or text[i - 1] == "_"))):
-            out[i] = " "
-            i += 1
-            while i < n and text[i] != c:
-                if text[i] == "\\":
-                    out[i] = " "
-                    i += 1
-                out[i] = " " if text[i] != "\n" else "\n"
-                i += 1
-            if i >= n:
-                raise ValueError(f"unterminated {c} literal")
-            out[i] = " "
-            i += 1
+        char, following = text[i], text[i + 1:i + 2]
+        if char == "/" and following == "/":
+            i = _mask_line_comment(out, text, i, n)
+        elif char == "/" and following == "*":
+            i = _mask_block_comment(out, text, i)
+        elif char == "R" and following == '"' and not _is_identifier_tail(text, i):
+            i = _mask_raw_string(out, text, i)
+        elif char == '"' or (char == "'" and not _is_identifier_tail(text, i)):
+            i = _mask_quoted(out, text, i, n, char)
         else:
             i += 1
     return "".join(out)
@@ -271,6 +296,28 @@ def build_variant(text, name, total):
     sys.exit(f"unknown variant {name!r}")
 
 
+def tests_path(source_file) -> str:
+    """Resolve a path that this script is allowed to overwrite: under <repo>/tests/.
+
+    realpath first, so a symlink inside tests/ pointing out is rejected too.
+    """
+    resolved = os.path.realpath(source_file)
+    if not resolved.startswith(os.path.join(REPO_ROOT, "tests") + os.sep):
+        raise SystemExit(f"{source_file}: refusing to rewrite anything outside tests/")
+    return resolved
+
+
+def write_tu(source_file, text) -> None:
+    """Write `text` over a TU, confined to <repo>/tests/.
+
+    The guard is called inside the write it protects rather than assigned first:
+    that is the shape the taint analysis behind S2083 recognises as sanitizing
+    the sink, and it keeps the constraint visible at the point of use — the same
+    reasoning scripts/lib/compile_replay.py's safe_path records.
+    """
+    pathlib.Path(tests_path(source_file)).write_text(text, encoding="utf-8")
+
+
 def resolve_tu(db, wanted):
     """The one TU in the compile database whose path ends with `wanted`.
 
@@ -283,11 +330,7 @@ def resolve_tu(db, wanted):
         sys.exit(f"{wanted}: not in the compile database")
     if len(matches) > 1:
         sys.exit(f"{wanted} is ambiguous: {matches}")
-    resolved = safe_path(matches[0])
-    tests_dir = os.path.join(REPO_ROOT, "tests") + os.sep
-    if not resolved.startswith(tests_dir):
-        sys.exit(f"{resolved}: refusing to rewrite anything outside tests/")
-    return resolved
+    return safe_path(matches[0])
 
 
 def report(rows, names):
@@ -317,8 +360,8 @@ def main():
 
     db = load_compile_db(args.build_dir)
     match = resolve_tu(db, args.tu)
-    path = pathlib.Path(match)
-    original = path.read_text(encoding="utf-8")
+    tests_path(match)  # diagnostic: name the real reason before reading or parsing
+    original = pathlib.Path(match).read_text(encoding="utf-8")
     total = len(blocks(original))
     if total == 0:
         sys.exit(f"{match}: no test blocks found — if its bodies live in an included "
@@ -331,7 +374,7 @@ def main():
         with tempfile.TemporaryDirectory() as tmp:
             obj = str(pathlib.Path(tmp) / "probe.o")
             for name in names:
-                path.write_text(build_variant(original, name, total), encoding="utf-8")
+                write_tu(match, build_variant(original, name, total))
                 best, err = measure(db, match, obj, args.runs, ABLATION_FLAGS)
                 if err:
                     print(f"{name:16} FAILED\n{err}\n", flush=True)
@@ -339,7 +382,7 @@ def main():
                 rows.append((name, best))
                 print(f"{name:16} {best:7.2f}s", flush=True)
     finally:
-        path.write_text(original, encoding="utf-8")
+        write_tu(match, original)
         print("\nrestored source", flush=True)
 
     report(rows, names)

@@ -25,14 +25,16 @@ FAILED_TESTS=()
 CURRENT_TAG=""
 
 fail() {
-    echo "  FAIL: $1"
+    local msg="$1"
+    echo "  FAIL: $msg"
     FAIL=$((FAIL+1))
     FAILED_TESTS+=("$CURRENT_TAG")
     return 0
 }
 
 pass() {
-    echo "  ok: $1"
+    local msg="$1"
+    echo "  ok: $msg"
     PASS=$((PASS+1))
     return 0
 }
@@ -51,6 +53,7 @@ spec.loader.exec_module(mod)
 PRELUDE
         cat
     } | python3 - "$ABLATE" 2>&1
+    return 0
 }
 
 # Compare a snippet's output (read from stdin) against an expected string.
@@ -62,6 +65,7 @@ check() {
     else
         fail "$what: expected '$expected', got '$actual'"
     fi
+    return 0
 }
 
 # Assert a snippet (read from stdin) fails with a message containing a needle.
@@ -73,6 +77,7 @@ check_fails() {
     else
         fail "$what: expected a failure mentioning '$needle', got '$actual'"
     fi
+    return 0
 }
 
 # --- the apostrophe that started it ----------------------------------------
@@ -82,6 +87,7 @@ text = "// don't do this\nint a = 1;\nvoid f() { int b = 2; }\n"
 m = mod.mask_literals(text)
 print("OK" if m.count("{") == 1 and m.count("}") == 1 else "MASKED AWAY THE CODE")
 SNIPPET
+    return 0
 }
 
 # --- the semicolon inside a streamed message --------------------------------
@@ -93,6 +99,20 @@ out = mod.sink_asserts(text)
 print("OK" if '"truncated; here"' not in out and out.count("storm_probe_sink") == 2
       else "SPAN ENDED INSIDE THE LITERAL")
 SNIPPET
+    return 0
+}
+
+# --- the same, for a raw string: the mask must stop AT the closing quote ------
+scenario_raw_string_span() {
+    check "a raw string does not swallow the character after it" "OK" <<'SNIPPET'
+text = ('#include <gtest/gtest.h>\nimport std;\nTEST(S, T) {\n'
+        '    EXPECT_TRUE(ok) << R"(why it failed)";\n'
+        '    int survivor = 42;\n'
+        '    EXPECT_EQ(survivor, 42);\n}\n')
+out = mod.sink_asserts(text)
+print("OK" if "int survivor = 42;" in out else "SWALLOWED THE FOLLOWING STATEMENT")
+SNIPPET
+    return 0
 }
 
 # --- the fixture narrowing that silently did nothing ------------------------
@@ -104,6 +124,7 @@ text = ('import std;\ntemplate <typename ConnType>\n'
 out = mod.trivial_first(text, one_model=True)
 print("OK" if "StormTestFixture<Student, ConnType>" in out else "SILENTLY UNCHANGED")
 SNIPPET
+    return 0
 }
 
 scenario_fixture_narrowing_fails_loudly() {
@@ -111,6 +132,7 @@ scenario_fixture_narrowing_fails_loudly() {
         "silently measure the same thing" <<'SNIPPET'
 mod.trivial_first("import std;\nTYPED_TEST(T, A) { EXPECT_EQ(1, 1); }\n", one_model=True)
 SNIPPET
+    return 0
 }
 
 # --- merging across macros changes what is instantiated ---------------------
@@ -121,6 +143,7 @@ text = ("import std;\nTYPED_TEST(S, A) { EXPECT_EQ(1, 1); }\n"
         "TEST(Other, B) { EXPECT_EQ(2, 2); }\n")
 mod.merge_blocks(text)
 SNIPPET
+    return 0
 }
 
 # --- the scanner must not run off the end silently --------------------------
@@ -132,6 +155,7 @@ try:
 except ValueError:
     print("ValueError")
 SNIPPET
+    return 0
 }
 
 scenario_unterminated_raw_string_raises() {
@@ -142,6 +166,7 @@ try:
 except ValueError:
     print("ValueError")
 SNIPPET
+    return 0
 }
 
 # --- block discovery against the real tree ----------------------------------
@@ -151,6 +176,7 @@ text = ("import std;\nTYPED_TEST_SUITE(S, DatabaseTypes);\n"
         "TYPED_TEST(S, A) { EXPECT_EQ(1, 1); }\n")
 print(len(mod.blocks(text)))
 SNIPPET
+    return 0
 }
 
 scenario_every_test_file_parses() {
@@ -163,12 +189,15 @@ for f in sorted(pathlib.Path(sys.argv[1]).parent.parent.joinpath("tests").rglob(
         bad.append(f"{f}: {exc}")
 print("OK" if not bad else "\n".join(bad))
 SNIPPET
+    return 0
 }
 
-for tag in mask_comment_apostrophe semicolon_in_string \
+SCENARIOS=(mask_comment_apostrophe semicolon_in_string raw_string_span \
            fixture_narrowing_is_generic fixture_narrowing_fails_loudly \
            merge_refuses_mixed_macros unterminated_block_comment_raises \
-           unterminated_raw_string_raises block_discovery every_test_file_parses; do
+           unterminated_raw_string_raises block_discovery every_test_file_parses)
+
+for tag in "${SCENARIOS[@]}"; do
     CURRENT_TAG="$tag"
     echo ""
     echo "Scenario: $tag"
@@ -178,6 +207,15 @@ done
 echo ""
 echo "================================================"
 echo "Passed: $PASS, Failed: $FAIL"
+
+# A scenario that returns before reaching its assertion increments neither
+# counter, and the suite would report green having run fewer tests than it
+# lists. Every scenario now ends in `return 0`, so that slip is one misplaced
+# line away — count them instead of trusting them.
+if (( PASS + FAIL != ${#SCENARIOS[@]} )); then
+    echo "expected ${#SCENARIOS[@]} scenarios, accounted for $((PASS + FAIL))"
+    exit 1
+fi
 
 if [[ $FAIL -gt 0 ]]; then
     echo "Failed scenarios: ${FAILED_TESTS[*]}"
