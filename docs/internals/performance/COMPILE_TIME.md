@@ -276,6 +276,57 @@ in `tests/query/test_many_to_many_modifiers.cpp` is never named again but is the
 `tests/query/test_setop.cpp:17`. That is one model's worth across the whole tree. Recorded so
 nobody re-runs the audit expecting more.
 
+### Inside the fixture layer — and why its biggest item cannot be moved
+
+[The decomposition above](#what-one-average-tu-is-made-of) leaves the fixture and typed-test
+registration as ~37-41% of a TU, its largest unexplored layer. A ladder of hand-written probe TUs
+splits it — each rung adds exactly one thing over the previous, and each is compiled by replaying a
+real TU's command, the same method as `scripts/compile_time_probe.py`. The rungs are minimal TUs, so
+read the deltas and not the totals; the ladder itself was ad-hoc and is not shipped, since the table
+below says exactly what each rung contains:
+
+| rung | Δ | what it adds |
+|---|---:|---|
+| a plain `TEST_F` over `::testing::Test` | +0.08-0.13 | gtest having a fixture at all |
+| the same made `TYPED_TEST` over `DatabaseTypes` | +0.17-0.23 | **gtest's typed-test machinery, both backends** |
+| a fixture touching only `QuerySet<Person, Conn>` statics | +0.67-0.75 | `set_`/`clear_default_connection`, ×2 |
+| `pg_schema_init` + `rollback_test_txn` | **+1.07** | the PG isolation helpers in `tests/test_db_helpers.h` |
+| `ensure_tables<Conn, Person>` | +0.85-1.14 | storm's `SchemaStatement` DDL generator, ×2 |
+| two more models in the fixture | +0.30-0.45 | the per-model slope |
+
+**gtest is ~10% of the layer, not its bulk** — the typed-test registration that the trace makes look
+dominant (`TypeParameterizedTest` 3.12 s) is dominant only because everything else nests *inside*
+it. The single most expensive item is `tests/test_db_helpers.h`'s six `std::format` calls: swapping
+them for concatenation in the probe took that rung from +1.07 to +0.22, so **`std::format`
+instantiation alone was 0.85 s per TU** — more than storm's own DDL generator — for setup that runs
+once per process.
+
+That looked like ~85 s over the suite for a test-only, coverage-neutral change. It is not
+available:
+
+- **Moving the six calls into a separately-compiled TU does not build.** Neither does replacing
+  them with concatenation, nor keeping only one that formats an `int`. All three fail the same way:
+  `definition with same mangled name '_ZNSt3__17vformat…' as another definition`, in *other* TUs
+  (`test_upsert.cpp`, `test_select_large.cpp`, …). The header's textual `<format>` and the imported
+  `std` module each define those specializations, and it is the header's own `std::format` calls —
+  instantiated early, in the global module — that make them merge. Remove the instantiations and
+  the two definitions collide.
+- **Keeping exactly one call that formats a `std::string` does build**, which locates the
+  requirement precisely: `format<std::string&>` is the specialization the reconciliation needs. But
+  it saves nothing measurable — three interleaved rounds give −0.17 s and −0.08 s on two TUs, with
+  the baseline side spreading wider than that. The cost is the *specialization*, not the number of
+  call sites, so keeping one keeps the bill.
+
+So the 0.85 s is real and load-bearing at once. It is a compiler-interaction cost
+([COMPILER_ISSUES.md](../compiler/COMPILER_ISSUES.md) territory, and the same `<format>` fragility
+[the PCH attempt hit](#import-storm-inside-the-pch--a-regression-not-a-win-633)), not a test-code
+cost, and it moves only if the textual/modular `std` reconciliation stops needing a witness.
+
+**The probe said otherwise, and the probe was wrong.** The concatenation rung compiled fine as a
+standalone probe because a minimal TU never instantiates `CollatedField` — the `where.cppm`
+`std::format` call whose merge the header was silently underwriting. A probe establishes a cost; it
+cannot establish that a change is *possible*. Build the tree before believing a probe's saving.
+
 ## The YAML corpus is not the problem
 
 It registers **494 of the suite's 3093 tests (16%) for 5.3% of compile time**.
@@ -717,6 +768,7 @@ incremental behaviour (verified: the next build was `no work to do`, 0 s).
 | ~~`test_db_helpers.h` + `shared/models.h`~~ | ~~150 s~~ | **Done (#634), for ~half the reason the issue gave.** The model cost is an *intercept* — the first model and its first `fields::` proxy are +1.64 s, the other eleven models +0.50 s — so the per-model split reaches only the slope. What made it worth doing is the part the probes bundled in with the models: the helper block every TU parsed for 2 TUs' benefit, and the 14 TUs that need no shared model at all. Measured **−0.67 s/TU ≈ −64 s** as shipped, not the ~150 s estimated nor the ~30 s the probes projected. `test_db_helpers.h` itself is +0.09 s and was never the problem. See [above](#splitting-sharedmodelsh-per-model-634--rejected-on-probes-adopted-on-measurement). |
 | the test bodies themselves | ≤13% of a TU, not recommended | **Closed by measurement.** Of an average TU the bodies are ~41-45% and the fixture another ~37-41% ([above](#what-one-average-tu-is-made-of)). Inside the bodies the only levers are merging every `TYPED_TEST` into one block and neutering the assertions — together worth 12.9% in one session and 5.5% in another, so ≤13% is a ceiling, not a value. Both keep full coverage but cost failure granularity and diagnostic quality respectively. The rest is the distinct query shapes, i.e. the checklist's coverage. |
 | `ExpressionVariant`'s 27 alternatives | ~100 s, unmeasured | The variant-visitation machinery is 6.7% of a TU, and it scales with the ALTERNATIVE COUNT — which is a design choice, since `ComparisonExpr<T>`/`BetweenExpr<T>`/`InExpression<T>` each contribute one per value type. Replacing `std::visit` with a `switch` does **not** reach it ([measured and reverted](#stdvisit-over-expressionvariant--swapped-for-a-switch-no-reproducible-effect)); nesting the value variant inside one node type to make the outer variant ~5-wide might, at the cost of a refactor of every node's `to_sql`/`bind_impl`. Measure a prototype before opening it as work. |
+| the fixture + registration layer | ~0 reachable | **Closed by measurement.** Split into its axes [above](#inside-the-fixture-layer--and-why-its-biggest-item-cannot-be-moved): gtest's typed-test machinery is only ~10% of it, and the largest single item — 0.85 s per TU of `std::format` instantiation in `tests/test_db_helpers.h` — cannot be removed, moved, or reduced without the textual/modular `std` reconciliation collapsing in unrelated TUs. What remains is storm's `QuerySet` statics (~0.7 s) and its DDL generator (~0.9 s), both of which a test genuinely uses. |
 | the reflection intercept itself | unmeasured | What the row above leaves on the table: ~1.6 s per TU to enter the machinery (first annotated struct +0.65 s, first `define_aggregate`/`FieldRef` proxy +0.99 s). Library-side, so it would benefit users and not only tests — but it is the cost of the reflection a querying TU needs anyway, so whether *any* of it is removable is unknown. Measure before opening it as work. |
 
 ---
