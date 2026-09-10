@@ -204,6 +204,78 @@ same as importing it. Its own content contributes nothing measurable. The
 umbrella adds only +0.07 s on top of it, so even a perfectly narrowed umbrella
 is worth ~8 s over the suite.
 
+## What one average TU is made of
+
+[The per-TU floor](#the-per-tu-floor) and [After the PCH](#after-the-pch-issue-633) measure
+probes — TUs with a synthetic body. This section measures a **real** one by ablating it and
+recompiling: `tests/crud/test_conditional_update.cpp`, 449 lines, 34 `TYPED_TEST` blocks, picked
+for its shape rather than its size — one `TYPED_TEST` suite over both backends, a fixture with
+three models, and bodies that are query chains and assertions and nothing else, which is what
+most of the 110 hand-written test TUs are. It is deliberately NOT picked by comparing its 11.48 s
+against the 13.8 s per-TU mean in [Re-measured after #634](#re-measured-after-634-2026-09-08):
+that mean is of per-edge **wall** times from a `-j6`-on-4-cores build, and this section's seconds
+are serial, uncontended, min-of-3 replays. The two are not the same quantity. Reproducible with
+`scripts/tu_ablation.py`; each column below is internally consistent, so read a column against
+itself and never against another section's seconds.
+
+| step | A: sec | A: Δ | B: sec | B: Δ | what the step adds |
+|---|---:|---:|---:|---:|---|
+| `n=0` — every test block deleted | 2.07 | — | 2.00 | — | includes, the gtest PCH, `import storm;`, models + `fields::` proxies |
+| `trivial1-1model` — one block, body `EXPECT_TRUE(true)`, fixture on one model | 5.58 | +3.51 | 5.32 | +3.32 | gtest's typed-test registration and `StormTestFixture<Person>`'s table machinery, ×2 backends |
+| `trivial1` — same, fixture on the file's three models | 6.74 | +1.16 | 5.89 | +0.57 | `ensure_tables` for `Message` and `TimestampedRecord`, ×2 |
+| `full` — all 34 blocks | 11.48 | **+4.74** | 10.62 | **+4.73** | the bodies: 22 distinct WHERE shapes, 8 `update<>` packs, 117 assertions |
+
+Two independent sessions, A and B, because one is not enough — see
+[the measurement mistake](#the-measurement-mistake-this-cost-worth-not-repeating) this section
+paid for. **Read the three-way split, which both sessions agree on, and not the individual
+seconds:**
+
+| layer | A | B |
+|---|---:|---:|
+| entering the TU | 2.07 (18%) | 2.00 (19%) |
+| fixture + typed-test registration | 4.67 (41%) | 3.89 (37%) |
+| the test bodies | 4.74 (41%) | 4.73 (45%) |
+
+**The bodies are ~41-45% of the TU and the fixture is another ~37-41%.** Neither dominates,
+which is why "the tests are slow" has no single fix — and the entry cost that the probe sections
+above measure is the smallest of the three. `-ftime-trace` agrees on the middle layer: under the
+first block's `TypeParameterizedTest` (3.12 s on the PG side) sits `TestFactoryImpl::CreateTest`
+(2.82 s), then `StormTestFixture::on_setup` (1.39 s), then `storm::test::ensure_tables` (1.38 s).
+
+What does NOT reproduce is the fixture's per-model slope: the same two extra models cost 1.16 s in
+A and 0.57 s in B. Treat an extra fixture model as **~0.3-0.6 s**, and do not quote a point value.
+
+Two further ablations say the bodies are not reachable either. Both keep every assertion and
+every query shape, changing only how they are spelled:
+
+| variant | A: Δ | B: Δ | reading |
+|---|---:|---:|---|
+| `merge` — all 34 bodies concatenated into ONE block, each in its own scope | −0.57 (−5.0%) | −0.17 (−1.6%) | a `TYPED_TEST` block's wrapper is nearly free |
+| `sink` — every `EXPECT_*`/`ASSERT_*` replaced by a variadic no-op that still instantiates its arguments | −0.61 (−5.3%) | −0.11 (−1.0%) | so is gtest's comparison and printing machinery |
+| `merge+sink` | −1.48 (−12.9%) | −0.58 (−5.5%) | **more** than additive in both sessions |
+
+These deltas are the ones that move most between sessions — a factor of 3 — so the honest reading
+is their **ceiling**, not their value: together the two levers are worth **at most ~13%, and
+possibly ~5%**. The rest of the ~4.7 s is the distinct query shapes themselves — the six
+comparison operators, `IN`/`BETWEEN`/`LIKE`/`IS NULL`, the `AND`/`OR` combinations the testing
+checklist requires. Cutting them is the same trade as
+[dropping the second backend](#dropping-the-second-backend-from-typed_test), and gets the same
+answer: the coverage is cheap. So the only levers inside a test file cost either failure
+granularity (one merged block reports one failure) or diagnostic quality (a no-op assertion prints
+nothing), for a single-digit percentage. Neither is worth taking.
+
+### The fixture-model audit — measured, and empty
+
+~0.3-0.6 s per extra fixture model looks like free money: a fixture naming a model no test uses
+pays it for nothing. Audited across all 116 `tests/**/*.cpp` files (the 110 above is the
+`ninjalog_stats.py` bucket, which excludes the mock-binary TUs) — every `StormTestFixture<...>`
+model list
+against the rest of its own file — and there are **two** candidates, one of them false. `Course`
+in `tests/query/test_many_to_many_modifiers.cpp` is never named again but is the m2m target of
+`Student`, so its table must exist. The one real leftover is `Message` in
+`tests/query/test_setop.cpp:17`. That is one model's worth across the whole tree. Recorded so
+nobody re-runs the audit expecting more.
+
 ## The YAML corpus is not the problem
 
 It registers **494 of the suite's 3093 tests (16%) for 5.3% of compile time**.
@@ -317,6 +389,54 @@ It works mechanically (object 10.9 MB → 10.2 MB, symbols 8404 → 7736) but do
 not move compile time, because it suppresses codegen and codegen is 0.03 s of the
 floor. An early "-47%" reading was a cold-cache artifact of the first compile in
 a session; with warm caches and min-of-3 the effect is zero or slightly negative.
+
+### `std::visit` over `ExpressionVariant` — swapped for a `switch`, no reproducible effect
+
+`ExpressionVariant` has **27 alternatives**, and `bind_params_direct` is templated on the
+statement type, so libc++'s `__make_fmatrix` / `__visit_alt` tower is rebuilt once per backend in
+every TU that runs a WHERE. Self-time attributable to that machinery in the TU above (containment
+stack over `-ftime-trace`, 20219 events) is **0.77 s of 11.48 s — 6.7%**, which projected to
+~100 s over the suite: bigger than anything in [What was fixed](#what-was-fixed) except the PCH,
+library-side rather than test-side, and free of any coverage trade. It was worth trying.
+
+Replaced both visit sites with one `visit_expression` helper — a `switch` over `index()` with 27
+explicit cases and a `static_assert` on `variant_size_v` as the guard against an alternative being
+added without its case. It is correct (3093 tests, 3092 passed and the 1 skip is the pre-existing
+PG `COLLATE NOCASE` one) and runtime-neutral: Release A/B on `Storm/WHERE/.*`, 5 interleaved
+rounds of 12 repetitions, cv 1.4-2.6%, worst delta **+0.23%** — an order of magnitude under the
+noise, as expected since a switch over `index()` lowers to the same jump table.
+
+**But the compile-time win does not reproduce.** Three interleaved rounds, rebuilding and
+re-measuring each side (medians):
+
+| TU | `std::visit` | `switch` | Δ |
+|---|---:|---:|---:|
+| `crud/test_conditional_update.cpp` | 10.95 | 11.25 | **+0.30 (+2.7%)** |
+| `query/test_where.cpp` | 10.42 | 10.04 | **−0.38 (−3.6%)** |
+
+Opposite signs, and the within-side spread (10.96-11.30 against 10.64-11.00) is the size of the
+between-side gap. The mechanism is visible in libc++: `std::get_if<N>` reaches its alternative
+through `__get_alt<N>` recursing down the union tail, so the change trades one template tower for
+another of about the same cost. The 0.77 s is a real *label* for the work; it is not removed by
+changing how the dispatch is spelled. Reverted.
+
+What this does not close: the 0.77 s scales with the **number of alternatives**, and 27 is a
+choice — `ComparisonExpr<T>`, `BetweenExpr<T>` and `InExpression<T>` contribute one alternative
+per value type. Nesting the value variant inside a single node type would make the outer variant
+~5-wide. Unmeasured, and a much larger refactor (every node's `to_sql`/`bind_impl`), so it is a
+hypothesis, not a plan.
+
+#### The measurement mistake this cost, worth not repeating
+
+The first, uncontrolled reading of this change was **11.48 s → 10.70 s (−6.8%)**, matching the
+trace's 0.77 s almost exactly — which is precisely what made it convincing. It was an artifact:
+the two runs sat on opposite sides of a BMI rebuild, and the doc's own warm-up rule
+([Method](#method)) does not cover a cold *rebuilt* BMI. The tell was in the same table and was
+missed: `n=0` moved too (2.07 → 1.94), and a variant with no test blocks at all cannot be sped up
+by a change inside a WHERE visitor. **Any single before/after spanning a library edit is
+worthless here; interleave rebuild-and-measure rounds and read medians per side**, exactly as
+`/benchmark` requires for runtime. Same trap, different resource — see the `extern template`
+entry above, whose "-47%" died the same way.
 
 ### `import storm;` inside the PCH — a regression, not a win (#633)
 
@@ -595,34 +715,47 @@ incremental behaviour (verified: the next build was `no work to do`, 0 s).
 |---|---:|---|
 | ~~`import storm;` per TU~~ | ~~230 s~~ | **Closed by measurement (#633).** The gtest PCH already took it from +1.38 s to +0.5-0.8 s per TU. What remains is gtest's own instantiations slowing down because storm's declarations are in the lookup set — not storm being loaded — so it is not reachable from storm's side. Both directions #633 proposed were measured and rejected above; together they are worth ~15 s. |
 | ~~`test_db_helpers.h` + `shared/models.h`~~ | ~~150 s~~ | **Done (#634), for ~half the reason the issue gave.** The model cost is an *intercept* — the first model and its first `fields::` proxy are +1.64 s, the other eleven models +0.50 s — so the per-model split reaches only the slope. What made it worth doing is the part the probes bundled in with the models: the helper block every TU parsed for 2 TUs' benefit, and the 14 TUs that need no shared model at all. Measured **−0.67 s/TU ≈ −64 s** as shipped, not the ~150 s estimated nor the ~30 s the probes projected. `test_db_helpers.h` itself is +0.09 s and was never the problem. See [above](#splitting-sharedmodelsh-per-model-634--rejected-on-probes-adopted-on-measurement). |
+| the test bodies themselves | ≤13% of a TU, not recommended | **Closed by measurement.** Of an average TU the bodies are ~41-45% and the fixture another ~37-41% ([above](#what-one-average-tu-is-made-of)). Inside the bodies the only levers are merging every `TYPED_TEST` into one block and neutering the assertions — together worth 12.9% in one session and 5.5% in another, so ≤13% is a ceiling, not a value. Both keep full coverage but cost failure granularity and diagnostic quality respectively. The rest is the distinct query shapes, i.e. the checklist's coverage. |
+| `ExpressionVariant`'s 27 alternatives | ~100 s, unmeasured | The variant-visitation machinery is 6.7% of a TU, and it scales with the ALTERNATIVE COUNT — which is a design choice, since `ComparisonExpr<T>`/`BetweenExpr<T>`/`InExpression<T>` each contribute one per value type. Replacing `std::visit` with a `switch` does **not** reach it ([measured and reverted](#stdvisit-over-expressionvariant--swapped-for-a-switch-no-reproducible-effect)); nesting the value variant inside one node type to make the outer variant ~5-wide might, at the cost of a refactor of every node's `to_sql`/`bind_impl`. Measure a prototype before opening it as work. |
 | the reflection intercept itself | unmeasured | What the row above leaves on the table: ~1.6 s per TU to enter the machinery (first annotated struct +0.65 s, first `define_aggregate`/`FieldRef` proxy +0.99 s). Library-side, so it would benefit users and not only tests — but it is the cost of the reflection a querying TU needs anyway, so whether *any* of it is removable is unknown. Measure before opening it as work. |
 
 ---
 
 ## Method
 
-Three scripts implement the measurements below, so a later investigation re-runs
+Four scripts implement the measurements below, so a later investigation re-runs
 them rather than rebuilding the harness (and rediscovering the mistakes in the
-bullets that follow). The first two answer "what does one TU pay"; the third
-answers "where does the whole build's time go":
+bullets that follow). Three of them answer "what does one TU pay" from different
+angles; `ninjalog_stats.py` answers "where does the whole build's time go". They
+share one replay harness, `scripts/lib/compile_replay.py`, so they agree on what
+a timed compile is:
 
 | script | answers |
 |---|---|
 | `scripts/compile_time_probe.py` | what a TU pays before its first assertion — generates probes carrying N models from `shared/models/`, replays a real TU's command against each, reports deltas |
 | `scripts/typed_test_cost.py` | what the second backend costs — compiles real TUs as-is, then with `DatabaseTypes` narrowed to SQLite, bodies untouched |
 | `scripts/ninjalog_stats.py` | where the whole build's time goes — parses `.ninja_log` into the bucket table above, deduplicating module edges and excluding scan edges |
+| `scripts/tu_ablation.py` | what ONE TU's time is made of — ablates a real test file (drop bodies, merge them into one block, neuter the assertions, narrow the fixture) and recompiles each variant |
 
 ```bash
 scripts/dev-container.sh exec python3 scripts/compile_time_probe.py
 scripts/dev-container.sh exec python3 scripts/compile_time_probe.py --body real
 scripts/dev-container.sh exec python3 scripts/typed_test_cost.py
 scripts/ninjalog_stats.py build/debug/.ninja_log     # after a build from scratch
+scripts/dev-container.sh exec python3 scripts/tu_ablation.py \
+    tests/crud/test_conditional_update.cpp --variants full,merge,sink,trivial1,n=0
 ```
 
-The first two refuse to run if `compile_commands.json` shows a compiler
-launcher, since timing through a cache measures nothing. `typed_test_cost.py`
-edits `tests/test_db_helpers.h` in place and restores it in a `finally` block —
-run it on a clean tree, and check `git diff` if it is interrupted.
+All three replay scripts refuse to run if `compile_commands.json` shows a
+compiler launcher, since timing through a cache measures nothing. Two of them
+edit the tree in place and restore it in a `finally` block — run them on a clean
+tree, and check `git diff` if one is interrupted. Mind which file:
+`typed_test_cost.py` always writes the same `tests/test_db_helpers.h`, but
+`tu_ablation.py` rewrites **whichever TU you name on the command line** (confined
+to `tests/`), and its ablated variants are compiled with the unused-entity
+warnings suppressed — `full` included, so the rows stay comparable — because
+deleting bodies orphans the file-scope helpers only those bodies used and the
+tree builds with `-Werror`.
 
 - **Per-TU timing**: replay a TU's exact command from `compile_commands.json`
   with `-o` stripped, serially, min of 3 runs. Timing through `ninja` instead adds
@@ -633,6 +766,16 @@ run it on a clean tree, and check `git diff` if it is interrupted.
   objects in 0.2 s and invalidated a whole measurement round.
 - **Warm up before measuring.** The first compile in a session is inflated by
   cold page cache for the module BMIs — this produced a fake 47% win once.
+- **A warm-up does not cover a REBUILT BMI, and one before/after pair is not a
+  result.** To compare two versions of the library, the two runs necessarily sit
+  on opposite sides of a BMI rebuild, and that alone moved a TU by ~0.8 s here —
+  enough to manufacture a 7% win that three interleaved rounds erased. Rebuild
+  and re-measure each side several times, alternating sides, and read the median
+  per side, exactly as `/benchmark` requires for runtime. A cross-check that
+  costs nothing: a change confined to one code path must leave the variants that
+  never reach it (`n=0`) unmoved — if those shift too, the run is drifting, not
+  the code. See
+  [the std::visit entry](#stdvisit-over-expressionvariant--swapped-for-a-switch-no-reproducible-effect).
 - **Whole-build breakdown**: parse `.ninja_log`, deduplicating on
   `(start, end, cmdhash)` — one module compile emits both a `.pcm` and a `.o`
   and logs a line per output, so the raw log double-counts every module edge.
