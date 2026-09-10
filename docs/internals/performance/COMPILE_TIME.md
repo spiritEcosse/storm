@@ -799,15 +799,21 @@ scripts/dev-container.sh exec python3 scripts/tu_ablation.py \
 ```
 
 All three replay scripts refuse to run if `compile_commands.json` shows a
-compiler launcher, since timing through a cache measures nothing. Two of them
-edit the tree in place and restore it in a `finally` block — run them on a clean
-tree, and check `git diff` if one is interrupted. Mind which file:
-`typed_test_cost.py` always writes the same `tests/test_db_helpers.h`, but
-`tu_ablation.py` rewrites **whichever TU you name on the command line** (confined
-to `tests/`), and its ablated variants are compiled with the unused-entity
-warnings suppressed — `full` included, so the rows stay comparable — because
-deleting bodies orphans the file-scope helpers only those bodies used and the
-tree builds with `-Werror`.
+compiler launcher, since timing through a cache measures nothing.
+`typed_test_cost.py` edits `tests/test_db_helpers.h` in place and restores it in
+a `finally` block — run it on a clean tree, and check `git diff` if it is
+interrupted. `tu_ablation.py` does **not** touch the tree: each variant goes to a
+temporary file compiled with `-iquote <the TU's own directory>` added, so the
+relative includes resolve as they do in the real build while the source stays
+untouched, an interrupted run leaves nothing behind, and two runs cannot clobber
+each other. `-iquote` rather than `-I` because the quoted-include search order is
+*including file's directory, `-iquote`, `-I`, `-isystem`* — an appended `-I` would
+land BEHIND the command's own `-I` list, where an earlier entry could shadow a
+same-named header, and would widen the angle-bracket path the real build never
+puts that directory on. Its ablated variants are compiled with the unused-entity warnings
+suppressed — `full` included, so the rows stay comparable — because deleting
+bodies orphans the file-scope helpers only those bodies used and the tree builds
+with `-Werror`.
 
 - **Per-TU timing**: replay a TU's exact command from `compile_commands.json`
   with `-o` stripped, serially, min of 3 runs. Timing through `ninja` instead adds

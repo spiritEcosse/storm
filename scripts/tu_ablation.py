@@ -30,8 +30,11 @@ would not compile at all. It applies to `full` too, so all rows share one set of
 flags and stay comparable — at the cost of `full` no longer being byte-identical
 to what the real build does.
 
-The file under test is edited in place and restored in a finally block. Run it on
-a clean tree, and check `git diff` if it is interrupted.
+The file under test is never modified: each variant is written to a temporary
+file and compiled with `-I <the TU's own directory>` added, so its relative
+includes ("../../shared/models/person.h") resolve exactly as they do in the real
+build. An interrupted run therefore cannot leave a mutated tree behind, and two
+runs cannot clobber each other.
 
     scripts/dev-container.sh exec python3 scripts/tu_ablation.py \
         tests/crud/test_conditional_update.cpp --variants full,merge,sink,n=0
@@ -51,7 +54,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "lib"))
-from compile_replay import REPO_ROOT, load_compile_db, measure, safe_path  # noqa: E402
+from compile_replay import command_for, load_compile_db, safe_path, time_compile  # noqa: E402
 
 BLOCK_RE = re.compile(r'^(TYPED_TEST|TEST_F|TEST)\s*\(([^)]*)\)', re.M)
 ASSERT_RE = re.compile(r'\b(EXPECT|ASSERT)_[A-Z_]+\s*\(')
@@ -296,48 +299,21 @@ def build_variant(text, name, total):
     sys.exit(f"unknown variant {name!r}")
 
 
-def tests_path(source_file) -> str:
-    """Resolve a path that this script is allowed to overwrite: under <repo>/tests/.
-
-    realpath first, so a symlink inside tests/ pointing out is rejected too.
-    """
-    resolved = os.path.realpath(source_file)
-    if not resolved.startswith(os.path.join(REPO_ROOT, "tests") + os.sep):
-        raise SystemExit(f"{source_file}: refusing to rewrite anything outside tests/")
-    return resolved
-
-
-def write_tu(db, index, text) -> None:
-    """Write `text` over the TU at `index` in the compile database.
-
-    Nothing derived from the command line reaches the path: the caller passes an
-    integer, and the string handed to write_text is read straight out of
-    compile_commands.json. That is what S2083 asks for — the untrusted value
-    selects a destination from a known set instead of building one — and it is a
-    real constraint, not a relabelling: a caller cannot name a path the build
-    never produced. realpath keeps a symlink inside tests/ from pointing out.
-    """
-    resolved = os.path.realpath(db[index]["file"])
-    if not resolved.startswith(os.path.join(REPO_ROOT, "tests") + os.sep):
-        raise SystemExit(f"{db[index]['file']}: refusing to rewrite anything outside tests/")
-    pathlib.Path(resolved).write_text(text, encoding="utf-8")
-
-
 def resolve_tu(db, wanted):
     """The one TU in the compile database whose path ends with `wanted`.
 
-    Returns its INDEX, not its path: everything downstream then addresses the TU
-    through the database rather than through a string built from argv. Sorted and
-    ambiguity-checked because the match names the file this script OVERWRITES —
-    picking a different one on a different run, or the first of several, is not a
-    risk worth taking for a convenience suffix.
+    Returns the ENTRY, not a path: the source read, the include directory and the
+    command then all come from the database rather than from argv, and the lookup
+    cannot miss on a checkout reached through a symlink. Sorted and
+    ambiguity-checked so a convenience suffix cannot silently measure a different
+    file on a different run.
     """
     matches = sorted((e["file"], i) for i, e in enumerate(db) if e["file"].endswith(wanted))
     if not matches:
         sys.exit(f"{wanted}: not in the compile database")
     if len(matches) > 1:
         sys.exit(f"{wanted} is ambiguous: {[m[0] for m in matches]}")
-    return matches[0][1]
+    return db[matches[0][1]]
 
 
 def report(rows, names):
@@ -356,7 +332,7 @@ def report(rows, names):
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("tu", help="test TU to decompose, by path suffix (must be under tests/)")
+    ap.add_argument("tu", help="test TU to decompose, by path suffix into the compile database")
     ap.add_argument("--build-dir", default="build/debug",
                     help="configured build tree, relative to the repository root")
     ap.add_argument("--runs", type=int, default=3,
@@ -366,9 +342,8 @@ def main():
     args = ap.parse_args()
 
     db = load_compile_db(args.build_dir)
-    index = resolve_tu(db, args.tu)
-    match = db[index]["file"]
-    tests_path(match)  # diagnostic: name the real reason before reading or parsing
+    entry = resolve_tu(db, args.tu)
+    match = entry["file"]
     original = pathlib.Path(safe_path(match)).read_text(encoding="utf-8")
     total = len(blocks(original))
     if total == 0:
@@ -377,21 +352,31 @@ def main():
     names = [v.strip() for v in args.variants.split(",") if v.strip()]
     print(f"{match}\n{total} test blocks\n", flush=True)
 
+    # The TU's own directory on the quoted-include path: the variant compiles from
+    # a temporary file, and quoted includes resolve against the INCLUDING file's
+    # directory first, so without this every "../../shared/models/*.h" would miss.
+    #
+    # -iquote, not -I: the search order is (including file's dir, -iquote, -I,
+    # -isystem), so -iquote lands ahead of the command's own -I list — where the
+    # real build searches this directory — while an appended -I would land behind
+    # it and let an earlier -I shadow a same-named header. -iquote also leaves the
+    # angle-bracket path untouched, which -I would widen beyond what the real
+    # build has.
+    cmd, cwd = command_for(entry)
+    extra = ABLATION_FLAGS + ("-iquote", os.path.dirname(entry["file"]))
+
     rows = []
-    try:
-        with tempfile.TemporaryDirectory() as tmp:
-            obj = str(pathlib.Path(tmp) / "probe.o")
-            for name in names:
-                write_tu(db, index, build_variant(original, name, total))
-                best, err = measure(db, match, obj, args.runs, ABLATION_FLAGS)
-                if err:
-                    print(f"{name:16} FAILED\n{err}\n", flush=True)
-                    continue
-                rows.append((name, best))
-                print(f"{name:16} {best:7.2f}s", flush=True)
-    finally:
-        write_tu(db, index, original)
-        print("\nrestored source", flush=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        probe = pathlib.Path(tmp) / "tu_ablation_probe.cpp"
+        obj = str(pathlib.Path(tmp) / "probe.o")
+        for name in names:
+            probe.write_text(build_variant(original, name, total), encoding="utf-8")
+            best, err = time_compile(cmd, cwd, str(probe), obj, args.runs, extra)
+            if err:
+                print(f"{name:16} FAILED\n{err}\n", flush=True)
+                continue
+            rows.append((name, best))
+            print(f"{name:16} {best:7.2f}s", flush=True)
 
     report(rows, names)
     return 0 if rows else 1
