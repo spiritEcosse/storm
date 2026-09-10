@@ -370,7 +370,16 @@ def main():
         probe = pathlib.Path(tmp) / "tu_ablation_probe.cpp"
         obj = str(pathlib.Path(tmp) / "probe.o")
         for name in names:
-            probe.write_text(build_variant(original, name, total), encoding="utf-8")
+            # NOSONAR(pythonsecurity:S2083) — the path here is TemporaryDirectory()
+            # plus a hardcoded basename; nothing from argv reaches it. Four rounds
+            # went into satisfying this rule honestly: a same-frame realpath and
+            # prefix guard, comparing the argument against the compile database's
+            # own file set, addressing the entry by index, and finally removing the
+            # write to the source file altogether (this commit's predecessor). It
+            # still fires, and what is left tainted is the file's CONTENT, which no
+            # change can remove — writing the variant IS the tool. See
+            # docs/internals/performance/COMPILE_TIME.md.
+            probe.write_text(build_variant(original, name, total), encoding="utf-8")  # NOSONAR
             best, err = time_compile(cmd, cwd, str(probe), obj, args.runs, extra)
             if err:
                 print(f"{name:16} FAILED\n{err}\n", flush=True)
