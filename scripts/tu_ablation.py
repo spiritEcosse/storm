@@ -370,8 +370,10 @@ def main():
         probe = pathlib.Path(tmp) / "tu_ablation_probe.cpp"
         obj = str(pathlib.Path(tmp) / "probe.o")
         for name in names:
-            # NOSONAR(pythonsecurity:S2083) — the path here is TemporaryDirectory()
-            # plus a hardcoded basename; nothing from argv reaches it. Four rounds
+            # The trailing marker suppresses pythonsecurity S2083: the path here is
+            # TemporaryDirectory() plus a hardcoded basename, so nothing from argv
+            # reaches it. (Spelled as a bare marker — the parenthesised form needs a
+            # plain rule id, and "repository:Sxxxx" trips python S7632.) Four rounds
             # went into satisfying this rule honestly: a same-frame realpath and
             # prefix guard, comparing the argument against the compile database's
             # own file set, addressing the entry by index, and finally removing the
