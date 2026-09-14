@@ -48,10 +48,20 @@ add_custom_target(generate_test_json ALL DEPENDS ${SPLIT_JSON_FILES})
 # including file, so they cannot live under the build dir). Register them for
 # `clean` so a renamed category does not leave a stale JSON behind that keeps
 # satisfying an #embed — which would pass on a warm tree and fail on a cold one.
+#
+# The glob is what makes that true. Listing ${SPLIT_JSON_FILES} alone registers
+# only the CURRENT names, so the one file a rename orphans — the only file the
+# hazard is about — was precisely the one `clean` could not reach. #582 produced
+# the first real instance: the combined unified_cases.json it stopped generating
+# still sits in every tree built before it.
+file(GLOB STALE_CASES_JSON "${TEST_CASES_DIR}/unified_cases*.json")
+list(APPEND STALE_CASES_JSON ${SPLIT_JSON_FILES})
+list(REMOVE_DUPLICATES STALE_CASES_JSON)
+
 set_property(
   TARGET generate_test_json
   APPEND
-  PROPERTY ADDITIONAL_CLEAN_FILES ${SPLIT_JSON_FILES})
+  PROPERTY ADDITIONAL_CLEAN_FILES ${STALE_CASES_JSON})
 
 # Auto-discover all test source files (excluding mock_sqlite/mock_libpq
 # directories)
@@ -202,27 +212,41 @@ gtest_discover_tests(${PROJECT_NAME} DISCOVERY_MODE PRE_TEST DISCOVERY_TIMEOUT
 # Add Clang-specific flags (modules and reflection) to tests (same as Storm
 # library)
 apply_clang_flags(${PROJECT_NAME})
+# cmake-format: off
 # No -fconstexpr-steps here, deliberately. The consteval JSON parser for the
 # YAML-driven test corpus used to need -fconstexpr-steps=4194304, sized when one
-# TU parsed all 247 cases. #561 split the corpus across four tests/yaml TUs,
-# each #embedding only its own category slice, and the flag was never
-# re-measured.
+# TU parsed all 247 cases. #561 split the corpus across four tests/yaml TUs, each
+# #embedding only its own category slice, and the flag was never re-measured.
 #
 # #582 measured it, per slice, by bisecting the flag on each TU's real compile
 # command down to where clang reports "constexpr evaluation hit maximum step
 # limit":
 #
-# grouped    295864   <- ceiling, and NOT the slice with the most cases select
-# 213964 aggregate  164824 crud        82924
+#     grouped    295864   <- ceiling, and NOT the slice with the most cases
+#     select     213964
+#     aggregate  164824
+#     crud        82924
 #
-# grouped leads because cost tracks JSON bytes parsed (20.9 KB vs select's 14.3
-# KB), not case count (69 vs 75). Clang's DEFAULT step limit is 1048576
+# grouped leads because cost tracks JSON bytes parsed (20.9 KB vs select's
+# 14.3 KB), not case count (69 vs 75). Clang's DEFAULT step limit is 1048576
 # (verified: with no flag and with -fconstexpr-steps=1048576 the same probe
 # breaks at an identical loop count; 4194304 moves it 4x), i.e. ~3.5x the worst
-# slice — so the flag bought nothing and setting it to 1048576 would only have
-# been the default spelled out. A slice that outgrows the default fails with
-# that same diagnostic, and this comment is where to come back to. Treat
-# warnings as errors on Storm-owned test code (issue #317). Third-party
+# slice -- so the flag bought nothing and setting it to 1048576 would only have
+# been the default spelled out.
+#
+# The flag was target-wide, but only these four slices were measured: the other
+# ~40 TUs in storm_tests (reflection-heavy consteval in crud/, query/, schema/)
+# never had a measured budget, and are covered by the default on the evidence of
+# a clean full rebuild. So a step-limit failure elsewhere in this target is a new
+# data point, not a regression against a known budget -- measure that TU the same
+# way before reaching for the flag again.
+#
+# The fences matter: cmakelang runs at its defaults (no .cmake-format config in
+# the repo) and reflows comment markup, which is what flattened this table into
+# two unreadable lines when #582 first landed.
+# cmake-format: on
+
+# Treat warnings as errors on Storm-owned test code (issue #317). Third-party
 # gtest/gmock headers are silenced via SYSTEM includes in cmake/tests.cmake.
 target_compile_options(${PROJECT_NAME} PRIVATE -Werror)
 # Note: Custom libc++ linking now handled by global add_link_options() in main

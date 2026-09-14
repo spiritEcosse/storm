@@ -22,7 +22,7 @@
  */
 
 #ifndef STORM_UNIFIED_CASES_FILE
-#error "Define STORM_UNIFIED_CASES_FILE to a per-category corpus (see tests/yaml/test_unified_yaml_select.cpp) before including test_parser.hpp."
+#error "test_parser.hpp: define STORM_UNIFIED_CASES_FILE to a per-category corpus (see tests/yaml/test_unified_yaml_select.cpp) before including"
 #endif
 
 #include <array>

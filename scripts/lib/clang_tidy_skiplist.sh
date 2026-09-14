@@ -34,11 +34,17 @@
 #   tests/tools/storm_schema/models.h, shared/models.h
 #
 #   tests/test_unified_yaml_body.h joined with the YAML-harness split (#561).
-#   It needs `import storm;` like its siblings, and additionally reads
-#   STORM_UNIFIED_CASES_FILE, which the INCLUDING TU defines — parsed standalone
-#   that macro is undeclared and the static_assert guarding it errors out. The
-#   code is still linted through the four tests/yaml/test_unified_yaml_*.cpp TUs
-#   that include it, each of which has a real compile-commands entry.
+#   It needs `import storm;` like its siblings — that alone is the reason, since
+#   #582 deleted the static_assert on STORM_UNIFIED_CASES_FILE this entry used to
+#   cite (the header no longer names that macro in code at all). Do not prune the
+#   entry on the strength of the macro being gone. The code is still linted
+#   through the four tests/yaml/test_unified_yaml_*.cpp TUs that include it, each
+#   of which has a real compile-commands entry.
+#
+#   tests/test_parser.hpp is listed above for symmetry, but its standalone failure
+#   is neither storm nor a missing BMI: since #582 it #errors immediately unless
+#   the including TU defined STORM_UNIFIED_CASES_FILE, and what it imports is
+#   storm_benchmark_schema, not storm.
 #
 #   The 12 *_body.h files are the compile-time TU-split bodies (each holds the
 #   shared TYPED_TEST_SUITE/TYPED_TEST content for one _sqlite.cpp/_pg.cpp pair):
