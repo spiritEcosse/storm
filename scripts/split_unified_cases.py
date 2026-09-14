@@ -4,9 +4,9 @@
 Usage:
     python3 split_unified_cases.py input.yaml output_dir
 
-Writes <output_dir>/unified_cases_<category>.json for each category, plus the
-combined <output_dir>/unified_cases.json (still consumed by any includer that
-does not define STORM_UNIFIED_CASES_FILE).
+Writes <output_dir>/unified_cases_<category>.json for each category. There is no
+combined output: every includer of test_parser.hpp selects a slice via
+STORM_UNIFIED_CASES_FILE, which since #582 has no default (#error without it).
 
 Issue #561: the 247-case corpus compiled as a single TU took 53 s -- 89% of it
 the per-case template instantiation, linear at ~190 ms/case. Splitting the
