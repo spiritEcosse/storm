@@ -4,19 +4,25 @@
  * @file test_parser.hpp
  * @brief Compile-time JSON parser for YAML-driven unit test cases.
  *
- * Uses raw-pointer access (~2 steps/char) to stay within the 4M constexpr
- * step budget -- sized when one TU parsed all 247 cases, so it clears any
- * single slice comfortably. Imports storm_benchmark_schema for struct
- * definitions; does NOT import storm_benchmark_parser.
+ * Uses raw-pointer access (~2 steps/char) to stay within clang's default
+ * constexpr step limit -- which since #582 is all this needs, no
+ * -fconstexpr-steps override (see the measurement in tests/CMakeLists.txt).
+ * Imports storm_benchmark_schema for struct definitions; does NOT import
+ * storm_benchmark_parser.
  *
  * Issue #561: the corpus path is a macro because #embed requires a literal
  * filename -- a TU selects its slice by defining STORM_UNIFIED_CASES_FILE
- * before including this header. The default is the full corpus, for any
- * includer that does not.
+ * before including this header.
+ *
+ * Issue #582: there is no default. A full-corpus default let a TU that forgot
+ * to select a slice compile anyway, registering all 247 cases under one
+ * category with no diagnostic -- so the corpus had to keep being generated in
+ * combined form for a branch nothing was meant to take. Failing here instead
+ * costs nothing and names the fix.
  */
 
 #ifndef STORM_UNIFIED_CASES_FILE
-#define STORM_UNIFIED_CASES_FILE "test_cases/unified_cases.json"
+#error "test_parser.hpp: define STORM_UNIFIED_CASES_FILE to a per-category corpus (see tests/yaml/test_unified_yaml_select.cpp) before including"
 #endif
 
 #include <array>

@@ -35,16 +35,6 @@
 #include "test_fixture.h"
 #include "test_seed_helpers.h"
 
-// A category TU must select its slice BEFORE including test_parser.hpp. Forgetting
-// to is silent otherwise: test_parser.hpp's #ifndef default kicks in and the TU
-// registers all 247 cases under one category name, with no diagnostic. Checked here
-// rather than with #ifndef, because by this point test_parser.hpp has always
-// defined the macro -- to the default, which is exactly the case to reject.
-#include <string_view>
-static_assert(std::string_view(STORM_UNIFIED_CASES_FILE) != std::string_view("test_cases/unified_cases.json"),
-              "Define STORM_UNIFIED_CASES_FILE to a per-category corpus before including "
-              "test_parser.hpp; the full-corpus default would register every case under one category.");
-
 namespace storm::test {
 
 // Per-category fixture; Tag distinguishes the TUs -- see the ODR note above.

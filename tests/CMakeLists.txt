@@ -1,37 +1,25 @@
 project(storm_tests LANGUAGES CXX)
 
 # ============================================================================
-# YAML → JSON conversion for YAML-driven test cases Each YAML file is converted
+# YAML → JSON conversion for YAML-driven test cases.
+# test_cases/unified_cases.yaml is the single source of truth; it is converted
 # to JSON at configure time so the JSON can be embedded via C++26 #embed in
 # test_parser.hpp.
 # ============================================================================
 
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
 
-set(YAML_TO_JSON_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/yaml_to_json_tests.py")
 set(TEST_CASES_DIR "${CMAKE_CURRENT_SOURCE_DIR}/test_cases")
 
-set(YAML_TEST_FILES unified_cases)
-
-set(GENERATED_JSON_FILES "")
-foreach(STEM IN LISTS YAML_TEST_FILES)
-  set(YAML_SRC "${TEST_CASES_DIR}/${STEM}.yaml")
-  set(JSON_OUT "${TEST_CASES_DIR}/${STEM}.json")
-  list(APPEND GENERATED_JSON_FILES "${JSON_OUT}")
-  add_custom_command(
-    OUTPUT "${JSON_OUT}"
-    COMMAND ${Python3_EXECUTABLE} "${YAML_TO_JSON_SCRIPT}" "${YAML_SRC}"
-            "${JSON_OUT}"
-    DEPENDS "${YAML_SRC}" "${YAML_TO_JSON_SCRIPT}"
-    COMMENT "Generating ${STEM}.json from YAML"
-    VERBATIM)
-endforeach()
-
-# Issue #561: the unified corpus is additionally split by category, one JSON per
-# test TU, so its ~190 ms/case of template instantiation compiles in parallel
-# (53 s -> 24 s wall). The split files are generated from the same YAML source
-# as the combined one, never hand-maintained. The combined unified_cases.json
-# above stays generated: it is the #ifndef default in test_parser.hpp.
+# Issue #561: the unified corpus is split by category, one JSON per test TU, so
+# its ~190 ms/case of template instantiation compiles in parallel (53 s -> 24 s
+# wall). The split files are generated from the YAML, never hand-maintained.
+#
+# Issue #582: a second rule here also emitted the whole corpus as one
+# unified_cases.json, to feed test_parser.hpp's #ifndef default. Every includer
+# selects a slice, so nothing embedded it -- the rule generated a 53 KB file on
+# every build for a branch no TU took. It is gone along with the default, and so
+# is scripts/yaml_to_json_tests.py, which this rule was the only caller of.
 set(SPLIT_CASES_SCRIPT "${CMAKE_SOURCE_DIR}/scripts/split_unified_cases.py")
 set(UNIFIED_CASES_YAML "${TEST_CASES_DIR}/unified_cases.yaml")
 
@@ -54,17 +42,26 @@ add_custom_command(
   COMMENT "Splitting unified_cases.yaml into per-category JSON"
   VERBATIM)
 
-add_custom_target(generate_test_json ALL DEPENDS ${GENERATED_JSON_FILES}
-                                                 ${SPLIT_JSON_FILES})
+add_custom_target(generate_test_json ALL DEPENDS ${SPLIT_JSON_FILES})
 
 # These are generated into the SOURCE tree (#embed resolves relative to the
 # including file, so they cannot live under the build dir). Register them for
 # `clean` so a renamed category does not leave a stale JSON behind that keeps
 # satisfying an #embed — which would pass on a warm tree and fail on a cold one.
+#
+# The glob is what makes that true. Listing ${SPLIT_JSON_FILES} alone registers
+# only the CURRENT names, so the one file a rename orphans — the only file the
+# hazard is about — was precisely the one `clean` could not reach. #582 produced
+# the first real instance: the combined unified_cases.json it stopped generating
+# still sits in every tree built before it.
+file(GLOB STALE_CASES_JSON "${TEST_CASES_DIR}/unified_cases*.json")
+list(APPEND STALE_CASES_JSON ${SPLIT_JSON_FILES})
+list(REMOVE_DUPLICATES STALE_CASES_JSON)
+
 set_property(
   TARGET generate_test_json
   APPEND
-  PROPERTY ADDITIONAL_CLEAN_FILES ${GENERATED_JSON_FILES} ${SPLIT_JSON_FILES})
+  PROPERTY ADDITIONAL_CLEAN_FILES ${STALE_CASES_JSON})
 
 # Auto-discover all test source files (excluding mock_sqlite/mock_libpq
 # directories)
@@ -215,14 +212,40 @@ gtest_discover_tests(${PROJECT_NAME} DISCOVERY_MODE PRE_TEST DISCOVERY_TIMEOUT
 # Add Clang-specific flags (modules and reflection) to tests (same as Storm
 # library)
 apply_clang_flags(${PROJECT_NAME})
-# Increase constexpr steps limit — consteval JSON parser for the YAML-driven
-# test corpus. #561 split the 247 cases across four tests/yaml TUs, each of
-# which #embeds and parses only its own category slice — no TU embeds the whole
-# corpus any more (the three tests/crud TUs that used to include test_parser.hpp
-# without using a symbol from it no longer do). The limit is still sized for the
-# full corpus: the per-slice budgets have not been measured, so lowering it is a
-# separate change.
-target_compile_options(${PROJECT_NAME} PRIVATE -fconstexpr-steps=4194304)
+# cmake-format: off
+# No -fconstexpr-steps here, deliberately. The consteval JSON parser for the
+# YAML-driven test corpus used to need -fconstexpr-steps=4194304, sized when one
+# TU parsed all 247 cases. #561 split the corpus across four tests/yaml TUs, each
+# #embedding only its own category slice, and the flag was never re-measured.
+#
+# #582 measured it, per slice, by bisecting the flag on each TU's real compile
+# command down to where clang reports "constexpr evaluation hit maximum step
+# limit":
+#
+#     grouped    295864   <- ceiling, and NOT the slice with the most cases
+#     select     213964
+#     aggregate  164824
+#     crud        82924
+#
+# grouped leads because cost tracks JSON bytes parsed (20.9 KB vs select's
+# 14.3 KB), not case count (69 vs 75). Clang's DEFAULT step limit is 1048576
+# (verified: with no flag and with -fconstexpr-steps=1048576 the same probe
+# breaks at an identical loop count; 4194304 moves it 4x), i.e. ~3.5x the worst
+# slice -- so the flag bought nothing and setting it to 1048576 would only have
+# been the default spelled out.
+#
+# The flag was target-wide, but only these four slices were measured: the other
+# ~40 TUs in storm_tests (reflection-heavy consteval in crud/, query/, schema/)
+# never had a measured budget, and are covered by the default on the evidence of
+# a clean full rebuild. So a step-limit failure elsewhere in this target is a new
+# data point, not a regression against a known budget -- measure that TU the same
+# way before reaching for the flag again.
+#
+# The fences matter: cmakelang runs at its defaults (no .cmake-format config in
+# the repo) and reflows comment markup, which is what flattened this table into
+# two unreadable lines when #582 first landed.
+# cmake-format: on
+
 # Treat warnings as errors on Storm-owned test code (issue #317). Third-party
 # gtest/gmock headers are silenced via SYSTEM includes in cmake/tests.cmake.
 target_compile_options(${PROJECT_NAME} PRIVATE -Werror)
