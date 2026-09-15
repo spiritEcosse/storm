@@ -593,6 +593,109 @@ about what is an error) that composite-PK and FK work keeps hitting. Recorded
 here so the trade is known and nobody has to re-measure it: the coverage is
 cheap, at 13% of test compile time.
 
+### Hoisting `SelectStatement<T>`'s `T`-independent methods into a non-template runtime
+
+The standing suggestion: `SelectStatement<T, ConnType>` has 57 class-body entities (member
+functions, the nested `QueryBase`/`Query`/`FirstQuery`/`GetQuery`/`QueryClauses` types, the static
+SQL data and the type aliases, counted by walking the class body at brace depth 1), many of which
+(`prepare`, `bind`, `step`, `reset`, error handling) look independent of `T`, so the compiler
+instantiates them once per model for nothing. Move them into a non-template `StatementRuntime`
+(optionally behind a `QueryPlan` carrying the `T`-specific SQL across the boundary) and the
+per-model instantiation collapses to one shared implementation.
+
+**Most of the boundary already exists, and what is left of it is 0.3% of a TU.**
+
+The premise does not hold here. `prepare`/`bind`/`step`/`reset`/`finalize` and all error handling
+are not in `SelectStatement` — they are in `storm::db::sqlite::Statement` and
+`storm::db::postgresql::Statement` (`src/db/sqlite.cppm:47`, `src/db/postgresql_statement.cppm:16`),
+**plain non-template classes**, one per backend; `T` never reaches the DB layer. The only data
+member is `std::shared_ptr<ConnType> conn_`, so there is no `Connection<T>`/`Statement<T>` to
+propagate `T` through the graph. The join layer already applies the `QueryPlan` pattern:
+`M2MRelation` is a non-template struct of function pointers, and `JoinStatementWrapper<PkKeyType>`
+is keyed on the PK type (~3 values), not on the model.
+
+Classifying all 57 by hand leaves 11 runtime bodies that are genuinely
+`T`-independent — `build_sql`, `to_sql`/`to_sql_first`/`to_sql_get`, `bind_where_or_propagate`,
+`prepare_simple_path`, `prepare_and_bind`, `is_simple_select`, `prepare_statement`,
+`prepare_clause_sql`, `step_first_row` — plus the `QueryClauses` struct, **≈166 of 958 lines
+(17%)**, none of which contains reflection, `consteval`, a `plf::hive<T>` or a coroutine frame.
+Everything expensive (`extract_all_columns`, the consteval SQL builders, the hive loops,
+`generator<expected<T, Error>>`, the stitch-key splices) reads `T` irreducibly.
+
+Measured with `scripts/trace_one.py`, which attributes the instantiation events by SELF time so a
+nested instantiation is not charged again to its parent. The numbers below are what this
+invocation prints, and the same with `tests/query/test_where.cpp` — `--filter` and `--subset` are
+the substring lists behind them, recorded here because the subset is a hand-maintained name list.
+Two serial runs per TU (serial matters: one contended run put Frontend at 14.22 s and the share at
+0.83%); the absolute seconds move with machine load, the shares do not, so the columns are ranges
+over the runs and the percentages are the result:
+
+```
+scripts/dev-container.sh exec python3 scripts/trace_one.py tests/crud/test_select.cpp \
+    --filter SelectStatement \
+    --subset '::build_sql,::to_sql,::bind_where_or_propagate,::prepare_simple_path,::prepare_and_bind,::is_simple_select,::prepare_statement,::prepare_clause_sql,::step_first_row'
+```
+
+| TU | Frontend | all `SelectStatement` | the `T`-independent subset |
+|---|---:|---:|---:|
+| `crud/test_select.cpp` (SELECT-only, one model, 2 backends) | 8.6-9.6 s | 0.103-0.112 s (**1.16-1.19%**) | 0.026-0.028 s (**0.29-0.30%**) |
+| `query/test_where.cpp` | 11.7-12.7 s | 0.171-0.185 s (**1.45%**) | 0.037-0.039 s (**0.30-0.31%**) |
+
+Deleting the entire class template would buy ~1.2-1.5% of a TU. The movable 17% of it is
+**0.29-0.31%**, on the two TUs where SELECT is the whole point — and a quarter of what does show
+up is `InstantiateClass` on the class itself, which a method hoist does not remove.
+
+The per-specialization slope says the same from the other side (`scripts/probe_select_slope.py`,
+N synthetic models, two rounds):
+
+| | N=1 | N=3 | N=6 | slope per extra model (raw) |
+|---|---:|---:|---:|---:|
+| models + `fields::` proxies declared, nothing queried | 1.83 / 2.07 | 1.88 / 2.05 | 1.99 / 2.03 | 0.03 / −0.01 |
+| + the SELECT stack instantiated, one backend | 6.83 / 7.49 | 7.62 / 8.42 | 9.86 / 9.87 | **0.61 / 0.48** |
+| + the same on both backends | 7.22 / 7.96 | 9.09 / 9.25 | 11.40 / 11.55 | 0.84 / 0.72 |
+
+So one additional model's SELECT stack costs **0.48-0.58 s** on the first backend and **~0.23 s**
+more on the second — against an **intercept of ~5.0-5.4 s** to enter the machinery at all. That is
+the whole stack: `QuerySet`, the WHERE expression, `BaseStatement`, the schema and extraction
+machinery and `SelectStatement` together. (The bolded column is the raw `select` slope; the
+0.48-0.58 quoted here is that minus the `decl` slope, which is what the script's own
+"one extra model's SELECT stack" line prints.) A hoist reduces only the slope, and against that
+denominator `SelectStatement` is ~13% (0.10 s of the ~0.8 s a model costs across both backends) of
+which the movable part is a quarter — ~3%.
+
+The probe errs in both directions and neither is large. It calls `.to_sql()`, which neither
+measured TU does, so it over-states the stack; and its synthetic models carry no relation, FK,
+optional or blob member, so `SelectStatement`'s m2m half — `if constexpr`-gated on
+`has_m2m_field_ || has_reverse_fk_field_`, and with it `prepare_clause_sql`, `run_q1`,
+`run_q2_stitch` and the stitch-key machinery — is never instantiated, which makes the slope a
+floor for a real model.
+
+**The first version of that probe measured a third of the real slope, in the direction of its own
+conclusion.** It ended each chain at `qs.select()`, and a member of a class template is
+instantiated on odr-use: stopping at the proxy compiles `Query`/`FirstQuery`/`GetQuery`'s
+declarations and none of their bodies — so `build_sql`, `prepare_statement`, `extract_all_columns`
+and the consteval SQL builders, i.e. the study's entire subject, never existed. It read 0.20 s per
+model instead of 0.48-0.58 s. `compile_time_probe.py`'s `BODIES["real"]` has the same shape and is
+defensible there (it measures the intercept, where the bodies are not the point), which is how the
+shape got copied. **A probe that under-instantiates fails silently and reads fast** — terminate
+every chain, and check a `--filter` trace names the members you meant to measure.
+
+Two further reasons not to open it. `SelectStatement` is the **least** multiplied statement
+template — exactly one specialization per `(model, backend)`; `ProjectionStatement<T, ConnType,
+Mode, FieldInfos...>` (`distinct()`/`values()`) and `AggregateStatement<T, ConnType, GroupFields,
+Ops...>` instantiate once per *field-selector pack*. And the top storm instantiation costs in those
+two TUs are elsewhere — summed across both (the table above is per-TU): `SchemaStatement` 1.13 s,
+`BaseStatement` 0.74 s, `default_return_id` 0.49 s, `InsertStatement` 0.44 s, against
+`SelectStatement`'s 0.27-0.30 s — consistent with
+[the fixture layer](#inside-the-fixture-layer--and-why-its-biggest-item-cannot-be-moved), whose DDL
+generator is the single largest storm-side item a test TU pays.
+
+Not measured, because the ceiling closed the question first: whether the refactor is even
+runtime-neutral. `build_sql` and the `prepare_*` helpers carry `__attribute__((always_inline))` on
+the hot path, for the call-overhead reason recorded in `select.cppm`'s own #264 Phase 2 comments,
+and routing them through a non-template runtime reintroduces exactly the indirection those comments
+are about.
+
 ### Replacing GoogleTest — poor return
 
 The ceiling is gtest's 2.2 s, but any framework includes standard headers
@@ -775,12 +878,13 @@ incremental behaviour (verified: the next build was `no work to do`, 0 s).
 
 ## Method
 
-Four scripts implement the measurements below, so a later investigation re-runs
+Six scripts implement the measurements below, so a later investigation re-runs
 them rather than rebuilding the harness (and rediscovering the mistakes in the
-bullets that follow). Three of them answer "what does one TU pay" from different
-angles; `ninjalog_stats.py` answers "where does the whole build's time go". They
-share one replay harness, `scripts/lib/compile_replay.py`, so they agree on what
-a timed compile is:
+bullets that follow). Five of them answer "what does one TU pay" from different
+angles; `ninjalog_stats.py` answers "where does the whole build's time go". Those
+five share one replay harness, `scripts/lib/compile_replay.py`, so they agree on
+what a timed compile is, which TU a convenience suffix resolves to, and which
+paths a CLI argument may reach:
 
 | script | answers |
 |---|---|
@@ -788,6 +892,8 @@ a timed compile is:
 | `scripts/typed_test_cost.py` | what the second backend costs — compiles real TUs as-is, then with `DatabaseTypes` narrowed to SQLite, bodies untouched |
 | `scripts/ninjalog_stats.py` | where the whole build's time goes — parses `.ninja_log` into the bucket table above, deduplicating module edges and excluding scan edges |
 | `scripts/tu_ablation.py` | what ONE TU's time is made of — ablates a real test file (drop bodies, merge them into one block, neuter the assertions, narrow the fixture) and recompiles each variant |
+| `scripts/trace_one.py` | what ONE TU instantiates — replays a TU's command with `-ftime-trace -ftime-trace-granularity=0` and leaves the JSON next to the object, for attributing instantiation SELF time by template |
+| `scripts/probe_select_slope.py` | what ONE extra `(model, backend)` query stack costs — generates N synthetic models, compiles them declared-only / queried on one backend / queried on both, and reports the slope |
 
 ```bash
 scripts/dev-container.sh exec python3 scripts/compile_time_probe.py
@@ -796,10 +902,14 @@ scripts/dev-container.sh exec python3 scripts/typed_test_cost.py
 scripts/ninjalog_stats.py build/debug/.ninja_log     # after a build from scratch
 scripts/dev-container.sh exec python3 scripts/tu_ablation.py \
     tests/crud/test_conditional_update.cpp --variants full,merge,sink,trivial1,n=0
+scripts/dev-container.sh exec python3 scripts/trace_one.py tests/crud/test_select.cpp
+scripts/dev-container.sh exec python3 scripts/probe_select_slope.py --counts 1,3,6
 ```
 
-All three replay scripts refuse to run if `compile_commands.json` shows a
-compiler launcher, since timing through a cache measures nothing.
+All five replay scripts refuse to run if `compile_commands.json` shows a
+compiler launcher, since timing through a cache measures nothing — `trace_one.py`
+inherits the refusal through the same `command_for`, though it reports a single
+`-ftime-trace` compile rather than a min-of-N timing.
 `typed_test_cost.py` edits `tests/test_db_helpers.h` in place and restores it in
 a `finally` block — run it on a clean tree, and check `git diff` if it is
 interrupted. `tu_ablation.py` does **not** touch the tree: each variant goes to a

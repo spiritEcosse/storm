@@ -20,7 +20,7 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "lib"))
-from compile_replay import REPO_ROOT, command_for, load_compile_db, time_compile  # noqa: E402
+from compile_replay import REPO_ROOT, command_for, load_compile_db, resolve_tu, time_compile  # noqa: E402
 
 BODIES = {
     # Matches the table in COMPILE_TIME.md. An empty body understates costs that
@@ -129,12 +129,7 @@ def write_probe_header(tmpdir: pathlib.Path, headers, count: int, selectors: boo
 
 def base_command(build_dir, reference: str):
     """The compile command of a real TU, ready for a probe source to be appended."""
-    db = load_compile_db(build_dir)
-    try:
-        entry = next(e for e in db if e["file"].endswith(reference))
-    except StopIteration:
-        sys.exit(f"no compile_commands.json entry ends with {reference!r}")
-    return command_for(entry)
+    return command_for(resolve_tu(load_compile_db(build_dir), reference))
 
 
 def build_variants(tmpdir: pathlib.Path, headers, body: str, counts: str):

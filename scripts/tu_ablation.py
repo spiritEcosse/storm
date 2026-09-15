@@ -54,7 +54,8 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), "lib"))
-from compile_replay import command_for, load_compile_db, safe_path, time_compile  # noqa: E402
+from compile_replay import (command_for, load_compile_db, resolve_tu,  # noqa: E402
+                            safe_path, time_compile)
 
 BLOCK_RE = re.compile(r'^(TYPED_TEST|TEST_F|TEST)\s*\(([^)]*)\)', re.M)
 ASSERT_RE = re.compile(r'\b(EXPECT|ASSERT)_[A-Z_]+\s*\(')
@@ -297,23 +298,6 @@ def build_variant(text, name, total):
             sys.exit(f"{name}: expected n=0..{total} for this file")
         return keep_first(text, int(name[2:]))
     sys.exit(f"unknown variant {name!r}")
-
-
-def resolve_tu(db, wanted):
-    """The one TU in the compile database whose path ends with `wanted`.
-
-    Returns the ENTRY, not a path: the source read, the include directory and the
-    command then all come from the database rather than from argv, and the lookup
-    cannot miss on a checkout reached through a symlink. Sorted and
-    ambiguity-checked so a convenience suffix cannot silently measure a different
-    file on a different run.
-    """
-    matches = sorted((e["file"], i) for i, e in enumerate(db) if e["file"].endswith(wanted))
-    if not matches:
-        sys.exit(f"{wanted}: not in the compile database")
-    if len(matches) > 1:
-        sys.exit(f"{wanted} is ambiguous: {[m[0] for m in matches]}")
-    return db[matches[0][1]]
 
 
 def report(rows, names):

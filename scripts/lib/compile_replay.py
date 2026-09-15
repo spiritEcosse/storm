@@ -1,12 +1,18 @@
 #!/usr/bin/env python3
 """Shared harness for the compile-time measurement scripts in scripts/.
 
-`compile_time_probe.py`, `typed_test_cost.py` and `tu_ablation.py` all do the
-same three things before they can measure anything: confine a CLI-derived path
-to this repository, read `compile_commands.json` and rebuild one entry's command
-without its output operands, and time that command serially taking the best of N
-runs. Those live here so the three agree by construction — and so SonarCloud's
-duplication gate, which does not exclude `scripts/**`, has nothing to report.
+`compile_time_probe.py`, `typed_test_cost.py`, `tu_ablation.py`,
+`probe_select_slope.py` and `trace_one.py` all do the same things before they can
+measure anything: confine a CLI-derived path to this repository, read
+`compile_commands.json`, resolve a convenience suffix to exactly one entry,
+rebuild that entry's command without its output operands, and time it serially
+taking the best of N runs. Those live here so they agree by construction — and so
+SonarCloud's duplication gate, which does not exclude `scripts/**`, has nothing
+to report.
+
+`resolve_tu` is used by all of them except `typed_test_cost.py`, which resolves a
+LIST of suffixes and reports a miss as one `NO ENTRY` row rather than exiting, so
+it keeps its own tolerant loop.
 
 Not a CLI: import it from a script in scripts/.
 """
@@ -43,6 +49,23 @@ def load_compile_db(build_dir):
     if not os.path.isfile(safe_path(db_path)):
         sys.exit(f"{db_path} not found — configure the build first")
     return json.loads(pathlib.Path(safe_path(db_path)).read_text(encoding="utf-8"))
+
+
+def resolve_tu(db, wanted):
+    """The one TU in the compile database whose path ends with `wanted`.
+
+    Returns the ENTRY, not a path: the source read, the include directory and the
+    command then all come from the database rather than from argv, and the lookup
+    cannot miss on a checkout reached through a symlink. Sorted and
+    ambiguity-checked so a convenience suffix cannot silently measure a different
+    file on a different run.
+    """
+    matches = sorted((e["file"], i) for i, e in enumerate(db) if e["file"].endswith(wanted))
+    if not matches:
+        sys.exit(f"{wanted}: not in the compile database")
+    if len(matches) > 1:
+        sys.exit(f"{wanted} is ambiguous: {[m[0] for m in matches]}")
+    return db[matches[0][1]]
 
 
 def strip_output_flags(argv):
